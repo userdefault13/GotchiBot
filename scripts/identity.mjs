@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import crypto from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -72,7 +73,7 @@ async function mint() {
   }
   const r = await call(`/cartridges/${meta.cartridgeId}/portals/mint`, {
     method: "POST",
-    body: { quantity: 1, gameId: GAME_ID },
+    body: { quantity: 10, gameId: GAME_ID },
   });
   if (r.status === 401 || r.status === 403) {
     console.error(
@@ -140,7 +141,6 @@ async function checkpoint() {
   const nonce = (snap.checkpoint?.nonce || 0) + 1;
 
   const stableStringify = (obj) => JSON.stringify(obj, Object.keys(obj).sort());
-  const crypto = await import("node:crypto");
   const stateHash = "0x" + crypto.createHash("sha256").update(stableStringify(gameState)).digest("hex");
   const message = [
     "Aarcade cartridge checkpoint",
@@ -172,10 +172,99 @@ function saveMeta(m) {
   writeFileSync(metaPath(), JSON.stringify({ ...prev, ...m }, null, 2));
 }
 
+async function seal() {
+  const meta = loadMeta();
+  if (!meta?.cartridgeId) {
+    console.error("no cartridge yet — run: gotchibot identity ensure");
+    process.exit(1);
+  }
+  const batchId = process.env.GOTCHIBOT_BATCH_ID;
+  if (!batchId) {
+    console.error("set GOTCHIBOT_BATCH_ID to the pack batchId to seal");
+    process.exit(1);
+  }
+  const words = Array.from({ length: 30 }, () =>
+    `0x${crypto.randomBytes(32).toString("hex")}`
+  );
+  const r = await call(`/cartridges/${meta.cartridgeId}/portals/fulfill`, {
+    method: "POST",
+    body: { batchId, entropyWords: words, requestId: `dev-${Date.now()}` },
+  });
+  print(r);
+}
+
+async function unpack() {
+  const meta = loadMeta();
+  if (!meta?.cartridgeId) {
+    console.error("no cartridge yet — run: gotchibot identity ensure");
+    process.exit(1);
+  }
+  const batchId = process.env.GOTCHIBOT_BATCH_ID;
+  if (!batchId) {
+    console.error("set GOTCHIBOT_BATCH_ID to the sealed pack batchId");
+    process.exit(1);
+  }
+  const r = await call(`/cartridges/${meta.cartridgeId}/portals/open-pack`, {
+    method: "POST",
+    body: { packId: batchId },
+  });
+  print(r);
+}
+
+async function open() {
+  const meta = loadMeta();
+  if (!meta?.cartridgeId) {
+    console.error("no cartridge yet — run: gotchibot identity ensure");
+    process.exit(1);
+  }
+  const portalId = process.argv[3] ?? process.env.GOTCHIBOT_PORTAL_ID;
+  if (!portalId) {
+    console.error("usage: identity.mjs open <portalId>");
+    process.exit(1);
+  }
+  const r = await call(`/cartridges/${meta.cartridgeId}/portals/${portalId}/open`, {
+    method: "POST",
+    body: {},
+  });
+  print(r);
+}
+
+async function bind() {
+  const meta = loadMeta();
+  if (!meta?.cartridgeId) {
+    console.error("no cartridge yet — run: gotchibot identity ensure");
+    process.exit(1);
+  }
+  const r = await call(`/cartridges/${meta.cartridgeId}/bind-starter`, {
+    method: "POST",
+    body: { gameId: GAME_ID },
+  });
+  print(r);
+}
+
+async function apply() {
+  const meta = loadMeta();
+  if (!meta?.cartridgeId) {
+    console.error("no cartridge yet — run: gotchibot identity ensure");
+    process.exit(1);
+  }
+  const portalId = process.argv[3] ?? process.env.GOTCHIBOT_PORTAL_ID;
+  const heroId = process.argv[4] ?? process.env.GOTCHIBOT_HERO_ID;
+  if (!portalId || !heroId) {
+    console.error("usage: identity.mjs apply <portalId> <cAavegotchiId>");
+    process.exit(1);
+  }
+  const r = await call(`/cartridges/${meta.cartridgeId}/portals/${portalId}/apply`, {
+    method: "POST",
+    body: { cAavegotchiId: heroId },
+  });
+  print(r);
+}
+
 const cmd = process.argv[2];
-const handlers = { ensure, mint, roster, rules, checkpoint };
+const handlers = { ensure, mint, seal, unpack, open, bind, apply, roster, rules, checkpoint };
 if (!handlers[cmd]) {
-  console.error("usage: identity.mjs ensure|mint|roster|rules|checkpoint");
+  console.error("usage: identity.mjs ensure|mint|seal|unpack|open|bind|apply|roster|rules|checkpoint");
   process.exit(2);
 }
 handlers[cmd]().catch((e) => { console.error(e.message); process.exit(1); });
