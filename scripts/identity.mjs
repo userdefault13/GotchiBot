@@ -24,13 +24,14 @@ function serviceKey() {
 }
 
 function owner() {
-  const o = process.env.GOTCHIBOT_OWNER;
-  if (!o) {
-    console.error("owner wallet missing. Set it once:\n" +
-      "  abra set gotchibot GOTCHIBOT_OWNER   # paste your address");
-    process.exit(1);
-  }
-  return o;
+  if (process.env.GOTCHIBOT_OWNER) return process.env.GOTCHIBOT_OWNER;
+  try {
+    const w = JSON.parse(readFileSync(`${ROOT}/sessions/.wallet.json`, "utf8"));
+    if (w.address) return w.address;
+  } catch {}
+  console.error("no wallet. Connect once:\n" +
+    "  ./scripts/gotchibot connect   # MetaMask popup in browser");
+  process.exit(1);
 }
 
 async function call(path, { method = "GET", body } = {}) {

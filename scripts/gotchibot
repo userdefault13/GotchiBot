@@ -18,6 +18,9 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot wait [<id>...]        block until sessions finish
   gotchibot output <id>           print a session deliverable
   gotchibot requests              pending skill requests
+  gotchibot connect            open browser wallet-connect (MetaMask)
+  gotchibot wallet             show connected wallet address
+  gotchibot roster --wallet    list your real on-chain gotchis
   gotchibot avatar <agentId>      pin an agent to the avatar pane
   gotchibot handoff [oldId]       build HANDOFF.md and seed a new session
   gotchibot checkpoint <id> <label>   push a milestone to the cartridge
@@ -60,6 +63,16 @@ cmd_checkpoint() {
     node "$ROOT/scripts/identity.mjs" checkpoint
 }
 
+cmd_wallet() {
+  local f="$SESSIONS/.wallet.json"
+  [ -f "$f" ] || { echo "no wallet connected — run: gotchibot connect" >&2; exit 1; }
+  python3 -c "import json;print(json.load(open('$f'))['address'])"
+}
+
+cmd_roster() {
+  exec node "$ROOT/scripts/wallet-roster.mjs" "$@"
+}
+
 cmd_identity() {
   node "$ROOT/scripts/identity.mjs" "$@"
 }
@@ -75,6 +88,9 @@ case "$cmd" in
   output) exec "$DISPATCH" output "$@" ;;
   requests) exec "$DISPATCH" requests ;;
   avatar) [ $# -eq 1 ] || usage; cmd_avatar "$1" ;;
+  connect) exec node "$ROOT/scripts/wallet-connect.mjs" ;;
+  wallet) cmd_wallet ;;
+  roster) cmd_roster "$@" ;;
   handoff) cmd_handoff "$@" ;;
   checkpoint) cmd_checkpoint "$@" ;;
   identity) cmd_identity "$@" ;;
