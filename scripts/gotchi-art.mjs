@@ -13,6 +13,43 @@ const COLLATERAL_TEX = {
   ghst: "*", maticx: "+", ftm: "º", bnb: "°", avax: "·",
 };
 
+const COLLATERAL_COLOR = {
+  ameth: "9553FF", amweth: "9553FF", aaave: "B6509E", adai: "FF7D00",
+  alink: "1E90FF", ausdt: "26A17B", ausdc: "2775CA", atusd: "E7C51E",
+  auni: "FF007A", ayfi: "006AE3", amwbtc: "F7931A", amwmatic: "8247E5",
+  ghst: "FA34F3", maticx: "8247E5", ftm: "13B5EC", bnb: "F3BA2F", avax: "E84142",
+};
+
+const RARITY_COLOR = {
+  common: "9CA3AF", uncommon: "4CAF50", rare: "2196F3",
+  legendary: "9C27B0", mythical: "FF5252",
+};
+
+function rarityBand(traits) {
+  const dist = (traits ?? [])
+    .slice(0, 6)
+    .reduce((sum, t) => sum + Math.abs(Math.round(Number(t) || 0) - 50), 0);
+  if (dist >= 250) return "mythical";
+  if (dist >= 200) return "legendary";
+  if (dist >= 150) return "rare";
+  if (dist >= 100) return "uncommon";
+  return "common";
+}
+
+function colorEnabled() {
+  if (process.argv.includes("--no-color")) return false;
+  if (process.argv.includes("--color")) return true;
+  if (process.env.NO_COLOR) return false;
+  return Boolean(process.stdout.isTTY);
+}
+
+function paint(text, hex) {
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `\x1b[38;2;${r};${g};${b}m${text}\x1b[0m`;
+}
+
 const EYE_GLYPHS = [
   [41, "Θ"], [33, "δ"], [25, "@"], [17, "0"], [9, "O"], [1, "o"],
 ];
@@ -28,9 +65,13 @@ function eyeDigit(color) {
   return String((Math.round(color) % 9) + 1);
 }
 
-function applyIdentity(art, { tex, glyph, digit }) {
-  let lines = art.split("\n");
-  lines = lines.map((line) => line.replace(/▒/g, tex));
+function applyIdentity(art, { tex, glyph, digit, color, useColor }) {
+  const texRe = new RegExp(`${tex.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}+`, "g");
+  let lines = art.split("\n").map((line) => line.replace(/▒/g, tex));
+
+  if (useColor && color) {
+    lines = lines.map((line) => line.replace(texRe, (m) => paint(m, color)));
+  }
 
   let inEyes = false;
   let eyeRowCount = 0;
@@ -39,7 +80,9 @@ function applyIdentity(art, { tex, glyph, digit }) {
       eyeRowCount += 1;
       inEyes = true;
       if (eyeRowCount === 2) {
-        return line.replace(/█████/g, `█${glyph}${digit}${glyph}█`);
+        const eye = `${glyph}${digit}${glyph}`;
+        const painted = useColor && color ? paint(eye, color) : eye;
+        return line.replace(/█████/g, `█${painted}█`);
       }
       return line;
     }
@@ -64,21 +107,29 @@ async function heroIdentity() {
   const collateral = (hero.collateral ?? idCollateral ?? "ameth").toLowerCase();
   return {
     tex: COLLATERAL_TEX[collateral] ?? COLLATERAL_TEX[`a${collateral}`] ?? "▒",
+    color: COLLATERAL_COLOR[collateral] ?? COLLATERAL_COLOR[`a${collateral}`] ?? null,
     glyph: eyeGlyph(traits[4] ?? 0),
     digit: eyeDigit(traits[5] ?? 0),
+    rarity: rarityBand(traits),
   };
 }
 
 async function main() {
-  const status = process.argv[2] ?? "idle";
+  const status = process.argv.filter((a) => !a.startsWith("--"))[2] ?? "idle";
   const idleArt = readFileSync(`${ROOT}/assets/gotchi-framed.ascii`, "utf8");
   const activeArt = readFileSync(`${ROOT}/assets/gotchi-inverted.ascii`, "utf8");
   const base = status === "running" ? activeArt : idleArt;
+  const useColor = colorEnabled();
 
   let art = base;
   try {
     const id = await heroIdentity();
-    if (id) art = applyIdentity(base, id);
+    if (id) {
+      art = applyIdentity(base, { ...id, useColor });
+      if (useColor && id.rarity) {
+        art += `\n${paint(id.rarity.toUpperCase(), RARITY_COLOR[id.rarity])}`;
+      }
+    }
   } catch {}
 
   process.stdout.write(art);
