@@ -82,6 +82,14 @@ async function main() {
     const portals = (s.portalInventory ?? []).filter(Boolean);
     ok(`heroes: ${heroes.length}${heroes.length ? " (" + heroes.map((h) => h.id).join(", ") + ")" : ""}`);
     ok(`portals: ${portals.length} (${portals.filter((p) => String(p.status || "").startsWith("pack")).length} packs)`);
+    const active = s.activeCAavegotchi?.id ?? heroes[0]?.id;
+    if (active) {
+      saveMeta({ activeHeroId: active });
+      try {
+        execFileSync(process.execPath, [`${ROOT}/scripts/render-avatar.mjs`, active], { stdio: "pipe" });
+        ok(`orchestrator avatar rendered: sessions/.avatars/${active}.svg`);
+      } catch {}
+    }
   }
 
   console.log("\ninit complete. next steps:");

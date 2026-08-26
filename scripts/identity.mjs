@@ -36,12 +36,13 @@ function owner() {
 }
 
 async function call(path, { method = "GET", body } = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET) {
+    headers["x-aarcade-service-key"] = process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET;
+  }
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      "x-aarcade-service-key": serviceKey(),
-    },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -56,6 +57,7 @@ function print(result) {
 }
 
 async function ensure() {
+  serviceKey();
   const r = await call("/cartridges/ensure", {
     method: "POST",
     body: { owner: owner(), gameId: GAME_ID },
@@ -68,6 +70,7 @@ async function ensure() {
 }
 
 async function mint() {
+  serviceKey();
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
     console.error("no cartridge yet — run: gotchibot identity ensure");
@@ -99,6 +102,7 @@ async function rules() {
 }
 
 async function checkpoint() {
+  serviceKey();
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
     console.error("no cartridge yet — run: gotchibot identity ensure");
@@ -175,6 +179,7 @@ function saveMeta(m) {
 }
 
 async function seal() {
+  serviceKey();
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
     console.error("no cartridge yet — run: gotchibot identity ensure");
@@ -196,6 +201,7 @@ async function seal() {
 }
 
 async function unpack() {
+  serviceKey();
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
     console.error("no cartridge yet — run: gotchibot identity ensure");
@@ -214,6 +220,7 @@ async function unpack() {
 }
 
 async function open() {
+  serviceKey();
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
     console.error("no cartridge yet — run: gotchibot identity ensure");
@@ -232,6 +239,7 @@ async function open() {
 }
 
 async function bind() {
+  serviceKey();
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
     console.error("no cartridge yet — run: gotchibot identity ensure");
@@ -245,6 +253,7 @@ async function bind() {
 }
 
 async function apply() {
+  serviceKey();
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
     console.error("no cartridge yet — run: gotchibot identity ensure");

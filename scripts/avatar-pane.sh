@@ -25,7 +25,28 @@ target_svg() {
 
   case "$key" in
     s*) dir="$SESSIONS/$key" ;;
-    *) dir="" ;;
+    *)
+      dir=""
+      if [ -f "$AVATARS/$key.svg" ]; then
+        echo "$AVATARS/$key.svg"
+        return 0
+      fi
+      if [ -f "$SESSIONS/.identity.json" ] && command -v node >/dev/null; then
+        local hero
+        hero="$(python3 -c 'import json;print((json.load(open("'"$SESSIONS"'/.identity.json")).get("activeHeroId")) or "")' 2>/dev/null)"
+        if [ -n "$hero" ] && [ -f "$AVATARS/$hero.svg" ]; then
+          echo "$AVATARS/$hero.svg"
+          return 0
+        fi
+        if [ -n "$hero" ]; then
+          node "$ROOT/scripts/render-avatar.mjs" "$hero" >/dev/null 2>&1 && {
+            echo "$AVATARS/$hero.svg"
+            return 0
+          }
+        fi
+      fi
+      return 1
+      ;;
   esac
 
   local cache="$AVATARS/${key}.svg"
