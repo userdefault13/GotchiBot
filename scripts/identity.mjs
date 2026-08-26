@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import crypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -262,10 +263,22 @@ async function apply() {
   print(r);
 }
 
-const cmd = process.argv[2];
-const handlers = { ensure, mint, seal, unpack, open, bind, apply, roster, rules, checkpoint };
-if (!handlers[cmd]) {
-  console.error("usage: identity.mjs ensure|mint|seal|unpack|open|bind|apply|roster|rules|checkpoint");
-  process.exit(2);
+export { call, loadMeta, saveMeta, owner, serviceKey, GAME_ID, API };
+
+function isDirectRun() {
+  try {
+    return import.meta.url === pathToFileURL(process.argv[1]).href;
+  } catch {
+    return false;
+  }
 }
-handlers[cmd]().catch((e) => { console.error(e.message); process.exit(1); });
+
+if (isDirectRun()) {
+  const cmd = process.argv[2];
+  const handlers = { ensure, mint, seal, unpack, open, bind, apply, roster, rules, checkpoint };
+  if (!handlers[cmd]) {
+    console.error("usage: identity.mjs ensure|mint|seal|unpack|open|bind|apply|roster|rules|checkpoint");
+    process.exit(2);
+  }
+  handlers[cmd]().catch((e) => { console.error(e.message); process.exit(1); });
+}

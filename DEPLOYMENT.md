@@ -71,20 +71,32 @@ Notes:
 
 ## Phase 3 — Identity system
 
+First-run setup (idempotent — safe to rerun):
+
+```bash
+./scripts/gotchibot init        # step 1: connects MetaMask via localhost page
+abra run gotchibot -- ./scripts/gotchibot init   # step 2: sim-mints cartridge
+```
+
+`init` walks through: wallet connect (signature-verified, address-only) →
+gotchibot cartridge sim-mint on AarcadeGh-t → roster summary. State lives in
+`sessions/.wallet.json` and `sessions/.identity.json`.
+
+Agent identity lifecycle (each sub-agent role):
+
+```bash
+gotchibot identity mint / seal / unpack / open / bind / apply   # portals
+gotchibot checkpoint <sessionId> <label>                        # milestones
+```
+
 See `IDENTITY_SYSTEM.md`. Summary:
 
 1. Register the `gotchibot` cartridge game entry in AarcadeGh-t
-   (`GET /rules/gotchibot`)
-2. Add service-key auth to `api/routes/cartridge-sim.js`
-3. Mint the orchestrator gotchi (VRF dev-fulfill locally), then sub-agent
-   identities at spawn time
+   (`GET /rules/gotchibot`)  ✓ done 2026-08-25
+2. Service-key auth on cartridge-sim routes  ✓ done (`84da68d3e`)
+3. Mint the orchestrator identity (portal open + starter bind), then
+   sub-agent identities at spawn time
 4. Avatars: official `previewAavegotchi` SVG composition
-
-Also generate the orchestrator wallet (for future onchain actions):
-
-```bash
-abra keygen foundry gotchibot-orchestrator   # Touch ID gated
-```
 
 ## Phase 4 — Secrets & models
 

@@ -18,6 +18,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot wait [<id>...]        block until sessions finish
   gotchibot output <id>           print a session deliverable
   gotchibot requests              pending skill requests
+  gotchibot init                first-run setup: connect wallet, sim-mint cartridge
   gotchibot connect            open browser wallet-connect (MetaMask)
   gotchibot wallet             show connected wallet address
   gotchibot roster --wallet    list your real on-chain gotchis
@@ -88,6 +89,7 @@ case "$cmd" in
   output) exec "$DISPATCH" output "$@" ;;
   requests) exec "$DISPATCH" requests ;;
   avatar) [ $# -eq 1 ] || usage; cmd_avatar "$1" ;;
+  init) exec node "$ROOT/scripts/init.mjs" ;;
   connect) exec node "$ROOT/scripts/wallet-connect.mjs" ;;
   wallet) cmd_wallet ;;
   roster) cmd_roster "$@" ;;
