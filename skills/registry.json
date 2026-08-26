@@ -1,0 +1,44 @@
+{
+  "skills": {
+    "abracadabra": {
+      "status": "approved",
+      "type": "mcp",
+      "description": "Local secrets vault. Touch ID-gated. All credentials flow through here.",
+      "config": "config/mcp.abracadabra.json",
+      "addedAt": "2026-08-25"
+    },
+    "aavegotchi-baazaar": {
+      "status": "approved",
+      "type": "skill",
+      "description": "View/add/execute Baazaar listings on Base (8453). DRY_RUN default.",
+      "source": "~/Dev/aavegotchi-agent-skills",
+      "addedAt": "2026-08-25"
+    },
+    "aavegotchi-gbm-skill": {
+      "status": "approved",
+      "type": "skill",
+      "description": "GBM auctions on Base: discover via subgraph, execute via cast. DRY_RUN default.",
+      "source": "~/.agents/skills/aavegotchi-gbm-skill",
+      "addedAt": "2026-08-25"
+    },
+    "aavegotchi-gotchiverse": {
+      "status": "approved",
+      "type": "skill",
+      "description": "Gotchiverse workflows: channeling, harvesting, crafting, parcel management.",
+      "source": "~/.claude/skills/aavegotchi-gotchiverse",
+      "addedAt": "2026-08-25"
+    },
+    "aavegotchi-3d-renderer": {
+      "status": "approved",
+      "type": "skill",
+      "description": "Render Aavegotchi 3D assets via www.aavegotchi.com renderer batch API.",
+      "source": "~/.agents/skills/aavegotchi-3d-renderer",
+      "addedAt": "2026-08-25"
+    }
+  },
+  "pending": [],
+  "policy": {
+    "autoInstall": false,
+    "note": "Additions land in pending[] first; human approval moves them into skills."
+  }
+}

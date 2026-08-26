@@ -1,0 +1,16 @@
+services:
+  openclaw-gateway:
+    volumes:
+      - ../../config:/gotchibot-config:ro
+      - ../../sessions:/gotchibot-sessions
+      - ../../skills:/gotchibot-skills:ro
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    depends_on:
+      - openclaw-gateway

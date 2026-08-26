@@ -1,0 +1,29 @@
+{
+  "$comment": "Gateway model provider plan. NVIDIA NIM is the primary choice but PENDING until the user's NVIDIA API issue is resolved. Interim provider: Cloudflare Workers AI (account already active via commsies.user-defaults.workers.dev).",
+  "primary": {
+    "provider": "nvidia-nim",
+    "status": "active - key issued into abra project 'gotchibot' 2026-08-25; opencode reads {env:NVIDIA_API_KEY}",
+    "baseURL": "https://integrate.api.nvidia.com/v1",
+    "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "keyEnv": "NVIDIA_API_KEY (abracadabra project 'gotchibot')"
+  },
+  "interim": {
+    "provider": "cloudflare-workers-ai",
+    "status": "ready - account confirmed active (commsies worker)",
+    "openaiCompatBase": "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1",
+    "freeTier": "10,000 neurons/day, no credit card",
+    "candidateModels": {
+      "default": "@cf/zai-org/glm-5.2",
+      "fastCheap": "@cf/zai-org/glm-4.7-flash",
+      "quality": "@cf/openai/gpt-oss-120b",
+      "agentic": "@cf/nvidia/nemotron-3-120b-a12b",
+      "codingHeavy": "@cf/moonshotai/kimi-k2.7-code"
+    },
+    "keyEnv": "CLOUDFLARE_WORKERS_AI_TOKEN + CLOUDFLARE_ACCOUNT_ID (abracadabra project 'gotchibot')",
+    "note": "commsies currently runs @cf/meta/llama-3.1-8b-instruct-fast (dated); deprecated-model refresh announced 2026-05-08 - avoid llama-3.x"
+  },
+  "fallbacks": [
+    "ollama/deepseek-r1 on iMac 192.168.1.162:11434 (private/offline)",
+    "google gemini flash free tier (prompts may train)"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "$comment": "Gotchi data layer — reuses AarcadeGh-t's home Cloudflare tunnel (UserDefaultTunnel on the iMac). No local indexers needed.",
+  "gateway": "https://subgraph.aarcadeghst.com",
+  "subgraphs": {
+    "aavegotchi-core-base": {
+      "url": "https://subgraph.aarcadeghst.com/subgraphs/name/aavegotchi-core-base",
+      "use": "gotchi traits, ownership, BRS, listings"
+    },
+    "aavegotchi-svg-base": {
+      "url": "https://subgraph.aarcadeghst.com/subgraphs/name/aavegotchi-svg-base",
+      "use": "on-chain SVG art for avatars"
+    },
+    "gotchiverse-base": {
+      "url": "https://subgraph.aarcadeghst.com/subgraphs/name/gotchiverse-base",
+      "use": "realm parcels, alchemica"
+    },
+    "aavegotchi-gbm-baazaar-base": {
+      "url": "https://subgraph.aarcadeghst.com/subgraphs/name/aavegotchi-gbm-baazaar-base",
+      "use": "GBM auctions"
+    }
+  },
+  "auth": {
+    "header": "X-Subgraph-Proxy-Key",
+    "note": "Compat proxy supports optional proxy key; currently not enforced. Set GOTCHIBOT_SUBGRAPH_PROXY_KEY in abracadabra if enforcement is enabled."
+  },
+  "health": {
+    "status": "verified 2026-08-25",
+    "coreQuery": "aavegotchis(first:2) returned data",
+    "svgQuery": "__typename query_root ok"
+  },
+  "identityLayer": {
+    "cartridgeSim": "https://www.aarcadeghst.com",
+    "cartridgeSimProxy": "https://cartridge.aarcadeghst.com",
+    "mongoProxy": "https://mongo-api.aarcadeghst.com",
+    "homeCdn": "https://cdn.aarcadeghst.com"
+  },
+  "lanNote": "iMac LAN ports are not directly reachable from the MBP (firewall/AP isolation) — always go through the tunnel hostnames, never http://192.168.1.162:*"
+}

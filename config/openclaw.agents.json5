@@ -1,0 +1,27 @@
+{
+  "//": "Sub-agent definitions consumed by scripts/opencode-dispatch.sh and the OpenClaw gateway.",
+  "defaultModel": "deepseek/deepseek-v4-flash",
+  "agents": {
+    "sub-coder": {
+      "model": "deepseek/deepseek-v4-flash",
+      "role": "volume coding tasks",
+      "sandbox": "workspace-only"
+    },
+    "sub-hard": {
+      "model": "deepseek/deepseek-v4-pro",
+      "role": "escalation: hard reasoning / architecture / gnarly bugs",
+      "sandbox": "workspace-only"
+    },
+    "sub-local": {
+      "model": "ollama/deepseek-r1:8b",
+      "endpoint": "http://192.168.1.162:11434",
+      "role": "offline/private fallback (via tunnel after migration)",
+      "sandbox": "workspace-only"
+    }
+  },
+  "rulesFile": "AGENTS.md",
+  "toolPolicy": {
+    "autonomousInstalls": false,
+    "secretsAccess": "orchestrator-via-abra-only"
+  }
+}

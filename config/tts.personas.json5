@@ -1,0 +1,22 @@
+{
+  "globalAutoTTS": false,
+  "optInCommand": "/tts chat on",
+  "personas": {
+    "gotchi": {
+      "provider": "edge-tts",
+      "voice": "en-US-AnaNeural",
+      "pitch": "+15Hz",
+      "rate": "+5%"
+    },
+    "sub-coder": {
+      "provider": "edge-tts",
+      "voice": "en-US-BlueNeural",
+      "rate": "+10%"
+    },
+    "sub-hard": {
+      "provider": "edge-tts",
+      "voice": "en-US-AriaNeural"
+    }
+  },
+  "upgradePath": ["elevenlabs", "openai"]
+}

@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SESSIONS="$ROOT/sessions"
+DISPATCH="$ROOT/scripts/opencode-dispatch.sh"
+PIN="$SESSIONS/.pin"
+mkdir -p "$SESSIONS"
+
+usage() {
+  cat >&2 <<'EOF'
+gotchibot — GotchiBot orchestrator CLI
+
+  gotchibot tmux                  open the orchestrator layout (mc | avatars)
+  gotchibot new [--model t] "P"   spawn a sub-agent (t: nim|pro|local|<id>)
+  gotchibot list                  session table
+  gotchibot status <id>...        one session's state
+  gotchibot wait [<id>...]        block until sessions finish
+  gotchibot output <id>           print a session deliverable
+  gotchibot requests              pending skill requests
+  gotchibot avatar <agentId>      pin an agent to the avatar pane
+  gotchibot handoff [oldId]       build HANDOFF.md and seed a new session
+  gotchibot checkpoint <id> <label>   push a milestone to the cartridge
+  gotchibot identity ensure|mint|roster   cartridge identity ops
+EOF
+  exit 2
+}
+
+cmd_tmux() {
+  command -v tmux >/dev/null || { echo "tmux missing: brew install tmux" >&2; exit 1; }
+  local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+  if tmux has-session -t "$sess" 2>/dev/null; then
+    exec tmux attach -t "$sess"
+  fi
+  tmux new-session -d -s "$sess" -n work
+  tmux send-keys -t "$sess:work" "cd '$ROOT' && mc ." C-m
+  local right
+  right="$(tmux split-window -h -P -F '#{pane_id}' -t "$sess:work")"
+  tmux send-keys -t "$right" "cd '$ROOT' && ./scripts/avatar-pane.sh watch" C-m
+  local bottom
+  bottom="$(tmux split-window -v -P -F '#{pane_id}' -t "$right")"
+  tmux send-keys -t "$bottom" "cd '$ROOT' && while true; do clear; '$DISPATCH' list; sleep 5; done" C-m
+  tmux select-pane -t "$sess:work.0"
+  exec tmux attach -t "$sess"
+}
+
+cmd_avatar() {
+  printf '%s\n' "$1" > "$PIN"
+  rm -f "$SESSIONS/.avatars/$1.svg"
+  echo "pinned avatar: $1"
+}
+
+cmd_handoff() {
+  node "$ROOT/scripts/handoff.mjs" "$@"
+}
+
+cmd_checkpoint() {
+  [ $# -ge 2 ] || usage
+  GOTCHIBOT_CHECKPOINT_SESSION="$1" GOTCHIBOT_CHECKPOINT_LABEL="$2" \
+    node "$ROOT/scripts/identity.mjs" checkpoint
+}
+
+cmd_identity() {
+  node "$ROOT/scripts/identity.mjs" "$@"
+}
+
+[ $# -ge 1 ] || usage
+cmd="$1"; shift
+case "$cmd" in
+  tmux) cmd_tmux ;;
+  new) "$DISPATCH" new "$@" ;;
+  list) exec "$DISPATCH" list ;;
+  status) exec "$DISPATCH" status "$@" ;;
+  wait) exec "$DISPATCH" wait "$@" ;;
+  output) exec "$DISPATCH" output "$@" ;;
+  requests) exec "$DISPATCH" requests ;;
+  avatar) [ $# -eq 1 ] || usage; cmd_avatar "$1" ;;
+  handoff) cmd_handoff "$@" ;;
+  checkpoint) cmd_checkpoint "$@" ;;
+  identity) cmd_identity "$@" ;;
+  *) usage ;;
+esac
