@@ -103,25 +103,61 @@ async function checkpoint() {
   }
   const sessionId = process.env.GOTCHIBOT_CHECKPOINT_SESSION;
   const label = process.env.GOTCHIBOT_CHECKPOINT_LABEL ?? "milestone";
-  let gameState = {};
+  let gameState = { schemaVersion: 1 };
   if (sessionId) {
     const dir = resolve(ROOT, "sessions", sessionId);
     try {
-      gameState = {
-        sessionId,
+      gameState.agents = {
+        orchestrator: { cAavegotchiId: "orchestrator", status: "active" },
+        "sub-agents": [
+          {
+            id: `sub-${sessionId}`,
+            cAavegotchiId: sessionId,
+            runtime: "opencode",
+            model: process.env.GOTCHIBOT_CHECKPOINT_MODEL ?? "",
+            status: "completed",
+            task: label,
+            startedAt: null,
+          },
+        ],
+      };
+      gameState.handoff = {
+        knowledgeFiles: [],
         prompt: readFileSync(`${dir}/prompt.txt`, "utf8").slice(0, 2000),
         output: readFileSync(`${dir}/output.md`, "utf8").slice(0, 8000),
       };
     } catch {
-      gameState = { sessionId, note: "session files unavailable" };
+      gameState.note = "session files unavailable";
     }
   } else {
-    gameState = { note: label, at: new Date().toISOString() };
+    gameState.agents = { orchestrator: { status: "idle" }, "sub-agents": [] };
+    gameState.handoff = { note: label, at: new Date().toISOString() };
   }
+
+  const r0 = await call(`/cartridges/${meta.cartridgeId}`);
+  if (!r0.ok) { print(r0); return; }
+  const snap = r0.data.cartridge ?? r0.data;
+  const nonce = (snap.checkpoint?.nonce || 0) + 1;
+
+  const stableStringify = (obj) => JSON.stringify(obj, Object.keys(obj).sort());
+  const crypto = await import("node:crypto");
+  const stateHash = "0x" + crypto.createHash("sha256").update(stableStringify(gameState)).digest("hex");
+  const message = [
+    "Aarcade cartridge checkpoint",
+    `cartridgeId: ${meta.cartridgeId}`,
+    `nonce: ${nonce}`,
+    `stateHash: ${stateHash}`,
+  ].join("\n");
 
   const r = await call(`/cartridges/${meta.cartridgeId}/checkpoint`, {
     method: "POST",
-    body: { gameId: GAME_ID, gameState, signature: null, message: null, label },
+    body: {
+      gameId: GAME_ID,
+      gameState,
+      signature: "service-key",
+      message,
+      label,
+    },
   });
   print(r);
 }
