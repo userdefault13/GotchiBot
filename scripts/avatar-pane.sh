@@ -36,7 +36,9 @@ footer() {
   else
     for d in "$SESSIONS"/s*/state.env; do
       grep -q '^status=running' "$d" 2>/dev/null || continue
-      echo "active: $(basename "$(dirname "$d")") ($(grep '^model=' "$d" | cut -d= -f2-))"
+      local hero
+      hero="$(grep -oE '^hero=.*' "$d" | cut -d= -f2-)"
+      echo "active: $(basename "$(dirname "$d")") ($(grep '^model=' "$d" | cut -d= -f2-)${hero:+ · $hero})"
       return
     done
   fi

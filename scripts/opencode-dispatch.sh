@@ -75,6 +75,14 @@ $dir/skill-requests.jsonl and continue without it. Never install anything.
 Never handle secrets directly; ask the orchestrator to fetch them via abracadabra.
 EOF
 
+  if [ -n "${AARCADE_GOTCHIBOT_SERVICE_SECRET:-}" ]; then
+    hero="$(node "$ROOT/scripts/identity.mjs" bind --session "$id" 2>/dev/null | tail -1)" || hero=""
+    if [ -n "$hero" ]; then
+      set_field "$dir" hero "$hero"
+      echo "Your gotchi identity: $hero" >> "$dir/bootstrap.txt"
+    fi
+  fi
+
   runner="$dir/runner.sh"
   cat > "$runner" <<RUNNER
 #!/usr/bin/env bash

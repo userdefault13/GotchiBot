@@ -245,10 +245,30 @@ async function bind() {
     console.error("no cartridge yet — run: gotchibot identity ensure");
     process.exit(1);
   }
+  const sessionIdx = process.argv.indexOf("--session");
+  const sessionId = sessionIdx > -1 ? process.argv[sessionIdx + 1] : null;
+
+  const before = await call(`/cartridges/${meta.cartridgeId}`);
+  const beforeIds = new Set(
+    ((before.data.cartridge ?? before.data)?.cAavegotchis ?? []).map((h) => h.id)
+  );
   const r = await call(`/cartridges/${meta.cartridgeId}/bind-starter`, {
     method: "POST",
     body: { gameId: GAME_ID },
   });
+  if (!r.ok) {
+    if (sessionId) { console.error(JSON.stringify(r.data)); process.exit(1); }
+    print(r);
+    return;
+  }
+  const after = r.data.cartridge ?? r.data;
+  const newHero = (after.cAavegotchis ?? []).find((h) => !beforeIds.has(h.id));
+  if (sessionId) {
+    if (!newHero) { console.error("no new hero in roster after bind"); process.exit(1); }
+    saveMeta({ sessionHeroes: { ...(meta.sessionHeroes ?? {}), [sessionId]: newHero.id } });
+    process.stdout.write(newHero.id);
+    return;
+  }
   print(r);
 }
 
