@@ -62,10 +62,16 @@ target_svg() {
   echo "$cache"
 }
 
+ASCII_AVATAR="$ROOT/assets/gotchi.ascii"
+
 render() {
   local f="$1"
   clear
-  chafa --format symbols --symbols block+border-solid -s "$(tput cols)x$(($(tput lines) - 3))" "$f"
+  if [ -f "$ASCII_AVATAR" ]; then
+    cat "$ASCII_AVATAR"
+  else
+    chafa --format symbols --symbols block+border-solid -s "$(tput cols)x$(($(tput lines) - 3))" "$f"
+  fi
   echo
   if [ -f "$PIN" ]; then
     echo "pinned: $(cat "$PIN")"
