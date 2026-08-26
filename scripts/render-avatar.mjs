@@ -52,11 +52,39 @@ function previewOnChain(diamond, rpcUrl, hauntId, collateralAddr, traits, equipp
   return Buffer.from(svgHex, "hex").toString("utf8");
 }
 
-export function stripBackground(svg) {
-  if (!/<style[\s>]/i.test(svg)) {
-    return svg.replace(/(<svg[^>]*>)/i, `$1<style>.gotchi-bg:not(.gotchi-bg-rh),.wearable-bg{display:none!important}</style>`);
+export function normalizeSvg(svg) {
+  const styleMatch = /<style>([\s\S]*?)<\/style>/i.exec(svg);
+  if (!styleMatch) return svg;
+  const rules = [...styleMatch[1].matchAll(/\.([a-zA-Z-]+)\s*\{([^}]+)\}/g)];
+  const hidden = new Set();
+
+  const rewriteTag = (m0, tag, attrs, selfClose, className, extraStyle) => {
+    const clsMatch = /\bclass="([^"]*)"/i.exec(attrs);
+    let next = attrs;
+    if (clsMatch) {
+      const keep = clsMatch[1].split(/\s+/).filter((c) => c && c !== className);
+      next = next.replace(clsMatch[0], keep.length ? `class="${keep.join(" ")}"` : "");
+    }
+    return `<${tag}${next}${extraStyle}${selfClose}>`;
+  };
+
+  for (const [, className, decls] of rules) {
+    const isHidden = /display\s*:\s*none/.test(decls);
+    if (isHidden) hidden.add(className);
+    const fill = !isHidden ? /(?:^|;)\s*fill\s*:\s*([^;}]+)/i.exec(decls)?.[1]?.trim() : null;
+    const extra = isHidden ? ' style="display:none"' : "";
+    svg = svg.replace(
+      new RegExp(`<([a-z][a-z0-9]*)([^>]*\\bclass="[^"]*\\b${className}\\b[^"]*"[^>]*?)(/?)>`, "gi"),
+      (m0, tag, attrs, selfClose) => rewriteTag(m0, tag, attrs, selfClose, className, extra),
+    );
   }
-  return svg.replace(/<\/style>/i, ".gotchi-bg:not(.gotchi-bg-rh),.wearable-bg{display:none!important}</style>");
+
+  svg = svg.replace(
+    /<g([^>]*)\bclass="gotchi-bg(?!-rh)([^"]*)"([^>]*)>/gi,
+    (_m, pre, _c, post) => `<g${pre} class="gotchi-bg"${post} style="display:none">`,
+  );
+  svg = svg.replace(/<style>[\s\S]*?<\/style>/i, "");
+  return svg;
 }
 
 async function loadHero(heroId) {
@@ -100,7 +128,7 @@ async function main() {
   const outDir = `${ROOT}/sessions/.avatars`;
   mkdirSync(outDir, { recursive: true });
   const out = `${outDir}/${hero.id}.svg`;
-  writeFileSync(out, stripBackground(svg));
+  writeFileSync(out, normalizeSvg(svg));
 
   console.log(JSON.stringify({ hero: hero.id, traits, out, bytes: svg.length }));
 }

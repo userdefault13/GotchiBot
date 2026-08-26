@@ -62,17 +62,46 @@ target_svg() {
   echo "$cache"
 }
 
-ASCII_AVATAR="$ROOT/assets/gotchi.ascii"
+ASCII_IDLE="$ROOT/assets/gotchi-framed.ascii"
+ASCII_ACTIVE="$ROOT/assets/gotchi-inverted.ascii"
+ASCII_FALLBACK="$ROOT/assets/gotchi.ascii"
+
+active_status() {
+  if [ -f "$PIN" ]; then
+    local k
+    k="$(tr -d '[:space:]' < "$PIN")"
+    case "$k" in
+      s*) [ -f "$SESSIONS/$k/state.env" ] && grep -oE '^status=[a-z]+' "$SESSIONS/$k/state.env" | cut -d= -f2 && return ;;
+    esac
+    echo "pinned"
+    return
+  fi
+  for d in "$SESSIONS"/s*/state.env; do
+    grep -q '^status=running' "$d" 2>/dev/null || continue
+    echo "running"
+    return
+  done
+  echo "idle"
+}
 
 render() {
   local f="$1"
   clear
-  if [ -f "$ASCII_AVATAR" ]; then
-    cat "$ASCII_AVATAR"
+  local status art
+  status="$(active_status)"
+  case "$status" in
+    running) art="$ASCII_ACTIVE" ;;
+    *)       art="$ASCII_IDLE" ;;
+  esac
+  if [ -f "$art" ]; then
+    cat "$art"
+  elif [ -f "$ASCII_FALLBACK" ]; then
+    cat "$ASCII_FALLBACK"
   else
     chafa --format symbols --symbols block+border-solid -s "$(tput cols)x$(($(tput lines) - 3))" "$f"
   fi
   echo
+  echo "status: $status"
   if [ -f "$PIN" ]; then
     echo "pinned: $(cat "$PIN")"
   else
@@ -93,12 +122,10 @@ case "${1:-watch}" in
   watch)
     last=""
     while true; do
-      if f="$(target_svg)" && [ -n "${f:-}" ] && [ -f "$f" ]; then
-        sig="${f}:$(stat -f '%m' "$f")"
-        if [ "$sig" != "$last" ]; then
-          render "$f"
-          last="$sig"
-        fi
+      sig="$(active_status)"
+      if [ "$sig" != "$last" ]; then
+        render ""
+        last="$sig"
       fi
       sleep "$INTERVAL"
     done
