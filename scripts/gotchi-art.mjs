@@ -61,11 +61,7 @@ function eyeGlyph(shape) {
   return "o";
 }
 
-function eyeDigit(color) {
-  return String((Math.round(color) % 9) + 1);
-}
-
-function applyIdentity(art, { tex, glyph, digit, color, useColor }) {
+function applyIdentity(art, { tex, glyph, color, useColor }) {
   const texRe = new RegExp(`${tex.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}+`, "g");
   let lines = art.split("\n").map((line) => line.replace(/▒/g, tex));
 
@@ -80,7 +76,7 @@ function applyIdentity(art, { tex, glyph, digit, color, useColor }) {
       eyeRowCount += 1;
       inEyes = true;
       if (eyeRowCount === 2) {
-        const eye = `${glyph}${digit}${glyph}`;
+        const eye = `${glyph}${glyph}`;
         const painted = useColor && color ? paint(eye, color) : eye;
         return line.replace(/█████/g, `█${painted}█`);
       }
@@ -109,7 +105,6 @@ async function heroIdentity() {
     tex: COLLATERAL_TEX[collateral] ?? COLLATERAL_TEX[`a${collateral}`] ?? "▒",
     color: COLLATERAL_COLOR[collateral] ?? COLLATERAL_COLOR[`a${collateral}`] ?? null,
     glyph: eyeGlyph(traits[4] ?? 0),
-    digit: eyeDigit(traits[5] ?? 0),
     rarity: rarityBand(traits),
   };
 }
