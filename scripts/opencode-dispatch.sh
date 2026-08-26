@@ -20,6 +20,7 @@ EOF
 
 model_for() {
   case "$1" in
+    free) echo "openrouter/stealth/ox-alpha" ;;
     nim) echo "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b" ;;
     flash) echo "deepseek/deepseek-v4-flash" ;;
     pro) echo "deepseek/deepseek-v4-pro" ;;
@@ -40,7 +41,7 @@ set_field() {
 }
 
 spawn() {
-  local model="nim" prompt id dir runner
+  local model="free" prompt id dir runner
   while [ $# -gt 0 ]; do
     case "$1" in
       --model) model="$2"; shift 2 ;;
