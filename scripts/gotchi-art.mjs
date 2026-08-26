@@ -121,7 +121,7 @@ async function main() {
     const id = await heroIdentity();
     if (id) {
       art = applyIdentity(base, { ...id, useColor });
-      if (useColor && id.rarity) {
+      if (useColor && id.rarity && !process.argv.includes("--no-rarity")) {
         art += `\n${paint(id.rarity.toUpperCase(), RARITY_COLOR[id.rarity])}`;
       }
     }

@@ -11,8 +11,10 @@ usage() {
   cat >&2 <<'EOF'
 gotchibot — GotchiBot orchestrator CLI
 
-  gotchibot tmux                  open the orchestrator layout (mc | avatars)
+  gotchibot tmux                  open orchestrator (sidebar | opencode | avatar)
+  gotchibot sidebar               toggle file explorer (mc) sidebar
   gotchibot new [--model t] "P"   spawn a sub-agent (t: nim|pro|local|<id>)
+  gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot list                  session table
   gotchibot status <id>...        one session's state
   gotchibot wait [<id>...]        block until sessions finish
@@ -32,20 +34,19 @@ EOF
 
 cmd_tmux() {
   command -v tmux >/dev/null || { echo "tmux missing: brew install tmux" >&2; exit 1; }
+  # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
+  # API keys are injected inside chat/sub-agent panes when needed.
   local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+  local min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-42}"
+  local layout="$ROOT/scripts/orchestrator-layout.sh"
+
   if tmux has-session -t "$sess" 2>/dev/null; then
-    exec tmux attach -t "$sess"
+    "$layout" refresh
+    exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit"
   fi
   tmux new-session -d -s "$sess" -n work
-  tmux send-keys -t "$sess:work" "cd '$ROOT' && mc ." C-m
-  local right
-  right="$(tmux split-window -h -P -F '#{pane_id}' -t "$sess:work")"
-  tmux send-keys -t "$right" "cd '$ROOT' && ./scripts/avatar-pane.sh watch" C-m
-  local bottom
-  bottom="$(tmux split-window -v -P -F '#{pane_id}' -t "$right")"
-  tmux send-keys -t "$bottom" "cd '$ROOT' && while true; do clear; '$DISPATCH' list; sleep 5; done" C-m
-  tmux select-pane -t "$sess:work.0"
-  exec tmux attach -t "$sess"
+  "$layout" refresh
+  exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit"
 }
 
 cmd_avatar() {
@@ -56,6 +57,50 @@ cmd_avatar() {
 
 cmd_handoff() {
   node "$ROOT/scripts/handoff.mjs" "$@"
+}
+
+cmd_ask() {
+  local model="" prompt="" tier
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --model) model="$2"; shift 2 ;;
+      *) prompt="$1"; shift ;;
+    esac
+  done
+  [ -n "$prompt" ] || usage
+
+  if [ -z "$model" ]; then
+    tier="$(node "$ROOT/scripts/prompt-route.mjs" "$prompt" 2>/dev/null || echo nim)"
+    model="$tier"
+  fi
+
+  local ctx="$prompt"
+  if [ -f "$SESSIONS/HANDOFF.md" ]; then
+    ctx="$(cat <<EOF
+Context from prior work (HANDOFF.md):
+$(head -c 4000 "$SESSIONS/HANDOFF.md")
+
+---
+User task:
+$prompt
+EOF
+)"
+  fi
+
+  echo "→ spawning ($model): $prompt"
+  local id
+  id="$("$DISPATCH" new --model "$model" "$ctx")"
+  echo "  session: $id  (gotchibot output $id)"
+  # shellcheck source=scripts/progress-bar.sh
+  source "$ROOT/scripts/progress-bar.sh"
+  (
+    st="$(progress_wait_session "$id" "$ROOT")"
+    if [ "$st" = failed ] && [ -f "$SESSIONS/$id/output.log" ]; then
+      echo "  failed: $(grep -iE 'error|unauthorized|missing' "$SESSIONS/$id/output.log" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')"
+    elif [ "$st" = done ] && [ -s "$SESSIONS/$id/output.md" ]; then
+      head -c 400 "$SESSIONS/$id/output.md" | sed 's/^/  /'
+    fi
+  ) &
 }
 
 cmd_checkpoint() {
@@ -94,7 +139,9 @@ case "$cmd" in
   wallet) cmd_wallet ;;
   roster) cmd_roster "$@" ;;
   handoff) cmd_handoff "$@" ;;
+  ask) cmd_ask "$@" ;;
   checkpoint) cmd_checkpoint "$@" ;;
   identity) cmd_identity "$@" ;;
+  sidebar) exec "$ROOT/scripts/orchestrator-layout.sh" sidebar ;;
   *) usage ;;
 esac

@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SESSIONS="$ROOT/sessions"
+DISPATCH="$ROOT/scripts/opencode-dispatch.sh"
+INIT="$ROOT/scripts/init.mjs"
+IDENTITY="$ROOT/scripts/identity.mjs"
+WALLET_CONNECT="$ROOT/scripts/wallet-connect.mjs"
+
+mkdir -p "$SESSIONS"
+
+step() {
+  echo
+  echo "═══════════════════════════════════════════"
+  echo "  $1"
+  echo "═══════════════════════════════════════════"
+}
+
+ok() {
+  echo "    ✓ $1" >&2
+}
+
+info() {
+  echo "    $1" >&2
+}
+
+warn() {
+  echo "    ⚠ $1" >&2
+}
+
+error() {
+  echo "    ✗ $1" >&2
+}
+
+read_wallet() {
+  local f="$SESSIONS/.wallet.json"
+  [ -f "$f" ] || return 1
+  python3 -c "import json,sys; d=json.load(open('$f')); print(d.get('address',''))" 2>/dev/null || return 1
+}
+
+connect_wallet() {
+  step "Connect Wallet"
+  info "Opening browser for MetaMask signature..."
+  node "$WALLET_CONNECT"
+}
+
+ensure_cartridge() {
+  step "Ensure Cartridge"
+  if ! node "$INIT"; then
+    error "Cartridge init failed"
+    return 1
+  fi
+}
+
+get_active_hero() {
+  node -e "
+    const { loadMeta } = await import('$IDENTITY');
+    const meta = loadMeta();
+    console.log(meta?.activeHeroId || '');
+  " 2>/dev/null || echo ""
+}
+
+list_heroes() {
+  node -e "
+    const { call, loadMeta } = await import('$IDENTITY');
+    const meta = loadMeta();
+    if (!meta?.cartridgeId) { console.log(''); process.exit(0); }
+    const r = await call(\`/cartridges/\${meta.cartridgeId}\`);
+    if (!r.ok) { console.log(''); process.exit(0); }
+    const heroes = (r.data.cartridge ?? r.data).cAavegotchis || [];
+    heroes.forEach(h => console.log(h.id));
+  " 2>/dev/null | grep -v '^$' || true
+}
+
+bind_starter_hero() {
+  step "Binding starter cAavegotchi"
+  local hero
+  hero=$(node "$IDENTITY" bind 2>/dev/null | tail -1) || return 1
+  [ -n "$hero" ] || { error "No hero bound"; return 1; }
+  ok "Bound hero: $hero"
+  echo "$hero"
+}
+
+mint_portal() {
+  step "Minting portal pack"
+  warn "This requires service key. Run with: abra run gotchibot -- ./scripts/gotchibot identity mint"
+  read -p "Press Enter after minting via abra, or Ctrl+C to skip..."
+}
+
+select_orchestrator() {
+  local heroes_str=$(list_heroes)
+  local heroes=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && heroes+=("$line")
+  done <<< "$heroes_str"
+  local active=$(get_active_hero)
+
+  if [ ${#heroes[@]} -eq 0 ]; then
+    warn "No cAavegotchis found in cartridge"
+    read -p "Mint a portal pack now? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      mint_portal
+      # Re-check after mint
+      local heroes_str2=$(list_heroes)
+      heroes=()
+      while IFS= read -r line; do
+        [ -n "$line" ] && heroes+=("$line")
+      done <<< "$heroes_str2"
+    fi
+
+    if [ ${#heroes[@]} -eq 0 ]; then
+      info "Binding starter hero instead..."
+      bind_starter_hero
+      return
+    fi
+  fi
+
+  if [ -n "$active" ] && printf '%s\n' "${heroes[@]}" | grep -qx "$active"; then
+    info "Using active orchestrator: $active"
+    echo "$active"
+    return
+  fi
+
+  if [ ${#heroes[@]} -eq 1 ]; then
+    ok "Single hero found: ${heroes[0]}"
+    echo "${heroes[0]}"
+    return
+  fi
+
+  echo "Available heroes:"
+  for i in "${!heroes[@]}"; do
+    echo "  $((i+1))) ${heroes[i]}"
+  done
+  read -p "Select orchestrator [1-${#heroes[@]}]: " choice
+  local idx=$((choice-1))
+  if [[ $idx -ge 0 && $idx -lt ${#heroes[@]} ]]; then
+    echo "${heroes[idx]}"
+  else
+    error "Invalid selection"
+    exit 1
+  fi
+}
+
+open_orchestrator() {
+  local hero="$1"
+  step "Starting Orchestrator"
+  info "Setting avatar to: $hero"
+  printf '%s\n' "$hero" > "$SESSIONS/.pin"
+  rm -f "$SESSIONS/.avatars/$hero.svg"
+
+  info "Opening tmux session..."
+  exec "$ROOT/scripts/gotchibot" tmux
+}
+
+prompt_subagent() {
+  step "Spawn Sub-Agent"
+  echo "The orchestrator is ready. You can now spawn sub-agents."
+  echo
+  echo "Examples:"
+  echo "  gotchibot new --model nim \"Analyze GHST price trends\""
+  echo "  gotchibot new --model pro \"Audit smart contract\""
+  echo "  gotchibot new \"Research Aavegotchi mechanics\""
+  echo
+  read -p "Spawn a sub-agent now? (y/N) " -n 1 -r
+  echo
+  if [[ $REPLY =~ ^[Yy]$ ]]; then
+    read -p "Prompt: " prompt
+    read -p "Model (nim/pro/flash/local) [nim]: " model
+    model="${model:-nim}"
+    "$DISPATCH" new --model "$model" "$prompt"
+  fi
+}
+
+main() {
+  echo "🎮 GotchiBot Orchestrator Launcher"
+  echo "===================================="
+
+  # 1. Wallet
+  local wallet=$(read_wallet)
+  if [ -z "$wallet" ]; then
+    connect_wallet
+    wallet=$(read_wallet)
+    [ -n "$wallet" ] || { error "Wallet connection failed"; exit 1; }
+  fi
+  ok "Wallet: $wallet"
+
+  # 2. Cartridge
+  local meta_exists=false
+  if [ -f "$SESSIONS/.identity.json" ]; then
+    if python3 -c "import json; d=json.load(open('$SESSIONS/.identity.json')); exit(0 if d.get('cartridgeId') else 1)" 2>/dev/null; then
+      meta_exists=true
+    fi
+  fi
+
+  if ! $meta_exists; then
+    ensure_cartridge || exit 1
+  else
+    ok "Cartridge already initialized"
+  fi
+
+  # 3. Select/set orchestrator hero
+  local hero=$(select_orchestrator)
+  [ -n "$hero" ] || { error "No orchestrator hero available"; exit 1; }
+
+  # 4. Save active hero
+  node -e "
+    const { saveMeta } = await import('$IDENTITY');
+    saveMeta({ activeHeroId: '$hero' });
+  " 2>/dev/null
+
+  # 5. Open tmux
+  open_orchestrator "$hero"
+}
+
+main "$@"

@@ -37,7 +37,8 @@ Your session dir contains:
 
 | Tier | Model | Use |
 |---|---|---|
-| default | `nvidia-nim/nemotron-3.5-lightning-30b-a3b` (`--model nim`) | routine coding |
+| default | `opencode/nemotron-3.5-lightning-free` (`--model nim`) | routine coding (no API key) |
+| reasoning | `opencode/nemotron-3-ultra-free` | set `GOTCHIBOT_OPENCODE_MODEL` for heavier tasks |
 | escalation | `deepseek/deepseek-v4-pro` | hard reasoning (needs DEEPSEEK_API_KEY) |
 | fallback | `ollama/qwen2.5:3b` | offline/private |
 

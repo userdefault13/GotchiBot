@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SESSIONS="$ROOT/sessions"
+PROGRESS="$ROOT/scripts/progress-bar.sh"
 mkdir -p "$SESSIONS"
 
 usage() {
@@ -20,8 +21,7 @@ EOF
 
 model_for() {
   case "$1" in
-    free) echo "openrouter/stealth/ox-alpha" ;;
-    nim) echo "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b" ;;
+    free|nim) echo "opencode/nemotron-3.5-lightning-free" ;;
     flash) echo "deepseek/deepseek-v4-flash" ;;
     pro) echo "deepseek/deepseek-v4-pro" ;;
     local) echo "ollama/qwen2.5:3b" ;;
@@ -42,6 +42,8 @@ set_field() {
 
 spawn() {
   local model="free" prompt id dir runner
+  # shellcheck source=scripts/progress-bar.sh
+  source "$PROGRESS"
   while [ $# -gt 0 ]; do
     case "$1" in
       --model) model="$2"; shift 2 ;;
@@ -49,6 +51,8 @@ spawn() {
     esac
   done
   [ -n "${prompt:-}" ] || usage
+
+  progress_pulse "spawning sub-agent…" 0; progress_end
 
   id="s$(date +%Y%m%d-%H%M%S)-$$"
   dir="$SESSIONS/$id"
@@ -87,10 +91,15 @@ EOF
   cat > "$runner" <<RUNNER
 #!/usr/bin/env bash
 cd "$ROOT"
-opencode run -m "$(model_for "$model")" --title "gotchibot:$id" \
-  "\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")" \
-  > "$dir/output.md" \
-  2> "$dir/output.log"
+PROMPT="\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")"
+MODEL="$(model_for "$model")"
+if command -v abra >/dev/null 2>&1; then
+  abra run gotchibot -- opencode run -m "\$MODEL" --title "gotchibot:$id" "\$PROMPT" \
+    > "$dir/output.md" 2> "$dir/output.log"
+else
+  opencode run -m "\$MODEL" --title "gotchibot:$id" "\$PROMPT" \
+    > "$dir/output.md" 2> "$dir/output.log"
+fi
 RUNNER
   chmod +x "$runner"
 
@@ -106,6 +115,18 @@ RUNNER
 }
 
 cmd_list() {
+  local cols="${GOTCHIBOT_LIST_COLS:-$(tput cols 2>/dev/null || echo 80)}"
+  if [ "$cols" -lt 70 ]; then
+    printf '%-18s %-8s\n' ID STATUS
+    for d in "$SESSIONS"/s*/; do
+      [ -f "$d/state.env" ] || continue
+      local id status
+      id="$(basename "$d")"
+      status="$(field status "$d" || echo '?')"
+      printf '%-18s %-8s\n' "$id" "$status"
+    done
+    return
+  fi
   printf '%-24s %-8s %-32s %s\n' ID STATUS MODEL STARTED
   for d in "$SESSIONS"/s*/; do
     [ -f "$d/state.env" ] || continue
@@ -127,6 +148,8 @@ cmd_status() {
 }
 
 cmd_wait() {
+  # shellcheck source=scripts/progress-bar.sh
+  source "$PROGRESS"
   if [ $# -eq 0 ]; then
     set -- $(for d in "$SESSIONS"/s*/state.env; do
       grep -q '^status=running' "$d" 2>/dev/null && basename "$(dirname "$d")"
@@ -134,11 +157,7 @@ cmd_wait() {
     [ $# -gt 0 ] || return 0
   fi
   for id in "$@"; do
-    d="$SESSIONS/$id"
-    while [ ! -f "$d/output.md" ] || grep -q '^status=running' "$d/state.env" 2>/dev/null; do
-      sleep 1
-    done
-    field status "$d"
+    progress_wait_session "$id" "$ROOT"
   done
 }
 

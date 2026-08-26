@@ -1,8 +1,14 @@
 {
   "$comment": "Gateway model provider plan. NVIDIA NIM is the primary choice but PENDING until the user's NVIDIA API issue is resolved. Interim provider: Cloudflare Workers AI (account already active via commsies.user-defaults.workers.dev).",
   "primary": {
+    "provider": "opencode",
+    "status": "active — opencode/nemotron-3.5-lightning-free (no API key)",
+    "model": "opencode/nemotron-3.5-lightning-free",
+    "keyEnv": "(none — OpenCode hosted free tier)"
+  },
+  "paidNim": {
     "provider": "nvidia-nim",
-    "status": "active - key issued into abra project 'gotchibot' 2026-08-25; opencode reads {env:NVIDIA_API_KEY}",
+    "status": "optional — key in abra project 'gotchibot'",
     "baseURL": "https://integrate.api.nvidia.com/v1",
     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
     "keyEnv": "NVIDIA_API_KEY (abracadabra project 'gotchibot')"
