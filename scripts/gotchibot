@@ -23,7 +23,6 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot wallet             show connected wallet address
   gotchibot roster --wallet    list your real on-chain gotchis
   gotchibot avatar <agentId>      pin an agent to the avatar pane
-  gotchibot render [heroId]       official previewAavegotchi render -> avatar cache
   gotchibot handoff [oldId]       build HANDOFF.md and seed a new session
   gotchibot checkpoint <id> <label>   push a milestone to the cartridge
   gotchibot identity ensure|mint|roster   cartridge identity ops
@@ -90,7 +89,6 @@ case "$cmd" in
   output) exec "$DISPATCH" output "$@" ;;
   requests) exec "$DISPATCH" requests ;;
   avatar) [ $# -eq 1 ] || usage; cmd_avatar "$1" ;;
-  render) exec node "$ROOT/scripts/render-avatar.mjs" "$@" ;;
   init) exec node "$ROOT/scripts/init.mjs" ;;
   connect) exec node "$ROOT/scripts/wallet-connect.mjs" ;;
   wallet) cmd_wallet ;;

@@ -85,10 +85,7 @@ async function main() {
     const active = s.activeCAavegotchi?.id ?? heroes[0]?.id;
     if (active) {
       saveMeta({ activeHeroId: active });
-      try {
-        execFileSync(process.execPath, [`${ROOT}/scripts/render-avatar.mjs`, active], { stdio: "pipe" });
-        ok(`orchestrator avatar rendered: sessions/.avatars/${active}.svg`);
-      } catch {}
+      ok(`orchestrator hero: ${active}`);
     }
   }
 
