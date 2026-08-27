@@ -1,0 +1,212 @@
+{
+  "collaterals": [
+    {
+      "collateralType": "0xe0b22e0037b130a9f56bbb537684e6fa18192341",
+      "name": "maDAI",
+      "haunt": 1,
+      "primaryColor": "0xff7d00",
+      "secondaryColor": "0xf9d792",
+      "cheekColor": "0xf4af24"
+    },
+    {
+      "collateralType": "0x20d3922b4a1a8560e1ac99fba4fade0c849e2142",
+      "name": "maWETH",
+      "haunt": 1,
+      "primaryColor": "0x64438e",
+      "secondaryColor": "0xedd3fd",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x823cd4264c1b951c9209ad0deaea9988fe8429bf",
+      "name": "maAAVE",
+      "haunt": 1,
+      "primaryColor": "0xb6509e",
+      "secondaryColor": "0xcfeef4",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x98ea609569bd25119707451ef982b90e3eb719cd",
+      "name": "maLINK",
+      "haunt": 1,
+      "primaryColor": "0x0000b9",
+      "secondaryColor": "0xd4def8",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0xdae5f1590db13e3b40423b5b5c5fbf175515910b",
+      "name": "maUSDT",
+      "haunt": 1,
+      "primaryColor": "0x26a17b",
+      "secondaryColor": "0xaedcce",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x9719d867a500ef117cc201206b8ab51e794d3f82",
+      "name": "maUSDC",
+      "haunt": 1,
+      "primaryColor": "0x2664ba",
+      "secondaryColor": "0xd4e0f1",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0xf4b8888427b00d7caf21654408b7cba2ecf4ebd9",
+      "name": "maTUSD",
+      "haunt": 1,
+      "primaryColor": "0x282473",
+      "secondaryColor": "0x489ff8",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x8c8bdbe9cee455732525086264a4bf9cf821c498",
+      "name": "maUNI",
+      "haunt": 1,
+      "primaryColor": "0xff2a7a",
+      "secondaryColor": "0xffc3df",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0xe20f7d1f0ec39c4d5db01f53554f2ef54c71f613",
+      "name": "maYFI",
+      "haunt": 1,
+      "primaryColor": "0x0074f9",
+      "secondaryColor": "0xc8e1fd",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x27f8d03b3a2196956ed754badc28d73be8830a6e",
+      "name": "amDAI",
+      "haunt": 2,
+      "primaryColor": "0xff7d00",
+      "secondaryColor": "0xf9d792",
+      "cheekColor": "0xf4af24"
+    },
+    {
+      "collateralType": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+      "name": "amWETH",
+      "haunt": 2,
+      "primaryColor": "0x000000",
+      "secondaryColor": "0xfbdfeb",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x1d2a0e5ec8e5bbdca5cb219e649b565d8e5c3360",
+      "name": "amAAVE",
+      "haunt": 2,
+      "primaryColor": "0xb6509e",
+      "secondaryColor": "0xcfeef4",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+      "name": "amUSDT",
+      "haunt": 2,
+      "primaryColor": "0x26a17b",
+      "secondaryColor": "0xaedcce",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+      "name": "amUSDC",
+      "haunt": 2,
+      "primaryColor": "0x2664ba",
+      "secondaryColor": "0xd4e0f1",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x5c2ed810328349100a66b82b78a1791b101c9d61",
+      "name": "amWBTC",
+      "haunt": 2,
+      "primaryColor": "0xff5e00",
+      "secondaryColor": "0xffcaa2",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+      "name": "amWMATIC",
+      "haunt": 2,
+      "primaryColor": "0x824ee2",
+      "secondaryColor": "0xe6dcf9",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x0000000000000000000000000000000000000001",
+      "name": "amazon",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x0000000000000000000000000000000000000002",
+      "name": "apple",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x0000000000000000000000000000000000000003",
+      "name": "disney",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x0000000000000000000000000000000000000004",
+      "name": "gamestop",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x0000000000000000000000000000000000000005",
+      "name": "microsoft",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x0000000000000000000000000000000000000006",
+      "name": "nike",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x0000000000000000000000000000000000000007",
+      "name": "nvidia",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x0000000000000000000000000000000000000008",
+      "name": "spacex",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x0000000000000000000000000000000000000009",
+      "name": "tesla",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    },
+    {
+      "collateralType": "0x000000000000000000000000000000000000000a",
+      "name": "usoilfund",
+      "haunt": 3,
+      "primaryColor": "0xccff00",
+      "secondaryColor": "0xe8ff66",
+      "cheekColor": "0xf696c6"
+    }
+  ]
+}

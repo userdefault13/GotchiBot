@@ -33,6 +33,14 @@ Your session dir contains:
    fan-out completion.
 4. Stay inside this repo's working tree unless the prompt says otherwise.
 
+## cAavegotchi identity (sub-agents)
+
+You were spawned only because the orchestrator passed the **wallet gate**: the
+cartridge has at least one **cAavegotchi**. Your session may be bound to a
+cAavegotchi hero id (see `state.env` / bootstrap). Sub-agents cannot be created
+without a cAavegotchi on the gotchibot cartridge — if spawn failed for the user,
+they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
+
 ## Model tiers
 
 | Tier | Model | Use |

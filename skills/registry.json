@@ -3,42 +3,433 @@
     "abracadabra": {
       "status": "approved",
       "type": "mcp",
-      "description": "Local secrets vault. Touch ID-gated. All credentials flow through here.",
+      "source": "gotchibot",
+      "description": "Local secrets vault (Touch ID). MCP for get_secrets / generate_wallet.",
       "config": "config/mcp.abracadabra.json",
+      "command": ["abra", "mcp"],
       "addedAt": "2026-08-25"
+    },
+    "mcp-aarcade-cartridge-schema": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "aarcadeghst",
+      "description": "Cartridge diamond rules/checkpoint schema tools for Aarcade game developers.",
+      "config": "config/mcp.stack.json",
+      "command": ["./scripts/mcp/aarcade-cartridge-schema.sh"],
+      "project": "AarcadeGh-t",
+      "addedAt": "2026-08-26"
+    },
+    "mcp-aarcade-hackathon-ideas": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "aarcadeghst",
+      "description": "Hackathon idea validation, templates, Lens preview — draft only, never auto-publish.",
+      "config": "config/mcp.stack.json",
+      "command": ["./scripts/mcp/aarcade-hackathon-ideas.sh"],
+      "project": "AarcadeGh-t",
+      "addedAt": "2026-08-26"
+    },
+    "mcp-cron402": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "ai-cron-site",
+      "description": "Schedule x402 USDC-paid webhook crons on Base. Requires CRON402_PRIVATE_KEY via abra.",
+      "config": "config/mcp.stack.json",
+      "command": ["./scripts/mcp/cron402.sh"],
+      "project": "ai-cron-site",
+      "repo": "https://github.com/userdefault13/ai-cron-site",
+      "addedAt": "2026-08-26"
+    },
+    "mcp-base": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "base",
+      "description": "Base L2 (8453) chain docs and tooling — primary Aavegotchi/Aarcade network.",
+      "url": "https://mcp.base.org",
+      "addedAt": "2026-08-26"
+    },
+    "mcp-vercel": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "vercel",
+      "description": "Vercel deployments, env vars, previews — AarcadeGh-t and ai-cron-site.",
+      "url": "https://mcp.vercel.com",
+      "addedAt": "2026-08-26"
+    },
+    "mcp-snapshot": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "snapshot",
+      "description": "Snapshot DAO governance — AarcadeGh-t proposal spaces.",
+      "url": "https://mcp.snapshot.box",
+      "addedAt": "2026-08-26"
+    },
+    "mcp-reown-docs": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "reown",
+      "description": "Reown / WalletConnect AppKit documentation search.",
+      "url": "https://docs.reown.com/mcp",
+      "addedAt": "2026-08-26"
+    },
+    "mcp-coinbase-developer": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "coinbase",
+      "description": "Coinbase Developer Platform docs — CDP, x402, Base tooling.",
+      "url": "https://docs.cdp.coinbase.com/mcp",
+      "addedAt": "2026-08-26"
+    },
+    "mcp-blockscout": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "blockscout",
+      "description": "Onchain explorer data — balances, tokens, contracts across ~100 chains.",
+      "url": "https://mcp.blockscout.com/mcp",
+      "secrets": ["BLOCKSCOUT_PRO_API_KEY"],
+      "addedAt": "2026-08-26"
+    },
+    "mcp-mongodb": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "mongodb",
+      "description": "MongoDB Atlas / mongo-proxy queries — cartridge sim, Aarcade backend.",
+      "command": ["npx", "-y", "mongodb-mcp-server"],
+      "secrets": ["MDB_MCP_CONNECTION_STRING"],
+      "addedAt": "2026-08-26"
+    },
+    "mcp-pixellab": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "pixellab",
+      "description": "AI pixel art generation for gotchi sprites and game assets.",
+      "url": "https://api.pixellab.ai/mcp",
+      "secrets": ["PIXELLAB_API_KEY"],
+      "addedAt": "2026-08-26"
+    },
+    "abra": {
+      "status": "approved",
+      "type": "skill",
+      "source": "abracadabra",
+      "description": "abracadabra API keys — issue, scope, and fetch secrets via bearer token without Touch ID per request. Never print secret values.",
+      "path": "~/.claude/skills/abra/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "aarcadeghst": {
+      "status": "approved",
+      "type": "skill",
+      "source": "aarcadeghst",
+      "description": "Aarcade Gh$t (AarcadeGh-t) — Vue 3 app: games, DAO, hackathon, Juicebox, subgraphs, 1337 aagent, cartridge sim.",
+      "path": "~/Dev/AarcadeGh-t/.cursor/skills/aarcadeghst/SKILL.md",
+      "repo": "https://github.com/userdefault13/AarcadeGh-t",
+      "addedAt": "2026-08-26"
+    },
+    "aavegotchi-agent-skills-index": {
+      "status": "approved",
+      "type": "index",
+      "source": "aavegotchi",
+      "description": "Curated index of Aavegotchi ecosystem agent skills (Baazaar, GBM, Gotchiverse, 3D, autopet, traits, etc.).",
+      "path": "~/Dev/aavegotchi-agent-skills/README.md",
+      "repo": "https://github.com/aavegotchi/aavegotchi-agent-skills",
+      "addedAt": "2026-08-26"
     },
     "aavegotchi-baazaar": {
       "status": "approved",
       "type": "skill",
+      "source": "aavegotchi",
       "description": "View/add/execute Baazaar listings on Base (8453). DRY_RUN default.",
-      "source": "~/Dev/aavegotchi-agent-skills",
+      "path": "~/.agents/skills/aavegotchi-baazaar/SKILL.md",
+      "repo": "https://github.com/aavegotchi/aavegotchi-baazaar-skill",
       "addedAt": "2026-08-25"
     },
     "aavegotchi-gbm-skill": {
       "status": "approved",
       "type": "skill",
+      "source": "aavegotchi",
       "description": "GBM auctions on Base: discover via subgraph, execute via cast. DRY_RUN default.",
-      "source": "~/.agents/skills/aavegotchi-gbm-skill",
+      "path": "~/.agents/skills/aavegotchi-gbm-skill/SKILL.md",
+      "repo": "https://github.com/aavegotchi/aavegotchi-gbm-skill",
       "addedAt": "2026-08-25"
     },
     "aavegotchi-gotchiverse": {
       "status": "approved",
       "type": "skill",
+      "source": "aavegotchi",
       "description": "Gotchiverse workflows: channeling, harvesting, crafting, parcel management.",
-      "source": "~/.claude/skills/aavegotchi-gotchiverse",
+      "path": "~/.agents/skills/aavegotchi-gotchiverse/SKILL.md",
+      "repo": "https://github.com/aavegotchi/aavegotchi-gotchiverse-skill",
       "addedAt": "2026-08-25"
     },
     "aavegotchi-3d-renderer": {
       "status": "approved",
       "type": "skill",
+      "source": "aavegotchi",
       "description": "Render Aavegotchi 3D assets via www.aavegotchi.com renderer batch API.",
-      "source": "~/.agents/skills/aavegotchi-3d-renderer",
+      "path": "~/.agents/skills/aavegotchi-3d-renderer/SKILL.md",
+      "repo": "https://github.com/aavegotchi/aavegotchi-3d-render-skill",
       "addedAt": "2026-08-25"
+    },
+    "aavegotchi-autopet": {
+      "status": "approved",
+      "type": "remote",
+      "source": "aavegotchi",
+      "description": "Auto-pet Aavegotchi NFTs to maintain kinship on Base (cron, multi-gotchi).",
+      "repo": "https://github.com/aaigotchi/aavegotchi-autopet",
+      "addedAt": "2026-08-26"
+    },
+    "gotchi-finder": {
+      "status": "approved",
+      "type": "remote",
+      "source": "aavegotchi",
+      "description": "Fetch Aavegotchi by ID on Base; full on-chain traits and image data.",
+      "repo": "https://github.com/aaigotchi/gotchi-finder-skill",
+      "addedAt": "2026-08-26"
+    },
+    "gotchi-equip": {
+      "status": "approved",
+      "type": "remote",
+      "source": "aavegotchi",
+      "description": "Equip wearables on Aavegotchis with agent-friendly automation.",
+      "repo": "https://github.com/aaigotchi/gotchi-equip-skill",
+      "addedAt": "2026-08-26"
+    },
+    "pet-me-master": {
+      "status": "approved",
+      "type": "remote",
+      "source": "aavegotchi",
+      "description": "Interactive Aavegotchi petting flow for kinship upkeep and daily rituals.",
+      "repo": "https://github.com/aaigotchi/pet-me-master",
+      "addedAt": "2026-08-26"
+    },
+    "aavegotchi-traits": {
+      "status": "approved",
+      "type": "remote",
+      "source": "aavegotchi",
+      "description": "Trait-focused tooling for inspecting and working with Aavegotchi NFTs.",
+      "repo": "https://github.com/aaigotchi/aavegotchi-traits",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-ship": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "End-to-end dApp guide — fetch FIRST; routes through all other ethskills.",
+      "url": "https://ethskills.com/ship/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-why": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Why Ethereum in 2026 — Pectra/Fusaka, gas reality, ERC-8004, x402.",
+      "url": "https://ethskills.com/why/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-crops": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "CROPS architecture review — Censorship Resistance, Open Source, Privacy, Security.",
+      "url": "https://ethskills.com/crops/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-protocol": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Ethereum protocol evolution — EIP lifecycle, forks, roadmap reality checks.",
+      "url": "https://ethskills.com/protocol/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-gas": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Real gas costs on Ethereum mainnet and L2s (2026 baseline).",
+      "url": "https://ethskills.com/gas/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-wallets": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Wallets, multisig, EIP-7702, account abstraction, key safety.",
+      "url": "https://ethskills.com/wallets/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-l2s": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "L2 landscape, bridging, chain selection, deployment differences.",
+      "url": "https://ethskills.com/l2s/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-standards": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "ERC-20/721/8004, EIP-7702, x402, EIP-3009 token standards.",
+      "url": "https://ethskills.com/standards/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-tools": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Foundry, Scaffold-ETH 2, Blockscout MCP, x402 SDKs, abi.ninja.",
+      "url": "https://ethskills.com/tools/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-building-blocks": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "DeFi building blocks — Uniswap, Aave, flash loans, composability.",
+      "url": "https://ethskills.com/building-blocks/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-orchestration": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Three-phase Scaffold-ETH 2 build system (localhost → testnet → production).",
+      "url": "https://ethskills.com/orchestration/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-addresses": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Verified contract addresses for major protocols across mainnet and L2s.",
+      "url": "https://ethskills.com/addresses/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-concepts": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Onchain mental models — incentives, callers, no cron, state transitions.",
+      "url": "https://ethskills.com/concepts/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-security": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Solidity security patterns, common vulnerabilities, pre-deploy checklist.",
+      "url": "https://ethskills.com/security/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-audit": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Systematic EVM audit methodology — 500+ checklist items across 19 domains.",
+      "url": "https://ethskills.com/audit/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-noir": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Noir ZK circuits — privacy apps, Poseidon, commitment-nullifier patterns.",
+      "url": "https://ethskills.com/noir/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-testing": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Foundry testing — unit, fuzz, fork, invariant.",
+      "url": "https://ethskills.com/testing/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-indexing": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Events, The Graph, Dune, Multicall3, reading onchain data.",
+      "url": "https://ethskills.com/indexing/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-frontend-ux": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "dApp frontend UX — loaders, approve flows, address formatting, USD values.",
+      "url": "https://ethskills.com/frontend-ux/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-frontend-playbook": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Frontend build-to-production — fork testing, IPFS deploy, clean builds.",
+      "url": "https://ethskills.com/frontend-playbook/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-qa": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Pre-ship QA checklist for reviewer agents (bugs AI agents actually ship).",
+      "url": "https://ethskills.com/qa/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "ethskills-feedback": {
+      "status": "approved",
+      "type": "remote",
+      "source": "ethskills",
+      "description": "Send feedback (issues or praise) about ethskills content via API.",
+      "url": "https://ethskills.com/feedback/SKILL.md",
+      "addedAt": "2026-08-26"
+    },
+    "cursor-cli": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Cursor CLI bridge — orchestrator bundles handoff/sub-agent context; cursor agent run/resume.",
+      "path": ".opencode/skills/cursor-cli/SKILL.md",
+      "script": "scripts/cursor-cli.mjs",
+      "addedAt": "2026-08-26"
+    },
+    "gotchibot-orchestrator": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "GotchiBot swarm orchestration; all sub-agents require cAavegotchi.",
+      "path": ".opencode/skills/gotchibot/SKILL.md",
+      "addedAt": "2026-08-26"
+    }
+  },
+  "sources": {
+    "aavegotchi": {
+      "org": "https://github.com/aavegotchi",
+      "index": "https://github.com/aavegotchi/aavegotchi-agent-skills"
+    },
+    "ethskills": {
+      "site": "https://ethskills.com",
+      "fetchPattern": "https://ethskills.com/{slug}/SKILL.md"
+    },
+    "abracadabra": {
+      "mcp": "config/mcp.abracadabra.json",
+      "skill": "~/.claude/skills/abra/SKILL.md"
+    },
+    "mcps": {
+      "catalog": "config/mcp.stack.json",
+      "cursor": ".cursor/mcp.json",
+      "opencode": "opencode.json"
+    },
+    "aarcadeghst": {
+      "repo": "https://github.com/userdefault13/AarcadeGh-t",
+      "skill": "~/Dev/AarcadeGh-t/.cursor/skills/aarcadeghst/SKILL.md"
     }
   },
   "pending": [],
   "policy": {
     "autoInstall": false,
-    "note": "Additions land in pending[] first; human approval moves them into skills."
+    "remoteFetch": "Agents fetch ethskills URLs on demand; never commit fetched content.",
+    "note": "Bulk-approved 2026-08-26. MCP catalog: config/mcp.stack.json. Secrets via abra only — never commit keys to mcp.json."
   }
 }

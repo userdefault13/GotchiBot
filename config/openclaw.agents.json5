@@ -1,6 +1,16 @@
 {
   "//": "Sub-agent definitions consumed by scripts/opencode-dispatch.sh and the OpenClaw gateway.",
-  "defaultModel": "deepseek/deepseek-v4-flash",
+  "defaultModel": "opencode/nemotron-3.5-lightning-free",
+  "orchestrator": {
+    "id": "gotchi",
+    "runtime": "opencode",
+    "mode": "primary",
+    "agentFile": ".opencode/agents/gotchi.md",
+    "openclawConfig": "config/openclaw.gotchi.json5",
+    "spawnScript": "scripts/gotchi-orchestrate.mjs",
+    "gateScript": "scripts/wallet-gate.mjs",
+    "requires": ["wallet", "cartridge", "cAavegotchi"]
+  },
   "agents": {
     "sub-coder": {
       "model": "deepseek/deepseek-v4-flash",

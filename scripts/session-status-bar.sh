@@ -20,6 +20,27 @@ short_model() {
 }
 
 st="idle"
+running=0
+for d in "$SESSIONS"/s*/state.env; do
+  [ -f "$d" ] || continue
+  grep -q '^status=running' "$d" 2>/dev/null || continue
+  running=$((running + 1))
+done
+
+if [ "$running" -gt 0 ]; then
+  if [ "$running" -eq 1 ]; then
+    for d in "$SESSIONS"/s*/state.env; do
+      [ -f "$d" ] || continue
+      grep -q '^status=running' "$d" 2>/dev/null || continue
+      id="$(basename "$(dirname "$d")")"
+      printf 'status: running  active: %s (%s)' "$id" "$(short_model "$(field model "$d")")"
+      exit 0
+    done
+  fi
+  printf 'status: multitask  %s running' "$running"
+  exit 0
+fi
+
 if [ -f "$PIN" ]; then
   k="$(tr -d '[:space:]' < "$PIN")"
   case "$k" in
@@ -34,14 +55,5 @@ if [ -f "$PIN" ]; then
   printf 'status: pinned  pin: %s' "$k"
   exit 0
 fi
-
-for d in "$SESSIONS"/s*/state.env; do
-  [ -f "$d" ] || continue
-  grep -q '^status=running' "$d" 2>/dev/null || continue
-  id="$(basename "$(dirname "$d")")"
-  st="running"
-  printf 'status: %s  active: %s (%s)' "$st" "$id" "$(short_model "$(field model "$d")")"
-  exit 0
-done
 
 printf 'status: %s' "$st"

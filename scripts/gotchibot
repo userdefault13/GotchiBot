@@ -13,8 +13,12 @@ gotchibot — GotchiBot orchestrator CLI
 
   gotchibot tmux                  open orchestrator (sidebar | opencode | avatar)
   gotchibot sidebar               toggle file explorer (mc) sidebar
+  gotchibot spawn [--model t] "P"   spawn sub-agent (wallet + cAavegotchi gate)
   gotchibot new [--model t] "P"   spawn a sub-agent (t: nim|pro|local|<id>)
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
+  gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
+  gotchibot mode [gotchi|ask|plan|build|cycle] [--restart]  OpenCode agent
+  gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
   gotchibot list                  session table
   gotchibot status <id>...        one session's state
   gotchibot wait [<id>...]        block until sessions finish
@@ -28,6 +32,9 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot handoff [oldId]       build HANDOFF.md and seed a new session
   gotchibot checkpoint <id> <label>   push a milestone to the cartridge
   gotchibot identity ensure|mint|roster   cartridge identity ops
+  gotchibot reset [--full] [--yes]      wipe gotchibot cartridge (new-user test)
+  gotchibot onboarding              re-run welcome / sign-in gate
+  gotchibot tts on|off|status|test|warm|stop-daemon  voice (MeloTTS EN-AU / edge-tts / say)
 EOF
   exit 2
 }
@@ -42,21 +49,30 @@ cmd_tmux() {
 
   if tmux has-session -t "$sess" 2>/dev/null; then
     "$layout" refresh
-    exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit"
+    exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
   fi
   tmux new-session -d -s "$sess" -n work
   "$layout" refresh
-  exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit"
+  exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
 }
 
 cmd_avatar() {
   printf '%s\n' "$1" > "$PIN"
   rm -f "$SESSIONS/.avatars/$1.svg"
+  node "$ROOT/scripts/gotchi-svg.mjs" --force "$1" >/dev/null 2>&1 || true
+  if [ -n "${TMUX:-}" ]; then
+    pid="$(tmux display -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.2" '#{pane_pid}' 2>/dev/null || true)"
+    [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true
+  fi
   echo "pinned avatar: $1"
 }
 
 cmd_handoff() {
   node "$ROOT/scripts/handoff.mjs" "$@"
+}
+
+cmd_spawn() {
+  exec node "$ROOT/scripts/gotchi-orchestrate.mjs" spawn "$@"
 }
 
 cmd_ask() {
@@ -89,7 +105,7 @@ EOF
 
   echo "→ spawning ($model): $prompt"
   local id
-  id="$("$DISPATCH" new --model "$model" "$ctx")"
+  id="$(node "$ROOT/scripts/gotchi-orchestrate.mjs" spawn --model "$model" "$ctx")"
   echo "  session: $id  (gotchibot output $id)"
   # shellcheck source=scripts/progress-bar.sh
   source "$ROOT/scripts/progress-bar.sh"
@@ -119,14 +135,51 @@ cmd_roster() {
   exec node "$ROOT/scripts/wallet-roster.mjs" "$@"
 }
 
+cmd_reset() {
+  exec node "$ROOT/scripts/identity-reset.mjs" "$@"
+}
+
+cmd_multitask() {
+  exec node "$ROOT/scripts/gotchi-multitask.mjs" "$@"
+}
+
+cmd_cursor() {
+  exec node "$ROOT/scripts/cursor-cli.mjs" "$@"
+}
+
+cmd_mode() {
+  local sub="${1:-get}"
+  shift || true
+  case "$sub" in
+    gotchi|ask|plan|build)
+      exec node "$ROOT/scripts/agent-mode.mjs" set "$sub" "$@"
+      ;;
+    cycle)
+      exec node "$ROOT/scripts/agent-mode.mjs" cycle "$@"
+      ;;
+    get|status|"")
+      exec node "$ROOT/scripts/agent-mode.mjs" get "$@"
+      ;;
+    *)
+      echo "unknown mode: $sub (use gotchi|ask|plan|build)" >&2
+      exit 2
+      ;;
+  esac
+}
+
+cmd_tts() {
+  exec node "$ROOT/scripts/tts.mjs" "$@"
+}
+
 cmd_identity() {
-  node "$ROOT/scripts/identity.mjs" "$@"
+  exec node "$ROOT/scripts/identity.mjs" "$@"
 }
 
 [ $# -ge 1 ] || usage
 cmd="$1"; shift
 case "$cmd" in
   tmux) cmd_tmux ;;
+  spawn) cmd_spawn "$@" ;;
   new) "$DISPATCH" new "$@" ;;
   list) exec "$DISPATCH" list ;;
   status) exec "$DISPATCH" status "$@" ;;
@@ -140,7 +193,13 @@ case "$cmd" in
   roster) cmd_roster "$@" ;;
   handoff) cmd_handoff "$@" ;;
   ask) cmd_ask "$@" ;;
+  multitask) cmd_multitask "$@" ;;
+  mode) cmd_mode "$@" ;;
+  cursor) cmd_cursor "$@" ;;
   checkpoint) cmd_checkpoint "$@" ;;
+  reset) cmd_reset "$@" ;;
+  onboarding) exec node "$ROOT/scripts/onboarding-gate.mjs" ;;
+  tts) cmd_tts "$@" ;;
   identity) cmd_identity "$@" ;;
   sidebar) exec "$ROOT/scripts/orchestrator-layout.sh" sidebar ;;
   *) usage ;;

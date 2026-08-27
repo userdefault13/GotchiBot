@@ -1,9 +1,8 @@
 {
   "mcpServers": {
-    "abra": {
-      "command": "opencode",
+    "abracadabra": {
+      "command": "abra",
       "args": ["mcp"],
-      "env": {},
       "note": "abracadabra local API. Every secret request pops Touch ID naming the requesting agent. Secrets never reach disk or prompts."
     }
   }

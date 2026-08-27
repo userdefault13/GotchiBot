@@ -1,22 +1,40 @@
 {
   "globalAutoTTS": false,
-  "optInCommand": "/tts chat on",
+  "optInCommand": "gotchibot tts on",
+  "stateFile": "sessions/.tts.json",
   "personas": {
     "gotchi": {
+      "provider": "melo",
+      "meloSpeaker": "EN-AU",
+      "meloSpeed": 1.05,
+      "voice": "EN-AU"
+    },
+    "sub": {
       "provider": "edge-tts",
-      "voice": "en-US-AnaNeural",
-      "pitch": "+15Hz",
-      "rate": "+5%"
+      "voice": "en-US-BlueNeural",
+      "rate": "+10%",
+      "sayVoice": "Daniel",
+      "sayRate": 200
     },
     "sub-coder": {
       "provider": "edge-tts",
       "voice": "en-US-BlueNeural",
-      "rate": "+10%"
+      "rate": "+10%",
+      "sayVoice": "Daniel",
+      "sayRate": 200
     },
     "sub-hard": {
       "provider": "edge-tts",
-      "voice": "en-US-AriaNeural"
+      "voice": "en-US-AriaNeural",
+      "sayVoice": "Alex",
+      "sayRate": 185
     }
+  },
+  "events": {
+    "spawnDone": "Sub agent finished.",
+    "spawnFailed": "Sub agent failed.",
+    "spawnStarted": "Spawning sub agent.",
+    "onboardingComplete": "Welcome back, portal lord."
   },
   "upgradePath": ["elevenlabs", "openai"]
 }

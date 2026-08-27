@@ -25,6 +25,7 @@ function serviceKey() {
 }
 
 function owner() {
+  // Headless/service only (abra run gotchibot -- …). Interactive flows use sessions/.wallet.json.
   if (process.env.GOTCHIBOT_OWNER) return process.env.GOTCHIBOT_OWNER;
   try {
     const w = JSON.parse(readFileSync(`${ROOT}/sessions/.wallet.json`, "utf8"));

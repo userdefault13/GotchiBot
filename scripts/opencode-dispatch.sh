@@ -52,6 +52,13 @@ spawn() {
   done
   [ -n "${prompt:-}" ] || usage
 
+  if [ "${GOTCHIBOT_SKIP_GATE:-}" != "1" ]; then
+    if ! node "$ROOT/scripts/wallet-gate.mjs" >/dev/null 2>&1; then
+      node "$ROOT/scripts/wallet-gate.mjs" >&2 || true
+      exit 12
+    fi
+  fi
+
   progress_pulse "spawning sub-agent…" 0; progress_end
 
   id="s$(date +%Y%m%d-%H%M%S)-$$"
@@ -74,6 +81,7 @@ spawn() {
 You are sub-agent $id in the GotchiBot swarm.
 Session dir: $dir
 Write your deliverable to $dir/output.md.
+You exist because the cartridge has a cAavegotchi — sub-agents cannot spawn without one.
 If you need a skill not in skills/registry.json, append a JSON request to
 $dir/skill-requests.jsonl and continue without it. Never install anything.
 Never handle secrets directly; ask the orchestrator to fetch them via abracadabra.
@@ -104,9 +112,9 @@ RUNNER
   chmod +x "$runner"
 
   ( if "$runner"; then set_field "$dir" status done
-      "$ROOT/scripts/tts.sh" "Sub agent $id finished."
+      GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id finished."
     else set_field "$dir" status failed
-      "$ROOT/scripts/tts.sh" "Sub agent $id failed."
+      GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id failed."
     fi
     set_field "$dir" ended "$(date -u +%FT%TZ)" ) >/dev/null 2>&1 </dev/null &
   echo $! > "$dir/pid"

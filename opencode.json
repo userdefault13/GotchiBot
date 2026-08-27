@@ -1,5 +1,52 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "opencode/nemotron-3.5-lightning-free",
-  "small_model": "opencode/nemotron-3.5-lightning-free"
+  "small_model": "opencode/nemotron-3.5-lightning-free",
+  "default_agent": "gotchi",
+  "agent": {
+    "gotchi": {
+      "order": 1
+    },
+    "plan": {
+      "order": 2
+    },
+    "build": {
+      "order": 3
+    },
+    "ask": {
+      "order": 4
+    }
+  },
+  "mcp": {
+    "abracadabra": {
+      "type": "local",
+      "command": ["abra", "mcp"],
+      "enabled": true
+    },
+    "aarcade-cartridge-schema": {
+      "type": "local",
+      "command": ["./scripts/mcp/aarcade-cartridge-schema.sh"],
+      "enabled": true
+    },
+    "aarcade-hackathon-ideas": {
+      "type": "local",
+      "command": ["./scripts/mcp/aarcade-hackathon-ideas.sh"],
+      "enabled": true
+    },
+    "cron402": {
+      "type": "local",
+      "command": ["./scripts/mcp/cron402.sh"],
+      "enabled": false
+    },
+    "base-mcp": {
+      "type": "remote",
+      "url": "https://mcp.base.org",
+      "enabled": true
+    },
+    "blockscout": {
+      "type": "remote",
+      "url": "https://mcp.blockscout.com/mcp",
+      "enabled": true
+    }
+  }
 }

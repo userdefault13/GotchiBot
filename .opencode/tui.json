@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "mouse": true,
+  "scroll_speed": 4,
+  "scroll_acceleration": {
+    "enabled": true
+  },
+  "keybinds": {
+    "agent_cycle": "tab",
+    "agent_cycle_reverse": "shift+tab",
+    "agent_list": "<leader>a,ctrl+p",
+    "prompt.autocomplete.complete": "ctrl+space",
+    "prompt.autocomplete.select": "return",
+    "messages_copy": "<leader>y",
+    "input_paste": {
+      "key": "ctrl+v",
+      "preventDefault": false
+    },
+    "input_select_all": "super+a"
+  }
+}

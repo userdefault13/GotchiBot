@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "abracadabra": {
+      "command": "abra",
+      "args": ["mcp"]
+    },
+    "aarcade-cartridge-schema": {
+      "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/aarcade-cartridge-schema.sh"
+    },
+    "aarcade-hackathon-ideas": {
+      "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/aarcade-hackathon-ideas.sh"
+    },
+    "cron402": {
+      "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/cron402.sh"
+    },
+    "base-mcp": {
+      "url": "https://mcp.base.org"
+    },
+    "vercel": {
+      "url": "https://mcp.vercel.com"
+    },
+    "snapshot": {
+      "url": "https://mcp.snapshot.box"
+    },
+    "Reown Docs": {
+      "url": "https://docs.reown.com/mcp"
+    },
+    "Coinbase Developer": {
+      "url": "https://docs.cdp.coinbase.com/mcp"
+    },
+    "blockscout": {
+      "url": "https://mcp.blockscout.com/mcp",
+      "timeout": 180000
+    },
+    "MongoDB": {
+      "command": "npx",
+      "args": ["-y", "mongodb-mcp-server"],
+      "env": {}
+    },
+    "pixellab": {
+      "url": "https://api.pixellab.ai/mcp",
+      "transport": "http",
+      "headers": {}
+    }
+  }
+}

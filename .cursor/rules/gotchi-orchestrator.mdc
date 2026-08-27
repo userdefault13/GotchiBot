@@ -23,7 +23,13 @@ When the user gives you a task, follow this loop:
 
 ## 2. Dispatch
 
-- Spawn via `scripts/opencode-dispatch.sh new --model <tier> "<unit prompt>"`.
+- **All sub-agents require a cAavegotchi** on the gotchibot cartridge. Run
+  `scripts/wallet-gate.mjs` before fan-out; spawns fail without wallet +
+  cartridge + at least one cAavegotchi.
+- Spawn via `scripts/opencode-dispatch.sh new --model <tier> "<unit prompt>"`
+  or `scripts/gotchi-orchestrate.mjs spawn` (preferred — runs the gate).
+- **Cursor CLI** — for user prompts via Cursor Agent (not gated sub-agents):
+  `scripts/cursor-cli.mjs run "prompt"` (orchestrator manages context bundle).
 - Prompts must be self-contained: context, constraints, definition of done,
   and where to write results (`output.md`).
 - Spawn independent units in parallel (one `new` call each); chain only when

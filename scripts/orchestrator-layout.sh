@@ -19,6 +19,40 @@ layout_ready() {
   [ "$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')" -eq 3 ]
 }
 
+require_three_panes() {
+  layout_ready && return 0
+  rebuild_panes || return 1
+  layout_ready || {
+    echo "orchestrator layout failed: need 3 panes (sidebar | chat | avatar)" >&2
+    return 1
+  }
+}
+
+pane_start_cmd() {
+  tmux display -p -t "$sess:work.$1" '#{pane_start_command}' 2>/dev/null || echo ""
+}
+
+layout_correct() {
+  layout_ready || return 1
+  local c0 c1 c2
+  c0="$(pane_start_cmd 0)"
+  c1="$(pane_start_cmd 1)"
+  c2="$(pane_start_cmd 2)"
+  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *avatar-pane* ]]
+}
+
+rebuild_panes() {
+  local need=$((sidebar_collapsed + min_center + min_right + 2))
+  tmux resize-window -t "$sess:work" -x "$win_w_default" -y "$win_h_default" 2>/dev/null || true
+  tmux select-pane -t "$sess:work.0" 2>/dev/null || true
+  tmux kill-pane -a -t "$sess:work.0" 2>/dev/null || true
+  # work.0 = chat (center) → split avatar right, then sidebar left
+  tmux split-window -h -t "$sess:work.0" -l "$min_right"
+  tmux select-pane -t "$sess:work.0"
+  tmux split-window -h -b -t "$sess:work.0" -l "$sidebar_collapsed"
+  layout_ready || { echo "orchestrator layout failed (window too small? need ${need} cols)" >&2; return 1; }
+}
+
 save_layout() {
   layout_ready || return 0
   tmux list-windows -t "$sess:work" -F '#{window_layout}' 2>/dev/null | head -1 > "$LAYOUT_FILE"
@@ -32,22 +66,20 @@ apply_window_policy() {
 ensure_panes() {
   tmux has-session -t "$sess" 2>/dev/null || return 1
   apply_window_policy
-  if layout_ready; then
+  if layout_correct; then
     return 0
   fi
-  local need=$((sidebar_collapsed + min_center + min_right + 2))
-  tmux resize-window -t "$sess" -x "$win_w_default" -y "$win_h_default" 2>/dev/null || true
-  tmux select-pane -t "$sess:work.0"
-  tmux kill-pane -a -t "$sess:work.0" 2>/dev/null || true
-  tmux split-window -h -l "$min_right" -t "$sess:work.0"
-  tmux split-window -hb -l "$sidebar_collapsed" -t "$sess:work.0"
-  layout_ready || { echo "orchestrator layout failed (window too small?)" >&2; return 1; }
+  require_three_panes
 }
 
 start_pane_commands() {
-  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh"
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
+  require_three_panes || return 1
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || \
+    tmux send-keys -t "$sess:work.0" C-c Enter "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" Enter
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh" 2>/dev/null || \
+    tmux send-keys -t "$sess:work.1" C-c Enter "cd \"$ROOT\" && exec ./scripts/chat-pane.sh" Enter
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || \
+    tmux send-keys -t "$sess:work.2" C-c Enter "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" Enter
 }
 
 collapse_sidebar() {
@@ -121,12 +153,34 @@ should_signal_avatar() {
   [ "${GOTCHIBOT_SIGNAL_AVATAR_ON_FIT:-0}" = 1 ]
 }
 
+install_agent_keys() {
+  [ "${GOTCHIBOT_TAB_TMUX:-1}" = "1" ] || return 0
+  local hook="$ROOT/scripts/tmux-chat-focus-hook.sh"
+  chmod +x "$hook" 2>/dev/null || true
+  # Tab in the chat pane cycles gotchi → plan → build → ask (respawns OpenCode with persisted agent).
+  tmux bind-key -T gotchi-chat Tab run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --restart" 2>/dev/null || true
+  tmux bind-key -T gotchi-chat S-Tab run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --reverse --restart" 2>/dev/null || true
+  tmux bind-key -T gotchi-chat F2 run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --restart" 2>/dev/null || true
+  tmux set-hook -t "$sess" pane-focus-in "run-shell '$hook'" 2>/dev/null || true
+  "$hook" 2>/dev/null || true
+}
+
 install_ui_theme() {
+  # tmux mouse stays off so OpenCode owns the wheel (history scroll). Shift+drag still copies.
+  # Pane resize / tmux scrollback: GOTCHIBOT_TMUX_MOUSE=1
+  if [ "${GOTCHIBOT_TMUX_MOUSE:-0}" = "1" ]; then
+    tmux set-option -g mouse on 2>/dev/null || true
+    tmux set-option -t "$sess" mouse on 2>/dev/null || true
+  else
+    tmux set-option -t "$sess" mouse off 2>/dev/null || true
+    tmux set-option -t "$sess" set-clipboard on 2>/dev/null || true
+  fi
+  install_agent_keys
   tmux set-option -t "$sess" pane-border-lines heavy 2>/dev/null || true
   tmux set-option -t "$sess" pane-border-style 'fg=colour238' 2>/dev/null || true
   tmux set-option -t "$sess" pane-active-border-style 'fg=colour39' 2>/dev/null || true
   tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' OpenCode ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
   tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
   tmux set-option -t "$sess" status-style 'bg=colour24,fg=colour252' 2>/dev/null || true
   tmux set-option -t "$sess" status-left-length 14 2>/dev/null || true
@@ -170,7 +224,13 @@ case "$cmd" in
     if ! layout_ready; then
       disable_resize_hook
       rm -f "$LAYOUT_FILE"
-      ensure_panes
+      require_three_panes || exit 1
+      start_pane_commands
+      finish_ensure
+    elif ! layout_correct; then
+      disable_resize_hook
+      rm -f "$LAYOUT_FILE"
+      require_three_panes || exit 1
       start_pane_commands
       finish_ensure
     else

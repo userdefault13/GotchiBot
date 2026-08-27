@@ -1,0 +1,99 @@
+{
+  "$comment": "GotchiBot / Dev stack MCP catalog. Secrets via abracadabra — never commit keys. Sync to Cursor: .cursor/mcp.json",
+  "mcpServers": {
+    "abracadabra": {
+      "command": "abra",
+      "args": ["mcp"],
+      "note": "Local secrets vault — list_projects, get_secrets (Touch ID), generate_wallet, generate_cloudflare_token"
+    },
+    "aarcade-cartridge-schema": {
+      "command": "./scripts/mcp/aarcade-cartridge-schema.sh",
+      "cwd": ".",
+      "project": "AarcadeGh-t",
+      "note": "Cartridge diamond rules/checkpoint schemas for game dev"
+    },
+    "aarcade-hackathon-ideas": {
+      "command": "./scripts/mcp/aarcade-hackathon-ideas.sh",
+      "cwd": ".",
+      "project": "AarcadeGh-t",
+      "note": "Hackathon idea JSON validation, Lens preview — never auto-publish"
+    },
+    "cron402": {
+      "command": "./scripts/mcp/cron402.sh",
+      "cwd": ".",
+      "project": "ai-cron-site",
+      "env": {
+        "CRON402_PRIVATE_KEY": "{abra:ai-cron-site:CRON402_PRIVATE_KEY}",
+        "CRON402_API_URL": "{abra:ai-cron-site:CRON402_API_URL}"
+      },
+      "note": "x402 USDC cron webhooks on Base — requires funded CRON402_PRIVATE_KEY"
+    },
+    "base-mcp": {
+      "url": "https://mcp.base.org",
+      "transport": "http",
+      "project": "AarcadeGh-t",
+      "note": "Base chain (8453) — primary Aavegotchi/Aarcade L2"
+    },
+    "vercel": {
+      "url": "https://mcp.vercel.com",
+      "transport": "http",
+      "project": "AarcadeGh-t",
+      "note": "Deploy previews — auth via Cursor/Vercel OAuth on first use"
+    },
+    "snapshot": {
+      "url": "https://mcp.snapshot.box",
+      "transport": "http",
+      "project": "AarcadeGh-t",
+      "note": "DAO governance — AarcadeGh-t Snapshot spaces"
+    },
+    "reown-docs": {
+      "url": "https://docs.reown.com/mcp",
+      "transport": "http",
+      "project": "AarcadeGh-t",
+      "note": "WalletConnect / Reown AppKit docs search"
+    },
+    "coinbase-developer": {
+      "url": "https://docs.cdp.coinbase.com/mcp",
+      "transport": "http",
+      "project": "ai-cron-site",
+      "note": "CDP, x402, Base tooling — pairs with cron402"
+    },
+    "blockscout": {
+      "url": "https://mcp.blockscout.com/mcp",
+      "transport": "http",
+      "timeout": 180000,
+      "headers": {
+        "Blockscout-MCP-Pro-Api-Key": "{abra:gotchibot:BLOCKSCOUT_PRO_API_KEY}"
+      },
+      "project": "GotchiBot",
+      "note": "Onchain balances/tokens/contracts ~100 chains. Key optional for hosted tier."
+    },
+    "mongodb": {
+      "command": "npx",
+      "args": ["-y", "mongodb-mcp-server"],
+      "env": {
+        "MDB_MCP_CONNECTION_STRING": "{abra:aarcadeghst:MONGODB_URI}"
+      },
+      "project": "AarcadeGh-t",
+      "note": "Cartridge sim / mongo-proxy data — scope connection string narrowly"
+    },
+    "pixellab": {
+      "url": "https://api.pixellab.ai/mcp",
+      "transport": "http",
+      "headers": {
+        "Authorization": "Bearer {abra:gotchibot:PIXELLAB_API_KEY}"
+      },
+      "project": "aavegotchi-game-sprites",
+      "note": "Pixel art generation — key in abracadabra only"
+    }
+  },
+  "projects": {
+    "AarcadeGh-t": ["aarcade-cartridge-schema", "aarcade-hackathon-ideas", "base-mcp", "vercel", "snapshot", "reown-docs", "mongodb"],
+    "Aarcade-AIBot": ["mongodb", "reown-docs"],
+    "GotchiBot": ["abracadabra", "aarcade-cartridge-schema", "blockscout", "base-mcp", "pixellab"],
+    "ai-cron-site": ["abracadabra", "cron402", "coinbase-developer", "vercel"],
+    "Gotchi-Trader": ["base-mcp", "blockscout", "mongodb"],
+    "aavegotchi-envio-indexers": ["blockscout", "base-mcp"],
+    "abracadabra": ["abracadabra"]
+  }
+}
