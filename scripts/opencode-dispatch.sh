@@ -21,7 +21,15 @@ EOF
 
 model_for() {
   case "$1" in
-    free|nim) echo "opencode/nemotron-3.5-lightning-free" ;;
+    free|nim|ultra) echo "opencode/hy3-free" ;;
+    # OpenCode Zen lightning-free currently 404s; prefer NIM when key present.
+    lightning)
+      if [ -n "${NVIDIA_API_KEY:-}" ]; then
+        echo "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b"
+      else
+        echo "opencode/hy3-free"
+      fi
+      ;;
     flash) echo "deepseek/deepseek-v4-flash" ;;
     pro) echo "deepseek/deepseek-v4-pro" ;;
     local) echo "ollama/qwen2.5:3b" ;;
@@ -88,10 +96,19 @@ Never handle secrets directly; ask the orchestrator to fetch them via abracadabr
 EOF
 
   if [ -n "${AARCADE_GOTCHIBOT_SERVICE_SECRET:-}" ]; then
-    hero="$(node "$ROOT/scripts/identity.mjs" bind --session "$id" 2>/dev/null | tail -1)" || hero=""
+    # Optional: GOTCHIBOT_HERO_ID pins an existing cAavegotchi (e.g. starter-link-h1-1)
+    if [ -n "${GOTCHIBOT_HERO_ID:-}" ]; then
+      hero="$(node "$ROOT/scripts/identity.mjs" bind --session "$id" --hero "$GOTCHIBOT_HERO_ID" 2>/dev/null | tail -1)" || hero=""
+    else
+      hero="$(node "$ROOT/scripts/identity.mjs" bind --session "$id" 2>/dev/null | tail -1)" || hero=""
+    fi
     if [ -n "$hero" ]; then
       set_field "$dir" hero "$hero"
       echo "Your gotchi identity: $hero" >> "$dir/bootstrap.txt"
+      # Sim: spun up with assignment
+      node "$ROOT/scripts/hero-agent-state.mjs" set "$hero" active \
+        --session "$id" --task "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')" \
+        --model "$(model_for "$model")" --host local >/dev/null 2>&1 || true
     fi
   fi
 
@@ -101,19 +118,38 @@ EOF
 cd "$ROOT"
 PROMPT="\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")"
 MODEL="$(model_for "$model")"
-if command -v abra >/dev/null 2>&1; then
-  abra run gotchibot -- opencode run -m "\$MODEL" --title "gotchibot:$id" "\$PROMPT" \
+HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+if [ -n "\$HERO" ]; then
+  node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" working \
+    --session "$id" --task "\$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')" \
+    --model "\$MODEL" --host local >/dev/null 2>&1 || true
+fi
+# Prefer already-injected env (remote iMac / headless). abra on headless Macs
+# fails with Keychain "User interaction is not allowed".
+AUTO_FLAGS=()
+if [ "\${GOTCHIBOT_AUTO_APPROVE:-1}" = "1" ]; then
+  AUTO_FLAGS+=(--auto)
+fi
+if [ "\${GOTCHIBOT_SKIP_ABRA:-}" = "1" ] || [ -n "\${NVIDIA_API_KEY:-}\${OPENROUTER_API_KEY:-}\${DEEPSEEK_API_KEY:-}" ]; then
+  opencode run -m "\$MODEL" --title "gotchibot:$id" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" \
+    > "$dir/output.md" 2> "$dir/output.log"
+elif command -v abra >/dev/null 2>&1; then
+  abra run gotchibot -- opencode run -m "\$MODEL" --title "gotchibot:$id" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" \
     > "$dir/output.md" 2> "$dir/output.log"
 else
-  opencode run -m "\$MODEL" --title "gotchibot:$id" "\$PROMPT" \
+  opencode run -m "\$MODEL" --title "gotchibot:$id" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" \
     > "$dir/output.md" 2> "$dir/output.log"
 fi
 RUNNER
   chmod +x "$runner"
 
   ( if "$runner"; then set_field "$dir" status done
+      HERO="$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+      [ -n "$HERO" ] && node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" available --host local >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id finished."
     else set_field "$dir" status failed
+      HERO="$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+      [ -n "$HERO" ] && node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" available --host local >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id failed."
     fi
     set_field "$dir" ended "$(date -u +%FT%TZ)" ) >/dev/null 2>&1 </dev/null &

@@ -45,8 +45,8 @@ they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
 
 | Tier | Model | Use |
 |---|---|---|
-| default | `opencode/nemotron-3.5-lightning-free` (`--model nim`) | routine coding (no API key) |
-| reasoning | `opencode/nemotron-3-ultra-free` | set `GOTCHIBOT_OPENCODE_MODEL` for heavier tasks |
+| default | `opencode/hy3-free` (`--model nim`) | routine coding (no API key) |
+| reasoning | set `GOTCHIBOT_OPENCODE_MODEL` | heavier tasks (Zen lightning/ultra free currently 404) |
 | escalation | `deepseek/deepseek-v4-pro` | hard reasoning (needs DEEPSEEK_API_KEY) |
 | fallback | `ollama/qwen2.5:3b` | offline/private |
 

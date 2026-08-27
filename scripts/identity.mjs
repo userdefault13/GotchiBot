@@ -248,6 +248,27 @@ async function bind() {
   }
   const sessionIdx = process.argv.indexOf("--session");
   const sessionId = sessionIdx > -1 ? process.argv[sessionIdx + 1] : null;
+  const heroIdx = process.argv.indexOf("--hero");
+  const existingHero =
+    (heroIdx > -1 ? process.argv[heroIdx + 1] : null) ||
+    process.env.GOTCHIBOT_HERO_ID ||
+    null;
+
+  // Pin an already-minted cAavegotchi to a session (no new mint).
+  if (sessionId && existingHero) {
+    const snap = await call(`/cartridges/${meta.cartridgeId}`);
+    const heroes = ((snap.data.cartridge ?? snap.data)?.cAavegotchis ?? []).map((h) => h.id);
+    if (!heroes.includes(existingHero)) {
+      console.error(`hero ${existingHero} not on cartridge ${meta.cartridgeId}`);
+      process.exit(1);
+    }
+    saveMeta({
+      activeHeroId: existingHero,
+      sessionHeroes: { ...(meta.sessionHeroes ?? {}), [sessionId]: existingHero },
+    });
+    process.stdout.write(existingHero);
+    return;
+  }
 
   const before = await call(`/cartridges/${meta.cartridgeId}`);
   const beforeIds = new Set(

@@ -2,7 +2,7 @@
 description: Read-only Q&A — explain code and answer questions without edits or spawns
 mode: primary
 order: 4
-model: opencode/nemotron-3.5-lightning-free
+model: opencode/hy3-free
 temperature: 0.3
 color: info
 permission:

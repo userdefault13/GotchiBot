@@ -24,7 +24,7 @@ function viaOpencode(text) {
 nim = routine coding; pro = hard reasoning/architecture/bugs; local = private/offline.`;
   const r = spawnSync(
     "opencode",
-    ["run", "-m", "opencode/nemotron-3.5-lightning-free", "--title", "gotchibot:route", `${system}\n\nTask: ${text}`],
+    ["run", "-m", "opencode/hy3-free", "--title", "gotchibot:route", `${system}\n\nTask: ${text}`],
     { cwd: ROOT, encoding: "utf8", timeout: 25_000 },
   );
   if (r.status !== 0) return null;

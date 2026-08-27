@@ -2,9 +2,10 @@
   "$comment": "Gateway model provider plan. NVIDIA NIM is the primary choice but PENDING until the user's NVIDIA API issue is resolved. Interim provider: Cloudflare Workers AI (account already active via commsies.user-defaults.workers.dev).",
   "primary": {
     "provider": "opencode",
-    "status": "active — opencode/nemotron-3.5-lightning-free (no API key)",
-    "model": "opencode/nemotron-3.5-lightning-free",
-    "keyEnv": "(none — OpenCode hosted free tier)"
+    "status": "active — opencode/hy3-free (Zen lightning-free currently 404 upstream)",
+    "model": "opencode/hy3-free",
+    "keyEnv": "(none — OpenCode hosted free tier)",
+    "note": "nemotron-3.5-lightning-free / nemotron-3-ultra-free return Upstream 404 from OpenCode Zen as of 2026-08-27; hy3-free probed OK"
   },
   "paidNim": {
     "provider": "nvidia-nim",

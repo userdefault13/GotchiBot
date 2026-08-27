@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compact status for tmux — pin/active only (no session table; use gotchibot list).
+# Compact status for tmux — pin/active + wallet gotchi / cAavegotchi counts.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,10 +13,27 @@ field() {
 short_model() {
   local m="$1"
   case "$m" in
+    "") printf '' ;;
     nim|pro|local|free|flash) printf '%s' "$m" ;;
     */*) printf '%s' "${m##*/}" ;;
     *) printf '%s' "$m" ;;
   esac
+}
+
+roster() {
+  # Soft timeout — never block tmux redraw on a slow subgraph call.
+  if command -v node >/dev/null; then
+    node "$ROOT/scripts/roster-count.mjs" 2>/dev/null || echo "gotchis:? cAave:?"
+  else
+    echo "gotchis:? cAave:?"
+  fi
+}
+
+append_roster() {
+  local base="$1"
+  local r
+  r="$(roster)"
+  printf '%s  %s' "$base" "$r"
 }
 
 st="idle"
@@ -33,11 +50,16 @@ if [ "$running" -gt 0 ]; then
       [ -f "$d" ] || continue
       grep -q '^status=running' "$d" 2>/dev/null || continue
       id="$(basename "$(dirname "$d")")"
-      printf 'status: running  active: %s (%s)' "$id" "$(short_model "$(field model "$d")")"
+      model="$(short_model "$(field model "$(dirname "$d")")")"
+      if [ -n "$model" ]; then
+        append_roster "$(printf 'status: running  active: %s (%s)' "$id" "$model")"
+      else
+        append_roster "$(printf 'status: running  active: %s' "$id")"
+      fi
       exit 0
     done
   fi
-  printf 'status: multitask  %s running' "$running"
+  append_roster "$(printf 'status: multitask  %s running' "$running")"
   exit 0
 fi
 
@@ -47,13 +69,13 @@ if [ -f "$PIN" ]; then
     s*)
       if [ -f "$SESSIONS/$k/state.env" ]; then
         st="$(field status "$SESSIONS/$k")"
-        printf 'status: %s  pinned: %s' "${st:-?}" "$k"
+        append_roster "$(printf 'status: %s  pinned: %s' "${st:-?}" "$k")"
         exit 0
       fi
       ;;
   esac
-  printf 'status: pinned  pin: %s' "$k"
+  append_roster "$(printf 'status: pinned  pin: %s' "$k")"
   exit 0
 fi
 
-printf 'status: %s' "$st"
+append_roster "$(printf 'status: %s' "$st")"

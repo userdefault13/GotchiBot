@@ -240,11 +240,13 @@ export async function selectOrchestratorHero(cartridgeId, heroId) {
   if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
 }
 
-export function pinAvatar(heroId) {
+export function pinAvatar(heroId, { asOrchestrator = true } = {}) {
   mkdirSync(SESSIONS, { recursive: true });
   writeFileSync(PIN_PATH, `${heroId}\n`);
   saveMeta({ activeHeroId: heroId });
-  saveOnboarding({ orchestratorHeroId: heroId });
+  if (asOrchestrator) {
+    saveOnboarding({ orchestratorHeroId: heroId });
+  }
   // Refresh official SVG in background (subgraph → sessions/.avatars/<id>.svg)
   try {
     const child = spawn(process.execPath, [`${ROOT}/scripts/gotchi-svg.mjs`, "--force", heroId], {

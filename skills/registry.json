@@ -398,9 +398,27 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "GotchiBot swarm orchestration; all sub-agents require cAavegotchi.",
+      "description": "GotchiBot swarm orchestration; delegate-first; all sub-agents require cAavegotchi.",
       "path": ".opencode/skills/gotchibot/SKILL.md",
       "addedAt": "2026-08-26"
+    },
+    "delegate-first": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Orchestrator must pick an available local/remote cAavegotchi agent before doing work itself.",
+      "path": ".opencode/skills/delegate-first/SKILL.md",
+      "script": "scripts/delegate-pick.mjs",
+      "addedAt": "2026-08-27"
+    },
+    "gotchibot-mesh": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Cross-machine agent count + status across MBP and iMac over Tailscale SSH (read-only).",
+      "path": ".opencode/skills/gotchibot-mesh/SKILL.md",
+      "script": "scripts/mesh-status.mjs",
+      "addedAt": "2026-08-27"
     }
   },
   "sources": {

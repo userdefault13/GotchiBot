@@ -2,3 +2,5 @@
 sessions/*
 !sessions/.gitkeep
 KNOWLEDGE.md
+tmp/
+.mc.menu

@@ -9,7 +9,7 @@
     defaults: {
       // Override workspace to your GotchiBot checkout path when installing.
       workspace: "~/Dev/GotchiBot",
-      model: "opencode/nemotron-3.5-lightning-free",
+      model: "opencode/hy3-free",
       thinkingDefault: "off",
     },
     list: [

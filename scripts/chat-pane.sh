@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/nemotron-3.5-lightning-free}"
+MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/hy3-free}"
 MODE_FILE="$ROOT/sessions/.agent-mode.json"
 if [ -n "${GOTCHIBOT_OPENCODE_AGENT:-}" ]; then
   AGENT="$GOTCHIBOT_OPENCODE_AGENT"
@@ -76,6 +76,14 @@ if [ -n "${TMUX:-}" ]; then
   esac
   tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format "$border" 2>/dev/null || true
   "$ROOT/scripts/tmux-chat-focus-hook.sh" 2>/dev/null || true
+fi
+
+# Inject NVIDIA/OpenRouter/etc via abracadabra when keys aren't already in env.
+# Without this, NIM models fail with "Missing Authentication header".
+if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}" ] \
+  && [ "${GOTCHIBOT_SKIP_ABRA:-}" != "1" ] \
+  && command -v abra >/dev/null 2>&1; then
+  exec abra run gotchibot -- opencode "${args[@]}" "$ROOT"
 fi
 
 exec opencode "${args[@]}" "$ROOT"

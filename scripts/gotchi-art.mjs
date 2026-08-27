@@ -227,14 +227,68 @@ async function heroIdentity() {
 }
 
 async function main() {
-  const status = process.argv.filter((a) => !a.startsWith("--"))[2] ?? "idle";
+  const args = process.argv.slice(2);
+  const status = args.filter((a) => !a.startsWith("--"))[0] ?? "idle";
+  const useColor = colorEnabled() || args.includes("--color") || args.includes("--thumb");
+
+  // Thumbnail mode: recolor assets/gotchi-thumb.ascii from AarcadeGh-t collateral JSON
+  //   node scripts/gotchi-art.mjs --thumb --collateral link
+  //   node scripts/gotchi-art.mjs --thumb starter-link-h1-1
+  if (args.includes("--thumb")) {
+    const thumbPath = `${ROOT}/assets/gotchi-thumb.ascii`;
+    const base = existsSync(thumbPath)
+      ? readFileSync(thumbPath, "utf8")
+      : "  ▄▄▄▄▄▄\n";
+    const collIdx = args.indexOf("--collateral");
+    let collateralArg =
+      collIdx >= 0 ? args[collIdx + 1] : null;
+    if (!collateralArg) {
+      const pos = args.find((a) => !a.startsWith("--") && a !== "--thumb");
+      collateralArg = pos || null;
+      if (collateralArg && /^starter-([a-z0-9]+)-/i.test(collateralArg)) {
+        collateralArg = RegExp.$1;
+      }
+    }
+    const hauntIdx = args.indexOf("--haunt");
+    const hauntId = hauntIdx >= 0 ? Number(args[hauntIdx + 1]) || 1 : 1;
+    const colors =
+      findCollateralColors(collateralArg, hauntId) ||
+      findCollateralColors(String(collateralArg || "").replace(/^0x/i, ""), hauntId);
+    let art = base;
+    if (colors && useColor) {
+      art = recolorAscii(base, {
+        primary: colors.primary,
+        secondary: colors.secondary,
+        useColor: true,
+      });
+    }
+    process.stdout.write(art.endsWith("\n") ? art : `${art}\n`);
+    return;
+  }
+
+  // ANSI primary only (for shells): node scripts/gotchi-art.mjs --ansi-primary link
+  if (args.includes("--ansi-primary")) {
+    const i = args.indexOf("--ansi-primary");
+    const key = args[i + 1] || "";
+    const colors = findCollateralColors(key, 1);
+    const hex = colors?.primary;
+    if (!hex) {
+      process.stdout.write("\x1b[38;5;252m");
+      return;
+    }
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    process.stdout.write(`\x1b[38;2;${r};${g};${b}m`);
+    return;
+  }
+
   const idleArt = readFileSync(`${ROOT}/assets/gotchi-framed.ascii`, "utf8");
   const activeArt = readFileSync(`${ROOT}/assets/gotchi-inverted.ascii`, "utf8");
   const useInverted =
     process.argv.includes("--inverted") ||
     (status === "running" && !process.argv.includes("--framed"));
   const base = useInverted ? activeArt : idleArt;
-  const useColor = colorEnabled();
 
   let art = base;
   try {

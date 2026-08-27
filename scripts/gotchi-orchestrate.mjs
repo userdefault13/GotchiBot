@@ -2,6 +2,10 @@
 /**
  * Gotchi orchestrator shell bridge — wallet gate + opencode-dispatch spawn.
  * Used by the gotchi OpenCode agent and OpenClaw bot tools.
+ *
+ * Host selection (gotchi mode prefers Tailscale iMac when reachable):
+ *   --host local|imac|auto   (default: auto → imac if REMOTE_* SSH works)
+ *   GOTCHIBOT_SPAWN_HOST=local|imac|auto
  */
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -10,14 +14,15 @@ import { checkSpawnGate } from "./wallet-gate.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DISPATCH = `${ROOT}/scripts/opencode-dispatch.sh`;
+const REMOTE_SPAWN = `${ROOT}/scripts/remote-spawn.mjs`;
 
 function usage() {
   console.error(`usage:
   gotchi-orchestrate.mjs gate [--json]
-  gotchi-orchestrate.mjs spawn [--model nim|pro|local|<provider/model>] "PROMPT"
+  gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--model nim|pro|local|<provider/model>] "PROMPT"
   gotchi-orchestrate.mjs list
-  gotchi-orchestrate.mjs wait [<id>...]
-  gotchi-orchestrate.mjs output <id>`);
+  gotchi-orchestrate.mjs wait [--host local|imac] [<id>...]
+  gotchi-orchestrate.mjs output [--host local|imac] <id>`);
   process.exit(2);
 }
 
@@ -27,6 +32,60 @@ function runDispatch(args, { capture = false } = {}) {
   if (r.stderr) process.stderr.write(r.stderr);
   if (r.status !== 0) process.exit(r.status ?? 1);
   return (r.stdout || "").trim();
+}
+
+async function probeRemote() {
+  const host = process.env.REMOTE_HOST || process.env.GOTCHIBOT_REMOTE_HOST || "";
+  const user = process.env.REMOTE_USER || process.env.GOTCHIBOT_REMOTE_USER || "";
+  const key = process.env.SSH_PRIVATE_KEY || "";
+  if (!host || !user || !key) return false;
+  const { assertRemoteReady, materializeKey, runSsh } = await import("./remote-lib.mjs");
+  try {
+    const cfg = assertRemoteReady();
+    const mat = materializeKey(cfg.key);
+    try {
+      const r = runSsh(cfg, mat.path, "echo ok", { stdio: "pipe" });
+      return r.status === 0 && String(r.stdout || "").includes("ok");
+    } finally {
+      mat.dispose();
+    }
+  } catch {
+    return false;
+  }
+}
+
+function parseHostAndRest(argv) {
+  let host = (process.env.GOTCHIBOT_SPAWN_HOST || "auto").toLowerCase();
+  const rest = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--host" && argv[i + 1]) {
+      host = String(argv[++i]).toLowerCase();
+    } else {
+      rest.push(argv[i]);
+    }
+  }
+  if (!["local", "imac", "auto", "remote"].includes(host)) {
+    console.error(`unknown --host ${host} (use local|imac|auto)`);
+    process.exit(2);
+  }
+  if (host === "remote") host = "imac";
+  return { host, rest };
+}
+
+async function resolveHost(want) {
+  if (want === "local") return "local";
+  if (want === "imac") {
+    const ok = await probeRemote();
+    if (!ok) {
+      console.error(
+        "remote iMac not reachable over Tailscale SSH — set REMOTE_HOST/USER + SSH key via abra, or use --host local",
+      );
+      process.exit(3);
+    }
+    return "imac";
+  }
+  // auto
+  return (await probeRemote()) ? "imac" : "local";
 }
 
 async function cmdGate() {
@@ -48,6 +107,22 @@ async function cmdGate() {
 }
 
 async function cmdSpawn(argv) {
+  const { host: wantHost, rest: argv2 } = parseHostAndRest(argv);
+  const host = await resolveHost(wantHost);
+
+  if (host === "imac") {
+    const args = [...argv2];
+    if (process.argv.includes("--json") && !args.includes("--json")) args.push("--json");
+    const r = spawnSync(process.execPath, [REMOTE_SPAWN, ...args], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: process.env,
+    });
+    if (r.stdout) process.stdout.write(r.stdout);
+    if (r.stderr) process.stderr.write(r.stderr);
+    process.exit(r.status ?? 1);
+  }
+
   const gate = await checkSpawnGate();
   if (!gate.ok) {
     console.error(`spawn blocked (${gate.code}): ${gate.message}`);
@@ -57,23 +132,58 @@ async function cmdSpawn(argv) {
 
   let model = "nim";
   const rest = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--model" && argv[i + 1]) {
-      model = argv[++i];
+  for (let i = 0; i < argv2.length; i++) {
+    if (argv2[i] === "--model" && argv2[i + 1]) {
+      model = argv2[++i];
+    } else if (argv2[i] === "--json") {
+      // handled below
     } else {
-      rest.push(argv[i]);
+      rest.push(argv2[i]);
     }
   }
   const prompt = rest.join(" ").trim();
   if (!prompt) usage();
 
   const id = runDispatch(["new", "--model", model, prompt], { capture: true });
-  if (process.argv.includes("--json")) {
-    console.log(JSON.stringify({ ok: true, sessionId: id, model, gate }, null, 2));
+  if (process.argv.includes("--json") || argv2.includes("--json")) {
+    console.log(JSON.stringify({ ok: true, host: "local", sessionId: id, model, gate }, null, 2));
   } else {
     console.log(id);
-    console.error(`spawned ${id} (model=${model}, hero=${gate.activeHeroId ?? "roster"})`);
+    console.error(`spawned ${id} on local (model=${model}, hero=${gate.activeHeroId ?? "roster"})`);
   }
+}
+
+async function cmdWait(argv) {
+  const { host: wantHost, rest } = parseHostAndRest(argv);
+  const host = wantHost === "auto" ? "local" : wantHost;
+  if (host === "imac") {
+    const r = spawnSync(process.execPath, [REMOTE_SPAWN, "wait", ...rest], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: process.env,
+    });
+    if (r.stdout) process.stdout.write(r.stdout);
+    if (r.stderr) process.stderr.write(r.stderr);
+    process.exit(r.status ?? 1);
+  }
+  runDispatch(["wait", ...rest]);
+}
+
+async function cmdOutput(argv) {
+  const { host: wantHost, rest } = parseHostAndRest(argv);
+  const host = wantHost === "auto" ? "local" : wantHost;
+  if (!rest[0]) usage();
+  if (host === "imac") {
+    const r = spawnSync(process.execPath, [REMOTE_SPAWN, "output", rest[0]], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: process.env,
+    });
+    if (r.stdout) process.stdout.write(r.stdout);
+    if (r.stderr) process.stderr.write(r.stderr);
+    process.exit(r.status ?? 1);
+  }
+  runDispatch(["output", rest[0]]);
 }
 
 const cmd = process.argv[2];
@@ -90,11 +200,10 @@ switch (cmd) {
     runDispatch(["list"]);
     break;
   case "wait":
-    runDispatch(["wait", ...rest]);
+    await cmdWait(rest);
     break;
   case "output":
-    if (!rest[0]) usage();
-    runDispatch(["output", rest[0]]);
+    await cmdOutput(rest);
     break;
   default:
     usage();

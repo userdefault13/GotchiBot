@@ -7,12 +7,27 @@ min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-45}"
 min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-39}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
+chat_collapsed="${GOTCHIBOT_CHAT_COLLAPSED:-3}"
 min_center="${GOTCHIBOT_TMUX_CENTER_WIDTH:-50}"
 win_w_default="${GOTCHIBOT_WINDOW_WIDTH:-143}"
 win_h_default="${GOTCHIBOT_WINDOW_HEIGHT:-40}"
 resize_hook="$ROOT/scripts/orchestrator-resize.sh"
 status_bar="$ROOT/scripts/session-status-bar.sh"
 LAYOUT_FILE="$ROOT/sessions/.tmux-layout"
+LAYOUT_MODE="$ROOT/sessions/.layout-mode"
+
+layout_mode() {
+  if [ -f "$LAYOUT_MODE" ]; then
+    tr -d '[:space:]' < "$LAYOUT_MODE"
+  else
+    echo normal
+  fi
+}
+
+set_layout_mode() {
+  mkdir -p "$ROOT/sessions"
+  printf '%s\n' "$1" > "$LAYOUT_MODE"
+}
 
 # Panes: 0 sidebar | 1 opencode chat | 2 avatar (sessions → tmux status bar)
 layout_ready() {
@@ -87,12 +102,110 @@ collapse_sidebar() {
 }
 
 expand_sidebar() {
+  # Medium explorer (~min_left); not full-bleed. Use files-max for 100%.
+  if [ "$(layout_mode)" = "files-max" ]; then
+    restore_normal_layout
+  fi
   tmux resize-pane -t "$sess:work.0" -x "$min_left" 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/mc-pane.sh"
+  set_layout_mode normal
+}
+
+# Files take remaining width; chat collapses to a thin Gotchi bar; avatar stays.
+enter_files_max() {
+  layout_ready || return 1
+  if [ "$(layout_mode)" = "avatar-max" ]; then
+    # Leave avatar-max without restoring chat yet — we collapse chat again below.
+    tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+    collapse_sidebar
+  fi
+  local win_w files_w
+  win_w="$(tmux display -p -t "$sess" '#{window_width}' 2>/dev/null || echo "$win_w_default")"
+  files_w=$((win_w - chat_collapsed - min_avatar - 2))
+  [ "$files_w" -lt 20 ] && files_w=20
+
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/mc-pane.sh"
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
+  # Size order matters: grow files, then lock chat bar + avatar so tmux doesn't steal.
+  tmux resize-pane -t "$sess:work.0" -x "$files_w" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.2" -x "$min_avatar" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.1" -x "$chat_collapsed" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.1" -x "$chat_collapsed" 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' Files · full ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  set_layout_mode files-max
+  tmux select-pane -t "$sess:work.0"
+  save_layout
+}
+
+# Avatar takes remaining width; chat → bar; files stay collapsed.
+enter_avatar_max() {
+  layout_ready || return 1
+  if [ "$(layout_mode)" = "files-max" ]; then
+    tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+    collapse_sidebar
+  fi
+  local win_w avatar_w
+  win_w="$(tmux display -p -t "$sess" '#{window_width}' 2>/dev/null || echo "$win_w_default")"
+  avatar_w=$((win_w - sidebar_collapsed - chat_collapsed - 2))
+  [ "$avatar_w" -lt 40 ] && avatar_w=40
+
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
+  collapse_sidebar
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
+  tmux resize-pane -t "$sess:work.2" -x "$avatar_w" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.0" -x "$sidebar_collapsed" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.1" -x "$chat_collapsed" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.1" -x "$chat_collapsed" 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar · full ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
+  set_layout_mode avatar-max
+  tmux select-pane -t "$sess:work.2"
+  save_layout
+  signal_panes
+}
+
+restore_normal_layout() {
+  layout_ready || return 1
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh"
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
+  collapse_sidebar
+  apply_pane_sizes
+  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  set_layout_mode normal
+  tmux select-pane -t "$sess:work.1"
+  save_layout
+  signal_panes
+}
+
+toggle_files_max() {
+  if [ "$(layout_mode)" = "files-max" ]; then
+    restore_normal_layout
+  else
+    enter_files_max
+  fi
+}
+
+toggle_avatar_max() {
+  if [ "$(layout_mode)" = "avatar-max" ]; then
+    restore_normal_layout
+  else
+    enter_avatar_max
+  fi
 }
 
 toggle_sidebar() {
   local pw
+  if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ]; then
+    restore_normal_layout
+    return
+  fi
   pw="$(tmux display -p -t "$sess:work.0" '#{pane_width}' 2>/dev/null || echo 0)"
   if [ "$pw" -lt 12 ]; then
     expand_sidebar
@@ -118,6 +231,26 @@ enforce_sizes() {
 }
 
 fit_quiet() {
+  if [ "$(layout_mode)" = "files-max" ]; then
+    local win_w files_w
+    win_w="$(tmux display -p -t "$sess" '#{window_width}' 2>/dev/null || echo "$win_w_default")"
+    files_w=$((win_w - chat_collapsed - min_avatar - 2))
+    [ "$files_w" -lt 20 ] && files_w=20
+    tmux resize-pane -t "$sess:work.0" -x "$files_w" 2>/dev/null || true
+    tmux resize-pane -t "$sess:work.2" -x "$min_avatar" 2>/dev/null || true
+    tmux resize-pane -t "$sess:work.1" -x "$chat_collapsed" 2>/dev/null || true
+    return 0
+  fi
+  if [ "$(layout_mode)" = "avatar-max" ]; then
+    local win_w avatar_w
+    win_w="$(tmux display -p -t "$sess" '#{window_width}' 2>/dev/null || echo "$win_w_default")"
+    avatar_w=$((win_w - sidebar_collapsed - chat_collapsed - 2))
+    [ "$avatar_w" -lt 40 ] && avatar_w=40
+    tmux resize-pane -t "$sess:work.2" -x "$avatar_w" 2>/dev/null || true
+    tmux resize-pane -t "$sess:work.0" -x "$sidebar_collapsed" 2>/dev/null || true
+    tmux resize-pane -t "$sess:work.1" -x "$chat_collapsed" 2>/dev/null || true
+    return 0
+  fi
   apply_pane_sizes
   enforce_sizes
 }
@@ -156,11 +289,23 @@ should_signal_avatar() {
 install_agent_keys() {
   [ "${GOTCHIBOT_TAB_TMUX:-1}" = "1" ] || return 0
   local hook="$ROOT/scripts/tmux-chat-focus-hook.sh"
-  chmod +x "$hook" 2>/dev/null || true
+  local layout="$ROOT/scripts/orchestrator-layout.sh"
+  chmod +x "$hook" "$layout" "$ROOT/scripts/chat-bar-pane.sh" 2>/dev/null || true
   # Tab in the chat pane cycles gotchi → plan → build → ask (respawns OpenCode with persisted agent).
   tmux bind-key -T gotchi-chat Tab run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --restart" 2>/dev/null || true
   tmux bind-key -T gotchi-chat S-Tab run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --reverse --restart" 2>/dev/null || true
   tmux bind-key -T gotchi-chat F2 run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --restart" 2>/dev/null || true
+  # Files full-bleed ↔ chat bar — Mac: Ctrl-b f · chat: fn-F4
+  tmux bind-key -T gotchi-chat F4 run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess' '$layout' files-max" 2>/dev/null || true
+  tmux bind-key f run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess' '$layout' files-max" 2>/dev/null || true
+  tmux bind-key -T prefix C-f run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess' '$layout' files-max" 2>/dev/null || true
+  tmux unbind-key -T root M-e 2>/dev/null || true
+  tmux bind-key -T root M-f run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess' '$layout' files-max" 2>/dev/null || true
+  # Avatar full-bleed ↔ chat bar — Mac: Ctrl-b a · chat: fn-F6
+  tmux bind-key -T gotchi-chat F6 run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess' '$layout' avatar-max" 2>/dev/null || true
+  tmux bind-key a run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess' '$layout' avatar-max" 2>/dev/null || true
+  tmux bind-key -T prefix C-a run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess' '$layout' avatar-max" 2>/dev/null || true
+  tmux bind-key -T root M-a run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess' '$layout' avatar-max" 2>/dev/null || true
   tmux set-hook -t "$sess" pane-focus-in "run-shell '$hook'" 2>/dev/null || true
   "$hook" 2>/dev/null || true
 }
@@ -185,7 +330,7 @@ install_ui_theme() {
   tmux set-option -t "$sess" status-style 'bg=colour24,fg=colour252' 2>/dev/null || true
   tmux set-option -t "$sess" status-left-length 14 2>/dev/null || true
   tmux set-option -t "$sess" status-right-length 400 2>/dev/null || true
-  tmux set-option -t "$sess" status-interval 60 2>/dev/null || true
+  tmux set-option -t "$sess" status-interval 30 2>/dev/null || true
   tmux set-option -t "$sess" status-left '#[fg=white,bold] GotchiBot ' 2>/dev/null || true
   tmux set-option -t "$sess" status-right "#[fg=colour252]#($status_bar) #[fg=colour238]|#[default] #[fg=colour250]#S " 2>/dev/null || true
   apply_window_policy
@@ -201,8 +346,11 @@ disable_resize_hook() {
 }
 
 finish_ensure() {
+  set_layout_mode normal
   fit_window
   signal_panes
+  # Always boot with Files collapsed to a bar.
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
   collapse_sidebar
   save_layout
   install_ui_theme
@@ -249,14 +397,22 @@ case "$cmd" in
     ;;
   sidebar)
     toggle_sidebar
-    tmux select-pane -t "$sess:work.1"
+    if [ "$(layout_mode)" != "files-max" ] && [ "$(layout_mode)" != "avatar-max" ]; then
+      tmux select-pane -t "$sess:work.1"
+    fi
+    ;;
+  files-max|explorer)
+    toggle_files_max
+    ;;
+  avatar-max|avatar)
+    toggle_avatar_max
     ;;
   fit)
     fit_window
     install_ui_theme
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|fit]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|avatar-max|fit]" >&2
     exit 2
     ;;
 esac

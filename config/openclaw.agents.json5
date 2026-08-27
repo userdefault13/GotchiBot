@@ -1,6 +1,6 @@
 {
   "//": "Sub-agent definitions consumed by scripts/opencode-dispatch.sh and the OpenClaw gateway.",
-  "defaultModel": "opencode/nemotron-3.5-lightning-free",
+  "defaultModel": "opencode/hy3-free",
   "orchestrator": {
     "id": "gotchi",
     "runtime": "opencode",

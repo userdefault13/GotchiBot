@@ -1,0 +1,13 @@
+# GotchiBot Midnight Commander user menu (F2)
+# Right-click in mc marks files; press F2 (User menu) → "Add to Gotchi chat".
+# Hotkey: a
+#
+# Installed to ~/.config/mc/menu by scripts/mc-pane.sh (marker-managed block).
+
++ ! t t
+= a       Add to Gotchi chat
+          @GOTCHIBOT_ROOT@/scripts/mc-add-to-chat.sh %d/%f
+
++ t t
+a       Add tagged to Gotchi chat
+          for _f in %t; do @GOTCHIBOT_ROOT@/scripts/mc-add-to-chat.sh %d/"$_f"; done

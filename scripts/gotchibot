@@ -12,14 +12,24 @@ usage() {
 gotchibot — GotchiBot orchestrator CLI
 
   gotchibot tmux                  open orchestrator (sidebar | opencode | avatar)
-  gotchibot sidebar               toggle file explorer (mc) sidebar
-  gotchibot spawn [--model t] "P"   spawn sub-agent (wallet + cAavegotchi gate)
+  gotchibot sidebar               toggle medium file explorer (mc)
+                                  # in mc: F2 → Add to Gotchi chat (or press a)
+  gotchibot files-max             Files full-bleed / chat→bar (Mac: Ctrl-b f)
+  gotchibot avatar-max            Avatar full-bleed / chat→bar (Mac: Ctrl-b a)
+  gotchibot spawn [--host auto|imac|local] [--model t] "P"   spawn sub-agent (Tailscale iMac when auto/imac)
   gotchibot new [--model t] "P"   spawn a sub-agent (t: nim|pro|local|<id>)
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
   gotchibot mode [gotchi|ask|plan|build|cycle] [--restart]  OpenCode agent
   gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
   gotchibot list                  session table
+  gotchibot agents [--json]       cAavegotchis + MBP/iMac sessions (/list)
+  gotchibot switch [n|id]         list agents, or switch avatar+direct chat (/switch)
+  gotchibot focus <n|id>          pin avatar + SUB chat focus
+  gotchibot orch                  restore orchestrator focus (/orch)
+  gotchibot delegate [--json] [hint]  pick next local/remote agent (/delegate)
+  gotchibot hero-state set|sync|get   cAavegotchi agentStatus on cartridge sim
+                                      # available|active|working|idle|watching
   gotchibot status <id>...        one session's state
   gotchibot wait [<id>...]        block until sessions finish
   gotchibot output <id>           print a session deliverable
@@ -34,6 +44,16 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot identity ensure|mint|roster   cartridge identity ops
   gotchibot reset [--full] [--yes]      wipe gotchibot cartridge (new-user test)
   gotchibot onboarding              re-run welcome / sign-in gate
+  gotchibot attach [--mini] [-c]      attach TUI to iMac orchestrator (opencode serve)
+  gotchibot qr [--copy|--openlens]    iPhone connect: --copy = auth URL to clipboard; default = http QR
+  gotchibot remote -- <cmd>         run command on iMac via Tailscale SSH (abra keys)
+  gotchibot remote-sync               push wallet/identity/onboarding to iMac
+  gotchibot remote-setup              print Tailscale + abra SSH setup checklist
+  gotchibot remote-push               rsync GotchiBot tree to iMac (empty-git fix)
+  gotchibot remote-serve              start/restart iMac orchestrator opencode serve
+  gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
+  gotchibot menubar install|uninstall|preview|path|open  macOS menu bar ghost + agent count (SwiftBar)
+  gotchibot mesh [ping] [--live] [--json]  agent count + status across MBP and iMac (Tailscale SSH)
   gotchibot tts on|off|status|test|warm|stop-daemon  voice (MeloTTS EN-AU / edge-tts / say)
 EOF
   exit 2
@@ -72,6 +92,7 @@ cmd_handoff() {
 }
 
 cmd_spawn() {
+  # Default host=auto → iMac over Tailscale when SSH is up (gotchi mode).
   exec node "$ROOT/scripts/gotchi-orchestrate.mjs" spawn "$@"
 }
 
@@ -175,6 +196,157 @@ cmd_identity() {
   exec node "$ROOT/scripts/identity.mjs" "$@"
 }
 
+cmd_remote_setup() {
+  cat <<'EOF'
+GotchiBot — iMac orchestrator (Tailscale)
+
+  iPhone ─┐
+          ├─→ iMac :4096  opencode serve (gotchi) → sub-agents on iMac
+  MBP    ─┘
+
+1) MBP vault: SSH key + REMOTE_USER/HOST + OPENCODE_SERVER_PASSWORD
+2) iMac: Remote Login, Tailscale CLI, pubkey, ~/Dev/GotchiBot
+3) From MBP:
+   abra run gotchibot -- ./scripts/gotchibot remote-push
+   abra run gotchibot -- ./scripts/gotchibot remote-serve
+4) Clients:
+   MBP:    abra run gotchibot -- ./scripts/gotchibot attach
+   iPhone: http://$REMOTE_HOST:4096  user opencode
+           password: abra get gotchibot OPENCODE_SERVER_PASSWORD
+
+See DEPLOYMENT.md Phase 11.
+EOF
+}
+
+abra_or_node() {
+  if [ -n "${SSH_PRIVATE_KEY:-}" ] && [ -n "${REMOTE_HOST:-}" ]; then
+    exec node "$@"
+  fi
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$@"
+  fi
+  echo "need abra (or SSH_PRIVATE_KEY+REMOTE_HOST+REMOTE_USER in env)" >&2
+  exit 1
+}
+
+cmd_remote() {
+  # Strip optional leading --
+  if [ "${1:-}" = "--" ]; then shift; fi
+  [ $# -ge 1 ] || { echo "usage: gotchibot remote -- <cmd…>" >&2; exit 2; }
+  abra_or_node "$ROOT/scripts/remote-ssh.mjs" -- "$@"
+}
+
+cmd_remote_sync() {
+  abra_or_node "$ROOT/scripts/remote-sync.mjs"
+}
+
+cmd_attach() {
+  if [ -n "${OPENCODE_SERVER_PASSWORD:-}" ] && [ -n "${REMOTE_HOST:-}${GOTCHIBOT_OPENCODE_URL:-}" ]; then
+    exec node "$ROOT/scripts/attach-imac.mjs" "$@"
+  fi
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$ROOT/scripts/attach-imac.mjs" "$@"
+  fi
+  echo "need abra (or OPENCODE_SERVER_PASSWORD + REMOTE_HOST in env)" >&2
+  exit 1
+}
+
+cmd_agents() {
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$ROOT/scripts/agent-focus.mjs" list "$@"
+  fi
+  exec node "$ROOT/scripts/agent-focus.mjs" list "$@"
+}
+
+cmd_switch() {
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$ROOT/scripts/agent-focus.mjs" switch "$@"
+  fi
+  exec node "$ROOT/scripts/agent-focus.mjs" switch "$@"
+}
+
+cmd_focus() {
+  [ $# -ge 1 ] || { echo "usage: gotchibot focus <n|id>" >&2; exit 2; }
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$ROOT/scripts/agent-focus.mjs" select "$@"
+  fi
+  exec node "$ROOT/scripts/agent-focus.mjs" select "$@"
+}
+
+cmd_orch() {
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$ROOT/scripts/agent-focus.mjs" orch "$@"
+  fi
+  exec node "$ROOT/scripts/agent-focus.mjs" orch "$@"
+}
+
+cmd_delegate() {
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$ROOT/scripts/delegate-pick.mjs" "$@"
+  fi
+  exec node "$ROOT/scripts/delegate-pick.mjs" "$@"
+}
+
+cmd_qr() {
+  if [ -n "${OPENCODE_SERVER_PASSWORD:-}" ]; then
+    exec node "$ROOT/scripts/iphone-qr.mjs" "$@"
+  fi
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$ROOT/scripts/iphone-qr.mjs" "$@"
+  fi
+  echo "need abra (or OPENCODE_SERVER_PASSWORD in env)" >&2
+  exit 1
+}
+
+cmd_menubar() {
+  local sub="${1:-}"
+  local plugin_src="$ROOT/scripts/menubar-agents.sh"
+  local plugins_dir="${GOTCHIBOT_SWIFTBAR_DIR:-$HOME/Library/Application Support/SwiftBar}"
+  local dest="$plugins_dir/GotchiBot Agents.5s.sh"
+
+  case "$sub" in
+    preview|"")
+      exec "$plugin_src"
+      ;;
+    path)
+      printf '%s\n' "$plugins_dir"
+      ;;
+    open)
+      mkdir -p "$plugins_dir"
+      open "$plugins_dir"
+      printf '%s\n' "$plugins_dir"
+      ;;
+    install)
+      if [ ! -d "/Applications/SwiftBar.app" ] && [ ! -d "$HOME/Applications/SwiftBar.app" ]; then
+        echo "SwiftBar not found. Install it first (needs your approval):" >&2
+        echo "  brew install --cask swiftbar" >&2
+        echo "Then open SwiftBar once and re-run: gotchibot menubar install" >&2
+        exit 1
+      fi
+      mkdir -p "$plugins_dir"
+      ln -sfn "$plugin_src" "$dest"
+      chmod +x "$plugin_src"
+      open "$plugins_dir" 2>/dev/null || true
+      open -g -a SwiftBar 2>/dev/null || true
+      echo "linked: $dest"
+      echo ""
+      echo "If SwiftBar asks for a plugins folder (Documents is blocked):"
+      echo "  1. Click Choose New Location"
+      echo "  2. Pick: $plugins_dir"
+      echo "     (or run: ./scripts/gotchibot menubar open)"
+      echo "  3. Confirm — menu bar should show 👻N (refreshes every 5s)"
+      ;;
+    uninstall)
+      rm -f "$dest"
+      echo "removed: $dest"
+      ;;
+    *)
+      echo "usage: gotchibot menubar install|uninstall|preview|path|open" >&2
+      exit 2
+      ;;
+  esac
+}
+
 [ $# -ge 1 ] || usage
 cmd="$1"; shift
 case "$cmd" in
@@ -182,6 +354,14 @@ case "$cmd" in
   spawn) cmd_spawn "$@" ;;
   new) "$DISPATCH" new "$@" ;;
   list) exec "$DISPATCH" list ;;
+  agents) cmd_agents "$@" ;;
+  switch) cmd_switch "$@" ;;
+  focus) cmd_focus "$@" ;;
+  orch) cmd_orch "$@" ;;
+  delegate) cmd_delegate "$@" ;;
+  hero-state|hero-agent-state)
+    abra_or_node "$ROOT/scripts/hero-agent-state.mjs" "$@"
+    ;;
   status) exec "$DISPATCH" status "$@" ;;
   wait) exec "$DISPATCH" wait "$@" ;;
   output) exec "$DISPATCH" output "$@" ;;
@@ -201,6 +381,19 @@ case "$cmd" in
   onboarding) exec node "$ROOT/scripts/onboarding-gate.mjs" ;;
   tts) cmd_tts "$@" ;;
   identity) cmd_identity "$@" ;;
+  attach) cmd_attach "$@" ;;
+  qr) cmd_qr "$@" ;;
+  remote) cmd_remote "$@" ;;
+
+  remote-sync) cmd_remote_sync "$@" ;;
+  remote-push) abra_or_node "$ROOT/scripts/remote-push.mjs" ;;
+  remote-serve) abra_or_node "$ROOT/scripts/remote-serve.mjs" ;;
+  remote-setup) cmd_remote_setup ;;
+  remote-status) abra_or_node "$ROOT/scripts/remote-status.mjs" ;;
+  menubar) cmd_menubar "$@" ;;
+  mesh) exec node "$ROOT/scripts/mesh-status.mjs" "$@" ;;
   sidebar) exec "$ROOT/scripts/orchestrator-layout.sh" sidebar ;;
+  files-max|explorer) exec "$ROOT/scripts/orchestrator-layout.sh" files-max ;;
+  avatar-max) exec "$ROOT/scripts/orchestrator-layout.sh" avatar-max ;;
   *) usage ;;
 esac

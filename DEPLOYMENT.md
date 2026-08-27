@@ -191,6 +191,79 @@ Then:
 5. Verify end-to-end from cellular (not LAN)
 6. Keep both gateways running; sync `sessions/` + workspace dirs as needed
 
+## Phase 11 — iMac orchestrator (Tailscale): MBP + iPhone clients
+
+**Goal:** GotchiBot + `opencode serve` run on the **iMac**. The MacBook and
+iPhone are clients. Sub-agents spawn **on the iMac**.
+
+```text
+iPhone  ─┐
+         ├─ Tailscale ─→  iMac :4096  opencode serve  (gotchi orchestrator)
+MBP     ─┘                    └─ opencode run / gotchibot spawn (sub-agents)
+```
+
+LAN to `192.168.1.x` is often blocked (AP isolation). Use **Tailscale CLI**
+(`brew install tailscale`). Cloudflare stays for Envio/OpenClaw only.
+
+### 11.1 One-time: keys + iMac bootstrap
+
+```bash
+abra keygen ssh gotchibot --comment gotchibot-agent@mbp
+abra set gotchibot REMOTE_USER     # iMac username
+abra set gotchibot REMOTE_HOST     # e.g. 100.68.95.90
+abra set gotchibot OPENCODE_SERVER_PASSWORD
+abra set gotchibot OPENCODE_SERVER_USERNAME   # usually "opencode"
+abra get gotchibot SSH_PUBLIC_KEY            # → iMac authorized_keys
+```
+
+On iMac: Remote Login ON, Tailscale CLI, pubkey, GotchiBot at `~/Dev/GotchiBot`
+(if GitHub is empty, push from MBP with `remote-push`).
+
+### 11.2 Start / refresh the iMac orchestrator (from MBP)
+
+```bash
+abra run gotchibot -- ./scripts/gotchibot remote-push    # sync code + wallet
+abra run gotchibot -- ./scripts/gotchibot remote-serve   # opencode serve + secrets
+```
+
+`remote-serve` injects abra secrets into the serve process so the gotchi agent
+can spawn sub-agents without Touch ID on the iMac.
+
+### 11.3 MacBook — talk to the orchestrator
+
+```bash
+abra run gotchibot -- ./scripts/gotchibot attach
+# → opencode attach http://$REMOTE_HOST:4096  (TUI; Tab cycles gotchi/plan/ask/build)
+```
+
+Spawns run on the iMac working tree (`sessions/…` there). Optional SSH helpers:
+
+```bash
+abra run gotchibot -- ./scripts/gotchibot remote -- ./scripts/wallet-gate.mjs
+abra run gotchibot -- ./scripts/gotchibot remote -- ./scripts/gotchibot list
+```
+
+### 11.4 iPhone — OpenCode app
+
+Same Tailscale account:
+
+- **URL:** `http://100.68.95.90:4096` (or iMac MagicDNS)
+- **Username:** `opencode`
+- **Password:** `abra get gotchibot OPENCODE_SERVER_PASSWORD`
+
+### 11.5 Day-to-day
+
+| Action | Command |
+|--------|---------|
+| Start server | `abra run gotchibot -- ./scripts/gotchibot remote-serve` |
+| Attach from MBP | `abra run gotchibot -- ./scripts/gotchibot attach` |
+| Push code/state | `abra run gotchibot -- ./scripts/gotchibot remote-push` |
+| Status | `abra run gotchibot -- ./scripts/gotchibot remote-status` |
+| Delegate-first | `abra run gotchibot -- ./scripts/gotchibot delegate` (or `/delegate`) |
+
+Orchestrator always picks an available local/remote agent via `delegate-pick.mjs`
+before doing real work (skill `delegate-first`).
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -202,3 +275,7 @@ Then:
 | Cursor CLI flag drift | pin/probe `agent --version`; flags change between releases |
 | DeepSeek 400 on model id | use `deepseek-v4-flash` / `deepseek-v4-pro`; old aliases dead since 2026-07-24 |
 | chafa looks bad | increase cols (`--cols $(tput cols)`); Apple Terminal limits fidelity |
+| `REMOTE_HOST` / SSH timeout | join Tailscale on both machines; ping MagicDNS; LAN `192.168.1.x` may be isolated |
+| `Missing: SSH_PRIVATE_KEY` | `abra keygen ssh gotchibot` then wrap with `abra run gotchibot -- …` |
+| iOS / attach 401 | set password via abra; `remote-serve`; user `opencode` |
+| Empty iMac repo | GitHub may have no commits — use `gotchibot remote-push` from MBP |

@@ -18,18 +18,22 @@ route_prompt() {
   if [[ "$line" == gotchibot* ]] \
     || [[ "$line" == ./scripts/* ]] \
     || [[ "$line" == /sidebar ]] \
+    || [[ "$line" == /files ]] \
     || [[ "$line" == /handoff ]] \
     || [[ "$line" == /list ]] \
     || [[ "$line" == /help ]]; then
     case "$line" in
       /sidebar) line="gotchibot sidebar" ;;
+      /files) line="gotchibot files-max" ;;
       /handoff) line="gotchibot handoff" ;;
       /list) line="gotchibot list" ;;
       /help)
         cat <<'EOF'
 Natural language — describe a task; the gotchi spawns a sub-agent.
-Commands — gotchibot new|list|handoff|sidebar|…
-Shortcuts — /sidebar /handoff /list /help
+Commands — gotchibot new|list|handoff|sidebar|files-max|…
+Shortcuts — /sidebar /files /handoff /list /help
+  F4 / Ctrl-b f — Files full · chat bar (Mac: ⌃b then f)
+  F6 / Ctrl-b a — Avatar full · chat bar (Mac: ⌃b then a)
 Shell     — prefix with ! (e.g. !ls sessions)
 EOF
         return
