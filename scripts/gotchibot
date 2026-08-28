@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PATH="${HOME}/.openclaw/bin:${PATH}"
+# shellcheck source=/dev/null
+[ -f "$ROOT/scripts/openclaw-gateway-env.sh" ] && source "$ROOT/scripts/openclaw-gateway-env.sh"
 SESSIONS="$ROOT/sessions"
 DISPATCH="$ROOT/scripts/opencode-dispatch.sh"
 PIN="$SESSIONS/.pin"
@@ -27,6 +30,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot switch [n|id]         list agents, or switch avatar+direct chat (/switch)
   gotchibot focus <n|id>          pin avatar + SUB chat focus
   gotchibot orch                  restore orchestrator focus (/orch)
+  gotchibot openclaw sync|list|status|chat|install|point  OpenClaw fleet + CLI
   gotchibot delegate [--json] [hint]  pick next local/remote agent (/delegate)
   gotchibot hero-state set|sync|get   cAavegotchi agentStatus on cartridge sim
                                       # available|active|working|idle|watching
@@ -50,6 +54,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot remote-sync               push wallet/identity/onboarding to iMac
   gotchibot remote-setup              print Tailscale + abra SSH setup checklist
   gotchibot remote-push               rsync GotchiBot tree to iMac (empty-git fix)
+  gotchibot remote-openclaw           push fleet + merge openclaw.json + restart iMac gateway
   gotchibot remote-serve              start/restart iMac orchestrator opencode serve
   gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
   gotchibot menubar install|uninstall|preview|path|open  macOS menu bar ghost + agent count (SwiftBar)
@@ -59,10 +64,23 @@ EOF
   exit 2
 }
 
+# Best-effort OpenClaw fleet sync from cartridge heroes (non-fatal; runs before tmux).
+sync_openclaw_fleet() {
+  command -v node >/dev/null 2>&1 || return 0
+  if [ -n "${SSH_PRIVATE_KEY:-}" ] && [ -n "${REMOTE_HOST:-}" ]; then
+    node "$ROOT/scripts/openclaw-fleet.mjs" sync --quiet 2>/dev/null || true
+  elif command -v abra >/dev/null 2>&1; then
+    abra run gotchibot -- node "$ROOT/scripts/openclaw-fleet.mjs" sync --quiet 2>/dev/null || true
+  else
+    node "$ROOT/scripts/openclaw-fleet.mjs" sync --quiet 2>/dev/null || true
+  fi
+}
+
 cmd_tmux() {
   command -v tmux >/dev/null || { echo "tmux missing: brew install tmux" >&2; exit 1; }
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
   # API keys are injected inside chat/sub-agent panes when needed.
+  sync_openclaw_fleet
   local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
   local min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-42}"
   local layout="$ROOT/scripts/orchestrator-layout.sh"
@@ -72,6 +90,7 @@ cmd_tmux() {
     exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
   fi
   tmux new-session -d -s "$sess" -n work
+  node "$ROOT/scripts/agent-focus.mjs" orch >/dev/null 2>&1 || true
   "$layout" refresh
   exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
 }
@@ -280,6 +299,26 @@ cmd_orch() {
   exec node "$ROOT/scripts/agent-focus.mjs" orch "$@"
 }
 
+cmd_openclaw() {
+  local sub="${1:-}"
+  shift || true
+  case "$sub" in
+    install)
+      exec "$ROOT/scripts/openclaw-cli-install.sh" "$@"
+      ;;
+    point)
+      abra_or_node "$ROOT/scripts/openclaw-fleet.mjs" point "$@"
+      ;;
+    "")
+      echo "usage: gotchibot openclaw install|sync|list|status|chat …" >&2
+      exit 2
+      ;;
+    *)
+      abra_or_node "$ROOT/scripts/openclaw-fleet.mjs" "$sub" "$@"
+      ;;
+  esac
+}
+
 cmd_delegate() {
   if command -v abra >/dev/null 2>&1; then
     exec abra run gotchibot -- node "$ROOT/scripts/delegate-pick.mjs" "$@"
@@ -358,6 +397,7 @@ case "$cmd" in
   switch) cmd_switch "$@" ;;
   focus) cmd_focus "$@" ;;
   orch) cmd_orch "$@" ;;
+  openclaw) cmd_openclaw "$@" ;;
   delegate) cmd_delegate "$@" ;;
   hero-state|hero-agent-state)
     abra_or_node "$ROOT/scripts/hero-agent-state.mjs" "$@"
@@ -387,6 +427,7 @@ case "$cmd" in
 
   remote-sync) cmd_remote_sync "$@" ;;
   remote-push) abra_or_node "$ROOT/scripts/remote-push.mjs" ;;
+  remote-openclaw) abra_or_node "$ROOT/scripts/remote-openclaw-deploy.mjs" "$@" ;;
   remote-serve) abra_or_node "$ROOT/scripts/remote-serve.mjs" ;;
   remote-setup) cmd_remote_setup ;;
   remote-status) abra_or_node "$ROOT/scripts/remote-status.mjs" ;;

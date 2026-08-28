@@ -1,0 +1,39 @@
+{
+  "mode": "merge",
+  "providers": {
+    "cloudflare-wai": {
+      "baseUrl": "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+      "apiKey": "${CLOUDFLARE_API_TOKEN}",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "@cf/zai-org/glm-4.7-flash",
+          "name": "GLM 4.7 Flash (free tier)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 198000,
+          "maxTokens": 8192,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "@cf/nvidia/nemotron-3-120b-a12b",
+          "name": "Nemotron 3 Super 120B (free tier)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 8192,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "@cf/openai/gpt-oss-120b",
+          "name": "GPT-OSS 120B (free tier)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 131000,
+          "maxTokens": 8192,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    }
+  }
+}

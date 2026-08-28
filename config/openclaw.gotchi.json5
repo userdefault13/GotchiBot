@@ -1,43 +1,9 @@
 {
-  // Drop-in snippet for ~/.openclaw/openclaw.json:
-  //   agents: { $include: "/absolute/path/to/GotchiBot/config/openclaw.gotchi.json5" }
-  //
-  // Mount this repo into the gateway (see docker/compose.override.yml) so tools
-  // can run ./scripts/gotchi-orchestrate.mjs from the workspace.
+  // GotchiBot OpenClaw agent defaults (included under agents.defaults).
+  // Fleet per-hero entries: config/openclaw.fleet.generated.json5 (openclaw-fleet.mjs sync).
+  // Full install: config/openclaw.install.json5
 
-  agents: {
-    defaults: {
-      // Override workspace to your GotchiBot checkout path when installing.
-      workspace: "~/Dev/GotchiBot",
-      model: "opencode/hy3-free",
-      thinkingDefault: "off",
-    },
-    list: [
-      {
-        id: "gotchi",
-        default: true,
-        identity: {
-          name: "Gotchi",
-          emoji: "👻",
-        },
-        groupChat: {
-          mentionPatterns: ["@gotchi", "@Gotchi", "gotchi"],
-        },
-        // OpenClaw uses workspace tools; spawn goes through wallet gate + dispatch.
-        systemPrompt: [
-          "You are the GotchiBot orchestrator (the gotchi).",
-          "Speak naturally with the user. Decompose tasks and spawn sub-agents via:",
-          "  ./scripts/gotchi-orchestrate.mjs spawn --model nim \"prompt\"",
-          "Sub-agents require wallet + cAavegotchi — every sub-agent needs a cAavegotchi on the cartridge; spawn scripts enforce this.",
-          "Monitor: ./scripts/gotchi-orchestrate.mjs list | wait | output.",
-          "Never install tools autonomously. Secrets via abracadabra only.",
-          "Read AGENTS.md and ORCHESTRATOR.md in the workspace for full protocol.",
-        ].join("\n"),
-      },
-    ],
-  },
-
-  messages: {
-    messagePrefix: "[Gotchi] ",
-  },
+  workspace: "~/Dev/GotchiBot",
+  model: "opencode/hy3-free",
+  thinkingDefault: "off",
 }

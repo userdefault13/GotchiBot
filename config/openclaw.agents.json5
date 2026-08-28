@@ -3,6 +3,8 @@
   "defaultModel": "opencode/hy3-free",
   "orchestrator": {
     "id": "gotchi",
+    "openclawAgentId": "owned-954",
+    "note": "OpenClaw fleet uses cartridge hero ids (openclaw-fleet.mjs sync). gotchi is a legacy alias for the orchestrator hero.",
     "runtime": "opencode",
     "mode": "primary",
     "agentFile": ".opencode/agents/gotchi.md",

@@ -29,6 +29,8 @@ const FORWARD = [
   "GOTCHIBOT_OWNER",
   "CLOUDFLARE_API_TOKEN",
   "CLOUDFLARE_ACCOUNT_ID",
+  "OPENCODE_API_KEY",
+  "OPENCODE_ZEN_API_KEY",
 ];
 
 function dbg(hypothesisId, message, data) {

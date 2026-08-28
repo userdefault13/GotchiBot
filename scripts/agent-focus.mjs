@@ -216,6 +216,12 @@ async function buildRoster() {
     LIST_CACHE,
     `${JSON.stringify({ remote, entries: numbered, at: new Date().toISOString() }, null, 2)}\n`,
   );
+  try {
+    const { syncFleet } = await import("./openclaw-fleet.mjs");
+    await syncFleet({ quiet: true });
+  } catch {
+    /* OpenClaw fleet sync optional */
+  }
   return { numbered, remote, heroes: heroes.length, local: local.length };
 }
 
@@ -232,7 +238,7 @@ function printRoster({ numbered, remote }, { switchMode = false } = {}) {
   const imac = numbered.filter((e) => e.host === "imac");
 
   if (heroes.length) {
-    console.log("cAavegotchis");
+    console.log("cAavegotchis (OpenClaw agent id = hero id)");
     for (const e of heroes) {
       const coll = e.collateral ? ` · ${String(e.collateral).slice(0, 12)}` : "";
       const bt = e.bindType ? ` · ${e.bindType}` : "";
@@ -383,7 +389,15 @@ async function cmdSelect(arg, { host, via = "select" } = {}) {
     host: hostLabel,
     kind: entry.kind,
     label: entry.id,
+    openclawAgentId: heroId,
   });
+
+  try {
+    const { switchOpenClawAgent } = await import("./openclaw-fleet.mjs");
+    await switchOpenClawAgent(heroId);
+  } catch {
+    /* OpenClaw optional */
+  }
 
   // Cartridge: spun up, waiting for prompts
   try {
@@ -407,11 +421,13 @@ async function cmdSelect(arg, { host, via = "select" } = {}) {
   console.log(`switched → ${entry.id}`);
   console.log(`avatar  → ${heroId}`);
   console.log(`host    → ${hostLabel}`);
-  console.log(`focus   → SUB`);
+  console.log(`focus   → SUB (OpenClaw agent ${heroId})`);
   console.log("");
-  console.log("DIRECT_CHAT=1 — every following user message goes to this agent:");
+  console.log("DIRECT_CHAT=1 — every following user message goes to this OpenClaw agent:");
   console.log(`  ./scripts/agent-focus.mjs chat "<their message>"`);
+  console.log("  (falls back to OpenCode dispatch when OpenClaw gateway is unreachable)");
   console.log("Back to orchestrator: /orch   or   ./scripts/agent-focus.mjs orch");
+  respawnChatPane();
 }
 
 /** /switch — list all agents, or switch to one (avatar + direct chat). */
@@ -428,14 +444,45 @@ async function cmdSwitch(arg, { host, json } = {}) {
   await cmdSelect(arg, { host, via: "switch" });
 }
 
+function respawnChatPane() {
+  if (!process.env.TMUX) return;
+  const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
+  spawnSync(
+    "tmux",
+    [
+      "respawn-pane",
+      "-t",
+      `${sess}:work.1`,
+      "-k",
+      `cd "${ROOT}" && exec ./scripts/chat-pane.sh`,
+    ],
+    { stdio: "ignore" },
+  );
+}
+
 async function cmdOrch() {
   const heroId = orchestratorHeroId();
   pinAvatar(heroId, { asOrchestrator: true });
   signalAvatar(heroId);
   saveMeta({ activeHeroId: heroId });
-  saveFocus({ mode: "orch", heroId, sessionId: null, host: null, kind: null });
+  saveFocus({
+    mode: "orch",
+    heroId,
+    sessionId: null,
+    host: null,
+    kind: null,
+    openclawAgentId: heroId,
+  });
+  try {
+    const { switchOpenClawAgent } = await import("./openclaw-fleet.mjs");
+    await switchOpenClawAgent(heroId);
+  } catch {
+    /* OpenClaw optional */
+  }
   console.log(`orchestrator focus restored`);
   console.log(`avatar → ${heroId}`);
+  console.log(`OpenClaw agent → ${heroId}`);
+  respawnChatPane();
 }
 
 function cmdStatus(json) {
@@ -560,6 +607,24 @@ async function cmdChat(prompt, { force, spawnOnEscalate = false } = {}) {
     GOTCHIBOT_SKIP_ABRA: process.env.GOTCHIBOT_SKIP_ABRA || "1",
     GOTCHIBOT_AUTO_APPROVE: "1",
   };
+
+  const agentId = focus.openclawAgentId || focus.heroId;
+  try {
+    const { chatViaOpenClaw, findOpenclawBin, gatewayReachable } = await import(
+      "./openclaw-fleet.mjs"
+    );
+    if (findOpenclawBin() && (await gatewayReachable())) {
+      console.log(`sub chat → OpenClaw agent ${agentId} (${classification.reason})`);
+      const oc = await chatViaOpenClaw(agentId, prompt.trim());
+      if (oc.ok) {
+        if (oc.stdout) process.stdout.write(oc.stdout);
+        return;
+      }
+      console.error(`openclaw chat failed (${oc.reason}), falling back to dispatch`);
+    }
+  } catch {
+    /* fall through to dispatch */
+  }
 
   const wrapped = [
     `You are GotchiBot sub-agent focused as ${focus.heroId || focus.label}.`,

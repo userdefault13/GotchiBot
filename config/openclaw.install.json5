@@ -1,0 +1,11 @@
+{
+  "//": "Drop-in OpenClaw config fragment for GotchiBot fleet agents (2026.8+ uses agents.entries).",
+  "agents": {
+    "defaults": {
+      "$include": "/Users/juliuswong/Dev/GotchiBot/config/openclaw.gotchi.json5"
+    },
+    "entries": {
+      "$include": "/Users/juliuswong/Dev/GotchiBot/config/openclaw.fleet.generated.json5"
+    }
+  }
+}

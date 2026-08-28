@@ -21,7 +21,8 @@ EOF
 
 model_for() {
   case "$1" in
-    free|nim|ultra) echo "opencode/hy3-free" ;;
+    free|nim) echo "opencode/hy3-free" ;;
+    ultra) echo "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free" ;;
     # OpenCode Zen lightning-free currently 404s; prefer NIM when key present.
     lightning)
       if [ -n "${NVIDIA_API_KEY:-}" ]; then

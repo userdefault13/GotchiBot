@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/tui.json",
+  "theme": "gotchi",
   "mouse": true,
   "scroll_speed": 4,
   "scroll_acceleration": {

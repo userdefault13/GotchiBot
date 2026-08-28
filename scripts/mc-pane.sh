@@ -11,28 +11,30 @@ MARKER_END="# <<< gotchibot-add-to-chat"
 
 install_user_menu() {
   mkdir -p "$(dirname "$MENU_DST")"
-  local block
-  block="$(sed "s|@GOTCHIBOT_ROOT@|$ROOT|g" "$MENU_SRC")"
-  block="${MARKER_BEGIN}
-${block}
-${MARKER_END}"
+  local block_file="$ROOT/sessions/.mc-menu-block.tmp"
+  sed "s|@GOTCHIBOT_ROOT@|$ROOT|g" "$MENU_SRC" > "${block_file}.part"
+  {
+    printf '%s\n' "$MARKER_BEGIN"
+    cat "${block_file}.part"
+    printf '%s\n' "$MARKER_END"
+  } > "$block_file"
 
   if [ -f "$MENU_DST" ] && grep -q "$MARKER_BEGIN" "$MENU_DST" 2>/dev/null; then
-    # Replace existing GotchiBot block
-    awk -v begin="$MARKER_BEGIN" -v end="$MARKER_END" -v repl="$block" '
-      $0 == begin { skip=1; print repl; next }
+    # macOS awk cannot take multiline strings in -v repl; read from a file instead.
+    awk -v begin="$MARKER_BEGIN" -v end="$MARKER_END" -v repl="$block_file" '
+      $0 == begin { skip=1; while ((getline line < repl) > 0) print line; close(repl); next }
       $0 == end { skip=0; next }
       !skip { print }
     ' "$MENU_DST" > "${MENU_DST}.tmp"
     mv "${MENU_DST}.tmp" "$MENU_DST"
   elif [ -f "$MENU_DST" ]; then
-    printf '\n%s\n' "$block" >> "$MENU_DST"
+    printf '\n%s\n' "$(cat "$block_file")" >> "$MENU_DST"
   else
-    printf '%s\n' "$block" > "$MENU_DST"
+    cp "$block_file" "$MENU_DST"
   fi
-  # Local project menu (used when cwd is repo root)
-  printf '%s\n' "$(sed "s|@GOTCHIBOT_ROOT@|$ROOT|g" "$MENU_SRC")" > "$ROOT/.mc.menu"
+  cp "$block_file" "$ROOT/.mc.menu"
   chmod 644 "$MENU_DST" "$ROOT/.mc.menu" 2>/dev/null || true
+  rm -f "$block_file" "${block_file}.part"
 }
 
 # Mouse needed for click-to-select; enable for this mc session's tmux client.

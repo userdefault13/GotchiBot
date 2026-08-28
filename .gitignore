@@ -1,6 +1,8 @@
 .DS_Store
 sessions/*
 !sessions/.gitkeep
+config/openclaw/agents/*/models.json
+config/openclaw/agents/*/openclaw-agent.sqlite*
 KNOWLEDGE.md
 tmp/
 .mc.menu

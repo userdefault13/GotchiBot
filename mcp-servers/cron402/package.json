@@ -1,0 +1,51 @@
+{
+	"name": "cron402-mcp",
+	"version": "1.0.0",
+	"type": "module",
+	"description": "MCP server exposing cron402 — schedule webhook calls and pay per run in USDC on Base via x402. 6 tools: create_cron, topup_cron, get_cron, pause_cron, resume_cron, delete_cron.",
+	"bin": {
+		"cron402-mcp": "dist/index.js"
+	},
+	"files": ["dist"],
+	"keywords": [
+		"mcp",
+		"model-context-protocol",
+		"x402",
+		"cron",
+		"scheduler",
+		"ai-agents",
+		"base",
+		"usdc",
+		"webhook",
+		"coinbase"
+	],
+	"license": "MIT",
+	"author": "userdefault13",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/userdefault13/ai-cron-site.git"
+	},
+	"homepage": "https://web-seven-ecru-65.vercel.app",
+	"bugs": {
+		"url": "https://github.com/userdefault13/ai-cron-site/issues"
+	},
+	"engines": {
+		"node": ">=18"
+	},
+	"scripts": {
+		"build": "tsc && node -e \"const fs=require('fs');fs.chmodSync('dist/index.js',0o755)\"",
+		"check": "tsc --noEmit",
+		"start": "node dist/index.js"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.0.4",
+		"@x402/core": "^2.23.0",
+		"@x402/evm": "^2.23.0",
+		"@x402/fetch": "^2.23.0",
+		"viem": "^2.21.0",
+		"zod": "^3.24.1"
+	},
+	"devDependencies": {
+		"@types/node": "^26.2.0"
+	}
+}

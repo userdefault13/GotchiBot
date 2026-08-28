@@ -160,8 +160,15 @@ export function speak(text, { persona = "gotchi", force = false } = {}) {
   const provider = p.provider || "say";
 
   if (provider === "melo") {
-    if (!meloAvailable()) return { ok: false, reason: "melo-not-installed" };
-    if (speakMelo(phrase, p)) return { ok: true, provider: "melo", persona };
+    if (meloAvailable() && speakMelo(phrase, p)) return { ok: true, provider: "melo", persona };
+    const edgeVoice = p.edgeVoice || "en-AU-NatashaNeural";
+    if (hasCmd("edge-tts") && speakEdge(phrase, { ...p, voice: edgeVoice })) {
+      return { ok: true, provider: "edge-tts", persona, voice: edgeVoice };
+    }
+    const sayVoice = p.sayVoice || "Karen";
+    if (speakSay(phrase, { ...p, sayVoice })) {
+      return { ok: true, provider: "say", persona, voice: sayVoice };
+    }
     return { ok: false, reason: "melo-failed" };
   }
   if (provider === "edge-tts" && hasCmd("edge-tts")) {

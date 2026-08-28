@@ -7,7 +7,9 @@
       "provider": "melo",
       "meloSpeaker": "EN-AU",
       "meloSpeed": 1.05,
-      "voice": "EN-AU"
+      "voice": "EN-AU",
+      "edgeVoice": "en-AU-NatashaNeural",
+      "sayVoice": "Karen"
     },
     "sub": {
       "provider": "edge-tts",
