@@ -18,6 +18,7 @@ const MELO_PYTHON = `${ROOT}/scripts/melo-python.sh`;
 const MELO_TTS = `${ROOT}/scripts/melo-tts.sh`;
 const MELO_PID = `${ROOT}/sessions/.melo-tts.pid`;
 const MELO_SOCK = `${ROOT}/sessions/.melo-tts.sock`;
+const SPEAK_PID = `${ROOT}/sessions/.tts-speak.pid`;
 
 function stripJson5(raw) {
   return raw
@@ -118,6 +119,33 @@ export function warmMelo() {
     spawnSync("sleep", ["0.5"]);
   }
   return { ok: false, reason: "daemon-timeout" };
+}
+
+function markSpeakPid() {
+  mkdirSync(dirname(SPEAK_PID), { recursive: true });
+  writeFileSync(SPEAK_PID, `${process.pid}\n`);
+}
+
+function clearSpeakPid() {
+  try {
+    unlinkSync(SPEAK_PID);
+  } catch {}
+}
+
+export function stopPlayback() {
+  let stopped = false;
+  if (existsSync(SPEAK_PID)) {
+    const pid = readFileSync(SPEAK_PID, "utf8").trim();
+    if (pid && /^\d+$/.test(pid) && pid !== String(process.pid)) {
+      spawnSync("kill", ["-TERM", `-${pid}`], { stdio: "ignore" });
+      spawnSync("kill", ["-TERM", pid], { stdio: "ignore" });
+      stopped = true;
+    }
+    clearSpeakPid();
+  }
+  if (spawnSync("pkill", ["-x", "afplay"], { stdio: "ignore" }).status === 0) stopped = true;
+  if (spawnSync("pkill", ["-x", "say"], { stdio: "ignore" }).status === 0) stopped = true;
+  return { ok: true, stopped };
 }
 
 export function stopMelo() {
@@ -250,9 +278,14 @@ function cmdSpeak(argv) {
     console.error('usage: tts.mjs speak "phrase" [--persona gotchi] [--force]');
     process.exit(2);
   }
-  const r = speak(text, { persona: name, force: argv.includes("--force") });
-  if (!r.ok && r.reason !== "disabled") process.exit(1);
-  if (argv.includes("--json")) console.log(JSON.stringify(r, null, 2));
+  markSpeakPid();
+  try {
+    const r = speak(text, { persona: name, force: argv.includes("--force") });
+    if (!r.ok && r.reason !== "disabled") process.exit(1);
+    if (argv.includes("--json")) console.log(JSON.stringify(r, null, 2));
+  } finally {
+    clearSpeakPid();
+  }
 }
 
 const cmd = process.argv[2];
@@ -279,10 +312,13 @@ switch (cmd) {
     if (!r.ok) process.exit(1);
     break;
   }
+  case "stop":
+    console.log(JSON.stringify(stopPlayback(), null, 2));
+    break;
   case "stop-daemon":
     console.log(JSON.stringify(stopMelo(), null, 2));
     break;
   default:
-    console.error(`usage: node scripts/tts.mjs speak|on|off|status|test|warm|stop-daemon`);
+    console.error(`usage: node scripts/tts.mjs speak|on|off|status|test|warm|stop|stop-daemon`);
     process.exit(2);
 }

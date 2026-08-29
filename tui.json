@@ -19,5 +19,8 @@
       "preventDefault": false
     },
     "input_select_all": "super+a"
-  }
+  },
+  "plugin": [
+    "./.opencode/tui-plugins/gotchi-thought-tts.ts"
+  ]
 }
