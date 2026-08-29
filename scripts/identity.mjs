@@ -36,16 +36,27 @@ function owner() {
   process.exit(1);
 }
 
-async function call(path, { method = "GET", body } = {}) {
+async function call(path, { method = "GET", body, timeoutMs = 10_000 } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET) {
     headers["x-aarcade-service-key"] = process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET;
   }
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    const msg = e?.name === "AbortError" ? "cartridge API timed out" : String(e.message || e);
+    return { status: 0, ok: false, data: { error: msg } };
+  }
+  clearTimeout(timer);
   const text = await res.text();
   let data;
   try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 500) }; }

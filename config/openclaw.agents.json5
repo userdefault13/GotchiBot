@@ -1,6 +1,6 @@
 {
   "//": "Sub-agent definitions consumed by scripts/opencode-dispatch.sh and the OpenClaw gateway.",
-  "defaultModel": "opencode/hy3-free",
+  "defaultModel": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
   "orchestrator": {
     "id": "gotchi",
     "openclawAgentId": "owned-954",

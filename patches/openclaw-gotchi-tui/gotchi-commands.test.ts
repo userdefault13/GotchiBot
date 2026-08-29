@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   formatGotchiFocusOutput,
   gotchiFocusRespawnsChatPane,
+  gotchiFocusTimeoutMs,
   isGotchiBotEnabled,
   resolveGotchiBotRoot,
 } from "./gotchi-commands.js";
@@ -38,9 +39,16 @@ describe("gotchi-commands", () => {
 
   it("knows when focus changes respawn the chat pane", () => {
     expect(gotchiFocusRespawnsChatPane(["orch"])).toBe(true);
+    expect(gotchiFocusRespawnsChatPane(["cockpit"])).toBe(true);
     expect(gotchiFocusRespawnsChatPane(["switch", "2"])).toBe(true);
     expect(gotchiFocusRespawnsChatPane(["switch"])).toBe(false);
     expect(gotchiFocusRespawnsChatPane(["list"])).toBe(false);
+  });
+
+  it("uses short timeouts for roster listing", () => {
+    expect(gotchiFocusTimeoutMs(["switch"])).toBe(20_000);
+    expect(gotchiFocusTimeoutMs(["list"])).toBe(20_000);
+    expect(gotchiFocusTimeoutMs(["switch", "2"])).toBe(45_000);
   });
 
   it("formats stdout and stderr for chat display", () => {

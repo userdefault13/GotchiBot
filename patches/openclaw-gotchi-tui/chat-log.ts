@@ -31,6 +31,12 @@ type TrackedAssistantRun = {
   latestText?: string;
 };
 
+type CopyableKind = "assistant" | "user" | "system";
+
+const COPY_SKIP_RE = /^copied \d+ chars/i;
+const COPY_ERROR_RE =
+  /(?:agent failed|failed before reply|run error|send failed|unknown model|model fallback|model limit)/i;
+
 /** Scrollback container that tracks pending users, streaming assistant runs, tools, and notices. */
 export class ChatLog extends Container {
   private readonly maxComponents: number;
@@ -51,6 +57,7 @@ export class ChatLog extends Container {
   private lastTurnKind: "user" | "assistant" | null = null;
   private gotchiSystemTray: GotchiSystemTray | null = null;
   private gotchiDetailsVisible = false;
+  private lastCopyable: { kind: CopyableKind; text: string } | null = null;
 
   constructor(maxComponents = 180) {
     super();
@@ -218,6 +225,14 @@ export class ChatLog extends Container {
     this.pendingUsers.clear();
   }
 
+  private noteCopyable(kind: CopyableKind, text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || COPY_SKIP_RE.test(trimmed)) {
+      return;
+    }
+    this.lastCopyable = { kind, text: trimmed };
+  }
+
   private formatSystemText(text: string, count = 1) {
     const sanitized = sanitizeRenderableText(text);
     const visible = sanitized.trim() || (text ? "(no output)" : "");
@@ -251,6 +266,7 @@ export class ChatLog extends Container {
         this.append(this.gotchiSystemTray);
       }
       this.gotchiSystemTray.push(text, opts);
+      this.noteCopyable("system", text);
       this.repeatableSystemMessage = null;
       return;
     }
@@ -267,6 +283,7 @@ export class ChatLog extends Container {
     }
     const message = this.createSystemMessage(text);
     this.append(message.component);
+    this.noteCopyable("system", text);
     this.repeatableSystemMessage = opts?.coalesceConsecutive ? message : null;
   }
 
@@ -278,6 +295,7 @@ export class ChatLog extends Container {
     const message = this.createSystemMessage(text);
     this.pendingSystemNotices.set(runId, message.component);
     this.append(message.component);
+    this.noteCopyable("system", text);
   }
 
   dismissPendingSystem(runId: string) {
@@ -301,6 +319,7 @@ export class ChatLog extends Container {
       this.userComponents.set(options.messageId, component);
     }
     this.appendNonSystem(component);
+    this.noteCopyable("user", text);
     return component;
   }
 
@@ -351,9 +370,11 @@ export class ChatLog extends Container {
       this.children.splice(firstRunComponentIndex, 0, component);
       this.reserveLiveUserSlot(protectedComponents, firstRunComponent, options.runId);
       this.pruneOverflow(protectedComponents);
+      this.noteCopyable("user", text);
       return component;
     }
     this.appendNonSystem(component);
+    this.noteCopyable("user", text);
     return component;
   }
 
@@ -362,11 +383,13 @@ export class ChatLog extends Container {
     if (existing) {
       existing.text = text;
       existing.component.setText(text);
+      this.noteCopyable("user", text);
       return existing.component;
     }
     const component = new UserMessageComponent(text);
     this.pendingUsers.set(runId, { component, text });
     this.appendNonSystem(component);
+    this.noteCopyable("user", text);
     return component;
   }
 
@@ -549,6 +572,10 @@ export class ChatLog extends Container {
 
     if (lastAssistant) {
       finalized.add(lastAssistant);
+      const copyText = lastAssistant.getSourceText()?.trim();
+      if (copyText) {
+        this.noteCopyable("assistant", copyText);
+      }
     }
     for (const segment of finalized) {
       if (!this.children.includes(segment)) {
@@ -667,5 +694,81 @@ export class ChatLog extends Container {
   toggleGotchiDetailsVisible(): boolean {
     this.setGotchiDetailsVisible(!this.gotchiDetailsVisible);
     return this.gotchiDetailsVisible;
+  }
+
+  private findLatestAssistantText(): string | null {
+    for (let i = this.children.length - 1; i >= 0; i--) {
+      const child = this.children[i];
+      if (child instanceof AssistantMessageComponent) {
+        const text = child.getSourceText()?.trim();
+        if (text) {
+          return text;
+        }
+      }
+    }
+    for (const run of this.assistantRuns.values()) {
+      const text = (run.latestText ?? run.committedText ?? "").trim();
+      if (text) {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  private findLatestUserText(): string | null {
+    for (const entry of [...this.pendingUsers.values()].reverse()) {
+      const text = entry.text?.trim();
+      if (text) {
+        return text;
+      }
+    }
+    return this.lastCopyable?.kind === "user" ? this.lastCopyable.text : null;
+  }
+
+  private findLatestSystemText(): string | null {
+    return this.gotchiSystemTray?.getLatestText() ?? (this.lastCopyable?.kind === "system" ? this.lastCopyable.text : null);
+  }
+
+  private findLatestErrorText(): string | null {
+    const fromTray = this.gotchiSystemTray?.findLatestMatching(COPY_ERROR_RE);
+    if (fromTray) {
+      return fromTray;
+    }
+    for (let i = this.children.length - 1; i >= 0; i--) {
+      const child = this.children[i];
+      if (child instanceof AssistantMessageComponent) {
+        const text = child.getSourceText()?.trim();
+        if (text && COPY_ERROR_RE.test(text)) {
+          return text;
+        }
+      }
+    }
+    if (this.lastCopyable && COPY_ERROR_RE.test(this.lastCopyable.text)) {
+      return this.lastCopyable.text;
+    }
+    return null;
+  }
+
+  /** Last chat text suitable for clipboard copy (`/copy`, Ctrl+Y). */
+  getLastCopyableText(
+    prefer: "last" | "assistant" | "user" | "system" | "error" = "last",
+  ): string | null {
+    if (prefer === "error") {
+      return this.findLatestErrorText();
+    }
+    if (prefer === "system") {
+      return this.findLatestSystemText();
+    }
+    if (prefer === "user") {
+      return this.findLatestUserText();
+    }
+    if (prefer === "assistant") {
+      return this.findLatestAssistantText();
+    }
+
+    if (this.lastCopyable?.text) {
+      return this.lastCopyable.text;
+    }
+    return this.findLatestAssistantText() ?? this.findLatestSystemText() ?? this.findLatestUserText();
   }
 }

@@ -1,15 +1,16 @@
 {
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-mobile@latest"],
+  "plugin": [
+    "opencode-mobile@latest"
+  ],
   "mcp": {
     "cron402": {
-      "command": "node",
-      "args": ["mcp-servers/cron402/index.js"],
-      "env": {
-        "CRON402_API_URL": "https://cron402-api.user-defaults.workers.dev",
-        "CRON402_NETWORK": "eip155:8453",
-        "CRON402_PRIVATE_KEY": "{env:CRON402_PRIVATE_KEY}"
-      }
+      "type": "local",
+      "command": [
+        "node",
+        "mcp-servers/cron402/index.js"
+      ],
+      "enabled": false
     }
-  }
+  },
+  "$schema": "https://opencode.ai/config.json"
 }

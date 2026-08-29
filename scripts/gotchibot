@@ -18,17 +18,20 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot sidebar               toggle medium file explorer (mc)
                                   # in mc: F2 → Add to Gotchi chat (or press a)
   gotchibot files-max             Files full-bleed / chat→bar (Mac: Ctrl-b f)
+  gotchibot avatar                show the avatar pane (Ctrl+G or F6)
   gotchibot avatar-max            Avatar full-bleed / chat→bar (Mac: Ctrl-b a)
   gotchibot spawn [--host auto|imac|local] [--model t] "P"   spawn sub-agent (Tailscale iMac when auto/imac)
   gotchibot new [--model t] "P"   spawn a sub-agent (t: nim|pro|local|<id>)
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
-  gotchibot mode [gotchi|ask|plan|build|cycle] [--restart]  OpenCode agent
+  gotchibot mode [gotchi|verse|plan|build|ask|cycle] [--restart]  OpenCode agent
+  gotchibot gotchi-mode [status|env|model|ensure] [--json]  OpenCode TUI → iMac orchestrator session
   gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
   gotchibot list                  session table
   gotchibot agents [--json]       cAavegotchis + MBP/iMac sessions (/list)
   gotchibot switch [n|id]         list agents, or switch avatar+direct chat (/switch)
   gotchibot focus <n|id>          pin avatar + SUB chat focus
+  gotchibot cockpit               mint / change orchestrator avatar (/cockpit)
   gotchibot orch                  restore orchestrator focus (/orch)
   gotchibot openclaw sync|list|status|chat|install|point  OpenClaw fleet + CLI
   gotchibot delegate [--json] [hint]  pick next local/remote agent (/delegate)
@@ -42,7 +45,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot connect            open browser wallet-connect (MetaMask)
   gotchibot wallet             show connected wallet address
   gotchibot roster --wallet    list your real on-chain gotchis
-  gotchibot avatar <agentId>      pin an agent to the avatar pane
+  gotchibot avatar [agentId]      show avatar pane, or pin an agent
   gotchibot handoff [oldId]       build HANDOFF.md and seed a new session
   gotchibot checkpoint <id> <label>   push a milestone to the cartridge
   gotchibot identity ensure|mint|roster   cartridge identity ops
@@ -54,11 +57,14 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot remote-sync               push wallet/identity/onboarding to iMac
   gotchibot remote-setup              print Tailscale + abra SSH setup checklist
   gotchibot remote-push               rsync GotchiBot tree to iMac (empty-git fix)
-  gotchibot remote-openclaw           push fleet + merge openclaw.json + restart iMac gateway
+  gotchibot remote-openclaw [--http-only]  iMac OpenClaw: full deploy, or just enable /v1/chat/completions
   gotchibot remote-serve              start/restart iMac orchestrator opencode serve
   gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
+  gotchibot tunnel status|restart     subgraph.aarcadeghst.com health + iMac cloudflared restart
   gotchibot menubar install|uninstall|preview|path|open  macOS menu bar ghost + agent count (SwiftBar)
   gotchibot mesh [ping] [--live] [--json]  agent count + status across MBP and iMac (Tailscale SSH)
+  gotchibot trader [monitor|improve|news] [--json] [--host imac]  Gotchi-Trader desk
+  gotchibot model [pick|list|resolve] [--json] [--probe]  pick a free, listed model
   gotchibot tts on|off|status|test|warm|stop-daemon  voice (MeloTTS EN-AU / edge-tts / say)
 EOF
   exit 2
@@ -126,7 +132,7 @@ cmd_ask() {
   [ -n "$prompt" ] || usage
 
   if [ -z "$model" ]; then
-    tier="$(node "$ROOT/scripts/prompt-route.mjs" "$prompt" 2>/dev/null || echo nim)"
+    tier="$(node "$ROOT/scripts/prompt-route.mjs" "$prompt" 2>/dev/null || echo auto)"
     model="$tier"
   fi
 
@@ -187,11 +193,15 @@ cmd_cursor() {
   exec node "$ROOT/scripts/cursor-cli.mjs" "$@"
 }
 
+cmd_gotchi_mode() {
+  exec node "$ROOT/scripts/opencode-gotchi-mode.mjs" "$@"
+}
+
 cmd_mode() {
   local sub="${1:-get}"
   shift || true
   case "$sub" in
-    gotchi|ask|plan|build)
+    gotchi|verse|plan|build|ask)
       exec node "$ROOT/scripts/agent-mode.mjs" set "$sub" "$@"
       ;;
     cycle)
@@ -201,7 +211,7 @@ cmd_mode() {
       exec node "$ROOT/scripts/agent-mode.mjs" get "$@"
       ;;
     *)
-      echo "unknown mode: $sub (use gotchi|ask|plan|build)" >&2
+      echo "unknown mode: $sub (use gotchi|verse|plan|build|ask)" >&2
       exit 2
       ;;
   esac
@@ -297,6 +307,13 @@ cmd_orch() {
     exec abra run gotchibot -- node "$ROOT/scripts/agent-focus.mjs" orch "$@"
   fi
   exec node "$ROOT/scripts/agent-focus.mjs" orch "$@"
+}
+
+cmd_cockpit() {
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$ROOT/scripts/agent-focus.mjs" cockpit "$@"
+  fi
+  exec node "$ROOT/scripts/agent-focus.mjs" cockpit "$@"
 }
 
 cmd_openclaw() {
@@ -396,6 +413,7 @@ case "$cmd" in
   agents) cmd_agents "$@" ;;
   switch) cmd_switch "$@" ;;
   focus) cmd_focus "$@" ;;
+  cockpit|onboarding) cmd_cockpit "$@" ;;
   orch) cmd_orch "$@" ;;
   openclaw) cmd_openclaw "$@" ;;
   delegate) cmd_delegate "$@" ;;
@@ -406,7 +424,13 @@ case "$cmd" in
   wait) exec "$DISPATCH" wait "$@" ;;
   output) exec "$DISPATCH" output "$@" ;;
   requests) exec "$DISPATCH" requests ;;
-  avatar) [ $# -eq 1 ] || usage; cmd_avatar "$1" ;;
+  avatar)
+    if [ $# -eq 0 ]; then
+      exec "$ROOT/scripts/orchestrator-layout.sh" show-avatar
+    fi
+    [ $# -eq 1 ] || usage
+    cmd_avatar "$1"
+    ;;
   init) exec node "$ROOT/scripts/init.mjs" ;;
   connect) exec node "$ROOT/scripts/wallet-connect.mjs" ;;
   wallet) cmd_wallet ;;
@@ -415,6 +439,7 @@ case "$cmd" in
   ask) cmd_ask "$@" ;;
   multitask) cmd_multitask "$@" ;;
   mode) cmd_mode "$@" ;;
+  gotchi-mode) cmd_gotchi_mode "$@" ;;
   cursor) cmd_cursor "$@" ;;
   checkpoint) cmd_checkpoint "$@" ;;
   reset) cmd_reset "$@" ;;
@@ -431,8 +456,19 @@ case "$cmd" in
   remote-serve) abra_or_node "$ROOT/scripts/remote-serve.mjs" ;;
   remote-setup) cmd_remote_setup ;;
   remote-status) abra_or_node "$ROOT/scripts/remote-status.mjs" ;;
+  tunnel)
+    sub="${1:-status}"
+    shift || true
+    case "$sub" in
+      status) abra_or_node "$ROOT/scripts/tunnel-health.mjs" --remote "$@" ;;
+      restart) abra_or_node "$ROOT/scripts/remote-tunnel-restart.mjs" "$@" ;;
+      *) echo "usage: gotchibot tunnel status|restart" >&2; exit 2 ;;
+    esac
+    ;;
   menubar) cmd_menubar "$@" ;;
   mesh) exec node "$ROOT/scripts/mesh-status.mjs" "$@" ;;
+  trader) exec node "$ROOT/scripts/gotchi-trader-desk.mjs" "$@" ;;
+  model) exec node "$ROOT/scripts/model-auto.mjs" "$@" ;;
   sidebar) exec "$ROOT/scripts/orchestrator-layout.sh" sidebar ;;
   files-max|explorer) exec "$ROOT/scripts/orchestrator-layout.sh" files-max ;;
   avatar-max) exec "$ROOT/scripts/orchestrator-layout.sh" avatar-max ;;

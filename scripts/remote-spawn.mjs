@@ -42,7 +42,7 @@ function usage() {
 }
 
 function parseArgs(argv) {
-  let model = "nim";
+  let model = "auto";
   let hero = process.env.GOTCHIBOT_HERO_ID || "";
   let json = false;
   const rest = [];
@@ -197,6 +197,24 @@ async function cmdSpawn(argv) {
         `spawned ${sessionId} on imac (${cfg.host}) model=${model} hero=${hero || gate.activeHeroId || "roster"}`,
       );
     }
+    const hid = hero || gate.activeHeroId || "";
+    if (hid && sessionId) {
+      spawnSync(
+        process.execPath,
+        [
+          `${ROOT}/scripts/hero-agent-state.mjs`,
+          "set",
+          hid,
+          "working",
+          "--session",
+          sessionId,
+          "--host",
+          "imac",
+        ],
+        { stdio: "ignore" },
+      );
+    }
+    spawnSync("bash", [`${ROOT}/scripts/poke-avatar.sh`], { stdio: "ignore" });
   } finally {
     key.dispose();
   }

@@ -36,6 +36,18 @@ function field(path, key) {
   }
 }
 
+function heroStateCache() {
+  return readJson(`${SESSIONS}/.hero-agent-state.json`, {}) || {};
+}
+
+function resolveStatus(h, busy) {
+  const cached = heroStateCache()[h.id]?.status || null;
+  const fromCache = cached && cached !== "available" ? cached : null;
+  const fromSim = h.agentStatus && h.agentStatus !== "available" ? h.agentStatus : null;
+  if (busy.has(h.id)) return fromCache === "active" ? "active" : "working";
+  return fromSim || fromCache || "available";
+}
+
 function busyHeroIds() {
   const busy = new Set();
   if (!existsSync(SESSIONS)) return busy;
@@ -113,8 +125,7 @@ async function build() {
   const others = list
     .filter((h) => h.id && h.id !== pinned)
     .map((h) => {
-      const fromSim = h.agentStatus && h.agentStatus !== "available" ? h.agentStatus : null;
-      const status = fromSim || (busy.has(h.id) ? "working" : "available");
+      const status = resolveStatus(h, busy);
       return {
         id: h.id,
         name: h.name || null,
@@ -126,12 +137,9 @@ async function build() {
     });
 
   const pinnedHero = list.find((h) => h.id === pinned);
-  const pinnedFromSim =
-    pinnedHero?.agentStatus && pinnedHero.agentStatus !== "available"
-      ? pinnedHero.agentStatus
-      : null;
-  const pinnedStatus =
-    pinnedFromSim || (pinned && busy.has(pinned) ? "working" : pinned ? "available" : null);
+  const pinnedStatus = pinned
+    ? resolveStatus(pinnedHero || { id: pinned, agentStatus: null }, busy)
+    : null;
 
   const payload = {
     role,

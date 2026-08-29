@@ -29,6 +29,9 @@ cp "$PATCH_DIR/gotchi-prose-segments.ts" "$OPENCLAW_SRC/src/tui/gotchi-prose-seg
 cp "$PATCH_DIR/gotchi-prose-tts.ts" "$OPENCLAW_SRC/src/tui/gotchi-prose-tts.ts"
 cp "$PATCH_DIR/gotchi-prose-segments.test.ts" "$OPENCLAW_SRC/src/tui/gotchi-prose-segments.test.ts"
 cp "$PATCH_DIR/gotchi-commands.ts" "$OPENCLAW_SRC/src/tui/gotchi-commands.ts"
+cp "$PATCH_DIR/gotchi-model-fallback.ts" "$OPENCLAW_SRC/src/tui/gotchi-model-fallback.ts"
+cp "$PATCH_DIR/gotchi-model-catalog.ts" "$OPENCLAW_SRC/src/tui/gotchi-model-catalog.ts"
+cp "$PATCH_DIR/gotchi-clipboard.ts" "$OPENCLAW_SRC/src/tui/gotchi-clipboard.ts"
 cp "$PATCH_DIR/gotchi-commands.test.ts" "$OPENCLAW_SRC/src/tui/gotchi-commands.test.ts"
 cp "$PATCH_DIR/gotchi-tui-chrome.ts" "$OPENCLAW_SRC/src/tui/gotchi-tui-chrome.ts"
 cp "$PATCH_DIR/gotchi-tui-chrome.test.ts" "$OPENCLAW_SRC/src/tui/gotchi-tui-chrome.test.ts"
@@ -61,9 +64,9 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "$OPENCLAW_SRC/dist/.gotchi-patch-built"
 if [ -f "$OPENCLAW_SRC/dist/entry.js" ] \
   && rg -q 'formatGotchiOpencodeHeader|B650FF' "$OPENCLAW_SRC/dist/entry.js" "$OPENCLAW_SRC/dist"/tui-*.js 2>/dev/null; then
   echo ""
-  echo "GotchiBot TUI patch ready (purple/pink theme + /orch /list /switch)."
+  echo "GotchiBot TUI patch ready (purple/pink theme + /orch /list /switch /cockpit)."
   echo "Chat pane will use: $ROOT/scripts/openclaw-gotchi.sh"
-  echo "Respawn tmux center pane, then try: /orch  /list  /switch"
+  echo "Respawn tmux center pane, then try: /orch  /list  /switch  /cockpit"
 else
   echo "Build finished but GotchiBot patch markers not found in dist — check build output" >&2
   exit 1

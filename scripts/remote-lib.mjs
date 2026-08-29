@@ -65,6 +65,12 @@ export function sshArgs(cfg, keyPath, remoteCommand) {
   const target = `${cfg.user}@${cfg.host}`;
   const base = [
     "-o",
+    "ConnectTimeout=5",
+    "-o",
+    "ServerAliveInterval=5",
+    "-o",
+    "ServerAliveCountMax=1",
+    "-o",
     "IdentitiesOnly=yes",
     "-o",
     "BatchMode=yes",

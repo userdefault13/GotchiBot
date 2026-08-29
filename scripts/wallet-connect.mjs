@@ -17,8 +17,19 @@ function saveWallet(w) {
 
 function openBrowser(url) {
   if (process.env.GOTCHIBOT_NO_BROWSER === "1") return;
-  if (process.platform === "darwin") spawnSync("open", [url], { stdio: "ignore" });
-  else if (process.platform === "win32") spawnSync("cmd", ["/c", "start", "", url], { stdio: "ignore" });
+  if (process.platform === "darwin") {
+    const apps = (process.env.GOTCHIBOT_WALLET_BROWSER || "Google Chrome,Brave Browser,Firefox,Microsoft Edge")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+    for (const app of apps) {
+      const r = spawnSync("open", ["-a", app, url], { stdio: "ignore" });
+      if (r.status === 0) return;
+    }
+    spawnSync("open", [url], { stdio: "ignore" });
+    return;
+  }
+  if (process.platform === "win32") spawnSync("cmd", ["/c", "start", "", url], { stdio: "ignore" });
   else spawnSync("xdg-open", [url], { stdio: "ignore" });
 }
 
@@ -51,20 +62,63 @@ function renderPage(nonce) {
   .status{margin-top:1rem;font-size:.9rem;line-height:1.4;color:#a78bfa;min-height:1.4em}
   .ok{color:#4ade80}.err{color:#f87171}
   .hint{color:#888;font-size:.85rem;margin-top:.75rem}
+  .wallets{color:#c4b5fd;font-size:.85rem;margin:.5rem 0;min-height:1.2em}
 </style></head>
 <body><div class="card">
   <h2>GotchiBot</h2>
   <p>Connect your wallet to register it as the GotchiBot owner.</p>
   <p class="hint">Signing proves ownership only — no transaction, no fee.</p>
-  <p class="hint">Use Chrome, Brave, or Firefox with the MetaMask extension.</p>
-  <button type="button" id="connect">Connect MetaMask</button>
+  <p class="hint">Opens in Chrome/Brave/Firefox — Safari does not support wallet extensions.</p>
+  <div class="wallets" id="wallets"></div>
+  <button type="button" id="connect">Connect wallet</button>
   <div class="status" id="status"></div>
 </div>
 <script>
 const NONCE = ${n};
+const discovered = [];
 
-function provider() {
-  return window.ethereum || null;
+window.addEventListener('eip6963:announceProvider', (event) => {
+  if (event?.detail?.provider) discovered.push(event.detail);
+});
+window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+function friendlyError(e) {
+  const msg = String(e?.message || e || '');
+  if (/metamask extension not found/i.test(msg)) {
+    return 'MetaMask extension not found. Install MetaMask in Chrome or Brave, enable the extension, reload this page, then try again.';
+  }
+  if (/user rejected|rejected the request|4001/i.test(msg)) {
+    return 'Connection cancelled in wallet.';
+  }
+  if (/already pending/i.test(msg)) {
+    return 'Wallet request already open — check the extension popup.';
+  }
+  return msg || 'Unknown error';
+}
+
+function pickWallet() {
+  const mm6963 = discovered.find((d) => /metamask/i.test(d?.info?.name || ''));
+  if (mm6963?.provider) return { provider: mm6963.provider, label: mm6963.info.name || 'MetaMask' };
+  if (window.ethereum?.isMetaMask) return { provider: window.ethereum, label: 'MetaMask' };
+  if (discovered.length) {
+    const d = discovered[0];
+    return { provider: d.provider, label: d.info?.name || 'Browser wallet' };
+  }
+  if (window.ethereum) return { provider: window.ethereum, label: 'Browser wallet' };
+  return null;
+}
+
+function showDetectedWallets() {
+  const el = document.getElementById('wallets');
+  const names = discovered.map((d) => d.info?.name).filter(Boolean);
+  if (window.ethereum?.isMetaMask && !names.some((n) => /metamask/i.test(n))) names.unshift('MetaMask');
+  if (!names.length && !window.ethereum) {
+    el.textContent = 'No wallet extension detected yet — install MetaMask, then reload.';
+    return;
+  }
+  el.textContent = names.length
+    ? 'Detected: ' + names.join(', ')
+    : 'Wallet provider detected — click Connect wallet.';
 }
 
 function toHexUtf8(text) {
@@ -78,20 +132,20 @@ async function connect() {
   btn.disabled = true;
   s.className = 'status';
   try {
-    const eth = provider();
-    if (!eth) {
+    const wallet = pickWallet();
+    if (!wallet?.provider) {
       s.className = 'status err';
-      s.textContent = 'MetaMask not found. Install the extension and open this page in Chrome/Brave/Firefox.';
+      s.textContent = 'No wallet extension found. Install MetaMask in Chrome or Brave, reload this page, then try again.';
       btn.disabled = false;
       return;
     }
-    s.textContent = 'Requesting accounts…';
-    const accounts = await eth.request({ method: 'eth_requestAccounts' });
+    s.textContent = 'Requesting accounts from ' + wallet.label + '…';
+    const accounts = await wallet.provider.request({ method: 'eth_requestAccounts' });
     const address = accounts[0];
     if (!address) throw new Error('No account returned');
     const message = 'GotchiBot wallet connect\\nNonce: ' + NONCE;
-    s.textContent = 'Check MetaMask — approve the signature…';
-    const signature = await eth.request({
+    s.textContent = 'Check your wallet — approve the signature…';
+    const signature = await wallet.provider.request({
       method: 'personal_sign',
       params: [toHexUtf8(message), address],
     });
@@ -113,12 +167,22 @@ async function connect() {
     }
   } catch (e) {
     s.className = 'status err';
-    s.textContent = 'Error: ' + (e.message || e);
+    s.textContent = friendlyError(e);
     btn.disabled = false;
   }
 }
 
-document.getElementById('connect').addEventListener('click', connect);
+document.getElementById('connect').addEventListener('click', () => {
+  connect().catch((e) => {
+    const s = document.getElementById('status');
+    s.className = 'status err';
+    s.textContent = friendlyError(e);
+    document.getElementById('connect').disabled = false;
+  });
+});
+
+setTimeout(showDetectedWallets, 300);
+window.addEventListener('load', showDetectedWallets);
 </script></body></html>`;
 }
 
@@ -209,10 +273,10 @@ server.on("error", (e) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log("\n  MetaMask sign-in");
-  console.log("  ─────────────────");
-  console.log(`  Browser: ${URL}`);
-  console.log("  Waiting for signature… (Connect MetaMask → Sign message)\n");
+  console.log("\n  MetaMask / browser wallet sign-in");
+  console.log("  ─────────────────────────────────");
+  console.log(`  Browser: ${URL}  (Chrome/Brave preferred — not Safari)`);
+  console.log("  Waiting for signature… (Connect wallet → Sign message)\n");
   openBrowser(URL);
 });
 

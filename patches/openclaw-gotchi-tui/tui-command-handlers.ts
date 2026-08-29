@@ -43,12 +43,25 @@ import {
   reduceTuiSessionProjection,
 } from "./tui-session-projection.js";
 import { formatStatusSummary } from "./tui-status-summary.js";
+import { copyGotchiClipboard } from "./gotchi-clipboard.js";
 import {
   formatGotchiFocusOutput,
   gotchiFocusRespawnsChatPane,
+  isGotchiBotEnabled,
   readGotchiOpenClawAgentId,
-  runGotchiFocus,
+  runGotchiFocusAsync,
 } from "./gotchi-commands.js";
+import {
+  currentSessionModelRef,
+  FREE_MODEL,
+  isFreeModel,
+  shouldFallbackModel,
+} from "./gotchi-model-fallback.js";
+import {
+  gotchiModelPickerItems,
+  isOpenClawUnknownModel,
+  resolveGotchiModelArg,
+} from "./gotchi-model-catalog.js";
 import {
   acceptPendingSubmit,
   beginPendingSubmit,
@@ -344,23 +357,39 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     try {
       chatLog.addSystem("loading models...");
       tui.requestRender();
-      const models = await client.listModels({ agentId: selection.agentId });
+      let items: Array<{ value: string; label: string; description: string }> = [];
+      let usedFallback = false;
+      try {
+        const models = await client.listModels({ agentId: selection.agentId });
+        if (models.length > 0) {
+          items = models.map((model) => {
+            const ref = modelKey(model.provider, model.id);
+            return {
+              value: ref,
+              label: ref,
+              description: model.name && model.name !== model.id ? model.name : "",
+            };
+          });
+        }
+      } catch {
+        // Gateway models.list often empty on GotchiBot fleet agents — use catalog.
+      }
+      if (!items.length && isGotchiBotEnabled()) {
+        items = gotchiModelPickerItems();
+        usedFallback = true;
+      }
       if (request !== pickerRequest || !isCurrentSessionSelection(selection)) {
         return;
       }
-      if (models.length === 0) {
-        chatLog.addSystem("no models available");
+      if (!items.length) {
+        chatLog.addSystem("no models available — try /model free or /models");
         tui.requestRender();
         return;
       }
-      const items = models.map((model) => {
-        const ref = modelKey(model.provider, model.id);
-        return {
-          value: ref,
-          label: ref,
-          description: model.name && model.name !== model.id ? model.name : "",
-        };
-      });
+      if (usedFallback) {
+        chatLog.addSystem("using GotchiBot model catalog (gateway list empty)");
+        tui.requestRender();
+      }
       openSelector(
         createSearchableSelectList(items, 9),
         (value) =>
@@ -369,6 +398,20 @@ export function createCommandHandlers(context: CommandHandlerContext) {
       );
     } catch (err) {
       if (request !== pickerRequest || !isCurrentSessionSelection(selection)) {
+        return;
+      }
+      if (isGotchiBotEnabled()) {
+        const items = gotchiModelPickerItems();
+        chatLog.addSystem(
+          `model list failed (${formatTuiErrorMessage(err)}) — using GotchiBot catalog`,
+        );
+        tui.requestRender();
+        openSelector(
+          createSearchableSelectList(items, 9),
+          (value) =>
+            applySessionSetting({ model: value }, `model set to ${value}`, "model set failed"),
+          request,
+        );
         return;
       }
       chatLog.addSystem(`model list failed: ${formatTuiErrorMessage(err)}`);
@@ -483,9 +526,22 @@ export function createCommandHandlers(context: CommandHandlerContext) {
   };
 
   const runGotchiSlash = async (focusArgs: string[], respawnExpected: boolean) => {
-    const result = runGotchiFocus(focusArgs);
+    const busy = Boolean(state.activeChatRunId || hasPendingSubmit(state));
+    if (respawnExpected && busy) {
+      chatLog.addSystem("Finish or /stop the current run before switching focus (/orch /switch /cockpit).");
+      tui.requestRender();
+      return;
+    }
+    chatLog.addSystem(
+      focusArgs[0] === "switch" && focusArgs.length === 1
+        ? "GotchiBot: listing agents…"
+        : `GotchiBot: running /${focusArgs.join(" ")}…`,
+    );
+    tui.requestRender();
+    const result = await runGotchiFocusAsync(focusArgs);
     appendGotchiFocusLines(result);
     if (!result.ok) {
+      tui.requestRender();
       return;
     }
     if (respawnExpected && process.env.TMUX) {
@@ -495,6 +551,7 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     if (result.root && gotchiFocusRespawnsChatPane(focusArgs)) {
       await applyGotchiOpenClawSession(result.root);
     }
+    tui.requestRender();
   };
 
   const commandHandlers = {
@@ -582,6 +639,45 @@ export function createCommandHandlers(context: CommandHandlerContext) {
       tui.requestRender();
     },
     orch: async () => await runGotchiSlash(["orch"], true),
+    cockpit: async () => await runGotchiSlash(["cockpit"], true),
+    onboarding: async () => await runGotchiSlash(["cockpit"], true),
+    copy: async (args) => {
+      const preferRaw = args.trim().toLowerCase();
+      const prefer =
+        preferRaw === "user" || preferRaw === "u"
+          ? ("user" as const)
+          : preferRaw === "assistant" || preferRaw === "a"
+            ? ("assistant" as const)
+            : preferRaw === "system" || preferRaw === "s"
+              ? ("system" as const)
+              : preferRaw === "error" || preferRaw === "e"
+                ? ("error" as const)
+                : ("last" as const);
+      const text = chatLog.getLastCopyableText(prefer);
+      if (!text) {
+        chatLog.addSystem(
+          prefer === "error"
+            ? "nothing to copy — no recent error line (try /copy or /copy system)"
+            : "nothing to copy — chat log is empty",
+        );
+        tui.requestRender();
+        return;
+      }
+      const result = copyGotchiClipboard(text);
+      if (result.ok) {
+        const preview = text.length > 60 ? `${text.slice(0, 57)}…` : text;
+        const how = result.via.length ? result.via.join("+") : "clipboard";
+        const verified = result.verified ? " · verified" : " · via terminal";
+        chatLog.addSystem(
+          `copied ${text.length} chars (${how}${verified}): ${preview.replace(/\n/g, " ")}`,
+        );
+      } else {
+        chatLog.addSystem(
+          "copy failed — try Option+drag to select, or enable tmux set-clipboard / allow-passthrough",
+        );
+      }
+      tui.requestRender();
+    },
     list: async () => await runGotchiSlash(["list"], false),
     switch: async (args) =>
       await runGotchiSlash(args.trim() ? ["switch", args.trim()] : ["switch"], Boolean(args.trim())),
@@ -645,8 +741,9 @@ export function createCommandHandlers(context: CommandHandlerContext) {
       } else if (!args) {
         await openModelSelector();
       } else {
+        const resolved = isGotchiBotEnabled() ? resolveGotchiModelArg(args) : args;
         await applySessionSetting(
-          { model: /^default$/i.test(args) ? null : args },
+          { model: /^default$/i.test(resolved) ? null : resolved },
           (result) => {
             const resolvedModel = result.resolved?.model;
             const resolvedProvider = result.resolved?.modelProvider;
@@ -654,7 +751,7 @@ export function createCommandHandlers(context: CommandHandlerContext) {
               ? resolvedProvider
                 ? modelKey(resolvedProvider, resolvedModel)
                 : resolvedModel
-              : args;
+              : resolved;
             return `model set to ${resolvedModelRef}`;
           },
           "model set failed",
@@ -908,7 +1005,39 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     tui.requestRender();
   };
 
-  const sendMessage = async (text: string) => {
+  const switchSessionToFreeModel = async (): Promise<boolean> => {
+    const current = currentSessionModelRef(state.sessionInfo);
+    if (current === FREE_MODEL) {
+      return false;
+    }
+    try {
+      const result = await patchCurrentSession({ model: FREE_MODEL });
+      if (!result) {
+        return false;
+      }
+      applySessionInfoFromPatch(result);
+      await refreshSessionInfo();
+      chatLog.addSystem(`model limit / unknown — switched to ${FREE_MODEL}, retrying…`);
+      return true;
+    } catch (switchErr) {
+      chatLog.addSystem(`model fallback failed: ${formatTuiErrorMessage(switchErr)}`);
+      return false;
+    }
+  };
+
+  /** OpenCode Zen ids (opencode/hy3-free) are unknown to the OpenClaw gateway — migrate on connect. */
+  const ensureGatewayKnownModel = async (): Promise<void> => {
+    const current = currentSessionModelRef(state.sessionInfo);
+    if (!isOpenClawUnknownModel(current) && current !== "opencode/hy3-free") {
+      return;
+    }
+    if (current === FREE_MODEL) return;
+    chatLog.addSystem(`session model ${current} unknown to gateway — switching to ${FREE_MODEL}`);
+    tui.requestRender();
+    await switchSessionToFreeModel();
+  };
+
+  const sendMessage = async (text: string, sendOpts?: { skipModelFallback?: boolean }) => {
     const admission = resolveMessageAdmission(text);
     if (admission.status === "blocked") {
       reportBlockedMessageSubmit(text, admission);
@@ -1105,7 +1234,20 @@ export function createCommandHandlers(context: CommandHandlerContext) {
         });
         chatLog.dropPendingUser(runId);
       }
-      chatLog.addSystem(`${isBtw ? "btw failed" : "send failed"}: ${formatTuiErrorMessage(err)}`);
+      const message = formatTuiErrorMessage(err);
+      if (
+        !isBtw &&
+        !sendOpts?.skipModelFallback &&
+        shouldFallbackModel(currentSessionModelRef(state.sessionInfo), message)
+      ) {
+        const switched = await switchSessionToFreeModel();
+        if (switched) {
+          tui.requestRender();
+          await sendMessage(text, { skipModelFallback: true });
+          return;
+        }
+      }
+      chatLog.addSystem(`${isBtw ? "btw failed" : "send failed"}: ${message}`);
       if (!isBtw) {
         setActivityStatus("error");
       }
@@ -1124,6 +1266,7 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     openSessionSelector,
     openSettings,
     setAgent,
+    ensureGatewayKnownModel,
   };
 }
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

@@ -4,10 +4,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
-idx="$(tmux display -p '#{pane_index}' 2>/dev/null || echo "")"
-win="$(tmux display -p '#{window_index}' 2>/dev/null || echo "")"
-name="$(tmux display -p '#{session_name}' 2>/dev/null || echo "")"
-mode="$(tr -d '[:space:]' < "$ROOT/sessions/.layout-mode" 2>/dev/null || echo normal)"
+idx="$(tmux display -p "#{pane_index}" 2>/dev/null || echo "")"
+win="$(tmux display -p "#{window_index}" 2>/dev/null || echo "")"
+name="$(tmux display -p "#{session_name}" 2>/dev/null || echo "")"
+mode="$(tr -d "[:space:]" < "$ROOT/sessions/.layout-mode" 2>/dev/null || echo normal)"
 
 if [ "$name" != "$sess" ] || [ "$win" != "0" ]; then
   tmux switch-client -T root 2>/dev/null || true

@@ -1,0 +1,12 @@
+// Enable OpenAI-compatible HTTP for OpenCode gotchi mode (/v1/chat/completions).
+// Merged into ~/.openclaw/openclaw.json by remote-openclaw-deploy.mjs
+{
+  gateway: {
+    http: {
+      endpoints: {
+        chatCompletions: { enabled: true },
+        responses: { enabled: true },
+      },
+    },
+  },
+}

@@ -1721,6 +1721,7 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
     openModelSelector,
     openAgentSelector,
     openSessionSelector,
+    ensureGatewayKnownModel,
   } = createCommandHandlers({
     client,
     chatLog,
@@ -1846,6 +1847,9 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
   editor.onCtrlT = () => {
     state.showThinking = !state.showThinking;
     void loadHistory();
+  };
+  editor.onCtrlY = () => {
+    void handleCommand("/copy");
   };
 
   tui.addInputListener((data) => {
@@ -1974,6 +1978,14 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
       }
       loadProgress.set(85, "Loading chat history…");
       await loadHistory(reconnected);
+      if (!ownsConnection()) {
+        return;
+      }
+      await refreshSessionInfo();
+      if (!ownsConnection()) {
+        return;
+      }
+      await ensureGatewayKnownModel();
       if (!ownsConnection()) {
         return;
       }

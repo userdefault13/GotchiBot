@@ -90,6 +90,23 @@ export class GotchiSystemTray extends Container {
     this.refreshHeader();
   }
 
+  /** Plaintext of the most recent system notice (for `/copy`, `/copy system`). */
+  getLatestText(): string | null {
+    const text = this.entries[this.entries.length - 1]?.baseText?.trim();
+    return text || null;
+  }
+
+  /** Most recent tray entry whose text matches `pattern` (for `/copy error`). */
+  findLatestMatching(pattern: RegExp): string | null {
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      const text = this.entries[i]?.baseText?.trim();
+      if (text && pattern.test(text)) {
+        return text;
+      }
+    }
+    return null;
+  }
+
   private refreshHeader() {
     const total = this.entryCount;
     const latest = this.entries[this.entries.length - 1]?.baseText ?? "";

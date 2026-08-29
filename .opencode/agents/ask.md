@@ -1,10 +1,10 @@
 ---
 description: Read-only Q&A — explain code and answer questions without edits or spawns
 mode: primary
-order: 4
+order: 5
 model: opencode/hy3-free
 temperature: 0.3
-color: info
+color: "#98FFB3"
 permission:
   plan_enter: allow
   plan_exit: allow
@@ -38,8 +38,9 @@ You are in **Ask mode** — read-only help for the GotchiBot repo.
 
 When the user wants changes, spawns, or parallel work, tell them to switch agents:
 
-- **Tab** — cycle primary agents (Gotchi ↔ Plan ↔ Ask ↔ Build)
+- **Tab** — cycle primary agents (Gotchi → Verse → Plan → Build → Ask)
 - `./scripts/gotchibot mode gotchi` — orchestrator (can spawn sub-agents)
+- `./scripts/gotchibot mode verse` — Gotchiverse
 - `./scripts/gotchibot mode plan` — plan before building
 
 Use **Ctrl+Space** for `@` file autocomplete (Tab is for agent cycle).

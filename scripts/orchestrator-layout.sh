@@ -196,7 +196,7 @@ enter_chat_max() {
     tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
   fi
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh"
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh"
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   apply_chat_max_sizes
   tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
@@ -217,6 +217,32 @@ apply_chat_max_sizes() {
   tmux resize-pane -t "$sess:work.2" -x "$min_avatar" 2>/dev/null || true
   tmux resize-pane -t "$sess:work.1" -x "$chat_w" 2>/dev/null || true
   tmux resize-pane -t "$sess:work.0" -x "$sidebar_collapsed" 2>/dev/null || true
+}
+
+
+# Put the avatar pane back on the right without killing OpenCode chat.
+# OpenCode's info sidebar can swallow work.2; this splits it back out.
+restore_avatar_pane() {
+  local count
+  count="$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${count:-0}" -lt 3 ]; then
+    tmux split-window -h -t "$sess:work.1" -l "$min_right" || {
+      echo "could not split avatar pane (need a wider window)" >&2
+      return 1
+    }
+  fi
+  c2="$(pane_start_cmd 2)"
+  if [[ "$c2" != *avatar-pane* ]]; then
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
+  fi
+  set_layout_mode normal
+  tmux resize-pane -t "$sess:work.2" -x "$min_right" 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  save_layout
+  signal_panes
+  install_agent_keys 2>/dev/null || true
+  [ -x "$ROOT/scripts/poke-avatar.sh" ] && "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
 }
 
 toggle_chat_max() {
@@ -345,9 +371,11 @@ install_layout_keys() {
   local table="$1"
   tmux bind-key -T "$table" C-f run-shell "$layout_run enter-files-max" 2>/dev/null || true
   tmux bind-key -T "$table" C-a run-shell "$layout_run enter-avatar-max" 2>/dev/null || true
+  tmux bind-key -T "$table" C-g run-shell "$layout_run show-avatar" 2>/dev/null || true
   tmux bind-key -T "$table" C-b run-shell "$layout_run enter-chat-max" 2>/dev/null || true
   tmux bind-key -T "$table" M-f run-shell "$layout_run enter-files-max" 2>/dev/null || true
   tmux bind-key -T "$table" M-a run-shell "$layout_run enter-avatar-max" 2>/dev/null || true
+  tmux bind-key -T "$table" M-g run-shell "$layout_run show-avatar" 2>/dev/null || true
   tmux bind-key -T "$table" M-b run-shell "$layout_run enter-chat-max" 2>/dev/null || true
 }
 
@@ -364,15 +392,14 @@ install_agent_keys() {
   tmux bind-key -T gotchi-chat Tab run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --restart" 2>/dev/null || true
   tmux bind-key -T gotchi-chat S-Tab run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --reverse --restart" 2>/dev/null || true
   tmux bind-key -T gotchi-chat F2 run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --restart" 2>/dev/null || true
-  # Layout — Ctrl+F files · Ctrl+A avatar · Ctrl+B chat (all layout key tables)
-  # Fallback: Alt+F/A/B · prefix: Ctrl+Space then f/a/b
+  # Layout — Ctrl+F files · Ctrl+A avatar-max · Ctrl+G show avatar · Ctrl+B chat
+  # Fallback: Alt+F/A/G/B · F6 show avatar · F7 avatar-max · prefix: Ctrl+Space then f/a/b
   install_layout_keys root
   install_layout_keys gotchi-chat
   install_layout_keys gotchi-files
   install_layout_keys gotchi-avatar
-  # Orchestrator focus — Ctrl+O in chat · Ctrl+b o anywhere
+  # Orchestrator focus — F3 / prefix o / Option+O
   tmux bind-key -T gotchi-chat F3 run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
-  tmux bind-key -T gotchi-chat C-o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T prefix o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T root M-o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   # Prefix / fn-key toggles (Ctrl+b f/a/b)
@@ -380,7 +407,8 @@ install_agent_keys() {
   tmux bind-key f run-shell "$layout_run files-max" 2>/dev/null || true
   tmux bind-key -T prefix C-f run-shell "$layout_run files-max" 2>/dev/null || true
   tmux bind-key -T prefix f run-shell "$layout_run files-max" 2>/dev/null || true
-  tmux bind-key -T gotchi-chat F6 run-shell "$layout_run avatar-max" 2>/dev/null || true
+  tmux bind-key -T gotchi-chat F6 run-shell "$layout_run show-avatar" 2>/dev/null || true
+  tmux bind-key -T gotchi-chat F7 run-shell "$layout_run avatar-max" 2>/dev/null || true
   tmux bind-key a run-shell "$layout_run avatar-max" 2>/dev/null || true
   tmux bind-key -T prefix C-a run-shell "$layout_run avatar-max" 2>/dev/null || true
   tmux bind-key -T prefix a run-shell "$layout_run avatar-max" 2>/dev/null || true
@@ -399,6 +427,9 @@ install_ui_theme() {
   else
     tmux set-option -t "$sess" mouse off 2>/dev/null || true
     tmux set-option -t "$sess" set-clipboard on 2>/dev/null || true
+    # Let OSC 52 from OpenClaw TUI (/copy) reach Terminal/iTerm pasteboard.
+    tmux set-option -g allow-passthrough on 2>/dev/null || true
+    tmux set-option -t "$sess" allow-passthrough on 2>/dev/null || true
   fi
   # Truecolor for Gotchi message backgrounds (chalk bgHex needs Tc in tmux).
   tmux set-option -g terminal-overrides ",tmux-256color:Tc" 2>/dev/null || true
@@ -412,7 +443,7 @@ install_ui_theme() {
   tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
   tmux set-option -t "$sess" status-style 'bg=colour53,fg=colour255' 2>/dev/null || true
   tmux set-option -t "$sess" status-left-length 14 2>/dev/null || true
-  tmux set-option -t "$sess" status-right-length 400 2>/dev/null || true
+  tmux set-option -t "$sess" status-right-length 480 2>/dev/null || true
   tmux set-option -t "$sess" status-interval 30 2>/dev/null || true
   tmux set-option -t "$sess" status-left '#[fg=white,bold] GotchiBot ' 2>/dev/null || true
   tmux set-option -t "$sess" status-right "#[fg=colour252]#($status_bar) #[fg=colour238]|#[default] #[fg=colour250]#S " 2>/dev/null || true
@@ -490,8 +521,11 @@ case "$cmd" in
   enter-files-max)
     enter_files_max
     ;;
-  avatar-max|avatar)
+  avatar-max)
     toggle_avatar_max
+    ;;
+  show-avatar|avatar)
+    restore_avatar_pane
     ;;
   enter-avatar-max)
     enter_avatar_max
@@ -507,7 +541,7 @@ case "$cmd" in
     install_ui_theme
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|avatar-max|enter-avatar-max|chat-max|enter-chat-max|fit]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|fit]" >&2
     exit 2
     ;;
 esac

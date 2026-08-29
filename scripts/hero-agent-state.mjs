@@ -153,17 +153,28 @@ async function call(path, { method = "GET", body } = {}) {
   return { ok: res.ok, status: res.status, data };
 }
 
+function writeLocalCache(heroId, status, extra = {}) {
+  mkdirSync(SESSIONS, { recursive: true });
+  let cache = {};
+  try {
+    cache = JSON.parse(readFileSync(CACHE, "utf8"));
+  } catch {}
+  cache[heroId] = {
+    status,
+    sessionId: extra.sessionId || extra.session || null,
+    task: extra.task || null,
+    model: extra.model || null,
+    host: extra.host || null,
+    at: new Date().toISOString(),
+  };
+  writeFileSync(CACHE, `${JSON.stringify(cache, null, 2)}\n`);
+}
+
 export async function setHeroAgentStatus(heroId, status, extra = {}) {
   const st = String(status || "").toLowerCase();
   if (!STATUSES.includes(st)) {
     throw new Error(`invalid status "${status}" (want ${STATUSES.join("|")})`);
   }
-  const meta = loadMeta();
-  if (!meta?.cartridgeId) throw new Error("no cartridge — run gotchibot identity ensure");
-  if (!process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET) {
-    throw new Error("AARCADE_GOTCHIBOT_SERVICE_SECRET missing — use abra run gotchibot -- …");
-  }
-
   const body = {
     status: st,
     sessionId: extra.sessionId || undefined,
@@ -171,34 +182,33 @@ export async function setHeroAgentStatus(heroId, status, extra = {}) {
     model: extra.model || undefined,
     host: extra.host || undefined,
   };
+  // Local cache first so the avatar pane flips even if the sim POST fails.
+  writeLocalCache(heroId, st, extra);
+
+  const meta = loadMeta();
+  if (!meta?.cartridgeId) {
+    return { ok: true, cached: true, heroId, agentStatus: st };
+  }
+  if (!process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET) {
+    return { ok: true, cached: true, heroId, agentStatus: st };
+  }
+
   const r = await call(`/cartridges/${meta.cartridgeId}/heroes/${encodeURIComponent(heroId)}/agent-status`, {
     method: "POST",
     body,
   });
   if (!r.ok) {
-    const msg =
-      r.data?.error ||
-      (typeof r.data?.raw === "string" ? r.data.raw.slice(0, 120) : null) ||
-      `HTTP ${r.status}`;
-    const err = new Error(
-      `${msg} — deploy AarcadeGh-t with setCAavegotchiAgentStatus if route is missing`,
-    );
-    err.response = r;
-    throw err;
+    return {
+      ok: true,
+      cached: true,
+      heroId,
+      agentStatus: st,
+      simError:
+        r.data?.error ||
+        (typeof r.data?.raw === "string" ? r.data.raw.slice(0, 120) : null) ||
+        `HTTP ${r.status}`,
+    };
   }
-
-  mkdirSync(SESSIONS, { recursive: true });
-  let cache = {};
-  try {
-    cache = JSON.parse(readFileSync(CACHE, "utf8"));
-  } catch {}
-  cache[heroId] = {
-    status: st,
-    sessionId: body.sessionId || null,
-    task: body.task || null,
-    at: new Date().toISOString(),
-  };
-  writeFileSync(CACHE, `${JSON.stringify(cache, null, 2)}\n`);
   return r.data;
 }
 

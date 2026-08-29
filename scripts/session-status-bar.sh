@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Compact status for tmux — pin/active + wallet gotchi / cAavegotchi counts.
+# Compact status for tmux — live chat model + real running sessions (pid must be alive).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SESSIONS="$ROOT/sessions"
 PIN="$SESSIONS/.pin"
+CHAT_MODEL_FILE="$SESSIONS/.chat-model"
 
 field() {
   grep -E "^${1}=" "$2/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true
@@ -14,14 +15,27 @@ short_model() {
   local m="$1"
   case "$m" in
     "") printf '' ;;
-    nim|pro|local|free|flash) printf '%s' "$m" ;;
+    nim|pro|local|free|flash|auto) printf '%s' "$m" ;;
     */*) printf '%s' "${m##*/}" ;;
     *) printf '%s' "$m" ;;
   esac
 }
 
+chat_model() {
+  if [ -n "${GOTCHIBOT_OPENCODE_MODEL:-}" ]; then
+    short_model "$GOTCHIBOT_OPENCODE_MODEL"
+    return
+  fi
+  if [ -f "$CHAT_MODEL_FILE" ]; then
+    short_model "$(tr -d '[:space:]' < "$CHAT_MODEL_FILE")"
+    return
+  fi
+  if [ -f "$SESSIONS/.model-auto.json" ] && command -v node >/dev/null; then
+    node -e "try{const j=require(process.argv[1]); process.stdout.write(String(j.pick||''))}catch{}" "$SESSIONS/.model-auto.json" 2>/dev/null
+  fi
+}
+
 roster() {
-  # Soft timeout — never block tmux redraw on a slow subgraph call.
   if command -v node >/dev/null; then
     node "$ROOT/scripts/roster-count.mjs" 2>/dev/null || echo "gotchis:? cAave:?"
   else
@@ -29,37 +43,83 @@ roster() {
   fi
 }
 
-append_roster() {
-  local base="$1"
-  local r
-  r="$(roster)"
-  printf '%s  %s' "$base" "$r"
+imac_hub() {
+  if command -v node >/dev/null; then
+    node "$ROOT/scripts/imac-status.mjs" 2>/dev/null || echo "iMac: ?"
+  else
+    echo "iMac: ?"
+  fi
 }
 
-st="idle"
+append_roster() {
+  local base="$1"
+  local r im
+  r="$(roster)"
+  im="$(imac_hub)"
+  printf '%s  %s  %s' "$base" "$r" "$im"
+}
+
+pid_alive() {
+  local pid="$1"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+reap_dead() {
+  local dir pid
+  for d in "$SESSIONS"/s*/state.env; do
+    [ -f "$d" ] || continue
+    grep -q '^status=running' "$d" 2>/dev/null || continue
+    dir="$(dirname "$d")"
+    pid="$(field pid "$dir")"
+    if ! pid_alive "$pid"; then
+      tmp="$dir/.state.tmp.$$"
+      { grep -vE '^status=' "$d" || true; echo "status=failed"; } > "$tmp"
+      mv "$tmp" "$d"
+    fi
+  done
+}
+
+reap_dead
+
+chat="$(chat_model)"
 running=0
+live_id=""
+live_model=""
 for d in "$SESSIONS"/s*/state.env; do
   [ -f "$d" ] || continue
   grep -q '^status=running' "$d" 2>/dev/null || continue
+  dir="$(dirname "$d")"
+  pid="$(field pid "$dir")"
+  pid_alive "$pid" || continue
   running=$((running + 1))
+  if [ -z "$live_id" ]; then
+    live_id="$(basename "$dir")"
+    live_model="$(short_model "$(field model "$dir")")"
+  fi
 done
 
-if [ "$running" -gt 0 ]; then
-  if [ "$running" -eq 1 ]; then
-    for d in "$SESSIONS"/s*/state.env; do
-      [ -f "$d" ] || continue
-      grep -q '^status=running' "$d" 2>/dev/null || continue
-      id="$(basename "$(dirname "$d")")"
-      model="$(short_model "$(field model "$(dirname "$d")")")"
-      if [ -n "$model" ]; then
-        append_roster "$(printf 'status: running  active: %s (%s)' "$id" "$model")"
-      else
-        append_roster "$(printf 'status: running  active: %s' "$id")"
-      fi
-      exit 0
-    done
+if [ "$running" -gt 1 ]; then
+  if [ -n "$chat" ]; then
+    append_roster "$(printf 'status: multitask  %s running  chat: %s' "$running" "$chat")"
+  else
+    append_roster "$(printf 'status: multitask  %s running' "$running")"
   fi
-  append_roster "$(printf 'status: multitask  %s running' "$running")"
+  exit 0
+fi
+
+if [ "$running" -eq 1 ]; then
+  if [ -n "$chat" ]; then
+    append_roster "$(printf 'status: running  chat: %s  spawn: %s (%s)' "$chat" "$live_id" "${live_model:-?}")"
+  elif [ -n "$live_model" ]; then
+    append_roster "$(printf 'status: running  active: %s (%s)' "$live_id" "$live_model")"
+  else
+    append_roster "$(printf 'status: running  active: %s' "$live_id")"
+  fi
+  exit 0
+fi
+
+if [ -n "$chat" ]; then
+  append_roster "$(printf 'status: chat  %s' "$chat")"
   exit 0
 fi
 
@@ -78,4 +138,4 @@ if [ -f "$PIN" ]; then
   exit 0
 fi
 
-append_roster "$(printf 'status: %s' "$st")"
+append_roster "status: idle"

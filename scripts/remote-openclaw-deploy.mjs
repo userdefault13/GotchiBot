@@ -4,6 +4,7 @@
  *
  *   abra run gotchibot -- node scripts/remote-openclaw-deploy.mjs
  *   node scripts/remote-openclaw-deploy.mjs --no-push   # skip rsync
+ *   node scripts/remote-openclaw-deploy.mjs --http-only # enable /v1/chat/completions + restart
  */
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -68,8 +69,72 @@ function runLocal(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { cwd: ROOT, encoding: "utf8", ...opts });
 }
 
+async function enableChatCompletionsHttp(cfg, keyMat, openclawHome, openclawDir) {
+  console.log("→ enable gateway HTTP /v1/chat/completions on iMac (config patch + restart)…");
+  const patchScript = `
+set -euo pipefail
+OC=${shellQuote(openclawHome)}
+export OC
+node -e "
+const fs=require('fs');
+const oc=process.env.OC;
+const cfgPath=oc+'/openclaw.json';
+let cfg={};
+try { cfg=JSON.parse(fs.readFileSync(cfgPath,'utf8')); } catch (e) {
+  console.error('cannot read', cfgPath, e.message);
+  process.exit(1);
+}
+cfg.gateway=cfg.gateway||{};
+cfg.gateway.http=cfg.gateway.http||{};
+cfg.gateway.http.endpoints=cfg.gateway.http.endpoints||{};
+cfg.gateway.http.endpoints.chatCompletions={ enabled:true };
+cfg.gateway.http.endpoints.responses={ enabled:true };
+cfg.meta={ ...(cfg.meta||{}), lastTouchedAt:new Date().toISOString() };
+const bak=cfgPath+'.bak-http-'+Date.now();
+fs.copyFileSync(cfgPath, bak);
+fs.writeFileSync(cfgPath, JSON.stringify(cfg,null,2)+'\\n');
+console.log('enabled chatCompletions+responses');
+console.log('backup', bak);
+"
+`.trim();
+  let r = runSsh(cfg, keyMat.path, `bash -lc ${shellQuote(patchScript)}`, { stdio: "pipe" });
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  if (r.status !== 0) {
+    console.error("HTTP endpoint config patch failed");
+    process.exit(r.status ?? 1);
+  }
+
+  const restartScript = `
+set -euo pipefail
+OC_DIR=${shellQuote(openclawDir)}
+export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/local/bin/docker:$PATH"
+cd "$OC_DIR"
+if [ -f docker-compose.extra.yml ]; then
+  docker compose -f docker-compose.yml -f docker-compose.extra.yml restart openclaw-gateway
+else
+  docker compose restart openclaw-gateway
+fi
+sleep 8
+curl -sf --max-time 8 -o /dev/null -w "healthz=%{http_code}\\n" http://127.0.0.1:18789/healthz || true
+code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 5 -X POST http://127.0.0.1:18789/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"openclaw/default","messages":[]}' || true)
+echo "chatCompletions POST status=$code (404=still off; 400/401=on)"
+`.trim();
+  r = runSsh(cfg, keyMat.path, `bash -lc ${shellQuote(restartScript)}`, { stdio: "pipe" });
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  if (r.status !== 0) {
+    console.error("gateway restart failed");
+    process.exit(r.status ?? 1);
+  }
+  console.log("");
+  console.log(`iMac HTTP chat-completions enabled (${cfg.host}).`);
+  console.log("On the MBP: ./scripts/gotchibot gotchi-mode status");
+}
+
 async function main() {
   const noPush = process.argv.includes("--no-push");
+  const httpOnly = process.argv.includes("--http-only");
   const cfg = assertRemoteReady();
   const keyMat = materializeKey(cfg.key);
   const home = `/Users/${cfg.user}`;
@@ -78,6 +143,10 @@ async function main() {
   const openclawHome = `${home}/.openclaw`;
 
   try {
+    if (httpOnly) {
+      await enableChatCompletionsHttp(cfg, keyMat, openclawHome, openclawDir);
+      return;
+    }
     if (!noPush) {
       console.log("→ remote-push (GotchiBot tree)…");
       const push = runLocal("node", [`${ROOT}/scripts/remote-push.mjs`], { stdio: "inherit" });
@@ -133,6 +202,11 @@ const inc='\\x24include';
 cfg.agents.defaults={ ...(cfg.agents.defaults||{}), [inc]:'./gotchibot.defaults.json5', sandbox:{ mode:'off' }, model:{ primary } };
 cfg.agents.list={ [inc]:'./gotchibot-fleet.list.json5' };
 cfg.messages={ messagePrefix:'[Gotchi] ' };
+cfg.gateway=cfg.gateway||{};
+cfg.gateway.http=cfg.gateway.http||{};
+cfg.gateway.http.endpoints=cfg.gateway.http.endpoints||{};
+cfg.gateway.http.endpoints.chatCompletions={ enabled:true };
+cfg.gateway.http.endpoints.responses={ enabled:true };
 const modelsPath=gb+'/config/openclaw.gotchibot.models.json';
 try {
   const models=JSON.parse(fs.readFileSync(modelsPath,'utf8'));

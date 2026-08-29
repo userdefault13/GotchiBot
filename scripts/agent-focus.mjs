@@ -30,6 +30,7 @@ import {
   fetchCartridgeHeroes,
 } from "./onboarding-lib.mjs";
 import { classifyFocusRoute } from "./focus-classify.mjs";
+import { loadAgentMap, gatewayUrl, loadOpenClawFocus } from "./openclaw-fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -58,18 +59,10 @@ function saveFocus(data) {
 }
 
 function signalAvatar(heroId) {
-  if (!process.env.TMUX) return;
-  const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
-  const pid = spawnSync(
-    "tmux",
-    ["display", "-p", "-t", `${sess}:work.2`, "#{pane_pid}"],
-    { encoding: "utf8" },
-  ).stdout?.trim();
-  if (pid) spawnSync("kill", ["-USR1", pid], { stdio: "ignore" });
-  // Also refresh pin via gotchibot avatar path for status bar
   try {
     writeFileSync(PIN, `${heroId}\n`);
   } catch {}
+  spawnSync("bash", [`${ROOT}/scripts/poke-avatar.sh`], { stdio: "ignore" });
 }
 
 function field(path, key) {
@@ -167,42 +160,96 @@ function shellQuote(s) {
 
 async function loadHeroes() {
   const meta = loadMeta();
-  if (!meta?.cartridgeId) return [];
-  try {
-    const heroes = await fetchCartridgeHeroes(meta.cartridgeId);
-    return heroes.map((h) => ({
-      kind: "hero",
-      host: "cartridge",
-      id: h.id,
-      status: h.agentStatus || "available",
-      hero: h.id,
-      collateral: h.collateral || h.collateralAddress || null,
-      bindType: h.bindType || null,
-      name: h.name || null,
-      agentSessionId: h.agentSessionId || null,
-      agentTask: h.agentTask || null,
-    }));
-  } catch (e) {
-    // Fallback: active hero from meta only
-    if (meta.activeHeroId) {
-      return [
-        {
+  const fromApi = [];
+  if (meta?.cartridgeId) {
+    try {
+      const heroes = await fetchCartridgeHeroes(meta.cartridgeId);
+      for (const h of heroes) {
+        fromApi.push({
           kind: "hero",
           host: "cartridge",
-          id: meta.activeHeroId,
-          status: "available",
-          hero: meta.activeHeroId,
-          collateral: null,
-          bindType: null,
-          name: null,
-        },
-      ];
+          id: h.id,
+          status: h.agentStatus || "available",
+          hero: h.id,
+          collateral: h.collateral || h.collateralAddress || null,
+          bindType: h.bindType || null,
+          name: h.name || null,
+          agentSessionId: h.agentSessionId || null,
+          agentTask: h.agentTask || null,
+        });
+      }
+    } catch {
+      /* fall through to cache / meta */
     }
-    return [];
   }
+  if (fromApi.length) return fromApi;
+
+  try {
+    const cache = JSON.parse(readFileSync(LIST_CACHE, "utf8"));
+    const cached = (cache.entries || []).filter((e) => e.kind === "hero");
+    if (cached.length) return cached;
+  } catch {}
+
+  try {
+    const map = loadAgentMap();
+    if (map?.agents) {
+      const seen = new Set();
+      const out = [];
+      for (const [agentId, m] of Object.entries(map.agents)) {
+        const id = m.heroId || agentId;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({
+          kind: "hero",
+          host: "cartridge",
+          id,
+          status: m.isOrchestrator ? "active" : "available",
+          hero: id,
+          collateral: null,
+          bindType: m.isOrchestrator ? "orchestrator" : "sub",
+          name: null,
+        });
+      }
+      if (out.length) return out;
+    }
+  } catch {}
+
+  if (meta?.activeHeroId) {
+    return [
+      {
+        kind: "hero",
+        host: "cartridge",
+        id: meta.activeHeroId,
+        status: "available",
+        hero: meta.activeHeroId,
+        collateral: null,
+        bindType: null,
+        name: null,
+      },
+    ];
+  }
+  return [];
 }
 
-async function buildRoster() {
+async function buildRoster({ syncFleet = false, useCacheMs = 0 } = {}) {
+  if (useCacheMs > 0) {
+    try {
+      const cache = JSON.parse(readFileSync(LIST_CACHE, "utf8"));
+      const age = Date.now() - new Date(cache.at).getTime();
+      if (age >= 0 && age < useCacheMs && Array.isArray(cache.entries) && cache.entries.length) {
+        return {
+          numbered: cache.entries,
+          remote: cache.remote ?? { ok: false, sessions: [] },
+          heroes: cache.entries.filter((e) => e.kind === "hero").length,
+          local: cache.entries.filter((e) => e.host === "local").length,
+          cached: true,
+        };
+      }
+    } catch {
+      /* refresh below */
+    }
+  }
+
   const local = scanLocalSessions();
   const remote = await scanRemoteSessionsAsync();
   const heroes = await loadHeroes();
@@ -216,13 +263,15 @@ async function buildRoster() {
     LIST_CACHE,
     `${JSON.stringify({ remote, entries: numbered, at: new Date().toISOString() }, null, 2)}\n`,
   );
-  try {
-    const { syncFleet } = await import("./openclaw-fleet.mjs");
-    await syncFleet({ quiet: true });
-  } catch {
-    /* OpenClaw fleet sync optional */
+  if (syncFleet) {
+    try {
+      const { syncFleet: sync } = await import("./openclaw-fleet.mjs");
+      await sync({ quiet: true });
+    } catch {
+      /* OpenClaw fleet sync optional */
+    }
   }
-  return { numbered, remote, heroes: heroes.length, local: local.length };
+  return { numbered, remote, heroes: heroes.length, local: local.length, cached: false };
 }
 
 function printRoster({ numbered, remote }, { switchMode = false } = {}) {
@@ -286,6 +335,211 @@ function printRoster({ numbered, remote }, { switchMode = false } = {}) {
   }
 }
 
+function shortModel(model) {
+  const m = String(model || "").trim();
+  if (!m) return "";
+  if (m.includes("/")) return m.split("/").pop();
+  return m.length > 28 ? `${m.slice(0, 25)}…` : m;
+}
+
+function statusCounts(entries) {
+  const counts = {};
+  for (const e of entries) {
+    const s = String(e.status || "?").toLowerCase();
+    counts[s] = (counts[s] || 0) + 1;
+  }
+  return Object.entries(counts)
+    .map(([s, n]) => `${n} ${s}`)
+    .join(" · ");
+}
+
+/** Full cockpit roster — cAavegotchis, MBP/iMac OpenCode sessions, OpenClaw fleet. */
+export function printCockpitRoster({ numbered, remote, cached }) {
+  const heroes = numbered.filter((e) => e.kind === "hero");
+  const local = numbered.filter((e) => e.host === "local");
+  const imac = numbered.filter((e) => e.host === "imac");
+
+  console.log("OpenClaw agent roster — MBP (local) + iMac (remote)");
+  if (cached) console.log("(refreshing live scan…)\n");
+  else console.log("");
+
+  try {
+    const map = loadAgentMap();
+    const focus = loadOpenClawFocus();
+    console.log(`Gateway  ${gatewayUrl()}`);
+    if (map?.agents) {
+      console.log("Fleet    OpenClaw agents (orchestrator + sub-agents)");
+      for (const [agentId, m] of Object.entries(map.agents)) {
+        const tag = m.isOrchestrator || agentId === map.orchestratorAgentId ? "orch" : "sub";
+        const alias = m.aliasOf ? ` → ${m.aliasOf}` : "";
+        console.log(`  ${agentId} [${tag}] hero=${m.heroId || "—"}${alias}`);
+      }
+    } else {
+      console.log("Fleet    (no map — run ./scripts/openclaw-fleet.mjs sync)");
+    }
+    if (focus) {
+      console.log(
+        `Focus    ${focus.mode === "sub" ? `SUB agent=${focus.agentId} hero=${focus.heroId}` : "ORCH orchestrator"}`,
+      );
+    }
+    console.log("");
+  } catch {
+    /* OpenClaw fleet optional */
+  }
+
+  if (heroes.length) {
+    console.log(`cAavegotchis (${heroes.length}) — cartridge identities`);
+    for (const e of heroes) {
+      const coll = e.collateral ? ` · ${String(e.collateral).slice(0, 10)}` : "";
+      const bt = e.bindType ? ` · ${e.bindType}` : "";
+      const st = e.status || e.agentStatus || "available";
+      const sess = e.agentSessionId ? ` · session ${e.agentSessionId}` : "";
+      const task = e.agentTask ? ` · ${String(e.agentTask).slice(0, 40)}` : "";
+      console.log(`  ${String(e.index).padStart(2)}. ${e.id} [${st}]${bt}${coll}${sess}${task}`);
+    }
+    console.log("");
+  }
+
+  console.log(`MBP sessions (${local.length})${local.length ? ` — ${statusCounts(local)}` : ""}`);
+  if (!local.length) console.log("  (none)");
+  for (const e of local) {
+    const model = shortModel(e.model);
+    const modelBit = model ? ` · ${model}` : "";
+    console.log(
+      `  ${String(e.index).padStart(2)}. ${e.id} [${e.status}] hero=${e.hero || "—"}${modelBit}`,
+    );
+  }
+  console.log("");
+
+  console.log(`iMac sessions (${imac.length})`);
+  if (!remote.ok) {
+    console.log(`  (unreachable: ${remote.reason})`);
+    console.log("  tip: abra run gotchibot -- ./scripts/gotchibot agents");
+  } else if (!imac.length) {
+    console.log(`  (none)${remote.ok ? "" : ""}`);
+  } else {
+    console.log(`  ${statusCounts(imac)}`);
+    for (const e of imac) {
+      const model = shortModel(e.model);
+      const modelBit = model ? ` · ${model}` : "";
+      console.log(
+        `  ${String(e.index).padStart(2)}. ${e.id} [${e.status}] hero=${e.hero || "—"}${modelBit}`,
+      );
+    }
+  }
+  console.log("");
+
+  const focus = loadFocus();
+  if (focus.mode === "sub") {
+    console.log(
+      `Chat focus: SUB → ${focus.heroId || "—"} (${focus.host || "—"}) session=${focus.sessionId || "—"}`,
+    );
+  } else {
+    console.log("Chat focus: ORCH (orchestrator)");
+  }
+  console.log("");
+  console.log("Switch agent: /switch <n|id>   ·   mesh: ./scripts/gotchibot mesh --live");
+}
+
+export async function showCockpitRoster() {
+  const roster = await buildRoster({ syncFleet: true, useCacheMs: 0 });
+  printCockpitRoster(roster);
+  return roster;
+}
+
+function csvCell(value) {
+  const s = value == null ? "" : String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function defaultRosterCsvPath() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${SESSIONS}/roster-${stamp}.csv`;
+}
+
+/** Flatten roster entries (+ OpenClaw fleet) into CSV rows. */
+export function rosterToCsv(roster) {
+  const exportedAt = new Date().toISOString();
+  const headers = [
+    "index",
+    "kind",
+    "host",
+    "id",
+    "status",
+    "hero",
+    "model",
+    "collateral",
+    "bind_type",
+    "name",
+    "agent_session_id",
+    "task",
+    "started",
+    "exported_at",
+  ];
+  const rows = [headers.join(",")];
+  const seen = new Set();
+
+  const pushEntry = (e, index = e.index ?? "") => {
+    const id = String(e.id || "");
+    if (id) seen.add(id);
+    rows.push(
+      [
+        index,
+        e.kind || "",
+        e.host || "",
+        id,
+        e.status || e.agentStatus || "",
+        e.hero || "",
+        e.model || "",
+        e.collateral || "",
+        e.bindType || "",
+        e.name || "",
+        e.agentSessionId || "",
+        e.agentTask || "",
+        e.started || "",
+        exportedAt,
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  };
+
+  for (const e of roster.numbered || []) pushEntry(e);
+
+  try {
+    const map = loadAgentMap();
+    for (const [agentId, m] of Object.entries(map?.agents || {})) {
+      if (seen.has(agentId) || (m.heroId && seen.has(m.heroId))) continue;
+      pushEntry({
+        kind: "fleet",
+        host: "openclaw",
+        id: agentId,
+        status: m.isOrchestrator ? "orchestrator" : "sub",
+        hero: m.heroId || "",
+        bindType: m.aliasOf ? `alias:${m.aliasOf}` : m.isOrchestrator ? "orch" : "sub",
+      });
+    }
+  } catch {
+    /* fleet optional */
+  }
+
+  return `${rows.join("\n")}\n`;
+}
+
+export async function exportRosterCsv(outPath, { syncFleet = true } = {}) {
+  const roster = await buildRoster({ syncFleet, useCacheMs: 0 });
+  const csv = rosterToCsv(roster);
+  const path = outPath?.trim() || defaultRosterCsvPath();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, csv, "utf8");
+  return {
+    path,
+    rowCount: Math.max(0, csv.trim().split("\n").length - 1),
+    roster,
+  };
+}
+
 function resolveEntry(arg, hostFilter) {
   let cache;
   try {
@@ -346,7 +600,7 @@ async function cmdSelect(arg, { host, via = "select" } = {}) {
     process.exit(2);
   }
   // Always refresh roster so indexes match what the user just saw
-  await buildRoster();
+  await buildRoster({ syncFleet: true, useCacheMs: 0 });
   const entry = resolveEntry(arg, host);
   let heroId = entry.hero || (entry.kind === "hero" ? entry.id : null);
   let sessionId = entry.kind === "session" ? entry.id : null;
@@ -433,20 +687,25 @@ async function cmdSelect(arg, { host, via = "select" } = {}) {
 /** /switch — list all agents, or switch to one (avatar + direct chat). */
 async function cmdSwitch(arg, { host, json } = {}) {
   if (!arg) {
-    const roster = await buildRoster();
+    const roster = await buildRoster({ syncFleet: false, useCacheMs: 30_000 });
     if (json) {
       console.log(JSON.stringify(roster, null, 2));
     } else {
       printRoster(roster, { switchMode: true });
+      if (roster.cached) {
+        console.log("(cached roster — run /switch again to refresh remote sessions)");
+      }
     }
     return;
   }
   await cmdSelect(arg, { host, via: "switch" });
 }
 
-function respawnChatPane() {
+function respawnChatPane(extraEnv = {}) {
   if (!process.env.TMUX) return;
   const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
+  const envParts = Object.entries(extraEnv).map(([k, v]) => `${k}=${JSON.stringify(String(v))}`);
+  const prefix = envParts.length ? `${envParts.join(" ")} ` : "";
   spawnSync(
     "tmux",
     [
@@ -454,10 +713,34 @@ function respawnChatPane() {
       "-t",
       `${sess}:work.1`,
       "-k",
-      `cd "${ROOT}" && exec ./scripts/chat-pane.sh`,
+      `cd "${ROOT}" && ${prefix}exec ./scripts/chat-pane.sh`,
     ],
     { stdio: "ignore" },
   );
+}
+
+async function cmdCockpit() {
+  if (process.env.TMUX) {
+    spawnSync("bash", [`${ROOT}/scripts/orchestrator-layout.sh`, "enter-chat-max"], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        GOTCHIBOT_TMUX_SESSION: process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot",
+      },
+      stdio: "ignore",
+    });
+    console.log("Opening GotchiBot cockpit in chat pane…");
+    console.log("  mint cAavegotchi · change orchestrator avatar · return to chat");
+    respawnChatPane({ GOTCHIBOT_COCKPIT: "1" });
+    return;
+  }
+  console.log("Opening GotchiBot cockpit…");
+  const r = spawnSync(process.execPath, [`${ROOT}/scripts/onboarding-gate.mjs`, "--cockpit"], {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
 async function cmdOrch() {
@@ -553,12 +836,12 @@ async function escalateToOrch(prompt, { reason, spawn = false } = {}) {
   ].join("\n");
   const orchPath = `${ROOT}/scripts/gotchi-orchestrate.mjs`;
   const r = existsSync(orchPath)
-    ? spawnSync(process.execPath, [orchPath, "spawn", "--model", "nim", wrapped], {
+    ? spawnSync(process.execPath, [orchPath, "spawn", "--model", "auto", wrapped], {
         cwd: ROOT,
         env,
         encoding: "utf8",
       })
-    : spawnSync(`${ROOT}/scripts/opencode-dispatch.sh`, ["new", "--model", "nim", wrapped], {
+    : spawnSync(`${ROOT}/scripts/opencode-dispatch.sh`, ["new", "--model", "auto", wrapped], {
         cwd: ROOT,
         env,
         encoding: "utf8",
@@ -657,7 +940,7 @@ async function cmdChat(prompt, { force, spawnOnEscalate = false } = {}) {
 
   const r = spawnSync(
     `${ROOT}/scripts/opencode-dispatch.sh`,
-    ["new", "--model", "nim", wrapped],
+    ["new", "--model", "auto", wrapped],
     { cwd: ROOT, env, encoding: "utf8" },
   );
   if (r.stdout) process.stdout.write(r.stdout);
@@ -671,7 +954,7 @@ async function main() {
 
   if (!cmd || cmd === "list" || cmd === "agents") {
     const hostIdx = rest.indexOf("--host");
-    const roster = await buildRoster();
+    const roster = await buildRoster({ syncFleet: false, useCacheMs: 30_000 });
     if (json) {
       console.log(JSON.stringify(roster, null, 2));
     } else {
@@ -698,6 +981,41 @@ async function main() {
 
   if (cmd === "orch" || cmd === "orchestrator") {
     await cmdOrch();
+    return;
+  }
+
+  if (cmd === "roster" || cmd === "view-roster") {
+    const csvFlag = rest.includes("--csv") || rest.includes("--export");
+    if (csvFlag) {
+      const pathArg = rest.find((a) => a !== "--csv" && a !== "--export" && a !== "--json" && !a.startsWith("-"));
+      const { path, rowCount } = await exportRosterCsv(pathArg);
+      if (json) console.log(JSON.stringify({ ok: true, path, rowCount }, null, 2));
+      else {
+        console.log(`✓ roster exported → ${path} (${rowCount} rows)`);
+        try {
+          const copied = spawnSync(process.execPath, [`${ROOT}/scripts/clipboard-copy.mjs`, path], {
+            cwd: ROOT,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          if (copied.status === 0) console.log(`✓ ${(copied.stdout || "").trim() || "path copied to clipboard"}`);
+        } catch {
+          /* optional */
+        }
+      }
+      return;
+    }
+    if (json) {
+      const roster = await buildRoster({ syncFleet: true, useCacheMs: 0 });
+      console.log(JSON.stringify(roster, null, 2));
+    } else {
+      await showCockpitRoster();
+    }
+    return;
+  }
+
+  if (cmd === "cockpit" || cmd === "onboarding") {
+    await cmdCockpit();
     return;
   }
 
@@ -734,6 +1052,9 @@ async function main() {
   agent-focus.mjs switch [index|id]     # list, or switch avatar+direct chat
   agent-focus.mjs select <index|id>
   agent-focus.mjs orch
+  agent-focus.mjs roster              # full MBP + iMac OpenClaw roster (cockpit)
+  agent-focus.mjs roster --csv [path] # export roster to CSV (default: sessions/roster-<timestamp>.csv)
+  agent-focus.mjs cockpit              # mint / change orchestrator avatar menu
   agent-focus.mjs status [--json]
   agent-focus.mjs classify "prompt" [--json]
   agent-focus.mjs chat "prompt" [--orch|--sub] [--spawn]`);

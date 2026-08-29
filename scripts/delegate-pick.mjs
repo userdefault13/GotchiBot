@@ -98,8 +98,8 @@ function main() {
   } else {
     const spawnCmd =
       host === "imac"
-        ? `GOTCHIBOT_HERO_ID=${idleHero.id} abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs spawn --host imac --model nim "<self-contained prompt>"`
-        : `GOTCHIBOT_HERO_ID=${idleHero.id} ./scripts/gotchi-orchestrate.mjs spawn --host local --model nim "<self-contained prompt>"`;
+        ? `GOTCHIBOT_HERO_ID=${idleHero.id} abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs spawn --host imac --model auto "<self-contained prompt>"`
+        : `GOTCHIBOT_HERO_ID=${idleHero.id} ./scripts/gotchi-orchestrate.mjs spawn --host local --model auto "<self-contained prompt>"`;
     decision = {
       action: "spawn",
       reason: remoteOk && host === "imac"

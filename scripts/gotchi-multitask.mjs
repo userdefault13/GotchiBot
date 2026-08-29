@@ -105,7 +105,7 @@ If one coherent task, return a single-element array.`;
 }
 
 async function resolveTasks(argv) {
-  let model = "nim";
+  let model = "auto";
   let max = 5;
   let explicit = false;
   const tasks = [];

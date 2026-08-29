@@ -3,19 +3,30 @@
   "model": "opencode/hy3-free",
   "small_model": "opencode/hy3-free",
   "default_agent": "gotchi",
-  "agent": {
-    "gotchi": {
-      "order": 1
-    },
-    "plan": {
-      "order": 2
-    },
-    "build": {
-      "order": 3
-    },
-    "ask": {
-      "order": 4
+  "provider": {
+    "openclaw": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Gotchi (OpenClaw orchestrator)",
+      "options": {
+        "baseURL": "{env:GOTCHIBOT_OPENCLAW_HTTP_V1}",
+        "apiKey": "{env:OPENCLAW_GATEWAY_TOKEN}",
+        "headers": {
+          "x-openclaw-session-key": "{env:GOTCHIBOT_OPENCLAW_SESSION_KEY}"
+        }
+      },
+      "models": {
+        "orchestrator": {
+          "name": "Orchestrator (iMac OpenClaw)",
+          "modelID": "openclaw/default"
+        }
+      }
     }
+  },
+  "agent": {
+    "gotchi": { "order": 1 },
+    "plan": { "order": 2 },
+    "build": { "order": 3 },
+    "ask": { "order": 4 }
   },
   "mcp": {
     "abracadabra": {
@@ -36,7 +47,7 @@
     "cron402": {
       "type": "local",
       "command": ["./scripts/mcp/cron402.sh"],
-      "enabled": false
+      "enabled": true
     },
     "base-mcp": {
       "type": "remote",

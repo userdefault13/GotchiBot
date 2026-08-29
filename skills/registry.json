@@ -6,7 +6,10 @@
       "source": "gotchibot",
       "description": "Local secrets vault (Touch ID). MCP for get_secrets / generate_wallet.",
       "config": "config/mcp.abracadabra.json",
-      "command": ["abra", "mcp"],
+      "command": [
+        "abra",
+        "mcp"
+      ],
       "addedAt": "2026-08-25"
     },
     "mcp-aarcade-cartridge-schema": {
@@ -15,7 +18,9 @@
       "source": "aarcadeghst",
       "description": "Cartridge diamond rules/checkpoint schema tools for Aarcade game developers.",
       "config": "config/mcp.stack.json",
-      "command": ["./scripts/mcp/aarcade-cartridge-schema.sh"],
+      "command": [
+        "./scripts/mcp/aarcade-cartridge-schema.sh"
+      ],
       "project": "AarcadeGh-t",
       "addedAt": "2026-08-26"
     },
@@ -25,7 +30,9 @@
       "source": "aarcadeghst",
       "description": "Hackathon idea validation, templates, Lens preview — draft only, never auto-publish.",
       "config": "config/mcp.stack.json",
-      "command": ["./scripts/mcp/aarcade-hackathon-ideas.sh"],
+      "command": [
+        "./scripts/mcp/aarcade-hackathon-ideas.sh"
+      ],
       "project": "AarcadeGh-t",
       "addedAt": "2026-08-26"
     },
@@ -35,7 +42,9 @@
       "source": "ai-cron-site",
       "description": "Schedule x402 USDC-paid webhook crons on Base. Requires CRON402_PRIVATE_KEY via abra.",
       "config": "config/mcp.stack.json",
-      "command": ["./scripts/mcp/cron402.sh"],
+      "command": [
+        "./scripts/mcp/cron402.sh"
+      ],
       "project": "ai-cron-site",
       "repo": "https://github.com/userdefault13/ai-cron-site",
       "addedAt": "2026-08-26"
@@ -86,7 +95,9 @@
       "source": "blockscout",
       "description": "Onchain explorer data — balances, tokens, contracts across ~100 chains.",
       "url": "https://mcp.blockscout.com/mcp",
-      "secrets": ["BLOCKSCOUT_PRO_API_KEY"],
+      "secrets": [
+        "BLOCKSCOUT_PRO_API_KEY"
+      ],
       "addedAt": "2026-08-26"
     },
     "mcp-mongodb": {
@@ -94,8 +105,14 @@
       "type": "mcp",
       "source": "mongodb",
       "description": "MongoDB Atlas / mongo-proxy queries — cartridge sim, Aarcade backend.",
-      "command": ["npx", "-y", "mongodb-mcp-server"],
-      "secrets": ["MDB_MCP_CONNECTION_STRING"],
+      "command": [
+        "npx",
+        "-y",
+        "mongodb-mcp-server"
+      ],
+      "secrets": [
+        "MDB_MCP_CONNECTION_STRING"
+      ],
       "addedAt": "2026-08-26"
     },
     "mcp-pixellab": {
@@ -104,7 +121,9 @@
       "source": "pixellab",
       "description": "AI pixel art generation for gotchi sprites and game assets.",
       "url": "https://api.pixellab.ai/mcp",
-      "secrets": ["PIXELLAB_API_KEY"],
+      "secrets": [
+        "PIXELLAB_API_KEY"
+      ],
       "addedAt": "2026-08-26"
     },
     "abra": {
@@ -419,6 +438,33 @@
       "path": ".opencode/skills/gotchibot-mesh/SKILL.md",
       "script": "scripts/mesh-status.mjs",
       "addedAt": "2026-08-27"
+    },
+    "gotchi-trader-monitor": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Monitor Gotchi-Trader paper book. Read-only.",
+      "path": ".opencode/skills/gotchi-trader-monitor/SKILL.md",
+      "script": "scripts/gotchi-trader-desk.mjs",
+      "addedAt": "2026-08-28"
+    },
+    "gotchi-trader-improve": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Retune Gotchi-Trader from realized paper history. Never live.",
+      "path": ".opencode/skills/gotchi-trader-improve/SKILL.md",
+      "script": "scripts/gotchi-trader-desk.mjs",
+      "addedAt": "2026-08-28"
+    },
+    "market-news-feed": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Public crypto RSS regime hint. Not a trade signal.",
+      "path": ".opencode/skills/market-news-feed/SKILL.md",
+      "script": "scripts/gotchi-trader-desk.mjs",
+      "addedAt": "2026-08-28"
     }
   },
   "sources": {

@@ -28,7 +28,7 @@ opencode dispatch session under `sessions/<id>/`.
 - Read `ORCHESTRATOR.md` and your agentDir `config/openclaw/agents/owned-954/AGENTS.md`.
 - **Ignore** the sub-agent session protocol below (it does not apply to you).
 - While sub-agents run, keep Julius posted: what spawned, what's running, what merged. Don't vanish.
-- Focus: `/orch` `/list` `/switch` in OpenClaw TUI (after `./scripts/openclaw-gotchi-build.sh`). Without the patch: **Ctrl+O** in the chat pane, **Ctrl+b o** from any pane, or `./scripts/gotchibot orch`.
+- Focus: `/orch` `/list` `/switch` `/cockpit` in OpenClaw TUI (after `./scripts/openclaw-gotchi-build.sh`). Without the patch: **Ctrl+O** in the chat pane, **Ctrl+b o** from any pane, or `./scripts/gotchibot orch`.
 
 ### Sub-agent — dispatch session or non-orchestrator OpenClaw hero
 

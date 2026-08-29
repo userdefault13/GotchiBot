@@ -8,7 +8,7 @@ import { spawnSync, spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import {
   ROOT,
-  COLLATERALS_16,
+  loadBaseStarterCollaterals,
   readWelcomeArt,
   readWalletFile,
   saveWalletFile,
@@ -47,13 +47,36 @@ async function pause(msg = "Press Enter to continue…") {
   await rl.question(`\n  ${msg}`);
 }
 
+
+const OPENCLAW_SAYINGS = [
+  "Claws out. Agents in.",
+  "One haunt, many hands.",
+  "I pinch the tasks. You keep the Spirit Force.",
+  "The claw spins the fleet. The gotchi talks.",
+  "Don't go silent — reply first, then haunt the work.",
+  "Sub-agents spawn. Kinship stays here.",
+];
+
+function quirkyOpenclawSaying() {
+  return OPENCLAW_SAYINGS[Math.floor(Math.random() * OPENCLAW_SAYINGS.length)];
+}
+
+const QUIT_CODE = 2;
+
+function quitToTerminal() {
+  try {
+    rl.close();
+  } catch {}
+  process.exit(QUIT_CODE);
+}
+
 async function choose(prompt, options) {
   console.log("");
   options.forEach((o, i) => console.log(`    ${i + 1}) ${o.label}`));
   console.log(`    q) Quit`);
   for (;;) {
     const ans = (await rl.question(`\n  ${prompt} [1-${options.length}]: `)).trim().toLowerCase();
-    if (ans === "q" || ans === "quit") return null;
+    if (ans === "q" || ans === "quit") quitToTerminal();
     const n = Number(ans);
     if (n >= 1 && n <= options.length) return options[n - 1];
     console.log("  invalid choice");
@@ -114,8 +137,8 @@ async function waitForMetaMaskSave(sinceMs, timeoutMs = 180_000) {
 
 async function runMetaMaskConnect() {
   const since = Date.now();
-  console.log("\n  Opening browser for MetaMask…");
-  console.log("  Sign the message in MetaMask, then return here.\n");
+  console.log("\n  Opening Chrome/Brave for wallet sign-in…");
+  console.log("  Install MetaMask in that browser if needed, then sign the message.\n");
 
   const child = spawn(process.execPath, [`${ROOT}/scripts/wallet-connect.mjs`], {
     cwd: ROOT,
@@ -147,13 +170,13 @@ async function connectWalletMenu() {
       address: saved,
     });
   }
-  opts.push({ key: "mm", label: "MetaMask — browser sign-in" });
+  opts.push({ key: "mm", label: "Browser wallet — MetaMask sign-in (Chrome/Brave)" });
   if (commandExists("abra")) {
     opts.push({ key: "abra", label: "Abracadabra — fetch wallet from vault (Touch ID)" });
   }
 
   const pick = await choose("Connect wallet", opts);
-  if (!pick) process.exit(0);
+  if (!pick) quitToTerminal();
 
   if (pick.key === "saved") {
     return walletConnected(pick.address, "saved session");
@@ -201,8 +224,17 @@ async function ensureCartridge(wallet) {
 const GOTCHI_PAGE_SIZE = 25;
 
 function formatGotchiLabel(g) {
-  const name = g.name || `#${g.gotchiId}`;
-  return `#${g.gotchiId}  ${name}`;
+  const id = String(g.gotchiId ?? g.id ?? "");
+  const label = g.name ? `"${g.name}"` : "(unnamed)";
+  return `#${id}  ${label}`;
+}
+
+function formatCartridgeHeroLabel(h) {
+  const parts = [h.id];
+  if (h.bindType) parts.push(h.bindType);
+  if (h.collateral) parts.push(String(h.collateral).slice(0, 12));
+  if (h.name) parts.push(`"${h.name}"`);
+  return parts.join(" · ");
 }
 
 function renderGotchiPageTabs(page, totalPages) {
@@ -230,29 +262,53 @@ async function confirmOwnedImport(g) {
   }
 }
 
-/** Paginated on-chain gotchi picker — 25 per page, tab jump, search by id. */
-async function pickOnChainGotchi(wallet, allGotchis) {
+/** Pick existing cAavegotchi on cartridge and/or import an on-chain gotchi. */
+async function pickHeroOrImportGotchi(wallet, cartridgeId, allGotchis, cartridgeHeroes = []) {
+  let view = allGotchis.length > 0 ? "onchain" : "cartridge";
+  let cartridge = Array.isArray(cartridgeHeroes) ? [...cartridgeHeroes] : [];
   let page = 0;
-  let list = allGotchis;
   let searchMode = false;
+  let searchList = null;
+
+  const activeList = () => {
+    if (searchMode && searchList) return searchList;
+    return view === "cartridge" ? cartridge : allGotchis;
+  };
 
   for (;;) {
-    const totalPages = Math.max(1, Math.ceil(list.length / GOTCHI_PAGE_SIZE));
+    const items = activeList();
+    const totalPages = Math.max(1, Math.ceil(items.length / GOTCHI_PAGE_SIZE));
     if (page >= totalPages) page = totalPages - 1;
     const start = page * GOTCHI_PAGE_SIZE;
-    const slice = list.slice(start, start + GOTCHI_PAGE_SIZE);
+    const slice = items.slice(start, start + GOTCHI_PAGE_SIZE);
 
     clear();
-    title("Import on-chain gotchi");
+    title(view === "cartridge" ? "Cartridge cAavegotchis" : "On-chain gotchis");
     if (searchMode) {
-      console.log(`  Search results — ${list.length} match(es)\n`);
+      console.log(`  Search results — ${items.length} match(es)\n`);
     } else {
-      console.log(`  ${allGotchis.length} gotchi(s) in wallet — showing ${start + 1}–${start + slice.length}\n`);
+      const headline =
+        view === "cartridge"
+          ? `${cartridge.length} cAavegotchi(s) minted on this cartridge`
+          : `${allGotchis.length} gotchi(s) in wallet`;
+      console.log(`  ${headline}${totalPages > 1 ? ` · page ${page + 1}/${totalPages}` : ""}\n`);
       if (totalPages > 1) renderGotchiPageTabs(page, totalPages);
+      console.log("");
     }
 
-    slice.forEach((g, i) => {
-      console.log(`    ${String(i + 1).padStart(2)} ) ${formatGotchiLabel(g)}`);
+    if (!slice.length) {
+      console.log(
+        view === "cartridge"
+          ? "  (none yet — mint one or switch to on-chain import)"
+          : "  (none in wallet — switch to cartridge or mint)",
+      );
+      console.log("");
+    }
+
+    slice.forEach((item, i) => {
+      const label = view === "cartridge" ? formatCartridgeHeroLabel(item) : formatGotchiLabel(item);
+      const tag = view === "cartridge" ? "[cAave]" : "[on-chain]";
+      console.log(`    ${String(i + 1).padStart(2)} ) ${label}  ${tag}`);
     });
 
     console.log("");
@@ -261,17 +317,50 @@ async function pickOnChainGotchi(wallet, allGotchis) {
       if (page < totalPages - 1) console.log("    [n] Next page");
       console.log("    [tN] Jump to page tab (e.g. t2)");
     }
-    console.log("    [s] Search by gotchi ID");
+    if (!searchMode) {
+      if (view === "onchain") {
+        console.log(`    [c] Switch to cartridge cAavegotchis (${cartridge.length})`);
+      } else {
+        console.log(`    [o] Switch to on-chain wallet (${allGotchis.length})`);
+      }
+    }
+    console.log("    [s] Search by gotchi ID or cAavegotchi id");
+    console.log("    [m] Mint new cAavegotchi ($5)");
     if (searchMode) console.log("    [b] Back to full list");
     console.log("    [q] Quit");
 
-    const ans = (await rl.question("\n  Import [number / n / p / s / q]: ")).trim().toLowerCase();
+    const ans = (await rl.question("\n  Pick [number / c / o / m / n / p / s / q]: ")).trim().toLowerCase();
 
-    if (ans === "q" || ans === "quit") return null;
+    if (ans === "q" || ans === "quit") quitToTerminal();
+
+    if (ans === "m" || ans === "mint") {
+      const heroId = await mintNewGotchi({
+        collateralPrompt: "Choose collateral for new cAavegotchi",
+        intro: "  Mint a new cAavegotchi for $5.",
+      });
+      return { kind: "mint", heroId };
+    }
+
+    if (ans === "c" && view === "onchain" && !searchMode) {
+      cartridge = (await fetchCartridgeHeroes(cartridgeId)) || [];
+      view = "cartridge";
+      page = 0;
+      searchMode = false;
+      searchList = null;
+      continue;
+    }
+
+    if (ans === "o" && view === "cartridge" && !searchMode) {
+      view = "onchain";
+      page = 0;
+      searchMode = false;
+      searchList = null;
+      continue;
+    }
 
     if (ans === "b" && searchMode) {
-      list = allGotchis;
       searchMode = false;
+      searchList = null;
       page = 0;
       continue;
     }
@@ -286,7 +375,6 @@ async function pickOnChainGotchi(wallet, allGotchis) {
       continue;
     }
 
-    // Page tabs use tN so they never collide with list index 1…N
     const tabMatch = /^t(\d+)$/.exec(ans);
     if (!searchMode && tabMatch && totalPages > 1) {
       const tab = Number(tabMatch[1]);
@@ -300,31 +388,64 @@ async function pickOnChainGotchi(wallet, allGotchis) {
     }
 
     if (ans === "s") {
-      const raw = (await rl.question("  Gotchi ID (# or number): ")).trim();
+      const raw = (await rl.question("  ID (#gotchi, hero id, or number): ")).trim();
       const id = raw.replace(/^#/, "");
-      if (!/^\d+$/.test(id)) {
-        console.log("  invalid id — use digits only, e.g. 954");
+      if (!id) {
+        console.log("  enter an id");
         await pause();
         continue;
       }
-      const found = allGotchis.find((g) => String(g.gotchiId) === id) ?? await fetchWalletGotchiById(wallet, id);
-      if (!found) {
-        console.log(`  #${id} not found in this wallet on Base`);
-        await pause();
+
+      if (view === "cartridge") {
+        let hit = cartridge.find((h) => h.id === id || String(h.sourceTokenId) === id);
+        if (!hit && !/^\d+$/.test(id)) {
+          hit = cartridge.find((h) => h.id.includes(id));
+        }
+        if (!hit) {
+          console.log(`  no cAavegotchi match for ${id}`);
+          await pause();
+          continue;
+        }
+        searchList = [hit];
+        searchMode = true;
+        page = 0;
         continue;
       }
-      list = [found];
-      searchMode = true;
-      page = 0;
+
+      const cartHit = cartridge.find((h) => h.id === id || String(h.sourceTokenId) === id);
+      if (cartHit) {
+        return { kind: "cartridge", hero: cartHit };
+      }
+      if (/^\d+$/.test(id)) {
+        const found =
+          allGotchis.find((g) => String(g.gotchiId) === id) ??
+          (await fetchWalletGotchiById(wallet, id));
+        if (!found) {
+          console.log(`  #${id} not found in wallet or cartridge`);
+          await pause();
+          continue;
+        }
+        searchList = [found];
+        searchMode = true;
+        page = 0;
+        continue;
+      }
+      const cartByPrefix = cartridge.find((h) => h.id.includes(id));
+      if (cartByPrefix) return { kind: "cartridge", hero: cartByPrefix };
+      console.log(`  no match for ${id}`);
+      await pause();
       continue;
     }
 
     const n = Number(ans);
     if (Number.isInteger(n) && n >= 1 && n <= slice.length) {
       const picked = slice[n - 1];
+      if (view === "cartridge") {
+        return { kind: "cartridge", hero: picked };
+      }
       const ok = await confirmOwnedImport(picked);
       if (!ok) continue;
-      return picked;
+      return { kind: "onchain", gotchi: picked };
     }
 
     console.log("  invalid choice");
@@ -333,17 +454,38 @@ async function pickOnChainGotchi(wallet, allGotchis) {
 }
 
 async function pickCollateral(promptText) {
+  const options = loadBaseStarterCollaterals();
+  if (!options.length) throw new Error("no starter collaterals loaded — check assets/collateral-colors.json");
+
   console.log(`\n  ${promptText}\n`);
-  COLLATERALS_16.forEach((c, i) => {
-    const haunt = ["wbtc", "matic"].includes(c) ? "H2" : "H1";
-    console.log(`    ${String(i + 1).padStart(2)} ) ${c.padEnd(6)} (${haunt})`);
+  options.forEach((c, i) => {
+    console.log(`    ${String(i + 1).padStart(2)} ) ${c.libraryName.padEnd(10)} (H${c.hauntId})`);
   });
   for (;;) {
-    const ans = (await rl.question("\n  Collateral [1-16]: ")).trim();
+    const ans = (await rl.question(`\n  Collateral [1-${options.length}]: `)).trim();
     const n = Number(ans);
-    if (n >= 1 && n <= 16) return COLLATERALS_16[n - 1];
-    console.log("  pick 1–16");
+    if (n >= 1 && n <= options.length) return options[n - 1].id;
+    console.log(`  pick 1–${options.length}`);
   }
+}
+
+async function mintNewGotchi({ collateralPrompt, apiOpName = "bind-starter", intro } = {}) {
+  title("Mint cAavegotchi");
+  console.log(intro ?? "  Mint a cAavegotchi for $5.");
+  console.log("  (Simulated mint — no on-chain tx in this build.)\n");
+  const collateral = await pickCollateral(collateralPrompt);
+  console.log(`\n  Minting (${collateral})…`);
+  const heroId = await apiOp(apiOpName, collateral);
+  console.log(`  ✓ minted ${heroId}`);
+  return heroId;
+}
+
+async function mintStarterGotchi({ collateralPrompt, apiOpName = "bind-starter" }) {
+  return mintNewGotchi({
+    collateralPrompt,
+    apiOpName,
+    intro: "  No gotchis found. Mint a cAavegotchi for $5.",
+  });
 }
 
 async function resolveHeroes(wallet, cartridgeId) {
@@ -355,25 +497,47 @@ async function resolveHeroes(wallet, cartridgeId) {
 
   console.log("\n  No cAavegotchis on cartridge yet.");
   console.log("  Loading gotchis from subgraph…");
-  const onChain = await fetchWalletGotchis(wallet);
+  let onChain = [];
+  try {
+    onChain = await fetchWalletGotchis(wallet);
+  } catch (e) {
+    console.log(`  Subgraph: ${e.message || e}`);
+  }
 
-  if (onChain.length > 0) {
-    const pick = await pickOnChainGotchi(wallet, onChain);
+  if (onChain.length === 0) {
+    console.log("  Subgraph unreachable or empty — checked Base RPC too.");
+  }
+
+  // Re-fetch cartridge heroes — API may have been flaky on first call.
+  const cartridgeHeroes = (await fetchCartridgeHeroes(cartridgeId)) || [];
+
+  if (onChain.length > 0 || cartridgeHeroes.length > 0) {
+    if (onChain.length > 0) {
+      const via = onChain.source === "base-rpc" ? "Base RPC" : "subgraph";
+      console.log(`  Found ${onChain.length} Aavegotchi(s) on Base (${via}) for ${shortAddr(wallet)}.`);
+    }
+    if (cartridgeHeroes.length > 0) {
+      console.log(`  Found ${cartridgeHeroes.length} cAavegotchi(s) on cartridge.`);
+    }
+    const pick = await pickHeroOrImportGotchi(wallet, cartridgeId, onChain, cartridgeHeroes);
     if (!pick) return heroes;
-    console.log(`\n  Binding owned gotchi #${pick.gotchiId} (free)…`);
-    const heroId = await apiOp("bind-owned", pick.gotchiId);
+    if (pick.kind === "cartridge") {
+      console.log(`\n  ✓ using cAavegotchi ${pick.hero.id}`);
+      heroes = await fetchCartridgeHeroes(cartridgeId);
+      return heroes.length ? heroes : [pick.hero];
+    }
+    if (pick.kind === "mint") {
+      heroes = await fetchCartridgeHeroes(cartridgeId);
+      return heroes;
+    }
+    console.log(`\n  Binding owned gotchi #${pick.gotchi.gotchiId} (free)…`);
+    const heroId = await apiOp("bind-owned", pick.gotchi.gotchiId);
     console.log(`  ✓ bound ${heroId}`);
     heroes = await fetchCartridgeHeroes(cartridgeId);
     return heroes;
   }
 
-  title("Mint your first cAavegotchi");
-  console.log("  No Aavegotchis in this wallet on Base.");
-  console.log("  Sim-mint a starter cAavegotchi (pick collateral):\n");
-  const collateral = await pickCollateral("Choose collateral for orchestrator gotchi");
-  console.log(`\n  Minting starter (${collateral})…`);
-  const heroId = await apiOp("bind-starter", collateral);
-  console.log(`  ✓ minted ${heroId}`);
+  await mintStarterGotchi({ collateralPrompt: "Choose collateral for orchestrator gotchi" });
   heroes = await fetchCartridgeHeroes(cartridgeId);
   return heroes;
 }
@@ -385,6 +549,92 @@ async function pickOrchestrator(heroes) {
     heroes.map((h) => ({ label: h.id, id: h.id })),
   );
   return pick?.id ?? heroes[0].id;
+}
+
+async function syncFleetQuiet() {
+  try {
+    const { syncFleet } = await import("./openclaw-fleet.mjs");
+    await syncFleet({ quiet: true });
+  } catch {}
+}
+
+async function viewAgentRoster() {
+  clear();
+  title("OpenClaw agent roster");
+  console.log("  Scanning MBP + iMac sessions…\n");
+  const r = runAbraNode("scripts/agent-focus.mjs", ["roster"]);
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr && r.status !== 0) process.stderr.write(r.stderr);
+  if (r.status !== 0 && !r.stdout?.trim()) {
+    console.log(`  ✗ roster scan failed (exit ${r.status ?? "?"})`);
+    await pause();
+    return;
+  }
+
+  const follow = await choose("Roster", [
+    { key: "back", label: "Back to cockpit" },
+    { key: "export", label: "Export to CSV file" },
+  ]);
+  if (follow?.key === "export") {
+    await exportAgentRosterCsv();
+  }
+}
+
+async function exportAgentRosterCsv() {
+  clear();
+  title("Export roster");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const defaultPath = `${ROOT}/sessions/roster-${stamp}.csv`;
+  console.log(`  Default file:\n  ${defaultPath}\n`);
+  const raw = (await rl.question("  CSV path [Enter = default]: ")).trim();
+  const outPath = raw || defaultPath;
+  console.log("\n  Scanning + writing CSV…");
+  const args = ["roster", "--csv", outPath];
+  const r = runAbraNode("scripts/agent-focus.mjs", args);
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr && r.status !== 0) process.stderr.write(r.stderr);
+  if (r.status !== 0) {
+    console.log(`\n  ✗ export failed (exit ${r.status ?? "?"})`);
+  } else {
+    try {
+      const copied = spawnSync(process.execPath, [`${ROOT}/scripts/clipboard-copy.mjs`, outPath], {
+        cwd: ROOT,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      if (copied.status === 0) {
+        console.log(`  ✓ ${(copied.stdout || "").trim() || "path copied to clipboard"}`);
+      }
+    } catch {
+      /* clipboard optional */
+    }
+  }
+  await pause();
+}
+
+async function importOrChooseGotchi(wallet, cartridgeId) {
+  console.log("\n  Loading on-chain gotchis…");
+  let onChain = [];
+  try {
+    onChain = await fetchWalletGotchis(wallet);
+  } catch (e) {
+    console.log(`  ${e.message || e}`);
+  }
+  const cartridgeHeroes = (await fetchCartridgeHeroes(cartridgeId)) || [];
+  const pick = await pickHeroOrImportGotchi(wallet, cartridgeId, onChain, cartridgeHeroes);
+  if (!pick) return;
+  if (pick.kind === "cartridge") {
+    console.log(`\n  ✓ selected cAavegotchi ${pick.hero.id}`);
+  } else if (pick.kind === "mint") {
+    console.log(`\n  ✓ minted ${pick.heroId}`);
+    await syncFleetQuiet();
+  } else {
+    console.log(`\n  Binding owned gotchi #${pick.gotchi.gotchiId} (free)…`);
+    const heroId = await apiOp("bind-owned", pick.gotchi.gotchiId);
+    console.log(`  ✓ bound ${heroId}`);
+    await syncFleetQuiet();
+  }
+  await pause();
 }
 
 async function mainMenu(wallet, cartridgeId) {
@@ -403,11 +653,14 @@ async function mainMenu(wallet, cartridgeId) {
     hr();
 
     const pick = await choose("What next?", [
-      { key: "launch", label: "Launch orchestrator (OpenCode gotchi chat)" },
-      { key: "mint", label: "Mint another cAavegotchi (sub-agent identity)" },
+      { key: "launch", label: "Return to chat (orchestrator)" },
+      { key: "roster", label: "View agent roster (MBP + iMac · status)" },
+      { key: "export-roster", label: "Export agent roster to CSV" },
+      { key: "import", label: "Import on-chain gotchi / browse cartridge cAavegotchis" },
+      { key: "mint", label: "Mint another cAavegotchi — $5 (sub-agent identity)" },
       { key: "avatar", label: "Change orchestrator avatar" },
     ]);
-    if (!pick) process.exit(0);
+    if (!pick) quitToTerminal();
 
     if (pick.key === "launch") {
       const heroId = ob.orchestratorHeroId ?? (await pickOrchestrator(heroes));
@@ -419,7 +672,10 @@ async function mainMenu(wallet, cartridgeId) {
       console.log(`\n  ✓ Orchestrator ready — ${heroId}`);
       console.log("  Launching OpenCode gotchi mode…");
       console.log("  Talk in natural language to spin up sub-agents.\n");
-      spawnSync("node", [`${ROOT}/scripts/tts.mjs`, "speak", "Orchestrator ready.", "--persona", "gotchi"], {
+      const saying = quirkyOpenclawSaying();
+      console.log(`  Hi fren! I'm GotchiBot. ${saying}`);
+      console.log("  Welcome — press Enter to open the prompter.\n");
+      spawnSync("node", [`${ROOT}/scripts/tts.mjs`, "speak", `Hi fren! I'm GotchiBot. ${saying}`, "--persona", "gotchi"], {
         cwd: ROOT,
         stdio: "ignore",
       });
@@ -433,11 +689,29 @@ async function mainMenu(wallet, cartridgeId) {
       process.exit(0);
     }
 
+    if (pick.key === "roster") {
+      await viewAgentRoster();
+      continue;
+    }
+
+    if (pick.key === "export-roster") {
+      await exportAgentRosterCsv();
+      continue;
+    }
+
+    if (pick.key === "import") {
+      await importOrChooseGotchi(wallet, cartridgeId);
+      continue;
+    }
+
     if (pick.key === "mint") {
-      const collateral = await pickCollateral("Mint sub-agent cAavegotchi — pick collateral");
+      title("Mint cAavegotchi");
+      console.log("  Mint a new sub-agent cAavegotchi for $5.\n");
+      const collateral = await pickCollateral("Choose collateral for new sub-agent hero");
       console.log(`\n  Minting sub-agent (${collateral})…`);
       const heroId = await apiOp("mint-sub", collateral);
       console.log(`  ✓ minted ${heroId} (available for sub-agent spawn)`);
+      await syncFleetQuiet();
       await pause();
       continue;
     }
@@ -448,42 +722,72 @@ async function mainMenu(wallet, cartridgeId) {
       pinAvatar(heroId);
       saveOnboarding({ orchestratorHeroId: heroId });
       console.log(`\n  ✓ orchestrator avatar → ${heroId}`);
+      await syncFleetQuiet();
       await pause();
     }
   }
 }
 
+function clearStaleSessionPin() {
+  const pinPath = `${ROOT}/sessions/.pin`;
+  try {
+    const pin = readFileSync(pinPath, "utf8").trim();
+    if (/^s\d/.test(pin)) unlinkSync(pinPath);
+  } catch {}
+}
+
+async function ensureOrchestratorHero(heroes) {
+  if (loadOnboarding().orchestratorHeroId || !heroes.length) return;
+  title("Orchestrator avatar");
+  const heroId = await pickOrchestrator(heroes);
+  await apiOp("select-hero", heroId);
+  pinAvatar(heroId);
+  saveOnboarding({ orchestratorHeroId: heroId });
+  console.log(`\n  ✓ orchestrator set → ${heroId}`);
+  await pause();
+}
+
 async function run() {
   try {
-    // Stale session pins (s2026…) are not hero ids — clear before onboarding.
-    const pinPath = `${ROOT}/sessions/.pin`;
-    try {
-      const pin = readFileSync(pinPath, "utf8").trim();
-      if (/^s\d/.test(pin)) unlinkSync(pinPath);
-    } catch {}
-
+    clearStaleSessionPin();
     const wallet = await connectWalletMenu();
-
     const cartridgeId = await ensureCartridge(wallet);
     const heroes = await resolveHeroes(wallet, cartridgeId);
-
-    if (!loadOnboarding().orchestratorHeroId) {
-      title("Orchestrator avatar");
-      const heroId = await pickOrchestrator(heroes);
-      await apiOp("select-hero", heroId);
-      pinAvatar(heroId);
-      saveOnboarding({ orchestratorHeroId: heroId });
-      console.log(`\n  ✓ orchestrator set → ${heroId}`);
-      await pause();
-    }
-
+    await ensureOrchestratorHero(heroes);
     await mainMenu(wallet, cartridgeId);
   } finally {
     rl.close();
   }
 }
 
-run().catch((e) => {
+/** In-app cockpit (/cockpit) — skip wallet welcome when already connected. */
+async function loadCartridgeHeroesQuiet(cartridgeId) {
+  let heroes = await fetchCartridgeHeroes(cartridgeId);
+  if (!heroes.length) {
+    heroes = await fetchCartridgeHeroes(cartridgeId);
+  }
+  return heroes;
+}
+
+async function runCockpit() {
+  try {
+    clearStaleSessionPin();
+    let wallet = readWalletFile();
+    if (!wallet) {
+      wallet = await connectWalletMenu();
+    }
+    const cartridgeId = await ensureCartridge(wallet);
+    // Cockpit is settings/mint/roster — not first-time onboarding bind flow.
+    const heroes = await loadCartridgeHeroesQuiet(cartridgeId);
+    await ensureOrchestratorHero(heroes);
+    await mainMenu(wallet, cartridgeId);
+  } finally {
+    rl.close();
+  }
+}
+
+const cockpitOnly = process.argv.includes("--cockpit");
+(cockpitOnly ? runCockpit() : run()).catch((e) => {
   console.error(`\n  ✗ ${e.message}`);
   process.exit(1);
 });

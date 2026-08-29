@@ -2,8 +2,9 @@
   // GotchiBot OpenClaw agent defaults (included under agents.defaults).
   // Fleet per-hero entries: config/openclaw.fleet.generated.json5 (openclaw-fleet.mjs sync).
   // Full install: config/openclaw.install.json5
+  // Note: opencode/hy3-free is OpenCode Zen only — OpenClaw gateway does not know it.
 
   workspace: "~/Dev/GotchiBot",
-  model: "opencode/hy3-free",
+  model: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
   thinkingDefault: "off",
 }

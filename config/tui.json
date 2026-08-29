@@ -10,6 +10,7 @@
     "agent_cycle": "tab",
     "agent_cycle_reverse": "shift+tab",
     "agent_list": "<leader>a,ctrl+p",
+    "sidebar_toggle": "ctrl+o,<leader>b",
     "prompt.autocomplete.complete": "ctrl+space",
     "prompt.autocomplete.select": "return",
     "messages_copy": "<leader>y",

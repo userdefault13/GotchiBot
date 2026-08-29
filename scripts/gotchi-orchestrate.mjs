@@ -130,7 +130,7 @@ async function cmdSpawn(argv) {
     process.exit(gate.code === "wallet" ? 10 : gate.code === "cartridge" ? 11 : 12);
   }
 
-  let model = "nim";
+  let model = "auto";
   const rest = [];
   for (let i = 0; i < argv2.length; i++) {
     if (argv2[i] === "--model" && argv2[i + 1]) {
@@ -145,6 +145,7 @@ async function cmdSpawn(argv) {
   if (!prompt) usage();
 
   const id = runDispatch(["new", "--model", model, prompt], { capture: true });
+  spawnSync("bash", [`${ROOT}/scripts/poke-avatar.sh`], { stdio: "ignore" });
   if (process.argv.includes("--json") || argv2.includes("--json")) {
     console.log(JSON.stringify({ ok: true, host: "local", sessionId: id, model, gate }, null, 2));
   } else {

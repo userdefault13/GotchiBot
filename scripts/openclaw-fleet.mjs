@@ -42,16 +42,17 @@ export const OPENCLAW_FOCUS = `${SESSIONS}/.openclaw-focus.json`;
 export const GATEWAY_CONFIG = `${SESSIONS}/.openclaw-gateway.json`;
 
 const ORCH_PROMPT = [
-  "You are the GotchiBot ORCHESTRATOR (the gotchi) — OpenClaw agent owned-954.",
-  "You are NOT a sub-agent. Sub-agents are other OpenClaw heroes (e.g. starter-link-h1-1) or opencode dispatch sessions you spawn.",
-  "When asked whether you are orchestrator or sub-agent: you are the orchestrator.",
-  "Speak naturally with the user. Decompose tasks and spawn sub-agents via:",
-  "  ./scripts/gotchi-orchestrate.mjs spawn --model nim \"prompt\"",
-  "  ./scripts/opencode-dispatch.sh new --model nim \"prompt\"",
-  "Sub-agents require wallet + cAavegotchi — every sub-agent needs a cAavegotchi on the cartridge; spawn scripts enforce this.",
-  "Monitor: ./scripts/gotchi-orchestrate.mjs list | wait | output.",
+  "You are the MAIN GotchiBot. OpenClaw agent owned-954. Julius talks to you.",
+  "You are not a worker. You are the boss. You delegate and manage other bots.",
+  "Workers: LINK (starter-link-h1-1) and any other hero or dispatch session.",
+  "When asked if you are orch or a sub: you are the orchestrator, the main bot.",
+  "Job: hear Julius, assign the right bot, watch them, merge, report. Do not become LINK. Do not DIY the trader desk.",
+  "Reply first. Real beats only. Lead with the result. Close the loop. On it is not the answer.",
+  "Models: --model auto (hy3-free) for basic delegation. Lightning for faster gateway chat. Ultra/heavy only for retune or hard debug. Never Ultra for hello.",
+  "Trader: LINK owns the paper desk. Delegate monitor/improve/news. Stay paper. Open-mark is mark not PnL. News is a veto.",
+  "Spawn: ./scripts/gotchi-orchestrate.mjs spawn --model auto \"prompt\" — every worker needs a cAavegotchi.",
   "Never install tools autonomously. Secrets via abracadabra only.",
-  "Read AGENTS.md and ORCHESTRATOR.md in the workspace for full protocol.",
+  "Read workspace SOUL.md and USER.md every session.",
 ].join("\n");
 
 function ensureSessions() {
@@ -448,28 +449,56 @@ function gatewayAuthArgs() {
   return args;
 }
 
-export function runAgentTurn(agentId, message, { json = false, timeout = 600 } = {}) {
+export function gatewayProcessEnv() {
+  const file = loadGatewayConfig();
+  const token =
+    process.env.OPENCLAW_GATEWAY_TOKEN?.trim() ||
+    process.env.GOTCHIBOT_OPENCLAW_TOKEN?.trim() ||
+    file?.token?.trim() ||
+    "";
+  const password =
+    process.env.OPENCLAW_GATEWAY_PASSWORD?.trim() ||
+    process.env.GOTCHIBOT_OPENCLAW_PASSWORD?.trim() ||
+    "";
+  const env = {
+    ...process.env,
+    OPENCLAW_GATEWAY_URL: process.env.OPENCLAW_GATEWAY_URL?.trim() || gatewayUrl(),
+  };
+  if (token && !env.OPENCLAW_GATEWAY_TOKEN) env.OPENCLAW_GATEWAY_TOKEN = token;
+  if (password && !env.OPENCLAW_GATEWAY_PASSWORD) env.OPENCLAW_GATEWAY_PASSWORD = password;
+  return env;
+}
+
+/** Inject one user turn into an OpenClaw session (default: TUI main session). */
+export function runAgentTurn(agentId, message, { json = false, timeout = 600, sessionKey } = {}) {
   const bin = findOpenclawBin();
   if (!bin) return { ok: false, reason: "openclaw-not-installed" };
 
+  const key = (sessionKey || tuiSessionKey(agentId)).trim();
   const args = [
     "agent",
     "--agent",
     agentId,
     "--message",
     message,
+    "--session-key",
+    key,
     "--timeout",
     String(timeout),
     ...gatewayAuthArgs(),
   ];
   if (json) args.push("--json");
 
-  const run = () =>
-    spawnSync(bin, args, {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: process.env,
-    });
+  const env = gatewayProcessEnv();
+  const spawnOpts = {
+    cwd: ROOT,
+    encoding: "utf8",
+    env,
+    maxBuffer: 20 * 1024 * 1024,
+    timeout: (Number(timeout) + 30) * 1000,
+  };
+
+  const run = () => spawnSync(bin, args, spawnOpts);
 
   let r = run();
 
@@ -478,23 +507,26 @@ export function runAgentTurn(agentId, message, { json = false, timeout = 600 } =
     !process.env.GOTCHIBOT_SKIP_ABRA &&
     spawnSync("which", ["abra"], { encoding: "utf8" }).status === 0
   ) {
-    r = spawnSync("abra", ["run", "gotchibot", "--", bin, ...args], {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: process.env,
-    });
+    r = spawnSync("abra", ["run", "gotchibot", "--", bin, ...args], spawnOpts);
+  }
+
+  const stderr = r.stderr || "";
+  let reason = r.status === 0 ? null : "openclaw-agent-failed";
+  if (reason && /pairing required|device is not approved/i.test(`${stderr}\n${r.stdout || ""}`)) {
+    reason = "device-pairing-required";
   }
 
   return {
     ok: r.status === 0,
     status: r.status,
     stdout: r.stdout || "",
-    stderr: r.stderr || "",
-    reason: r.status === 0 ? null : "openclaw-agent-failed",
+    stderr,
+    sessionKey: key,
+    reason,
   };
 }
 
-export async function chatViaOpenClaw(agentId, message, { json = false } = {}) {
+export async function chatViaOpenClaw(agentId, message, { json = false, sessionKey } = {}) {
   if (!preferOpenClawChat()) {
     return { ok: false, reason: "openclaw-disabled" };
   }
@@ -504,7 +536,7 @@ export async function chatViaOpenClaw(agentId, message, { json = false } = {}) {
   if (!(await gatewayReachable())) {
     return { ok: false, reason: "gateway-unreachable", gateway: gatewayUrl() };
   }
-  return runAgentTurn(agentId, message, { json });
+  return runAgentTurn(agentId, message, { json, sessionKey: sessionKey || tuiSessionKey(agentId) });
 }
 
 export function tuiSessionKey(agentId) {

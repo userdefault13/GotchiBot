@@ -25,6 +25,16 @@ active_status() {
     case "$k" in
       s*) [ -f "$SESSIONS/$k/state.env" ] && grep -oE '^status=[a-z]+' "$SESSIONS/$k/state.env" | cut -d= -f2 && return ;;
     esac
+    # Live session for this hero beats a stale "available" cache
+    if [[ "$k" != s* ]]; then
+      for d in "$SESSIONS"/s*/state.env; do
+        [ -f "$d" ] || continue
+        grep -q "^hero=${k}$" "$d" 2>/dev/null || continue
+        grep -q '^status=running' "$d" 2>/dev/null || continue
+        echo "working"
+        return
+      done
+    fi
     # Hero pin — prefer cartridge / cache agentStatus over bare "pinned"
     if [ -f "$SESSIONS/.hero-agent-state.json" ] && command -v node >/dev/null; then
       local st
@@ -90,7 +100,13 @@ role_label() {
 
 refresh_roster() {
   # Fast path: refresh from cache / local sessions without abra.
+  local old new
+  old="$(cat "$ROSTER_CACHE" 2>/dev/null || true)"
   node "$ROOT/scripts/avatar-roster.mjs" --json >/dev/null 2>&1 || true
+  new="$(cat "$ROSTER_CACHE" 2>/dev/null || true)"
+  if [ "$old" != "$new" ]; then
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$SESSIONS/.avatar-roster.stamp" 2>/dev/null || true
+  fi
 }
 
 refresh_roster_async() {
@@ -384,6 +400,7 @@ case "${1:-watch}" in
     render "$(active_status)"
     refresh_roster_async
     while true; do
+      refresh_roster
       sig="$(active_status)"
       cols="$(pane_width)"
       role="$(role_label)"

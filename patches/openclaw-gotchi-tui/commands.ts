@@ -134,6 +134,20 @@ const TUI_COMMAND_ROWS = [
     { scope: "gotchi" },
   ],
   [
+    "cockpit",
+    "Mint cAavegotchi or change orchestrator avatar",
+    "/cockpit",
+    undefined,
+    { scope: "gotchi", aliases: [{ name: "onboarding", description: "Alias for /cockpit" }] },
+  ],
+  [
+    "copy",
+    "Copy latest chat line to clipboard",
+    "/copy [last|assistant|user|system|error]",
+    undefined,
+    { scope: "gotchi" },
+  ],
+  [
     "openclaw",
     "Return to OpenClaw",
     "/openclaw [request]",
@@ -249,6 +263,20 @@ function appendSlashCommand(
 }
 
 export function parseCommand(input: string): ParsedCommand {
+  const trimmedLocal = input.replace(/^\//, "").trim();
+  if (trimmedLocal) {
+    const [localName] = trimmedLocal.split(/\s+/);
+    const normalizedLocal = normalizeLowercaseStringOrEmpty(localName);
+    const gotchiDescriptor = resolveTuiCommandDescriptor(normalizedLocal);
+    if (gotchiDescriptor?.scope === "gotchi" && gotchiDescriptor.handler && isGotchiBotEnabled()) {
+      const rest = trimmedLocal.slice(localName.length).trim();
+      return {
+        name: gotchiDescriptor.name,
+        args: rest,
+      };
+    }
+  }
+
   const sharedCommand = resolveTextCommand(input);
   if (sharedCommand) {
     return {

@@ -1,0 +1,19 @@
+{
+  "prefer": [
+    "opencode/hy3-free",
+    "openrouter/nvidia/nemotron-3.5-lightning:free",
+    "openrouter/z-ai/glm-5.2:free",
+    "openrouter/google/gemma-4-31b-it:free",
+    "openrouter/google/gemma-4-26b-a4b-it:free",
+    "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+    "openrouter/minimax/minimax-m2.7:free",
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+  ],
+  "skip": [
+    "openrouter/nvidia/nemotron-3.5-content-safety:free",
+    "openrouter/openrouter/free"
+  ],
+  "lastResort": "opencode/hy3-free",
+  "ttlOkSec": 0,
+  "ttlFailSec": 1800
+}
