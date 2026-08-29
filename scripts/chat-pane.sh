@@ -186,8 +186,11 @@ fi
 # Resolve gotchi mode (OpenCode → OpenClaw orchestrator) before launching OpenCode.
 if [ "$AGENT" = "gotchi" ] && command -v node >/dev/null 2>&1; then
   eval "$(node "$ROOT/scripts/opencode-gotchi-mode.mjs" env 2>/dev/null)" || true
+  # Gotchi TUI pins Hy3 on load (gotchi-mode now exports hy3 as GOTCHIBOT_GOTCHI_MODEL).
   if [ -n "${GOTCHIBOT_GOTCHI_MODEL:-}" ]; then
     MODEL="$GOTCHIBOT_GOTCHI_MODEL"
+  else
+    MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/hy3-free}"
   fi
   if [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ] && [ -n "${TMUX:-}" ]; then
     tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (OpenClaw) " 2>/dev/null || true

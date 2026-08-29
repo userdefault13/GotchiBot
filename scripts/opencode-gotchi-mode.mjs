@@ -36,6 +36,8 @@ const RELAY_SCRIPT = `${ROOT}/scripts/opencode-gotchi-relay.mjs`;
 const RELAY_STATE = `${ROOT}/sessions/.gotchi-relay.json`;
 const LOCAL_MODEL = (process.env.GOTCHIBOT_OPENCODE_MODEL || "opencode/hy3-free").trim();
 const OPENCLAW_MODEL = (process.env.GOTCHIBOT_OPENCLAW_OPENCODE_MODEL || "openclaw/orchestrator").trim();
+// Gotchi TUI always starts on Hy3. Orchestrator model is status-only unless forced.
+const TUI_MODEL = process.env.GOTCHIBOT_GOTCHI_TUI_MODEL?.trim() || LOCAL_MODEL;
 const RELAY_PORT = Number(process.env.GOTCHIBOT_GOTCHI_RELAY_PORT || 18791);
 
 function gatewayAuthEnv() {
@@ -221,7 +223,7 @@ export async function resolveGotchiMode({ ensureRelay = false } = {}) {
       ...base,
       backend: "openclaw-gateway",
       enabled: true,
-      model: OPENCLAW_MODEL,
+      model: TUI_MODEL, backendModel: OPENCLAW_MODEL,
       reachable: true,
       chatCompletions,
       relay,
@@ -271,7 +273,7 @@ export async function resolveGotchiMode({ ensureRelay = false } = {}) {
     ...base,
     backend: "openclaw-gateway",
     enabled: true,
-    model: OPENCLAW_MODEL,
+    model: TUI_MODEL, backendModel: OPENCLAW_MODEL,
     reachable: true,
     httpV1,
     relay,

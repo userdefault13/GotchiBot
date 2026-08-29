@@ -188,6 +188,10 @@ cell_block() {
       status_color=$'\033[38;5;141m'
       label="watching"
       ;;
+    assigned)
+      status_color=$'\033[38;5;220m'
+      label="assigned"
+      ;;
     occupied)
       # legacy alias → working
       status_color=$'\033[38;5;208m'
@@ -309,6 +313,7 @@ render() {
     working|running|occupied) status_color=$'\033[38;5;208m' ;;
     active|pinned) status_color=$'\033[38;5;39m' ;;
     watching) status_color=$'\033[38;5;141m' ;;
+    assigned) status_color=$'\033[38;5;220m' ;;
     available) status_color=$'\033[38;5;40m' ;;
   esac
   local pin_id=""

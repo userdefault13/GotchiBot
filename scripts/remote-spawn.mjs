@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { assertRemoteReady, materializeKey, runSsh, runScp, localSessionFiles } from "./remote-lib.mjs";
 import { checkSpawnGate } from "./wallet-gate.mjs";
+import { looksStandingTask } from "./hero-agent-state.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -205,9 +206,11 @@ async function cmdSpawn(argv) {
           `${ROOT}/scripts/hero-agent-state.mjs`,
           "set",
           hid,
-          "working",
+          looksStandingTask(prompt) ? "assigned" : "working",
           "--session",
           sessionId,
+          "--task",
+          String(prompt || "").slice(0, 200),
           "--host",
           "imac",
         ],

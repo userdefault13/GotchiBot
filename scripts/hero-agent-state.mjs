@@ -6,6 +6,7 @@
  *   available — not spun up as an agent
  *   active    — spun up with an assignment
  *   working   — currently building / computing
+ *   assigned  — ongoing task that may need a cron
  *   idle      — spun up but no current task
  *   watching  — cron / wait loop
  *
@@ -24,7 +25,14 @@ const SESSIONS = `${ROOT}/sessions`;
 const CACHE = `${SESSIONS}/.hero-agent-state.json`;
 const ONBOARDING = `${SESSIONS}/.onboarding.json`;
 const FOCUS = `${SESSIONS}/.focus.json`;
-const STATUSES = ["available", "active", "working", "idle", "watching"];
+const STATUSES = ["available", "active", "working", "assigned", "idle", "watching"];
+
+
+/** Standing / cron-backed task (monitor, watch, trader desk, schedule). */
+export function looksStandingTask(text) {
+  const t = String(text || "").toLowerCase();
+  return /\b(cron|crontab|monitor|watch(?:ing|er)?|schedul|standing|trader|loop|daily|hourly|every\s+\d)\b/.test(t);
+}
 
 function orchestratorHeroId(heroes = []) {
   try {
@@ -239,8 +247,15 @@ export async function syncHeroAgentStatuses() {
     if (!hero || !derived.has(hero)) return;
     if (status === "running") {
       const alive = host === "imac" ? true : pidAlive(field(`${SESSIONS}/${sessionId}`, "pid"));
+      const taskHint = (() => {
+        try {
+          return readFileSync(`${SESSIONS}/${sessionId}/prompt.txt`, "utf8").trim().slice(0, 200);
+        } catch {
+          return sessionId;
+        }
+      })();
       derived.set(hero, {
-        status: alive ? "working" : "active",
+        status: alive ? (looksStandingTask(taskHint) ? "assigned" : "working") : "active",
         sessionId,
         task: (() => {
           try {
@@ -255,7 +270,15 @@ export async function syncHeroAgentStatuses() {
     } else if (status === "done" || status === "failed") {
       // leave as available unless another running session owns the hero
       const cur = derived.get(hero);
-      if (cur?.status === "working" || cur?.status === "active") return;
+      if (cur?.status === "working" || cur?.status === "active" || cur?.status === "assigned") return;
+      let task = "";
+      try {
+        task = readFileSync(`${SESSIONS}/${sessionId}/prompt.txt`, "utf8").trim().slice(0, 200);
+      } catch {}
+      if (looksStandingTask(task)) {
+        derived.set(hero, { status: "assigned", sessionId, task, host });
+        return;
+      }
       derived.set(hero, { status: "available" });
     }
   };
@@ -309,6 +332,27 @@ export async function syncHeroAgentStatuses() {
       });
     }
   }
+
+
+  // Keep standing assignments (cron / monitor) — do not drop to available/idle.
+  try {
+    const cache = JSON.parse(readFileSync(CACHE, "utf8"));
+    for (const [heroId, row] of Object.entries(cache || {})) {
+      if (!derived.has(heroId)) continue;
+      const keep = row?.status === "assigned" || row?.status === "watching";
+      if (!keep) continue;
+      const cur = derived.get(heroId);
+      if (cur.status === "available" || cur.status === "idle") {
+        derived.set(heroId, {
+          status: row.status,
+          sessionId: row.sessionId || cur.sessionId,
+          task: row.task || cur.task,
+          model: row.model || cur.model,
+          host: row.host || cur.host,
+        });
+      }
+    }
+  } catch {}
 
   const results = [];
   for (const [heroId, info] of derived) {

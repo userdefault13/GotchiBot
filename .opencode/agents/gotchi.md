@@ -3,10 +3,9 @@ description: GotchiBot orchestrator — delegate-first to local/remote agents, t
 mode: primary
 order: 1
 color: "#B650FF"
-# Gotchi mode: OpenCode TUI relays each prompt into the iMac OpenClaw
-# orchestrator TUI session (agent:<orchestratorId>:main).
-# Falls back to opencode/hy3-free when gateway is down (chat-pane.sh).
-model: openclaw/orchestrator
+# Gotchi mode loads on Hy3 (opencode/hy3-free). OpenClaw orch is opt-in via
+# GOTCHIBOT_GOTCHI_BACKEND=openclaw-gateway / GOTCHIBOT_OPENCLAW_OPENCODE_MODEL.
+model: opencode/hy3-free
 temperature: 0.5
 permission:
   plan_enter: allow

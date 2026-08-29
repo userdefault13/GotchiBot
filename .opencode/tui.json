@@ -6,6 +6,9 @@
   "scroll_acceleration": {
     "enabled": true
   },
+  "plugin": [
+    ".opencode/plugins/gotchi-thought-tts.ts"
+  ],
   "keybinds": {
     "agent_cycle": "tab",
     "agent_cycle_reverse": "shift+tab",

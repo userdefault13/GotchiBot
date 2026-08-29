@@ -44,7 +44,10 @@ function resolveStatus(h, busy) {
   const cached = heroStateCache()[h.id]?.status || null;
   const fromCache = cached && cached !== "available" ? cached : null;
   const fromSim = h.agentStatus && h.agentStatus !== "available" ? h.agentStatus : null;
-  if (busy.has(h.id)) return fromCache === "active" ? "active" : "working";
+  if (busy.has(h.id)) {
+    if (fromCache === "assigned" || fromCache === "watching" || fromCache === "active") return fromCache;
+    return "working";
+  }
   return fromSim || fromCache || "available";
 }
 

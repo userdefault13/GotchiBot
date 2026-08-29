@@ -2,6 +2,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+standing_status() {
+  local t="$1"
+  if echo "$t" | grep -Eiq '(cron|crontab|monitor|watch|watching|watcher|schedul|standing|trader|loop|daily|hourly)'; then
+    echo assigned
+  else
+    echo working
+  fi
+}
+
 SESSIONS="$ROOT/sessions"
 PROGRESS="$ROOT/scripts/progress-bar.sh"
 mkdir -p "$SESSIONS"
@@ -107,9 +117,12 @@ EOF
     if [ -n "$hero" ]; then
       set_field "$dir" hero "$hero"
       echo "Your gotchi identity: $hero" >> "$dir/bootstrap.txt"
-      # Sim: spun up with assignment
-      node "$ROOT/scripts/hero-agent-state.mjs" set "$hero" active \
-        --session "$id" --task "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')" \
+      # Sim: standing/cron → assigned, else active
+      TASK_HINT="$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')"
+      BIND_ST="$(standing_status "$TASK_HINT")"
+      [ "$BIND_ST" = working ] && BIND_ST=active
+      node "$ROOT/scripts/hero-agent-state.mjs" set "$hero" "$BIND_ST" \
+        --session "$id" --task "$TASK_HINT" \
         --model "$(model_for "$model")" --host local >/dev/null 2>&1 || true
       "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
     fi
@@ -124,7 +137,8 @@ MODEL="$(model_for "$model")"
 FREE_MODEL="\$(node "$ROOT/scripts/model-fallback.mjs" free-model 2>/dev/null || echo opencode/hy3-free)"
 HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 if [ -n "\$HERO" ]; then
-  node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" working \
+  ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
+  node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" "$ST" \
     --session "$id" --task "\$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')" \
     --model "\$MODEL" --host local >/dev/null 2>&1 || true
 fi
@@ -153,7 +167,7 @@ if [ \$ec -ne 0 ] && [ "\$MODEL" != "\$FREE_MODEL" ] && node "$ROOT/scripts/mode
   { grep -vE '^model=' "$dir/state.env"; echo "model=\$FREE_MODEL"; } > "$dir/.state.tmp"
   mv "$dir/.state.tmp" "$dir/state.env"
   if [ -n "\$HERO" ]; then
-    node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" working \
+    node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" "$ST" \
       --session "$id" --task "\$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')" \
       --model "\$FREE_MODEL" --host local >/dev/null 2>&1 || true
   fi
@@ -166,12 +180,20 @@ RUNNER
 
   ( if "$runner"; then set_field "$dir" status done
       HERO="$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-      [ -n "$HERO" ] && node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" available --host local >/dev/null 2>&1 || true
+      if [ -n "$HERO" ]; then
+        END_ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
+        [ "$END_ST" = working ] && END_ST=available
+        node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" "$END_ST" --host local >/dev/null 2>&1 || true
+      fi
       "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id finished."
     else set_field "$dir" status failed
       HERO="$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-      [ -n "$HERO" ] && node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" available --host local >/dev/null 2>&1 || true
+      if [ -n "$HERO" ]; then
+        END_ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
+        [ "$END_ST" = working ] && END_ST=available
+        node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" "$END_ST" --host local >/dev/null 2>&1 || true
+      fi
       "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id failed."
     fi

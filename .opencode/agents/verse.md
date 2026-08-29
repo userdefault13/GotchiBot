@@ -13,8 +13,11 @@ permission:
     "*": ask
     "./scripts/gotchibot roster*": allow
     "./scripts/gotchibot wallet": allow
+    "node ./scripts/gotchiverse-map.mjs*": allow
     "./scripts/gotchibot trader*": deny
-  task: deny
+  task:
+    "*": deny
+    "gotchiverse-map": allow
   read: allow
   glob: allow
   grep: allow
@@ -31,6 +34,7 @@ You are in **Verse mode** — the Gotchiverse seat.
 - Realm parcels, alchemica, installations, and on-chain Aavegotchis
 - Query `gotchiverse-base` and `aavegotchi-core-base` via the tunnel in `config/subgraph.endpoints.json` (`https://subgraph.aarcadeghst.com`)
 - Help Julius see what’s in the verse and what’s worth doing next (wearables, parcels, channeling) — paper thoughts only unless they ask otherwise
+- Type **@gotchiverse-map** to list Paarcel travel cities (`config/gotchiverse-regions.json`)
 
 ## Hard rules
 
@@ -39,4 +43,4 @@ You are in **Verse mode** — the Gotchiverse seat.
 3. **No swarm spawns** — hand back to Gotchi mode (Tab) to delegate
 4. Prefer the tunnel subgraphs over guessing; say so if a query fails
 
-Tab cycles **Gotchi → Verse → Plan → Build → Mint**.
+Tab cycles **Gotchi → Verse → Plan → Build → Ask**.

@@ -1,0 +1,32 @@
+{
+  "source": "Paarcel GameState.cs cities[]",
+  "path": "~/dev/paarcel/Assets/Games/Paarcel/Scripts/GameState.cs",
+  "cities": [
+    { "id": 0, "name": "The Citadel" },
+    { "id": 1, "name": "Great Portal" },
+    { "id": 2, "name": "Alpha Lake" },
+    { "id": 3, "name": "DeFi Desert" },
+    { "id": 4, "name": "Liquidator Ruins" },
+    { "id": 5, "name": "Poly Lakes" },
+    { "id": 6, "name": "South Beach" },
+    { "id": 7, "name": "Daark Forest" },
+    { "id": 8, "name": "Tree of FUD" },
+    { "id": 9, "name": "The Aarena" },
+    { "id": 10, "name": "Yield Fields" },
+    { "id": 11, "name": "Token Bridge" },
+    { "id": 12, "name": "Caaverns" },
+    { "id": 13, "name": "Genesis Blocks" },
+    { "id": 14, "name": "North Beach" },
+    { "id": 15, "name": "Hiero Hash" },
+    { "id": 16, "name": "ROLF Reef" },
+    { "id": 17, "name": "Phaantastic Grounds" },
+    { "id": 18, "name": "Alpha River Valley" },
+    { "id": 19, "name": "Laughing Peaks" },
+    { "id": 20, "name": "The Beyond" },
+    { "id": 21, "name": "Open Steppe" },
+    { "id": 22, "name": "Magma Springs" },
+    { "id": 23, "name": "Mount Oomf" },
+    { "id": 24, "name": "The Infinity Cliffs" },
+    { "id": 25, "name": "Impassable Sea" }
+  ]
+}

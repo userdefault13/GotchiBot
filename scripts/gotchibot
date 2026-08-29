@@ -36,7 +36,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot openclaw sync|list|status|chat|install|point  OpenClaw fleet + CLI
   gotchibot delegate [--json] [hint]  pick next local/remote agent (/delegate)
   gotchibot hero-state set|sync|get   cAavegotchi agentStatus on cartridge sim
-                                      # available|active|working|idle|watching
+                                      # available|active|working|assigned|idle|watching
   gotchibot status <id>...        one session's state
   gotchibot wait [<id>...]        block until sessions finish
   gotchibot output <id>           print a session deliverable
