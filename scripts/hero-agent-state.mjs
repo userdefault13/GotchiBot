@@ -7,7 +7,7 @@
  *   active    — spun up with an assignment
  *   working   — currently building / computing
  *   assigned  — ongoing task that may need a cron
- *   idle      — spun up but no current task
+ *   idle      — assigned a role but not currently in a live session
  *   watching  — cron / wait loop
  *
  * usage:

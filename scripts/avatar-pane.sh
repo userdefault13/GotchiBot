@@ -587,7 +587,7 @@ cell_block() {
       label="active"
       ;;
     idle)
-      status_color=$'\033[38;5;250m'
+      status_color=$'\033[38;5;184m'
       label="idle"
       ;;
     watching)
@@ -747,6 +747,7 @@ render() {
     active|pinned) status_color=$'\033[38;5;39m' ;;
     watching) status_color=$'\033[38;5;141m' ;;
     assigned) status_color=$'\033[38;5;220m' ;;
+    idle) status_color=$'\033[38;5;184m' ;;
     available) status_color=$'\033[38;5;40m' ;;
   esac
   local pin_id=""
