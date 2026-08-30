@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "updatedAt": "2026-08-30T08:20:00.000Z",
+  "entries": [
+    {
+      "id": "agc-20260830-081200",
+      "status": "done",
+      "areas": [
+        "surveys",
+        "bounce-gate",
+        "left-column",
+        "installations-drawers"
+      ],
+      "summary": "Surveys sum prior rounds via getRoundAlchemica; Bounce Gate uses 145.gif (removed northGate override); left column 280px / page 1100px; installations grouped in collapsible drawers by kind.",
+      "files": [
+        "/Users/juliuswong/Dev/AarcadeGh-t/src/composables/useParcelRealmDetail.ts",
+        "/Users/juliuswong/Dev/AarcadeGh-t/src/components/MyLand/ParcelRealmPanel.vue",
+        "/Users/juliuswong/Dev/AarcadeGh-t/src/helpers/installationThumbs.ts",
+        "/Users/juliuswong/Dev/AarcadeGh-t/src/helpers/parcelInstallStatus.ts",
+        "/Users/juliuswong/Dev/AarcadeGh-t/src/config/realmBase.ts",
+        "/Users/juliuswong/Dev/AarcadeGh-t/src/views/MyLand.vue",
+        "/Users/juliuswong/Dev/AarcadeGh-t/lib/cartridgeSim.cjs"
+      ],
+      "authorHero": "cursor",
+      "consumerHero": "owned-22899",
+      "createdAt": "2026-08-30T08:12:00.000Z",
+      "updatedAt": "2026-08-30T08:20:00.000Z",
+      "planRef": "MyLand surveys UI",
+      "notes": "BTC bot assigned active + task Handle AarcadeGh-t. Registry now includes aarcadeghst-changes.",
+      "ack": {
+        "hero": "owned-22899",
+        "at": "2026-08-30T08:20:00.000Z",
+        "note": "Landed in AarcadeGh-t; verify on /mypaarcel when focused."
+      }
+    }
+  ]
+}

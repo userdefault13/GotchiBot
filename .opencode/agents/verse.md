@@ -16,6 +16,11 @@ permission:
     "node ./scripts/gotchiverse-map.mjs*": allow
     "./scripts/gotchibot trader*": deny
     "./scripts/*.mjs*": allow
+    "./scripts/cursor-cli.mjs*": allow
+    "node ./scripts/cursor-cli.mjs*": allow
+    "node scripts/cursor-cli.mjs*": allow
+    "cursor-agent *": allow
+    "$HOME/.local/bin/cursor-agent *": allow
     "./scripts/*.sh*": allow
     "./scripts/gotchibot*": allow
     "./scripts/avatar-*": allow
@@ -86,3 +91,5 @@ You are in **Verse mode** — the Gotchiverse seat.
 4. Prefer the tunnel subgraphs over guessing; say so if a query fails
 
 Tab cycles **Gotchi → Verse → Plan → Build → Ask**.
+
+Hard repo investigation still goes through `./scripts/cursor-cli.mjs` (MBP or iMac). Stay on Hy3 / Nemotron 3 for talk. Do not switch OpenCode's model to Cursor.

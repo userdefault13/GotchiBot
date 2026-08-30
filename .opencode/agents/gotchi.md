@@ -24,6 +24,10 @@ permission:
     "./scripts/opencode-dispatch.sh*": allow
     "./scripts/gotchi-orchestrate.mjs*": allow
     "./scripts/cursor-cli.mjs*": allow
+    "node ./scripts/cursor-cli.mjs*": allow
+    "node scripts/cursor-cli.mjs*": allow
+    "cursor-agent *": allow
+    "$HOME/.local/bin/cursor-agent *": allow
     "./scripts/gotchi-multitask.mjs*": allow
     "./scripts/wallet-gate.mjs*": allow
     "./scripts/agent-focus.mjs*": allow
@@ -132,6 +136,8 @@ Load skill **`delegate-first`**. Prefer iMac when Tailscale SSH is up; local whe
 
 Load skill **cartridge-mint** whenever minting, binding, spawning, talking about portals/packs/VRF/cAavegotchi, or using Aarcade cartridge APIs. That skill **beats** ad-hoc Blockscout / Graph / `identity bind` / lore `:3010` ideas.
 
+Load skill **cursor-cli** whenever coding, debugging, writing patches, or investigating a repo. Bot stays on Hy3 Free (`opencode/hy3-free`) or Nemotron 3 for talk/route/task. Hard logic/code goes through `./scripts/cursor-cli.mjs` → `cursor-agent`. Do **not** switch OpenCode's model to Cursor. Do **not** add a Cursor provider.
+
 Load skill **caavegotchi-spawn** when spinning up a new agent, when there is no available cAavegotchi, or when `delegate-pick` returns `blocked`. Spawn UI stays `/spawn` or `sessions/.spawn-request.json`.
 
 ## Spin up / mint / add an agent — cartridge first
@@ -179,17 +185,22 @@ GOTCHIBOT_HERO_ID=<hero> abra run gotchibot -- \
 
 Report the group id (`multitask m…`) and session ids; do not serialize independent units.
 
-## Cursor CLI (orchestrator-managed context)
+## Cursor CLI (default for hard logic)
 
-When the user wants **Cursor Agent** (not gated sub-agents), delegate via the wrapper — you manage context; Cursor executes:
+Stay on **Hy3 Free** (`opencode/hy3-free`) or **Nemotron 3** for talking, routing, spawning, and summarizing. Do **not** switch OpenCode off Hy3 onto a Cursor provider.
+
+Coding, debugging, patches, and repo investigation go through the wrapper (Cursor subscription, logged-in account — never `--api-key`):
 
 ```bash
-./scripts/cursor-cli.mjs run "user prompt" [--mode plan|ask] [--json]
+./scripts/cursor-cli.mjs run "self-contained prompt: goal, constraints, repo path, done criteria"
+./scripts/cursor-cli.mjs run "…" --mode plan
 ./scripts/cursor-cli.mjs resume "follow-up in same Cursor chat"
-./scripts/cursor-cli.mjs context "preview bundled context"
+./scripts/cursor-cli.mjs status
 ```
 
-Interactive Cursor (user TTY): `./scripts/cursor-cli.mjs launch "…"`. Load skill `cursor-cli` for full rules.
+Hand a self-contained prompt. Do not micromanage line edits. Summarize the CLI output in first person as the gotchi. Never dump CLI help into chat. Load skill `cursor-cli`. Run the wrapper on **the current host** (MBP or iMac — both have logged-in Cursor Agent CLI at `~/.local/bin/cursor-agent`). Do not skip Cursor because you are on the iMac.
+
+OpenCode spawn is still for cAavegotchi swarm identities (Hy3/auto). Those sub-bots also pass hard logic to `cursor-cli.mjs` rather than doing it on Nemotron.
 
 ## Modes (Tab or `./scripts/gotchibot mode …`)
 

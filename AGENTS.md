@@ -59,6 +59,11 @@ Your session dir contains:
 3. Write your deliverable to `output.md`. It is the only file merged on
    fan-out completion.
 4. Stay inside this repo's working tree unless the prompt says otherwise.
+5. **Thread continuity** — on follow-ups that continue the last edit ("parent",
+   "tighter", "same element"), load skill `thread-continuity`
+   (`.opencode/skills/thread-continuity/SKILL.md`): reuse last files/selectors
+   before any full-tree search. Cross-session: `sessions/HANDOFF.md`,
+   `aarcadeghst-changes` / `changes.json`, or `cursor-cli.mjs resume`.
 
 ## cAavegotchi identity (sub-agents only)
 
@@ -72,9 +77,10 @@ they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
 
 | Tier | Model | Use |
 |---|---|---|
-| default | `opencode/hy3-free` (`--model nim`) | routine coding (no API key) |
-| reasoning | set `GOTCHIBOT_OPENCODE_MODEL` | heavier tasks (Zen lightning/ultra free currently 404) |
-| escalation | `deepseek/deepseek-v4-pro` | hard reasoning (needs DEEPSEEK_API_KEY) |
+| default | `opencode/hy3-free` (`--model nim`) | talk, route, spawn, summarize (no API key) |
+| task | Nemotron 3 Lightning / Ultra | also fine for tasking; `/model heavy` = Ultra |
+| hard logic | `./scripts/cursor-cli.mjs` → `cursor-agent` | coding / debug / patches (Cursor Pro+ on **MBP or iMac**) |
+| escalation | `deepseek/deepseek-v4-pro` | paid OpenCode fallback (needs DEEPSEEK_API_KEY) |
 | fallback | `ollama/qwen2.5:3b` | offline/private |
 
 NVIDIA_API_KEY flows through abracadabra (`abra run gotchibot -- ...`); opencode
@@ -124,6 +130,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 ## Models
 
-- Default coding: `opencode/hy3-free` (`nim`)
-- Hard: `deepseek/deepseek-v4-pro` (needs `DEEPSEEK_API_KEY` via abra)
+- Bot task / routing / talk: `opencode/hy3-free` (`nim`, default). Nemotron 3 Lightning/Ultra is also fine for tasking. `/model heavy` is still Ultra. Do not switch OpenCode to a Cursor provider.
+- Hard coding / debugging / investigation: `./scripts/cursor-cli.mjs run "…"` → `cursor-agent` (Julius's logged-in Cursor Pro+ on **MBP or iMac**). Never `--api-key`.
+- Paid OpenCode fallback: `deepseek/deepseek-v4-pro` (needs `DEEPSEEK_API_KEY` via abra)
 - Private/offline: local Ollama on the iMac

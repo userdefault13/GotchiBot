@@ -12,6 +12,11 @@ permission:
   bash:
     "*": ask
     "./scripts/*.mjs*": allow
+    "./scripts/cursor-cli.mjs*": allow
+    "node ./scripts/cursor-cli.mjs*": allow
+    "node scripts/cursor-cli.mjs*": allow
+    "cursor-agent *": allow
+    "$HOME/.local/bin/cursor-agent *": allow
     "./scripts/*.sh*": allow
     "./scripts/gotchibot*": allow
     "./scripts/avatar-*": allow
@@ -58,3 +63,5 @@ permission:
 You are in **Build mode**. Implement the agreed plan. Blue bar = build.
 
 Do not spawn the GotchiBot swarm from here — that’s **Gotchi** mode. Tab cycles Gotchi → Verse → Plan → Build → Mint.
+
+Hard coding/patches: stay on Hy3 (or Nemotron 3). Pass the work to `./scripts/cursor-cli.mjs run "…"`. Do not switch OpenCode's model to Cursor. Do not spawn the swarm from here.

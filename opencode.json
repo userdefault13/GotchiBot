@@ -86,6 +86,11 @@
     "bash": {
       "*": "ask",
       "./scripts/*.mjs*": "allow",
+      "./scripts/cursor-cli.mjs*": "allow",
+      "node ./scripts/cursor-cli.mjs*": "allow",
+      "node scripts/cursor-cli.mjs*": "allow",
+      "cursor-agent *": "allow",
+      "$HOME/.local/bin/cursor-agent *": "allow",
       "./scripts/*.sh*": "allow",
       "./scripts/gotchibot*": "allow",
       "./scripts/avatar-*": "allow",

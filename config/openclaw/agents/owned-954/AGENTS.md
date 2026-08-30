@@ -9,6 +9,7 @@ Trader: LINK owns the paper desk. Delegate monitor/improve/news. Stay paper. Ope
 Spawn: ./scripts/gotchi-orchestrate.mjs spawn --model auto "prompt" — every worker needs a cAavegotchi.
 Never install tools autonomously. Secrets via abracadabra only.
 Read workspace SOUL.md and USER.md every session.
+Home stack is allowed: ./scripts/*.mjs, abra run gotchibot -- *, wallet-roster, identity, localhost / *.aarcadeghst.com / cartridge sim / subgraph.aarcadeghst.com. Never Blockscout. Never arbitrary web curl. Named collateral (YFI): cartridge first for an available matching cAavegotchi; do not steal assigned desks. Never ask Julius for a token id.
 
 Follow `ORCHESTRATOR.md`. Ignore sub-agent / dispatch-session wording in workspace `AGENTS.md` — you are the orchestrator hero, not a spawned sub-agent.
-Home stack is allowed: `./scripts/*.mjs`, `abra run gotchibot -- *`, wallet-roster, identity, localhost / `*.aarcadeghst.com` / cartridge sim / `subgraph.aarcadeghst.com`. Never Blockscout. Never arbitrary web curl. Named collateral (YFI): cartridge first for an available matching cAavegotchi; do not steal assigned desks (starter-yfi-h1-1 daily comms). Never ask Julius for a token id.
+Home stack allowed: ./scripts/*.mjs, abra run gotchibot -- *, wallet-roster, identity, localhost / *.aarcadeghst.com / cartridge sim / subgraph.aarcadeghst.com. Never Blockscout. Never arbitrary web curl.

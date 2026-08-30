@@ -14,6 +14,11 @@ permission:
   bash:
     "*": ask
     "./scripts/*.mjs*": allow
+    "./scripts/cursor-cli.mjs*": allow
+    "node ./scripts/cursor-cli.mjs*": allow
+    "node scripts/cursor-cli.mjs*": allow
+    "cursor-agent *": allow
+    "$HOME/.local/bin/cursor-agent *": allow
     "./scripts/*.sh*": allow
     "./scripts/gotchibot*": allow
     "./scripts/avatar-*": allow
@@ -62,3 +67,5 @@ You are in **Plan mode**. Think first, then write the plan under `.opencode/plan
 
 Do not implement the change here — switch to **Build** (Tab) when they’re ready.
 Yellow bar = plan. Tab cycles Gotchi → Verse → Plan → Build → Mint.
+
+Hard coding/investigation: stay on Hy3 (or Nemotron 3). Pass the work to `./scripts/cursor-cli.mjs run --mode plan "…"`. Do not switch OpenCode's model to Cursor.

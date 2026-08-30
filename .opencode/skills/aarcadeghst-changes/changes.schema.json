@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gotchibot://skills/aarcadeghst-changes/changes.schema.json",
+  "title": "AarcadeGh-t UI change log",
+  "type": "object",
+  "required": ["version", "updatedAt", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "area": {
+      "type": "string",
+      "enum": [
+        "left-column",
+        "surveys",
+        "bounce-gate",
+        "installations-drawers",
+        "alchemica",
+        "rights",
+        "other-mypaarcel"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "acked",
+        "in_progress",
+        "done",
+        "blocked",
+        "wontfix"
+      ]
+    },
+    "ack": {
+      "type": "object",
+      "required": ["hero", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "hero": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" },
+        "note": { "type": "string" }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "areas",
+        "summary",
+        "files",
+        "authorHero",
+        "consumerHero",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^agc-[A-Za-z0-9-]+$"
+        },
+        "status": { "$ref": "#/$defs/status" },
+        "areas": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/area" }
+        },
+        "summary": { "type": "string", "minLength": 1 },
+        "files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths relative to AarcadeGh-t repo root or absolute under that tree"
+        },
+        "authorHero": { "type": "string" },
+        "consumerHero": {
+          "type": "string",
+          "const": "owned-22899"
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "commit": { "type": "string" },
+        "planRef": { "type": "string" },
+        "notes": { "type": "string" },
+        "ack": { "$ref": "#/$defs/ack" }
+      }
+    }
+  }
+}
