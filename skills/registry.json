@@ -483,6 +483,14 @@
       "path": ".opencode/skills/caavegotchi-spawn/SKILL.md",
       "addedAt": "2026-08-29"
     },
+    "infra-recover": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Recovery runbook for home iMac Docker/subgraph/tunnel — detect and restart failed Docker containers (esp. aavegotchi-monolith-base-graphql-proxy-1 on :8787), the AarcadeGh-t subgraph gateway, Cloudflare tunnel (cloudflared), and Hasura. Used by the YFI Infra Home Monitor on failure.",
+      "path": ".opencode/skills/infra-recover/SKILL.md",
+      "addedAt": "2026-08-29"
+    },
     "cartridge-mint": {
       "status": "approved",
       "type": "skill",
