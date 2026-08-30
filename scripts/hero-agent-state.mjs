@@ -220,6 +220,9 @@ export async function syncHeroAgentStatuses() {
   for (const h of heroes) {
     derived.set(h.id, { status: "available" });
   }
+  // Heroes with a running+alive session — these are "live", so role-idle does
+  // not apply to them.
+  const liveHeroes = new Set();
 
   const focusList = (() => {
     try {
@@ -233,6 +236,7 @@ export async function syncHeroAgentStatuses() {
     if (!hero || !derived.has(hero)) return;
     if (status === "running") {
       const alive = host === "imac" ? true : pidAlive(field(`${SESSIONS}/${sessionId}`, "pid"));
+      if (alive) liveHeroes.add(hero);
       const taskHint = (() => {
         try {
           return readFileSync(`${SESSIONS}/${sessionId}/prompt.txt`, "utf8").trim().slice(0, 200);
@@ -335,6 +339,35 @@ export async function syncHeroAgentStatuses() {
           task: row.task || cur.task,
           model: row.model || cur.model,
           host: row.host || cur.host,
+        });
+      }
+    }
+  } catch {}
+
+  // Respect persistent roles: a role-having agent that is NOT in a live session
+  // shows `idle` (not `available`/`assigned`). "Live session" = a running+alive
+  // session for that hero (tracked in liveHeroes) or the orchestrator's live TUI.
+  try {
+    const rolesPath = resolve(ROOT, "config", "agent-roles.json");
+    if (existsSync(rolesPath)) {
+      const roles = JSON.parse(readFileSync(rolesPath, "utf8"));
+      for (const [heroId, role] of Object.entries(roles || {})) {
+        if (!role) continue;
+        if (!derived.has(heroId)) continue;
+        if (liveHeroes.has(heroId)) continue; // live session → not idle
+        const cur = derived.get(heroId);
+        if (cur.status !== "available" && cur.status !== "assigned") continue;
+        let task = role;
+        try {
+          const cache = JSON.parse(readFileSync(CACHE, "utf8"));
+          if (cache?.[heroId]?.task) task = cache[heroId].task;
+        } catch {}
+        derived.set(heroId, {
+          status: "idle",
+          sessionId: null,
+          task,
+          model: cur.model,
+          host: cur.host,
         });
       }
     }

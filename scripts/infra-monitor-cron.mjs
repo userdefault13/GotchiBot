@@ -39,13 +39,12 @@ const SUBGRAPH_URL =
   "http://127.0.0.1:8787/subgraphs/name/aavegotchi-core-base";
 const asJson = process.argv.includes("--json");
 
-// Augmented PATH so docker (OrbStack at ~/.orbstack/bin) and curl resolve under
-// cron / abra run, where the default PATH is minimal.
+// Augmented PATH so docker and curl resolve under cron / abra run, where the
+// default PATH is minimal. Uses system docker (no OrbStack dependency).
 const HOME = process.env.HOME || "/Users/juliuswong";
 const EXTRA_PATH = [
   "/usr/local/bin",
   "/opt/homebrew/bin",
-  `${HOME}/.orbstack/bin`,
   `${HOME}/.nvm/versions/node/current/bin`,
 ].join(":");
 const ENV = { ...process.env, PATH: `${EXTRA_PATH}:${process.env.PATH || ""}` };
