@@ -29,6 +29,7 @@ import {
   loadOnboarding,
   fetchCartridgeHeroes,
 } from "./onboarding-lib.mjs";
+import { resolveThumbCollateral } from "./collateral-resolve.mjs";
 import { classifyFocusRoute } from "./focus-classify.mjs";
 import { loadAgentMap, gatewayUrl, loadOpenClawFocus } from "./openclaw-fleet.mjs";
 
@@ -165,13 +166,15 @@ async function loadHeroes() {
     try {
       const heroes = await fetchCartridgeHeroes(meta.cartridgeId);
       for (const h of heroes) {
+        const thumb = resolveThumbCollateral(h.id, h.collateral || h.collateralAddress, h.hauntId);
         fromApi.push({
           kind: "hero",
           host: "cartridge",
           id: h.id,
           status: h.agentStatus || "available",
           hero: h.id,
-          collateral: h.collateral || h.collateralAddress || null,
+          collateral: thumb.collateral || h.collateral || h.collateralAddress || null,
+          hauntId: thumb.hauntId || h.hauntId || null,
           bindType: h.bindType || null,
           name: h.name || null,
           agentSessionId: h.agentSessionId || null,
@@ -743,6 +746,21 @@ async function cmdCockpit() {
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
+async function cmdMeet() {
+  if (process.env.TMUX) {
+    console.log("Opening GotchiBot meeting room in chat pane…");
+    respawnChatPane({ GOTCHIBOT_MEET: "1" });
+    return;
+  }
+  console.log("Opening GotchiBot meeting room…");
+  const r = spawnSync(process.execPath, [`${ROOT}/scripts/onboarding-gate.mjs`, "--meet"], {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (r.status !== 0) process.exit(r.status ?? 1);
+}
+
 async function cmdOrch() {
   const heroId = orchestratorHeroId();
   pinAvatar(heroId, { asOrchestrator: true });
@@ -830,7 +848,7 @@ async function escalateToOrch(prompt, { reason, spawn = false } = {}) {
   };
   delete env.GOTCHIBOT_HERO_ID;
   const wrapped = [
-    `You are a GotchiBot sub-agent spawned by the orchestrator.`,
+    `You are this cAavegotchi, spawned by the orchestrator. Speak in first person (I, me, my).`,
     `User task (escalated from SUB focus): ${prompt.trim()}`,
     `Write deliverable to sessions/<id>/output.md. Follow AGENTS.md.`,
   ].join("\n");
@@ -910,7 +928,7 @@ async function cmdChat(prompt, { force, spawnOnEscalate = false } = {}) {
   }
 
   const wrapped = [
-    `You are GotchiBot sub-agent focused as ${focus.heroId || focus.label}.`,
+    `You are ${focus.heroId || focus.label}. Speak in first person (I, me, my). You are this gotchi, not a narrator and not the orchestrator.`,
     focus.sessionId ? `Prior session: ${focus.sessionId} (host=${focus.host}).` : "",
     `User message: ${prompt.trim()}`,
     `Write deliverable to sessions/<new-id>/output.md. Follow AGENTS.md.`,
@@ -1019,6 +1037,11 @@ async function main() {
     return;
   }
 
+  if (cmd === "meet" || cmd === "meeting") {
+    await cmdMeet();
+    return;
+  }
+
   if (cmd === "status") {
     cmdStatus(json);
     return;
@@ -1055,6 +1078,7 @@ async function main() {
   agent-focus.mjs roster              # full MBP + iMac OpenClaw roster (cockpit)
   agent-focus.mjs roster --csv [path] # export roster to CSV (default: sessions/roster-<timestamp>.csv)
   agent-focus.mjs cockpit              # mint / change orchestrator avatar menu
+  agent-focus.mjs meet                 # shared meeting room (start / invite, then chat)
   agent-focus.mjs status [--json]
   agent-focus.mjs classify "prompt" [--json]
   agent-focus.mjs chat "prompt" [--orch|--sub] [--spawn]`);

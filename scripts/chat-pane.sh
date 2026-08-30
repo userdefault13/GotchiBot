@@ -12,6 +12,8 @@
 # Copy: /copy or Ctrl+Y (last assistant reply → clipboard). Shift+drag selects text in terminal.
 # Disable OpenCode mouse: GOTCHIBOT_OPENCODE_MOUSE=0
 # Full OpenCode TUI (not mini): GOTCHIBOT_OPENCODE_MINI=0
+# Resume last session: GOTCHIBOT_OPENCODE_CONTINUE=1 (default). Fresh chat: =0
+# Pin a session: GOTCHIBOT_OPENCODE_SESSION=ses_…
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,6 +29,16 @@ else
   MODEL="$GOTCHIBOT_OPENCODE_MODEL"
 fi
 mkdir -p "$ROOT/sessions"
+# Cockpit Settings → sessions/.tui-prefs.json (do not override explicit env).
+if [ -f "$ROOT/sessions/.tui-prefs.json" ] && command -v node >/dev/null; then
+  eval "$(node -e "
+    const s=require('$ROOT/sessions/.tui-prefs.json');
+    if (!process.env.GOTCHIBOT_OPENCODE_MOUSE && s.mouse != null)
+      console.log('export GOTCHIBOT_OPENCODE_MOUSE=' + (s.mouse ? '1' : '0'));
+    if (!process.env.GOTCHIBOT_OPENCODE_REPLAY && s.replay != null)
+      console.log('export GOTCHIBOT_OPENCODE_REPLAY=' + (s.replay ? '1' : '0'));
+  " 2>/dev/null || true)"
+fi
 printf "%s\n" "$MODEL" > "$ROOT/sessions/.chat-model"
 MODE_FILE="$ROOT/sessions/.agent-mode.json"
 if [ -n "${GOTCHIBOT_OPENCODE_AGENT:-}" ]; then
@@ -103,6 +115,21 @@ if [ "${GOTCHIBOT_COCKPIT:-}" = "1" ]; then
   export GOTCHIBOT_SKIP_COCKPIT=1
 fi
 
+show_meet() {
+  if [ ! -t 0 ]; then
+    echo "GotchiBot meeting room needs an interactive terminal." >&2
+    exit 1
+  fi
+  run_onboarding_gate --meet
+  refresh_avatar_pane
+}
+
+# /meet — shared meeting room (setup in chat pane, then OpenCode).
+if [ "${GOTCHIBOT_MEET:-}" = "1" ]; then
+  show_meet
+  export GOTCHIBOT_SKIP_COCKPIT=1
+fi
+
 # Welcome / sign-in gate until onboarding is complete.
 if [ "${GOTCHIBOT_SKIP_ONBOARDING:-}" != "1" ]; then
   if ! onboarding_complete; then
@@ -122,8 +149,26 @@ if [ "${GOTCHIBOT_SKIP_COCKPIT:-}" != "1" ] && [ -t 0 ] && onboarding_complete; 
   show_cockpit
 fi
 
-# Default chat runtime: OpenCode TUI (gotchi mode → iMac OpenClaw orchestrator session).
+# Chat runtime: opencode (default), claude (Claude Code CLI + Kickbacks), or openclaw TUI.
+RUNTIME_FILE="$ROOT/sessions/.chat-runtime"
+if [ -z "${GOTCHIBOT_CHAT_RUNTIME:-}" ] && [ -f "$RUNTIME_FILE" ]; then
+  GOTCHIBOT_CHAT_RUNTIME="$(tr -d "[:space:]" < "$RUNTIME_FILE")"
+fi
 export GOTCHIBOT_CHAT_RUNTIME="${GOTCHIBOT_CHAT_RUNTIME:-opencode}"
+
+# Claude Code CLI in the chat pane (Kickbacks ads/earnings need their VS Code extension signed in).
+if [ "$GOTCHIBOT_CHAT_RUNTIME" = "claude" ]; then
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "claude CLI not on PATH — install Claude Code, then: gotchibot chat claude" >&2
+    exit 1
+  fi
+  if [ -n "${TMUX:-}" ]; then
+    tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (Claude) " 2>/dev/null || true
+  fi
+  cd "$ROOT"
+  claude || true
+  quit_to_terminal
+fi
 
 # Legacy OpenClaw pi-tui (patched) — opt-in only.
 if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:-0}" = "1" ] && [ "${GOTCHIBOT_OPENCLAW:-1}" != "0" ]; then
@@ -198,6 +243,13 @@ if [ "$AGENT" = "gotchi" ] && command -v node >/dev/null 2>&1; then
 fi
 
 args=(--agent "$AGENT" -m "$MODEL")
+# Resume last OpenCode session (`opencode --continue`). Fresh: GOTCHIBOT_OPENCODE_CONTINUE=0
+# Pin a session: GOTCHIBOT_OPENCODE_SESSION=<id>
+if [ -n "${GOTCHIBOT_OPENCODE_SESSION:-}" ]; then
+  args+=(--session "$GOTCHIBOT_OPENCODE_SESSION")
+elif [ "${GOTCHIBOT_OPENCODE_CONTINUE:-1}" = "1" ]; then
+  args+=(--continue)
+fi
 # Replay keeps prior turns visible + scrollable in mini mode (do not pass --no-replay).
 if [ "$REPLAY" != "1" ]; then
   args+=(--no-replay)

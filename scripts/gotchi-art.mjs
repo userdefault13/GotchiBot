@@ -5,16 +5,26 @@
  * Solid blocks (█ ▓ ▀ ▄ …) → collateral primaryColor
  * Lighter dots / hatch (▒ ░) → collateral secondaryColor
  *
+ * Body color is collateral JSON only — never agent status (working/assigned).
+ *
  * usage: node scripts/gotchi-art.mjs [--inverted] [--no-color] [--no-rarity] [idle|running]
+ *        node scripts/gotchi-art.mjs --color --no-rarity --hero owned-22899
+ *        node scripts/gotchi-art.mjs --thumb --collateral wbtc --haunt 2
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { call, loadMeta } from "./identity.mjs";
+import {
+  findCollateralColors,
+  hexNormalize,
+  persistHeroCollateral,
+  resolveHeroColors,
+  starterSpiritFromHeroId,
+  tokenIdFromHeroId,
+} from "./collateral-resolve.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const COLORS_PATH = `${ROOT}/assets/collateral-colors.json`;
-const AARCADE_COLORS = resolve(ROOT, "../AarcadeGh-t/public/data/aavegotchi_db_collaterals.json");
 
 const RARITY_COLOR = {
   common: "9CA3AF",
@@ -47,14 +57,6 @@ function colorEnabled() {
   return Boolean(process.stdout.isTTY);
 }
 
-function hexNormalize(raw) {
-  if (!raw) return null;
-  let h = String(raw).trim().replace(/^0x/i, "").replace(/^#/, "");
-  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
-  return h.toLowerCase();
-}
-
 function paint(text, hex) {
   const h = hexNormalize(hex);
   if (!h) return text;
@@ -62,72 +64,6 @@ function paint(text, hex) {
   const g = parseInt(h.slice(2, 4), 16);
   const b = parseInt(h.slice(4, 6), 16);
   return `\x1b[38;2;${r};${g};${b}m${text}\x1b[0m`;
-}
-
-function loadCollateralTable() {
-  const paths = [
-    process.env.GOTCHIBOT_COLLATERAL_COLORS,
-    COLORS_PATH,
-    AARCADE_COLORS,
-  ].filter(Boolean);
-  for (const p of paths) {
-    try {
-      if (!existsSync(p)) continue;
-      const raw = JSON.parse(readFileSync(p, "utf8"));
-      const list = raw.collaterals ?? (Array.isArray(raw) ? raw : []);
-      if (list.length) return list;
-    } catch {}
-  }
-  return [];
-}
-
-function spiritKey(name) {
-  return String(name || "")
-    .toLowerCase()
-    .replace(/^ma?/, "")
-    .replace(/^a/, "")
-    .replace(/[^a-z0-9]/g, "");
-}
-
-function findCollateralColors(collateralTypeOrName, hauntId = 1) {
-  const list = loadCollateralTable();
-  const key = String(collateralTypeOrName || "").trim().toLowerCase();
-  if (!key || !list.length) return null;
-
-  const byAddr = list.find((c) => String(c.collateralType || "").toLowerCase() === key);
-  if (byAddr) {
-    return {
-      name: byAddr.name,
-      primary: hexNormalize(byAddr.primaryColor),
-      secondary: hexNormalize(byAddr.secondaryColor),
-      cheek: hexNormalize(byAddr.cheekColor),
-    };
-  }
-
-  const byName = list.find((c) => String(c.name || "").toLowerCase() === key);
-  if (byName) {
-    return {
-      name: byName.name,
-      primary: hexNormalize(byName.primaryColor),
-      secondary: hexNormalize(byName.secondaryColor),
-      cheek: hexNormalize(byName.cheekColor),
-    };
-  }
-
-  const spirit = spiritKey(key);
-  const haunt = Number(hauntId) || 1;
-  const bySpirit =
-    list.find((c) => spiritKey(c.name) === spirit && Number(c.haunt) === haunt) ||
-    list.find((c) => spiritKey(c.name) === spirit);
-  if (bySpirit) {
-    return {
-      name: bySpirit.name,
-      primary: hexNormalize(bySpirit.primaryColor),
-      secondary: hexNormalize(bySpirit.secondaryColor),
-      cheek: hexNormalize(bySpirit.cheekColor),
-    };
-  }
-  return null;
 }
 
 function recolorAscii(art, { primary, secondary, useColor }) {
@@ -177,7 +113,6 @@ function applyEyeGlyph(art, glyph, primary, useColor) {
   return art
     .split("\n")
     .map((line) => {
-      // Match eye blocks before ANSI coloring; operate on raw art only.
       if (/█████\s+█████/.test(line.replace(/\x1b\[[0-9;]*m/g, ""))) {
         eyeRowCount += 1;
         if (eyeRowCount === 2) {
@@ -189,71 +124,137 @@ function applyEyeGlyph(art, glyph, primary, useColor) {
     .join("\n");
 }
 
-async function heroIdentity() {
+function argValue(args, flag) {
+  const i = args.indexOf(flag);
+  if (i >= 0 && args[i + 1] && !args[i + 1].startsWith("--")) return args[i + 1];
+  return null;
+}
+
+async function loadCartridgeHero(heroId) {
   const meta = loadMeta();
   if (!meta?.cartridgeId || !existsSync(`${ROOT}/sessions/.identity.json`)) return null;
-  const r = await call(`/cartridges/${meta.cartridgeId}`);
-  if (!r.ok) return null;
-  const s = r.data.cartridge ?? r.data;
-  const roster = s.cAavegotchis ?? [];
-  let pin = null;
   try {
-    pin = readFileSync(`${ROOT}/sessions/.pin`, "utf8").trim();
-  } catch {}
-  const hero =
-    roster.find((h) => h.id === pin) ||
-    roster.find((h) => h.id === meta.activeHeroId) ||
-    s.activeCAavegotchi ||
-    roster[0];
-  if (!hero) return null;
+    const r = await call(`/cartridges/${meta.cartridgeId}`);
+    if (!r.ok) return null;
+    const s = r.data.cartridge ?? r.data;
+    const roster = s.cAavegotchis ?? [];
+    return (
+      roster.find((h) => h.id === heroId) ||
+      roster.find((h) => String(h.sourceTokenId) === String(tokenIdFromHeroId(heroId) || "")) ||
+      roster.find((h) => h.id === meta.activeHeroId) ||
+      s.activeCAavegotchi ||
+      roster[0] ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function enrichFromWallet(hero) {
+  const tokenId = hero.sourceTokenId || tokenIdFromHeroId(hero.id);
+  if (!tokenId) return hero;
+  try {
+    const { fetchWalletGotchiById, readWalletFile } = await import("./onboarding-lib.mjs");
+    const w = readWalletFile();
+    const address = typeof w === "string" ? w : w?.address;
+    if (!address) return hero;
+    const g = await fetchWalletGotchiById(address, tokenId);
+    if (!g) return hero;
+    return {
+      ...hero,
+      sourceTokenId: tokenId,
+      collateral: g.collateral || hero.collateral,
+      collateralAddress: g.collateral || hero.collateralAddress,
+      hauntId: g.hauntId ?? hero.hauntId,
+      name: g.name || hero.name,
+    };
+  } catch {
+    return hero;
+  }
+}
+
+async function heroIdentity() {
+  const args = process.argv.slice(2);
+  let pin = argValue(args, "--hero");
+  if (!pin) {
+    try {
+      pin = readFileSync(`${ROOT}/sessions/.pin`, "utf8").trim();
+    } catch {}
+  }
+  const meta = loadMeta();
+  if (!pin) pin = meta?.activeHeroId || null;
+
+  let hero = (await loadCartridgeHero(pin)) || { id: pin };
+  if (pin && hero.id !== pin && tokenIdFromHeroId(pin)) {
+    hero = { ...hero, id: pin, sourceTokenId: tokenIdFromHeroId(pin) };
+  }
+  if (!hero.id && pin) hero.id = pin;
+
+  let colors = resolveHeroColors(hero, hero.id);
+  if (!colors?.primary && tokenIdFromHeroId(hero.id)) {
+    hero = await enrichFromWallet(hero);
+    colors = resolveHeroColors(hero, hero.id);
+  }
 
   const traits = hero.modifiedTraits ?? hero.traits ?? [];
-  const collateralAddr = hero.collateralAddress || hero.collateral || null;
-  const idCollateral = /^starter-([a-z0-9]+)-h\d/i.exec(hero.id ?? "")?.[1];
-  const colors =
-    findCollateralColors(collateralAddr, hero.hauntId) ||
-    findCollateralColors(idCollateral, hero.hauntId) ||
-    findCollateralColors(hero.collateral, hero.hauntId);
+  if (colors?.primary && hero.id) {
+    persistHeroCollateral(hero.id, {
+      collateral: colors.spirit,
+      collateralAddress: hero.collateralAddress || hero.collateral,
+      collateralName: colors.name,
+      hauntId: colors.hauntId ?? hero.hauntId,
+      primary: colors.primary,
+      secondary: colors.secondary,
+      sourceTokenId: hero.sourceTokenId || tokenIdFromHeroId(hero.id),
+    });
+  }
 
   return {
+    id: hero.id,
     primary: colors?.primary ?? null,
     secondary: colors?.secondary ?? null,
     cheek: colors?.cheek ?? null,
-    collateralName: colors?.name ?? idCollateral ?? null,
+    collateralName: colors?.name ?? colors?.spirit ?? null,
     glyph: eyeGlyph(Number(traits[4]) || 0),
     rarity: rarityBand(traits),
-    hauntId: hero.hauntId ?? 1,
+    hauntId: colors?.hauntId ?? hero.hauntId ?? 1,
+    collateral: colors?.spirit ?? null,
   };
+}
+
+function colorsFromCli(args) {
+  const collateralArg = argValue(args, "--collateral");
+  const hauntId = Number(argValue(args, "--haunt")) || 1;
+  const heroId = argValue(args, "--hero") || args.find((a) => !a.startsWith("--") && a !== "--thumb") || null;
+  if (collateralArg) {
+    return findCollateralColors(collateralArg, hauntId) || resolveHeroColors({ id: heroId, collateral: collateralArg, hauntId }, heroId);
+  }
+  if (heroId) return resolveHeroColors({ id: heroId, hauntId: hauntId || null }, heroId);
+  const starter = starterSpiritFromHeroId(heroId);
+  if (starter) return findCollateralColors(starter.spirit, starter.hauntId);
+  return null;
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  const status = args.filter((a) => !a.startsWith("--"))[0] ?? "idle";
   const useColor = colorEnabled() || args.includes("--color") || args.includes("--thumb");
 
-  // Thumbnail mode: recolor assets/gotchi-thumb.ascii from AarcadeGh-t collateral JSON
-  //   node scripts/gotchi-art.mjs --thumb --collateral link
-  //   node scripts/gotchi-art.mjs --thumb starter-link-h1-1
   if (args.includes("--thumb")) {
     const thumbPath = `${ROOT}/assets/gotchi-thumb.ascii`;
     const base = existsSync(thumbPath)
       ? readFileSync(thumbPath, "utf8")
       : "  ▄▄▄▄▄▄\n";
-    const collIdx = args.indexOf("--collateral");
-    let collateralArg =
-      collIdx >= 0 ? args[collIdx + 1] : null;
-    if (!collateralArg) {
-      const pos = args.find((a) => !a.startsWith("--") && a !== "--thumb");
-      collateralArg = pos || null;
-      if (collateralArg && /^starter-([a-z0-9]+)-/i.test(collateralArg)) {
-        collateralArg = RegExp.$1;
+    let colors = colorsFromCli(args);
+    const heroId = argValue(args, "--hero") || args.find((a) => /^owned-|starter-/i.test(a)) || null;
+    if (!colors?.primary && heroId) {
+      const hero = (await loadCartridgeHero(heroId)) || { id: heroId };
+      colors = resolveHeroColors(hero, heroId);
+      if (!colors?.primary) {
+        const enriched = await enrichFromWallet({ ...hero, id: heroId });
+        colors = resolveHeroColors(enriched, heroId);
       }
     }
-    const hauntIdx = args.indexOf("--haunt");
-    const hauntId = hauntIdx >= 0 ? Number(args[hauntIdx + 1]) || 1 : 1;
-    const colors =
-      findCollateralColors(collateralArg, hauntId) ||
-      findCollateralColors(String(collateralArg || "").replace(/^0x/i, ""), hauntId);
     let art = base;
     if (colors && useColor) {
       art = recolorAscii(base, {
@@ -266,11 +267,11 @@ async function main() {
     return;
   }
 
-  // ANSI primary only (for shells): node scripts/gotchi-art.mjs --ansi-primary link
   if (args.includes("--ansi-primary")) {
     const i = args.indexOf("--ansi-primary");
     const key = args[i + 1] || "";
-    const colors = findCollateralColors(key, 1);
+    const hauntId = Number(argValue(args, "--haunt")) || 1;
+    const colors = findCollateralColors(key, hauntId);
     const hex = colors?.primary;
     if (!hex) {
       process.stdout.write("\x1b[38;5;252m");
@@ -285,16 +286,14 @@ async function main() {
 
   const idleArt = readFileSync(`${ROOT}/assets/gotchi-framed.ascii`, "utf8");
   const activeArt = readFileSync(`${ROOT}/assets/gotchi-inverted.ascii`, "utf8");
-  const useInverted =
-    process.argv.includes("--inverted") ||
-    (status === "running" && !process.argv.includes("--framed"));
+  // Sprite color is collateral JSON only — never status (working/running).
+  const useInverted = process.argv.includes("--inverted");
   const base = useInverted ? activeArt : idleArt;
 
   let art = base;
   try {
     const id = await heroIdentity();
     if (id) {
-      // Eyes on raw art first, then recolor solids / dots.
       art = applyEyeGlyph(base, id.glyph, id.primary, useColor);
       art = recolorAscii(art, {
         primary: id.primary,

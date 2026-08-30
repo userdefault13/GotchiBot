@@ -8,6 +8,7 @@ import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadMeta } from "./identity.mjs";
+import { resolveThumbCollateral, persistHeroCollateral } from "./collateral-resolve.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -79,6 +80,7 @@ function heroesFromCache() {
     .map((e) => ({
       id: e.id,
       collateral: e.collateral || null,
+      hauntId: e.hauntId || null,
       bindType: e.bindType || null,
       name: e.name || null,
       agentStatus: e.status || e.agentStatus || "available",
@@ -94,8 +96,10 @@ async function heroesFresh() {
     return heroes.map((h) => ({
       id: h.id,
       collateral: h.collateral || h.collateralAddress || null,
+      hauntId: h.hauntId || null,
       bindType: h.bindType || null,
       name: h.name || null,
+      sourceTokenId: h.sourceTokenId || null,
       agentStatus: h.agentStatus || "available",
     }));
   } catch {
@@ -129,10 +133,21 @@ async function build() {
     .filter((h) => h.id && h.id !== pinned)
     .map((h) => {
       const status = resolveStatus(h, busy);
+      const thumb = resolveThumbCollateral(h.id, h.collateral, h.hauntId);
+      if (thumb?.primary) {
+        persistHeroCollateral(h.id, {
+          collateral: thumb.collateral,
+          collateralName: thumb.name,
+          hauntId: thumb.hauntId,
+          primary: thumb.primary,
+          secondary: thumb.secondary,
+        });
+      }
       return {
         id: h.id,
         name: h.name || null,
-        collateral: h.collateral || null,
+        collateral: thumb.collateral || h.collateral || null,
+        hauntId: thumb.hauntId || h.hauntId || null,
         bindType: h.bindType || null,
         status,
         svg: existsSync(`${AVATARS}/${h.id}.svg`) ? `${AVATARS}/${h.id}.svg` : null,

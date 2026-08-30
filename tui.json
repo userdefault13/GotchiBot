@@ -10,7 +10,7 @@
     "agent_cycle": "tab",
     "agent_cycle_reverse": "shift+tab",
     "agent_list": "<leader>a,ctrl+p",
-    "sidebar_toggle": "ctrl+o,<leader>b",
+    "sidebar_toggle": "ctrl+shift+g,<leader>b",
     "prompt.autocomplete.complete": "ctrl+space",
     "prompt.autocomplete.select": "return",
     "messages_copy": "<leader>y",
@@ -21,6 +21,8 @@
     "input_select_all": "super+a"
   },
   "plugin": [
-    "./.opencode/tui-plugins/gotchi-thought-tts.ts"
+    "./.opencode/tui-plugins/gotchi-thought-tts.ts",
+    "./.opencode/tui-plugins/gotchi-sidebar-hide.ts",
+    "./.opencode/tui-plugins/gotchi-spawn.ts"
   ]
 }

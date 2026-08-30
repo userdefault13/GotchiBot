@@ -64,6 +64,13 @@ function parseArgs(argv) {
 
 function writeForwardEnv() {
   const lines = ["export GOTCHIBOT_SKIP_ABRA=1", "export GOTCHIBOT_AUTO_APPROVE=1"];
+  // Headless Claude on the iMac attaches to the open VS Code (Kickbacks reporter).
+  lines.push("export GOTCHIBOT_DISPATCH=claude");
+  lines.push("export GOTCHIBOT_CHAT_RUNTIME=claude");
+  lines.push("export GOTCHIBOT_CLAUDE_IDE=1");
+  if (process.env.GOTCHIBOT_CLAUDE_PERMISSION) {
+    lines.push(`export GOTCHIBOT_CLAUDE_PERMISSION=${shellQuote(process.env.GOTCHIBOT_CLAUDE_PERMISSION)}`);
+  }
   for (const k of FORWARD) {
     if (process.env[k]) lines.push(`export ${k}=${shellQuote(process.env[k])}`);
   }
@@ -109,7 +116,7 @@ function sshSpawn(cfg, keyPath, { model, hero, prompt }) {
       `source ${shellQuote(remoteEnv)}`,
       `rm -f ${shellQuote(remoteEnv)}`,
       heroExport +
-        `node ./scripts/gotchi-orchestrate.mjs spawn --model ${shellQuote(model)} ${shellQuote(prompt)}`,
+        `node ./scripts/gotchi-orchestrate.mjs spawn --host local --model ${shellQuote(model)} ${shellQuote(prompt)}`,
     ].join("; ");
 
     const r = runSsh(cfg, keyPath, remoteCmd, { stdio: "pipe" });

@@ -19,6 +19,7 @@ import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { call } from "./identity.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -108,10 +109,6 @@ async function detectImacGotchiOpenCode() {
   }
 }
 
-const cfg = JSON.parse(readFileSync(`${ROOT}/config/subgraph.endpoints.json`, "utf8"));
-const BASE = (process.env.GOTCHIBOT_CARTRIDGE_URL ?? cfg.identityLayer.cartridgeSim).replace(/\/$/, "");
-const API = `${BASE}/api/cartridge-sim`;
-
 function loadMeta() {
   try {
     return JSON.parse(readFileSync(`${SESSIONS}/.identity.json`, "utf8"));
@@ -141,38 +138,27 @@ function pidAlive(pid) {
   }
 }
 
-async function call(path, { method = "GET", body } = {}) {
-  const headers = { "Content-Type": "application/json" };
-  if (process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET) {
-    headers["x-aarcade-service-key"] = process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET;
-  }
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = { raw: text.slice(0, 400) };
-  }
-  return { ok: res.ok, status: res.status, data };
-}
-
 function writeLocalCache(heroId, status, extra = {}) {
   mkdirSync(SESSIONS, { recursive: true });
   let cache = {};
   try {
     cache = JSON.parse(readFileSync(CACHE, "utf8"));
   } catch {}
+  const prev = cache[heroId] || {};
   cache[heroId] = {
+    ...prev,
     status,
-    sessionId: extra.sessionId || extra.session || null,
-    task: extra.task || null,
-    model: extra.model || null,
-    host: extra.host || null,
+    sessionId: extra.sessionId || extra.session || prev.sessionId || null,
+    task: extra.task !== undefined ? extra.task : (prev.task || null),
+    model: extra.model || prev.model || null,
+    host: extra.host || prev.host || null,
+    collateral: extra.collateral || prev.collateral || null,
+    collateralAddress: extra.collateralAddress || prev.collateralAddress || null,
+    collateralName: extra.collateralName || prev.collateralName || null,
+    hauntId: extra.hauntId ?? prev.hauntId ?? null,
+    primary: extra.primary || prev.primary || null,
+    secondary: extra.secondary || prev.secondary || null,
+    sourceTokenId: extra.sourceTokenId || prev.sourceTokenId || null,
     at: new Date().toISOString(),
   };
   writeFileSync(CACHE, `${JSON.stringify(cache, null, 2)}\n`);

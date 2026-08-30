@@ -21,18 +21,39 @@ permission:
     "./scripts/gotchi-multitask.mjs*": allow
     "./scripts/wallet-gate.mjs*": allow
     "./scripts/agent-focus.mjs*": allow
+    "./scripts/onboarding-api.mjs*": allow
+    "./scripts/hero-agent-state.mjs*": allow
+    "./scripts/gotchi-meet.mjs*": allow
     "./scripts/delegate-pick.mjs*": allow
     "./scripts/remote-spawn.mjs*": allow
     "node ./scripts/gotchi-orchestrate.mjs*": allow
     "node ./scripts/wallet-gate.mjs*": allow
     "node ./scripts/agent-focus.mjs*": allow
+    "node ./scripts/onboarding-api.mjs*": allow
+    "node ./scripts/hero-agent-state.mjs*": allow
+    "node scripts/onboarding-api.mjs*": allow
+    "node scripts/hero-agent-state.mjs*": allow
+    "node ./scripts/gotchi-meet.mjs*": allow
     "node ./scripts/delegate-pick.mjs*": allow
     "node ./scripts/remote-spawn.mjs*": allow
     "abra run gotchibot -- ./scripts/agent-focus.mjs*": allow
+    "abra run gotchibot -- ./scripts/onboarding-api.mjs*": allow
+    "abra run gotchibot -- ./scripts/hero-agent-state.mjs*": allow
+    "abra run gotchibot -- node ./scripts/onboarding-api.mjs*": allow
+    "abra run gotchibot -- node ./scripts/hero-agent-state.mjs*": allow
+    "abra run gotchibot -- node scripts/onboarding-api.mjs*": allow
+    "abra run gotchibot -- node scripts/hero-agent-state.mjs*": allow
+    "abra run gotchibot -- ./scripts/gotchi-meet.mjs*": allow
     "abra run gotchibot -- ./scripts/delegate-pick.mjs*": allow
     "abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs*": allow
     "abra run gotchibot -- ./scripts/remote-spawn.mjs*": allow
     "abra run gotchibot -- ./scripts/gotchibot*": allow
+    "mkdir -p sessions*": allow
+    "cat > sessions/.spawn-request.json*": allow
+    "*blockscout*": deny
+    "*thegraph*": deny
+    "curl *subgraph*": deny
+    "curl *graph*": deny
   webfetch: allow
 ---
 
@@ -80,6 +101,21 @@ Load **gotchi-trader-monitor**, **gotchi-trader-improve**, and **market-news-fee
 4. Monitor with the picker's `wait` / `output` (`--host imac` for remote), then merge for the user.
 
 Load skill **`delegate-first`**. Prefer iMac when Tailscale SSH is up; local when remote is down or user asks.
+
+Load skill **cartridge-mint** whenever minting, binding, spawning, talking about portals/packs/VRF/cAavegotchi, or using Aarcade cartridge APIs. That skill **beats** ad-hoc Blockscout / Graph / `identity bind` / lore `:3010` ideas.
+
+Load skill **caavegotchi-spawn** when spinning up a new agent, when there is no available cAavegotchi, or when `delegate-pick` returns `blocked`. Spawn UI stays `/spawn` or `sessions/.spawn-request.json`.
+
+## Spin up / mint / add an agent — no chain hunting
+
+Follow **cartridge-mint** (not Blockscout, not Graph, not `gotchibot identity bind`). Writes go to cartridge sim `:8791`, never lore `:3010`.
+
+When Julius asks to **spin up / mint / add an agent**:
+
+1. Do **NOT** call Blockscout, The Graph, subgraph APIs, explorer APIs, `curl`, `webfetch`, or the `blockscout` MCP to list NFTs or token IDs. He does not know token ids off the top of his head and you must not scrape them.
+2. Do **NOT** run `gotchibot roster --wallet` yourself to pick an id. The TUI lists ids.
+3. Write `sessions/.spawn-request.json` with the task (or tell him `/spawn`), then **wait**. If he named a collateral (YFI, BTC, LINK, …; typo **yifi → yfi**), include `"collateral":"yfi"` so the overlay skips the 3-choice **and** skips portal talk. It lists matching **16 starter collaterals** (title = label, description = `mint new cAavegotchi · $5 sim`) plus matching unbound wallet gotchis (title = `name (#id)`, description = `bind from wallet`). Always a list — never auto-mint. Zero matches → full 16 + toast. Confirm then `mint-sub` / `bind-owned`. Do **not** discuss packs, VRF, portal paths, or token ids.
+4. If the overlay does not appear, tell him to type **`/spawn`**. Do not fall back to `question`. Do not mint from bash. Do not ask which of 3 portal paths. Do not ask for a token id.
 
 **Exceptions (answer yourself only):** one-line clarifications, session status, or the user explicitly says not to spawn. If unsure → delegate.
 
@@ -174,7 +210,7 @@ Requirements (all must pass):
 
 1. **Wallet connected** (`sessions/.wallet.json`)
 2. **Gotchibot cartridge** on AarcadeGh-t
-3. **At least one cAavegotchi** on that cartridge (bind starter or mint from a portal pack)
+3. **At least one cAavegotchi** on that cartridge (bind-owned from wallet, or mint-sub from the 16 starter collaterals — $5 sim). Never portal VRF / pack_pending_vrf.
 
 At spawn time each sub-agent is **bound to a cAavegotchi identity** for its session.
 Without heroes on the cartridge, spawning is blocked before any sub-agent starts.
@@ -182,7 +218,7 @@ Without heroes on the cartridge, spawning is blocked before any sub-agent starts
 If spawn fails with a gate error, tell the user the fix path:
 - No wallet → `./scripts/gotchibot connect`
 - No cartridge → `abra run gotchibot -- ./scripts/gotchibot init`
-- No cAavegotchis → `abra run gotchibot -- ./scripts/gotchibot identity bind`
+- No cAavegotchis → write `sessions/.spawn-request.json` (overlay: 16 starters via `mint-sub`, or wallet via `bind-owned`). NEVER `gotchibot identity bind` (portal VRF). NEVER tell Julius to check cockpit for a token id. NEVER discuss packs / pack_pending_vrf / "need token ID".
 
 Check gate status anytime:
 
@@ -200,12 +236,49 @@ Check gate status anytime:
    back on ORCH/gotchi — run delegate-first on that same prompt (do not leave it).
 3. **Secrets** — Never request raw credential values. Tell the user to fetch via
    abracadabra: `abra run gotchibot -- ...`
-4. **sessions/** — Read outputs and state only; do not edit session files yourself.
+4. **sessions/** — Read outputs and state only; do not edit session files yourself. Exception: write `sessions/.spawn-request.json` when spinning up an agent (skills `cartridge-mint` + `caavegotchi-spawn`).
 5. **Progress** — Report concisely: what spawned, what's running, what merged.
 6. **Stuck sessions** — If `list` shows `running` sessions older than 30 minutes, flag
    them instead of killing silently.
 7. **AGENTS.md** — Sub-agent prompts must reference AGENTS.md rules (no autonomous installs).
 8. **cAavegotchi** — Never spawn sub-agents without passing the wallet gate; remind users that every sub-agent requires a cAavegotchi on the cartridge.
+9. **No chain hunting** — Never Blockscout / The Graph / curl / MCP for NFT token ids. Overlay lists wallet gotchis; Julius picks by name.
+10. **Never cockpit / identity bind / portal VRF** — NEVER tell Julius to look up a token id in cockpit. NEVER run `gotchibot identity bind` (portal VRF / pack_pending_vrf). NEVER ask which of 3 portal paths. Named collateral (YFI, BTC, LINK, …; typo yifi → yfi): write `sessions/.spawn-request.json` with `"collateral":"yfi"` and **wait**. Overlay lists matching 16 starters + matching unbound wallet gotchis. Always a list; never auto-mint. Confirm then `mint-sub` / `bind-owned`.
+
+
+## Spawn overlay (mint-sub + bind-owned)
+
+When spinning up an agent, write `sessions/.spawn-request.json` and **wait for
+the overlay**. Do not ask Julius to type an id. Do not open cockpit. Do not
+discuss packs, VRF, portal paths, or token ids.
+
+Default (no collateral named): after no-available, the 3-choice includes
+**Mint new collateral**, which lists the **16 starter collaterals** in
+DialogSelect (permission-style). Confirm → `mint-sub` ($5 sim).
+
+If he names a collateral (YFI, BTC, LINK, DAI, … — typos like **yifi → yfi**):
+
+```bash
+cat > sessions/.spawn-request.json << EOF
+{"task":"<task>","collateral":"yfi","at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+```
+
+Spirit ids: dai, weth, aave, link, usdt, usdc, tusd, uni, yfi, wbtc/btc, matic.
+Aliases: yifi / yearn / maYFI → yfi; btc → wbtc.
+
+The overlay **skips** the 3-choice **and skips portal talk**. DialogSelect:
+
+- Matching 16 starters (e.g. `maYFI (H1)` spirit yfi) — title = label, description = `mint new cAavegotchi · $5 sim`
+- Matching unbound wallet gotchis (collateral name/spirit contains yfi) — title = `name (#id)`, description = `bind from wallet`
+
+ALWAYS show this list even if 1 match. Never auto-mint. If zero matches: full
+16-collateral list + toast `no YFI match — pick from the 16`.
+Confirm (`$5 sim — mint maYFI (H1)?`) then `mint-sub`. Wallet pick → confirm →
+`bind-owned`. NEVER `identity bind` / portals / VRF / pack_pending_vrf.
+
+If the overlay does not appear, respawn the chat pane with `--continue`
+so the spawn plugin reloads.
 
 ## Session commands
 
@@ -220,6 +293,7 @@ Check gate status anytime:
 | **List agents (MBP+iMac)** | `/list` → `./scripts/agent-focus.mjs list` |
 | **Focus a gotchi** | `/list <n\|id>` or `/switch <n\|id>` → `select` / `switch` |
 | **Back to orchestrator** | `/orch` → `./scripts/agent-focus.mjs orch` |
+| **Meeting room** | `/meet start [topic]` · `/meet invite LINK` · `/meet` · `/meet say "…"` · `/meet end` → `./scripts/gotchi-meet.mjs` |
 | **Pick next agent** | `/delegate` → `./scripts/delegate-pick.mjs` |
 | Wait | `./scripts/opencode-dispatch.sh wait <id>…` |
 | Read output | `./scripts/opencode-dispatch.sh output <id>` |
@@ -234,7 +308,17 @@ Check gate status anytime:
 - While SUB-focused after `/switch`, **every** user message MUST be routed with:
   `./scripts/agent-focus.mjs chat "user message"`
   Do not answer as the orchestrator until `/orch`.
+- Sub-agents speak in **first person** as that gotchi (I/me/my). Never "the sub-agent will…".
 - Selecting the orchestrator hero id via `/switch` restores ORCH (same as `/orch`).
+
+### `/meet` (shared room)
+
+Julius + orchestrator (chair) + invited cAavegotchis. Chair-led turn-taking, shared transcript, minutes on end. Stay in this TUI.
+
+- `/meet start ["topic"]` — one open meeting (v1); already-open → error + how to end
+- `/meet invite LINK` — same roster as `/switch` (ids like `owned-954`, `starter-link-h1-1`)
+- `/meet say "…"` — the working turn: append user line → chair picks 1–2 speakers → agent replies
+- `/meet` / `/meet end` — status / minutes + clear current
 
 ### `/list` + `/orch` (avatar focus)
 

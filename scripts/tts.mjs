@@ -4,7 +4,7 @@
  *
  * usage:
  *   node scripts/tts.mjs speak "hello" [--persona gotchi]
- *   node scripts/tts.mjs on|off|status|test [--persona gotchi]
+ *   node scripts/tts.mjs on|off|status|test|speed [--persona gotchi]
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
@@ -37,10 +37,18 @@ function loadConfig() {
 
 function loadState() {
   try {
-    return JSON.parse(readFileSync(STATE, "utf8"));
+    const s = JSON.parse(readFileSync(STATE, "utf8"));
+    if (typeof s.readSpeed !== "number" || !(s.readSpeed > 0)) s.readSpeed = 1.05;
+    return s;
   } catch {
-    return { enabled: false, persona: "gotchi" };
+    return { enabled: false, persona: "gotchi", readSpeed: 1.05 };
   }
+}
+
+function edgeRateFromReadSpeed(readSpeed) {
+  const pct = Math.round((Number(readSpeed) - 1) * 100);
+  if (!Number.isFinite(pct)) return "+0%";
+  return `${pct >= 0 ? "+" : ""}${pct}%`;
 }
 
 function saveState(state) {
@@ -77,17 +85,20 @@ function hasCmd(cmd) {
 }
 
 function speakEdge(text, p) {
+  const state = loadState();
   const args = ["--voice", p.voice || "en-US-AnaNeural", "--text", text];
   if (p.pitch) args.push("--pitch", p.pitch);
-  if (p.rate) args.push("--rate", p.rate);
+  const rate = typeof state.readSpeed === "number" ? edgeRateFromReadSpeed(state.readSpeed) : p.rate;
+  if (rate) args.push("--rate", rate);
   args.push("--play-audio");
   return spawnSync("edge-tts", args, { stdio: "ignore" }).status === 0;
 }
 
 function speakSay(text, p) {
+  const state = loadState();
   const voice = p.sayVoice || (String(p.voice || "").includes("_") ? "Samantha" : p.voice) || "Samantha";
   const args = ["-v", voice];
-  const rate = p.sayRate ?? p.rate;
+  const rate = typeof state.readSpeed === "number" ? Math.round(180 * state.readSpeed) : (p.sayRate ?? p.rate);
   if (typeof rate === "number") args.push("-r", String(rate));
   else if (typeof rate === "string" && /^\d+$/.test(rate)) args.push("-r", rate);
   args.push(text);
@@ -163,8 +174,9 @@ export function stopMelo() {
 
 function speakMelo(text, p) {
   if (!meloAvailable()) return false;
+  const state = loadState();
   const speaker = p.meloSpeaker || "EN-AU";
-  const speed = String(p.meloSpeed ?? 1.05);
+  const speed = String(state.readSpeed ?? p.meloSpeed ?? 1.05);
   const env = {
     ...process.env,
     GOTCHIBOT_MELO_SPEAKER: speaker,
@@ -221,6 +233,7 @@ function cmdStatus() {
       {
         enabled: enabled(),
         persona: state.persona,
+        readSpeed: state.readSpeed ?? 1.05,
         provider: active,
         configuredProvider: p.provider,
         voice: p.voice,
@@ -253,6 +266,25 @@ function cmdOff() {
   saveState(state);
   stopMelo();
   console.log("tts off");
+}
+
+function cmdSpeed(argv) {
+  const state = loadState();
+  const raw = argv.find((a) => a && !a.startsWith("--"));
+  if (!raw) {
+    const n = state.readSpeed ?? 1.05;
+    if (argv.includes("--json")) console.log(JSON.stringify({ readSpeed: n }, null, 2));
+    else console.log(String(n));
+    return;
+  }
+  const n = Number(raw);
+  if (!(n > 0) || !Number.isFinite(n)) {
+    console.error("usage: tts.mjs speed [multiplier]");
+    process.exit(2);
+  }
+  state.readSpeed = n;
+  saveState(state);
+  console.log(`tts speed ${n}`);
 }
 
 function cmdTest(argv) {
@@ -306,6 +338,9 @@ switch (cmd) {
   case "test":
     cmdTest(rest);
     break;
+  case "speed":
+    cmdSpeed(rest);
+    break;
   case "warm": {
     const r = warmMelo();
     console.log(JSON.stringify(r, null, 2));
@@ -319,6 +354,6 @@ switch (cmd) {
     console.log(JSON.stringify(stopMelo(), null, 2));
     break;
   default:
-    console.error(`usage: node scripts/tts.mjs speak|on|off|status|test|warm|stop|stop-daemon`);
+    console.error(`usage: node scripts/tts.mjs speak|on|off|status|test|speed|warm|stop|stop-daemon`);
     process.exit(2);
 }

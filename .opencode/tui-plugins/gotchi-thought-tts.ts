@@ -337,6 +337,69 @@ const tui: TuiPlugin = async (api) => {
           slashName: "read-thought",
           run: () => (alive() ? interrupt("command") : speakLatest()),
         },
+        {
+          name: "gotchi.cockpit",
+          title: "Open cockpit",
+          category: "Gotchi",
+          namespace: "palette",
+          slashName: "cockpit",
+          run: () => {
+            spawn("node", [join(rootDir, "scripts", "agent-focus.mjs"), "cockpit"], {
+              cwd: rootDir,
+              env: process.env,
+              detached: true,
+              stdio: "ignore",
+            }).unref()
+            log(rootDir, "cockpit", { via: "slash" })
+            try {
+              api.ui.toast({ message: "Opening cockpit…", variant: "info" })
+            } catch {}
+          },
+        },
+        {
+          name: "gotchi.meet",
+          title: "Open meeting room",
+          category: "Gotchi",
+          namespace: "palette",
+          slashName: "meet",
+          run: () => {
+            spawn("node", [join(rootDir, "scripts", "agent-focus.mjs"), "meet"], {
+              cwd: rootDir,
+              env: process.env,
+              detached: true,
+              stdio: "ignore",
+            }).unref()
+            log(rootDir, "meet", { via: "slash" })
+            try {
+              api.ui.toast({ message: "Opening meeting room…", variant: "info" })
+            } catch {}
+          },
+        },
+        {
+          name: "gotchi.session.resume",
+          title: "Resume last chat",
+          category: "Gotchi",
+          namespace: "palette",
+          slashName: "resume",
+          run: () => {
+            const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot"
+            spawn(
+              "tmux",
+              [
+                "respawn-pane",
+                "-t",
+                `${sess}:work.1`,
+                "-k",
+                `cd "${rootDir}" && GOTCHIBOT_SKIP_COCKPIT=1 GOTCHIBOT_OPENCODE_CONTINUE=1 exec ./scripts/chat-pane.sh`,
+              ],
+              { cwd: rootDir, env: process.env, detached: true, stdio: "ignore" },
+            ).unref()
+            log(rootDir, "resume", { via: "slash" })
+            try {
+              api.ui.toast({ message: "Resuming last chat…", variant: "info" })
+            } catch {}
+          },
+        },
       ],
     })
   } catch (err) {

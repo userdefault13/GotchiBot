@@ -7,9 +7,41 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cfg = JSON.parse(readFileSync(`${ROOT}/config/subgraph.endpoints.json`, "utf8"));
-const BASE = (process.env.GOTCHIBOT_CARTRIDGE_URL ?? cfg.identityLayer.cartridgeSim)
-  .replace(/\/$/, "");
-const API = `${BASE}/api/cartridge-sim`;
+
+/**
+ * Cartridge SIM origin for mint-sub / bind-owned / bind-starter / roster.
+ *
+ * Default is Vercel same-origin (www.aarcadeghst.com). That thin-relays
+ * /api/cartridge-sim → cartridge.aarcadeghst.com → 127.0.0.1:8791
+ * (Docker aarcade-cartridge-sim). Abra `gotchibot` does not inject a sim URL.
+ *
+ * Do not use iMac :3010 — that is the lore / main Aarcade API with Cartridge
+ * SIM disabled. Lore reads (comms, subgraphs) stay on aarcadeghst.com / :3010.
+ *
+ * Override (no secrets): GOTCHIBOT_CARTRIDGE_URL, AARCADE_SIM_URL, CARTRIDGE_SIM.
+ */
+function resolveCartridgeOrigin() {
+  const envUrl = [
+    process.env.GOTCHIBOT_CARTRIDGE_URL,
+    process.env.AARCADE_SIM_URL,
+    process.env.CARTRIDGE_SIM,
+  ].map((v) => String(v || "").trim()).find(Boolean);
+  const fallback = cfg.identityLayer?.cartridgeSim || "https://www.aarcadeghst.com";
+  return String(envUrl || fallback).replace(/\/$/, "");
+}
+
+function resolveCartridgeApi(origin) {
+  const o = String(origin || "").replace(/\/$/, "");
+  if (/\/api\/cartridge-sim$/i.test(o)) return o;
+  // Home proxy mounts /cartridges at root (not /api/cartridge-sim/cartridges).
+  if (/:(8791)\b/i.test(o) || /^https?:\/\/cartridge\.aarcadeghst\.com$/i.test(o)) {
+    return o;
+  }
+  return `${o}/api/cartridge-sim`;
+}
+
+const BASE = resolveCartridgeOrigin();
+const API = resolveCartridgeApi(BASE);
 const GAME_ID = "gotchibot";
 
 function serviceKey() {
@@ -325,7 +357,7 @@ async function apply() {
   print(r);
 }
 
-export { call, loadMeta, saveMeta, owner, serviceKey, GAME_ID, API };
+export { call, loadMeta, saveMeta, owner, serviceKey, GAME_ID, API, BASE, resolveCartridgeOrigin, resolveCartridgeApi };
 
 function isDirectRun() {
   try {

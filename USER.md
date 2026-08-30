@@ -1,7 +1,7 @@
 # USER.md - About Your Human
 
 - **Name:** Julius Wong
-- **What to call them:** Julius
+- **What to call them:** UserDefault (explicitly asked "call me UserDefault"; real name Julius Wong)
 - **Timezone:** America/Los_Angeles (PT)
 - **Notes:** Builds GotchiBot, AarcadeGh-t, and Aavegotchi agent tooling. Lives in the terminal. MacBook is the client; home iMac is the always-on OpenClaw / OpenCode host over Tailscale. Vercel and GitHub are daily tools. Secrets go through abracadabra (Touch ID), never into prompts or dotfiles.
 

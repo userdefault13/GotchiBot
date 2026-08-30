@@ -35,6 +35,7 @@ layout_ready() {
 }
 
 require_three_panes() {
+  tmux resize-pane -Z -t "$sess:work" 2>/dev/null || true
   layout_ready && return 0
   rebuild_panes || return 1
   layout_ready || {
@@ -87,6 +88,55 @@ ensure_panes() {
   require_three_panes
 }
 
+# Mark the avatar pane so wheel binds survive pane-index drift.
+# work.2 is the current avatar index; @gotchibot-avatar is the stable mark.
+mark_avatar_pane() {
+  # Pane-only. Unset window/global so cockpit/files/chat never inherit the flag.
+  tmux set-option -gu @gotchibot-avatar 2>/dev/null || true
+  tmux set-option -u -w -t "$sess:work" @gotchibot-avatar 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" @gotchibot-avatar 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" history-limit 0 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-scrollbars off 2>/dev/null || true
+}
+
+# Mouse on for prev/next clicks. Wheel on the avatar pane is ignored.
+# Chat/files/cockpit keep default (OpenCode mouse / send-keys -M).
+# NEVER send-keys -t #{pane_id} — that format is empty and errors in the status bar.
+# Match avatar ONLY via @gotchibot-avatar=1 (never pane_index).
+install_avatar_mouse() {
+  local av_if='#{==:#{@gotchibot-avatar},1}'
+  local click="$ROOT/scripts/avatar-pane.sh sb-click #{mouse_x} #{mouse_y} #{pane_pid}"
+  local def_wheel='if-shell -F "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"'
+  local def_drag='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
+
+  tmux set-option -g mouse on 2>/dev/null || true
+  tmux set-option -t "$sess" mouse on 2>/dev/null || true
+  mark_avatar_pane
+
+  tmux unbind-key -n WheelUpPane 2>/dev/null || true
+  tmux unbind-key -n WheelDownPane 2>/dev/null || true
+  tmux unbind-key -n MouseDown1Pane 2>/dev/null || true
+  tmux unbind-key -n MouseDrag1Pane 2>/dev/null || true
+  tmux unbind-key -T gotchi-avatar WheelUp 2>/dev/null || true
+  tmux unbind-key -T gotchi-avatar WheelDown 2>/dev/null || true
+  tmux unbind-key -T gotchi-avatar WheelUpPane 2>/dev/null || true
+  tmux unbind-key -T gotchi-avatar WheelDownPane 2>/dev/null || true
+
+  # Avatar: ignore wheel (no sb-wheel, no send-keys). Else OpenCode/default.
+  # Invert so the avatar branch has no command at all (empty if-shell is invalid).
+  tmux bind-key -n WheelUpPane \
+    if-shell -F "#{!=:#{@gotchibot-avatar},1}" "$def_wheel" 2>/dev/null || true
+  tmux bind-key -n WheelDownPane \
+    if-shell -F "#{!=:#{@gotchibot-avatar},1}" "$def_wheel" 2>/dev/null || true
+
+  # Click prev/next hitboxes. Never copy-mode the avatar pane.
+  tmux bind-key -n MouseDown1Pane \
+    if-shell -F "$av_if" "run-shell '$click'" \
+    'select-pane -t = ; send-keys -M' 2>/dev/null || true
+  tmux bind-key -n MouseDrag1Pane \
+    if-shell -F "#{!=:#{@gotchibot-avatar},1}" "$def_drag" 2>/dev/null || true
+}
+
 start_pane_commands() {
   require_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || \
@@ -95,6 +145,7 @@ start_pane_commands() {
     tmux send-keys -t "$sess:work.1" C-c Enter "cd \"$ROOT\" && exec ./scripts/chat-pane.sh" Enter
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || \
     tmux send-keys -t "$sess:work.2" C-c Enter "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" Enter
+  mark_avatar_pane
 }
 
 window_width() {
@@ -148,7 +199,7 @@ expand_sidebar() {
 
 # Files take remaining width; chat collapses to a thin Gotchi bar; avatar stays.
 enter_files_max() {
-  layout_ready || return 1
+  require_three_panes || return 1
   if [ "$(layout_mode)" = "avatar-max" ]; then
     # Leave avatar-max without restoring chat yet — we collapse chat again below.
     tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
@@ -170,7 +221,7 @@ enter_files_max() {
 
 # Avatar takes remaining width; chat → bar; files stay collapsed.
 enter_avatar_max() {
-  layout_ready || return 1
+  require_three_panes || return 1
   if [ "$(layout_mode)" = "files-max" ]; then
     tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
     collapse_sidebar
@@ -191,7 +242,7 @@ enter_avatar_max() {
 }
 
 enter_chat_max() {
-  layout_ready || return 1
+  require_three_panes || return 1
   if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ]; then
     tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
   fi
@@ -221,22 +272,25 @@ apply_chat_max_sizes() {
 
 
 # Put the avatar pane back on the right without killing OpenCode chat.
-# OpenCode's info sidebar can swallow work.2; this splits it back out.
+# OpenCode's info sidebar is internal (not a tmux pane) and can hide work.2
+# when chat goes wide; this splits avatar back out.
 restore_avatar_pane() {
   local count
   count="$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')"
   if [ "${count:-0}" -lt 3 ]; then
-    tmux split-window -h -t "$sess:work.1" -l "$min_right" || {
+    tmux split-window -h -t "$sess:work.1" -l "$min_avatar" "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" || {
       echo "could not split avatar pane (need a wider window)" >&2
       return 1
     }
   fi
   c2="$(pane_start_cmd 2)"
   if [[ "$c2" != *avatar-pane* ]]; then
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
+    tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   fi
+  mark_avatar_pane
   set_layout_mode normal
-  tmux resize-pane -t "$sess:work.2" -x "$min_right" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.2" -x "$min_avatar" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.0" -x "$sidebar_collapsed" 2>/dev/null || true
   tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
@@ -398,6 +452,8 @@ install_agent_keys() {
   install_layout_keys gotchi-chat
   install_layout_keys gotchi-files
   install_layout_keys gotchi-avatar
+  # Pagination clicks on avatar; wheel unbound there (orch face stays pinned).
+  install_avatar_mouse
   # Orchestrator focus — F3 / prefix o / Option+O
   tmux bind-key -T gotchi-chat F3 run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T prefix o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
@@ -419,18 +475,16 @@ install_agent_keys() {
 }
 
 install_ui_theme() {
-  # tmux mouse stays off so OpenCode owns the wheel (history scroll). Shift+drag still copies.
-  # Pane resize / tmux scrollback: GOTCHIBOT_TMUX_MOUSE=1
-  if [ "${GOTCHIBOT_TMUX_MOUSE:-0}" = "1" ]; then
-    tmux set-option -g mouse on 2>/dev/null || true
-    tmux set-option -t "$sess" mouse on 2>/dev/null || true
-  else
-    tmux set-option -t "$sess" mouse off 2>/dev/null || true
-    tmux set-option -t "$sess" set-clipboard on 2>/dev/null || true
-    # Let OSC 52 from OpenClaw TUI (/copy) reach Terminal/iTerm pasteboard.
-    tmux set-option -g allow-passthrough on 2>/dev/null || true
-    tmux set-option -t "$sess" allow-passthrough on 2>/dev/null || true
-  fi
+  # Mouse ON so prev/next on the unfocused avatar pane are clickable.
+  # Wheel over avatar is a no-op (no copy-mode, no send-keys);
+  # chat/files keep default (OpenCode / send-keys -M).
+  tmux set-option -g mouse on 2>/dev/null || true
+  tmux set-option -t "$sess" mouse on 2>/dev/null || true
+  tmux set-option -t "$sess" set-clipboard on 2>/dev/null || true
+  # Let OSC 52 from OpenClaw TUI (/copy) reach Terminal/iTerm pasteboard.
+  tmux set-option -g allow-passthrough on 2>/dev/null || true
+  tmux set-option -t "$sess" allow-passthrough on 2>/dev/null || true
+  install_avatar_mouse
   # Truecolor for Gotchi message backgrounds (chalk bgHex needs Tc in tmux).
   tmux set-option -g terminal-overrides ",tmux-256color:Tc" 2>/dev/null || true
   tmux set-option -g terminal-overrides ",xterm-256color:Tc" 2>/dev/null || true
@@ -540,8 +594,11 @@ case "$cmd" in
     fit_window
     install_ui_theme
     ;;
+  install-mouse)
+    install_avatar_mouse
+    ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|fit]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|fit|install-mouse]" >&2
     exit 2
     ;;
 esac

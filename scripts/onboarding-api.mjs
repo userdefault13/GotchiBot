@@ -24,35 +24,23 @@ async function main() {
     }
     case "bind-starter": {
       const collateral = process.argv[3] ?? "dai";
-      const r = await call(`/cartridges/${meta.cartridgeId}/bind-starter`, {
-        method: "POST",
-        body: { gameId: GAME_ID, collateral, simPay: true },
-      });
-      if (!r.ok) throw new Error(JSON.stringify(r.data));
-      const heroes = (r.data.cartridge ?? r.data).cAavegotchis ?? [];
-      console.log(heroes[heroes.length - 1]?.id ?? "");
+      const { bindStarterHero } = await import("./onboarding-lib.mjs");
+      const id = await bindStarterHero(meta.cartridgeId, collateral);
+      console.log(id ?? "");
       break;
     }
     case "bind-owned": {
       const tokenId = process.argv[3];
-      const r = await call(`/cartridges/${meta.cartridgeId}/bind-owned`, {
-        method: "POST",
-        body: { sourceTokenId: String(tokenId), simPay: true },
-      });
-      if (!r.ok) throw new Error(JSON.stringify(r.data));
-      const c = r.data.cartridge ?? r.data;
-      console.log(c.cAavegotchi?.id ?? (c.cAavegotchis ?? []).slice(-1)[0]?.id ?? "");
+      const { bindOwnedGotchi } = await import("./onboarding-lib.mjs");
+      const id = await bindOwnedGotchi(meta.cartridgeId, tokenId);
+      console.log(id ?? "");
       break;
     }
     case "mint-sub": {
       const collateral = process.argv[3] ?? "dai";
-      const r = await call(`/cartridges/${meta.cartridgeId}/subagents/mint`, {
-        method: "POST",
-        body: { collateral, simPay: true },
-      });
-      if (!r.ok) throw new Error(JSON.stringify(r.data));
-      const heroes = (r.data.cartridge ?? r.data).cAavegotchis ?? [];
-      console.log(heroes[heroes.length - 1]?.id ?? "");
+      const { mintSubAgentHero } = await import("./onboarding-lib.mjs");
+      const id = await mintSubAgentHero(meta.cartridgeId, collateral);
+      console.log(id ?? "");
       break;
     }
     case "select-hero": {

@@ -3,7 +3,7 @@
  * Interactive welcome / sign-in gate for GotchiBot tmux (center pane).
  */
 import readline from "node:readline/promises";
-import { readFileSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import {
@@ -88,7 +88,7 @@ async function apiOp(op, ...args) {
     const handlers = {
       ensure: () => ensureCartridgeForOwner(args[0]),
       "bind-starter": () => bindStarterHero(loadMeta()?.cartridgeId, args[0]),
-      "bind-owned": () => bindOwnedGotchi(loadMeta()?.cartridgeId, args[0]),
+      "bind-owned": () => bindOwnedGotchi(loadMeta()?.cartridgeId, args[0], args[1] || null),
       "mint-sub": () => mintSubAgentHero(loadMeta()?.cartridgeId, args[0]),
       "select-hero": () => selectOrchestratorHero(loadMeta()?.cartridgeId, args[0]),
     };
@@ -531,7 +531,7 @@ async function resolveHeroes(wallet, cartridgeId) {
       return heroes;
     }
     console.log(`\n  Binding owned gotchi #${pick.gotchi.gotchiId} (free)…`);
-    const heroId = await apiOp("bind-owned", pick.gotchi.gotchiId);
+    const heroId = await apiOp("bind-owned", pick.gotchi.gotchiId, pick.gotchi);
     console.log(`  ✓ bound ${heroId}`);
     heroes = await fetchCartridgeHeroes(cartridgeId);
     return heroes;
@@ -556,6 +556,130 @@ async function syncFleetQuiet() {
     const { syncFleet } = await import("./openclaw-fleet.mjs");
     await syncFleet({ quiet: true });
   } catch {}
+}
+
+
+const TTS_STATE = `${ROOT}/sessions/.tts.json`;
+const TUI_PREFS = `${ROOT}/sessions/.tui-prefs.json`;
+const DEFAULT_READ_SPEED = 1.05;
+const READ_SPEED_PRESETS = [
+  { key: "slow", label: "Slow", readSpeed: 0.85 },
+  { key: "normal", label: "Normal", readSpeed: 1.05 },
+  { key: "fast", label: "Fast", readSpeed: 1.25 },
+  { key: "faster", label: "Faster", readSpeed: 1.45 },
+];
+
+function readJsonFile(path, fallback) {
+  try {
+    return { ...fallback, ...JSON.parse(readFileSync(path, "utf8")) };
+  } catch {
+    return { ...fallback };
+  }
+}
+
+function writeJsonFile(path, obj) {
+  writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
+}
+
+function loadTtsSettings() {
+  const s = readJsonFile(TTS_STATE, { enabled: false, persona: "gotchi", readSpeed: DEFAULT_READ_SPEED });
+  const readSpeed = typeof s.readSpeed === "number" && s.readSpeed > 0 ? s.readSpeed : DEFAULT_READ_SPEED;
+  return { enabled: s.enabled === true, persona: s.persona || "gotchi", readSpeed };
+}
+
+function saveTtsSettings(patch) {
+  const raw = readJsonFile(TTS_STATE, { enabled: false, persona: "gotchi", readSpeed: DEFAULT_READ_SPEED });
+  writeJsonFile(TTS_STATE, { ...raw, ...patch });
+}
+
+function loadTuiPrefs() {
+  const s = readJsonFile(TUI_PREFS, { mouse: true, replay: true });
+  return { mouse: s.mouse !== false, replay: s.replay !== false };
+}
+
+function saveTuiPrefs(patch) {
+  writeJsonFile(TUI_PREFS, { ...loadTuiPrefs(), ...patch });
+}
+
+function speedLabel(n) {
+  const hit = READ_SPEED_PRESETS.find((p) => p.readSpeed === n);
+  return hit ? `${hit.label} (${n})` : String(n);
+}
+
+async function settingsMenu() {
+  for (;;) {
+    const tts = loadTtsSettings();
+    const tui = loadTuiPrefs();
+    clear();
+    title("Settings");
+    console.log(`  Voice        ${tts.enabled ? "on" : "off"}`);
+    console.log(`  Read speed   ${speedLabel(tts.readSpeed)}`);
+    console.log(`  Mouse        ${tui.mouse ? "on" : "off"}  (OpenCode)`);
+    console.log(`  Chat replay  ${tui.replay ? "on" : "off"}  (keeps history scrollable)`);
+    hr();
+
+    const pick = await choose("Settings", [
+      { key: "voice", label: `Voice — ${tts.enabled ? "on" : "off"}` },
+      { key: "speed", label: `Read speed — ${speedLabel(tts.readSpeed)}` },
+      { key: "test", label: "Test voice (speak a short line at current speed)" },
+      { key: "mouse", label: `OpenCode mouse — ${tui.mouse ? "on" : "off"}` },
+      { key: "replay", label: `Chat replay — ${tui.replay ? "on" : "off"}` },
+      { key: "back", label: "Back to cockpit" },
+    ]);
+    if (!pick || pick.key === "back") return;
+
+    if (pick.key === "voice") {
+      saveTtsSettings({ enabled: !tts.enabled });
+      continue;
+    }
+
+    if (pick.key === "speed") {
+      const speedPick = await choose(
+        "Read speed",
+        READ_SPEED_PRESETS.map((p) => ({
+          key: p.key,
+          label: `${p.label} (${p.readSpeed})`,
+          readSpeed: p.readSpeed,
+        })),
+      );
+      if (speedPick?.readSpeed) saveTtsSettings({ readSpeed: speedPick.readSpeed });
+      continue;
+    }
+
+    if (pick.key === "test") {
+      console.log("\n  Speaking…");
+      try {
+        const r = spawnSync(
+          process.execPath,
+          [
+            `${ROOT}/scripts/tts.mjs`,
+            "speak",
+            "Hi fren! This is the current read speed.",
+            "--persona",
+            "gotchi",
+            "--force",
+          ],
+          { cwd: ROOT, stdio: "ignore", timeout: 60_000 },
+        );
+        if (r.status !== 0) console.log("  (voice test failed — TTS may be unavailable)");
+        else console.log("  ✓ done");
+      } catch {
+        console.log("  (voice test failed — TTS may be unavailable)");
+      }
+      await pause();
+      continue;
+    }
+
+    if (pick.key === "mouse") {
+      saveTuiPrefs({ mouse: !tui.mouse });
+      continue;
+    }
+
+    if (pick.key === "replay") {
+      saveTuiPrefs({ replay: !tui.replay });
+      continue;
+    }
+  }
 }
 
 async function viewAgentRoster() {
@@ -630,11 +754,94 @@ async function importOrChooseGotchi(wallet, cartridgeId) {
     await syncFleetQuiet();
   } else {
     console.log(`\n  Binding owned gotchi #${pick.gotchi.gotchiId} (free)…`);
-    const heroId = await apiOp("bind-owned", pick.gotchi.gotchiId);
+    const heroId = await apiOp("bind-owned", pick.gotchi.gotchiId, pick.gotchi);
     console.log(`  ✓ bound ${heroId}`);
     await syncFleetQuiet();
   }
   await pause();
+}
+
+
+async function startMeetingMenu(heroes) {
+  clear();
+  title("Start meeting");
+  let meet;
+  try {
+    meet = await import("./gotchi-meet.mjs");
+  } catch (e) {
+    console.log(`  ✗ failed to load meeting room: ${e.message || e}`);
+    await pause();
+    return false;
+  }
+  const open = meet.loadCurrentMeeting();
+  if (open) {
+    console.log(`  A meeting is already open: ${open.id}`);
+    console.log(`  topic  ${open.topic || "—"}`);
+    console.log("  End it first: ./scripts/gotchi-meet.mjs end\n");
+    const next = await choose("Meeting", [
+      { key: "end", label: "End current meeting, then start a new one" },
+      { key: "back", label: "Back to cockpit" },
+    ]);
+    if (next?.key !== "end") return false;
+    try {
+      await meet.endMeeting();
+      console.log("  ✓ ended");
+    } catch (e) {
+      console.log(`  ✗ ${e.message || e}`);
+      await pause();
+      return false;
+    }
+  }
+
+  const topic = (await rl.question("  Topic (Enter for untitled): ")).trim() || "Untitled meeting";
+  let meeting;
+  try {
+    meeting = await meet.startMeeting(topic);
+  } catch (e) {
+    console.log(`\n  ✗ ${e.message || e}`);
+    await pause();
+    return false;
+  }
+  console.log(`\n  ✓ meeting ${meeting.id}`);
+  console.log(`  topic  ${meeting.topic}`);
+  console.log("  Invite cAavegotchis into the room (optional).\n");
+
+  for (;;) {
+    meeting = meet.loadCurrentMeeting() || meeting;
+    const inRoom = new Set((meeting.participants || []).map((p) => p.id));
+    const available = (heroes || []).filter((h) => h?.id && !inRoom.has(h.id));
+    if (!available.length) {
+      console.log("  (no other cartridge heroes to invite)");
+      break;
+    }
+    const options = [
+      ...available.map((h) => ({
+        key: h.id,
+        id: h.id,
+        label: `${h.id}${h.collateral ? ` · ${h.collateral}` : ""}${h.name ? ` · ${h.name}` : ""}`,
+      })),
+      { key: "done", label: "Done inviting" },
+    ];
+    const pick = await choose("Invite who?", options);
+    if (!pick || pick.key === "done") break;
+    try {
+      const r = await meet.inviteParticipant(pick.id);
+      console.log(`  ✓ invited ${r.participant.id} (${r.participant.name || r.participant.role})`);
+    } catch (e) {
+      console.log(`  ✗ ${e.message || e}`);
+    }
+  }
+
+  const final = meet.loadCurrentMeeting() || meeting;
+  if (!final) {
+    console.log("  (no open meeting)");
+    await pause();
+    return false;
+  }
+  console.log(`\n  Meeting ${final.id} is open.`);
+  console.log('  In OpenCode: /meet say "…"   ·   /meet end');
+  await pause("Press Enter to open the meeting room (chat)");
+  return true;
 }
 
 async function mainMenu(wallet, cartridgeId) {
@@ -654,8 +861,10 @@ async function mainMenu(wallet, cartridgeId) {
 
     const pick = await choose("What next?", [
       { key: "launch", label: "Return to chat (orchestrator)" },
+      { key: "meet", label: "Start meeting" },
       { key: "roster", label: "View agent roster (MBP + iMac · status)" },
       { key: "export-roster", label: "Export agent roster to CSV" },
+      { key: "settings", label: "Settings (voice, read speed, mouse, replay)" },
       { key: "import", label: "Import on-chain gotchi / browse cartridge cAavegotchis" },
       { key: "mint", label: "Mint another cAavegotchi — $5 (sub-agent identity)" },
       { key: "avatar", label: "Change orchestrator avatar" },
@@ -689,6 +898,23 @@ async function mainMenu(wallet, cartridgeId) {
       process.exit(0);
     }
 
+    if (pick.key === "meet") {
+      const opened = await startMeetingMenu(heroes);
+      if (opened) {
+        // Leave cockpit — chat-pane.sh continues into OpenCode (the room).
+        if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") return;
+        rl.close();
+        const chatPane = `${ROOT}/scripts/chat-pane.sh`;
+        spawnSync(chatPane, [], {
+          cwd: ROOT,
+          stdio: "inherit",
+          env: { ...process.env, GOTCHIBOT_SKIP_ONBOARDING: "1", GOTCHIBOT_SKIP_COCKPIT: "1" },
+        });
+        process.exit(0);
+      }
+      continue;
+    }
+
     if (pick.key === "roster") {
       await viewAgentRoster();
       continue;
@@ -696,6 +922,11 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "export-roster") {
       await exportAgentRosterCsv();
+      continue;
+    }
+
+    if (pick.key === "settings") {
+      await settingsMenu();
       continue;
     }
 
@@ -786,8 +1017,26 @@ async function runCockpit() {
   }
 }
 
+/** /meet — start/invite then return so chat-pane.sh opens OpenCode. */
+async function runMeet() {
+  try {
+    clearStaleSessionPin();
+    let wallet = readWalletFile();
+    if (!wallet) {
+      wallet = await connectWalletMenu();
+    }
+    const cartridgeId = await ensureCartridge(wallet);
+    const heroes = await loadCartridgeHeroesQuiet(cartridgeId);
+    await ensureOrchestratorHero(heroes);
+    await startMeetingMenu(heroes);
+  } finally {
+    rl.close();
+  }
+}
+
+const meetOnly = process.argv.includes("--meet");
 const cockpitOnly = process.argv.includes("--cockpit");
-(cockpitOnly ? runCockpit() : run()).catch((e) => {
+(meetOnly ? runMeet() : cockpitOnly ? runCockpit() : run()).catch((e) => {
   console.error(`\n  ✗ ${e.message}`);
   process.exit(1);
 });

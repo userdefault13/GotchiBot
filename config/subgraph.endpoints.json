@@ -29,6 +29,7 @@
     "svgQuery": "__typename query_root ok"
   },
   "identityLayer": {
+    "$comment": "cartridgeSim is the Vercel origin GotchiBot uses (service key). Vercel /api/cartridge-sim thin-relays to cartridgeSimProxy → iMac 127.0.0.1:8791 (aarcade-cartridge-sim). Do not point GotchiBot writes at iMac :3010 (lore API, sim disabled). Direct cartridgeSimProxy needs X-Cartridge-Sim-Proxy-Key, which abra gotchibot does not inject. Override via GOTCHIBOT_CARTRIDGE_URL / AARCADE_SIM_URL / CARTRIDGE_SIM.",
     "cartridgeSim": "https://www.aarcadeghst.com",
     "cartridgeSimProxy": "https://cartridge.aarcadeghst.com",
     "mongoProxy": "https://mongo-api.aarcadeghst.com",

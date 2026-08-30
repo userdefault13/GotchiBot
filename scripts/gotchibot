@@ -14,14 +14,15 @@ usage() {
   cat >&2 <<'EOF'
 gotchibot — GotchiBot orchestrator CLI
 
-  gotchibot tmux                  open orchestrator (sidebar | opencode | avatar)
+  gotchibot tmux                  open orchestrator (sidebar | chat | avatar)
+  gotchibot chat [claude|opencode]  chat pane runtime (Claude CLI + Kickbacks, or OpenCode)
   gotchibot sidebar               toggle medium file explorer (mc)
                                   # in mc: F2 → Add to Gotchi chat (or press a)
   gotchibot files-max             Files full-bleed / chat→bar (Mac: Ctrl-b f)
   gotchibot avatar                show the avatar pane (Ctrl+G or F6)
   gotchibot avatar-max            Avatar full-bleed / chat→bar (Mac: Ctrl-b a)
   gotchibot spawn [--host auto|imac|local] [--model t] "P"   spawn sub-agent (Tailscale iMac when auto/imac)
-  gotchibot new [--model t] "P"   spawn a sub-agent (t: nim|pro|local|<id>)
+  gotchibot new [--model t] "P"   spawn a sub-agent (claude -p when chat runtime is claude)
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
   gotchibot mode [gotchi|verse|plan|build|ask|cycle] [--restart]  OpenCode agent
@@ -31,7 +32,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot agents [--json]       cAavegotchis + MBP/iMac sessions (/list)
   gotchibot switch [n|id]         list agents, or switch avatar+direct chat (/switch)
   gotchibot focus <n|id>          pin avatar + SUB chat focus
-  gotchibot cockpit               mint / change orchestrator avatar (/cockpit)
+  gotchibot cockpit               mint / avatar / Settings (/cockpit)
+  gotchibot meet start|invite|status|say|end   shared meeting room (/meet)
   gotchibot orch                  restore orchestrator focus (/orch)
   gotchibot openclaw sync|list|status|chat|install|point  OpenClaw fleet + CLI
   gotchibot delegate [--json] [hint]  pick next local/remote agent (/delegate)
@@ -65,7 +67,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot mesh [ping] [--live] [--json]  agent count + status across MBP and iMac (Tailscale SSH)
   gotchibot trader [monitor|improve|news] [--json] [--host imac]  Gotchi-Trader desk
   gotchibot model [pick|list|resolve] [--json] [--probe]  pick a free, listed model
-  gotchibot tts on|off|status|test|warm|stop-daemon  voice (MeloTTS EN-AU / edge-tts / say)
+  gotchibot tts on|off|status|test|speed|warm|stop-daemon  voice (MeloTTS EN-AU / edge-tts / say)
 EOF
   exit 2
 }
@@ -80,6 +82,33 @@ sync_openclaw_fleet() {
   else
     node "$ROOT/scripts/openclaw-fleet.mjs" sync --quiet 2>/dev/null || true
   fi
+}
+
+
+cmd_chat() {
+  local want="${1:-status}"
+  local file="$SESSIONS/.chat-runtime"
+  local current="opencode"
+  [ -f "$file" ] && current="$(tr -d "[:space:]" < "$file")"
+  case "$want" in
+    status|"")
+      echo "chat runtime: $current"
+      ;;
+    claude|opencode)
+      mkdir -p "$SESSIONS"
+      printf '%s\n' "$want" > "$file"
+      echo "chat runtime → $want"
+      if [ -n "${TMUX:-}" ]; then
+        tmux respawn-pane -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh" 2>/dev/null || true
+      else
+        echo "respawn chat: gotchibot tmux"
+      fi
+      ;;
+    *)
+      echo "usage: gotchibot chat [claude|opencode|status]" >&2
+      exit 2
+      ;;
+  esac
 }
 
 cmd_tmux() {
@@ -316,6 +345,14 @@ cmd_cockpit() {
   exec node "$ROOT/scripts/agent-focus.mjs" cockpit "$@"
 }
 
+
+cmd_meet() {
+  if command -v abra >/dev/null 2>&1; then
+    exec abra run gotchibot -- node "$ROOT/scripts/gotchi-meet.mjs" "$@"
+  fi
+  exec node "$ROOT/scripts/gotchi-meet.mjs" "$@"
+}
+
 cmd_openclaw() {
   local sub="${1:-}"
   shift || true
@@ -407,6 +444,7 @@ cmd_menubar() {
 cmd="$1"; shift
 case "$cmd" in
   tmux) cmd_tmux ;;
+  chat) cmd_chat "$@" ;;
   spawn) cmd_spawn "$@" ;;
   new) "$DISPATCH" new "$@" ;;
   list) exec "$DISPATCH" list ;;
@@ -414,6 +452,7 @@ case "$cmd" in
   switch) cmd_switch "$@" ;;
   focus) cmd_focus "$@" ;;
   cockpit|onboarding) cmd_cockpit "$@" ;;
+  meet) cmd_meet "$@" ;;
   orch) cmd_orch "$@" ;;
   openclaw) cmd_openclaw "$@" ;;
   delegate) cmd_delegate "$@" ;;

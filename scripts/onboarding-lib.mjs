@@ -7,6 +7,7 @@ import { spawnSync, spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { call, loadMeta, saveMeta, GAME_ID } from "./identity.mjs";
+import { persistHeroCollateral, findCollateralColors, writeWalletGotchiCache, loadWalletGotchiIndex } from "./collateral-resolve.mjs";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const SESSIONS = `${ROOT}/sessions`;
@@ -624,6 +625,19 @@ export async function ensureCartridgeForOwner(address) {
   return cartridgeId;
 }
 
+function persistMintedHeroColors(heroId, collateral, hero = {}) {
+  if (!heroId) return;
+  const hauntId = Number(hero.hauntId) || 1;
+  const colors = findCollateralColors(collateral || hero.collateral, hauntId);
+  persistHeroCollateral(heroId, {
+    collateral: colors?.spirit || collateral || hero.collateral,
+    collateralName: colors?.name || null,
+    hauntId: hauntId || colors?.hauntId || 1,
+    primary: colors?.primary,
+    secondary: colors?.secondary,
+  });
+}
+
 export async function bindStarterHero(cartridgeId, collateral) {
   const r = await call(`/cartridges/${cartridgeId}/bind-starter`, {
     method: "POST",
@@ -632,18 +646,69 @@ export async function bindStarterHero(cartridgeId, collateral) {
   if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
   const c = r.data.cartridge ?? r.data;
   const heroes = c.cAavegotchis ?? [];
-  return heroes[heroes.length - 1]?.id ?? null;
+  const hero = heroes[heroes.length - 1];
+  const heroId = hero?.id ?? null;
+  persistMintedHeroColors(heroId, collateral, hero);
+  return heroId;
 }
 
-export async function bindOwnedGotchi(cartridgeId, sourceTokenId) {
+export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = null) {
+  const tokenId = String(sourceTokenId);
+  let walletGotchi = gotchiHint && (gotchiHint.collateral || gotchiHint.gotchiId)
+    ? gotchiHint
+    : null;
+  if (!walletGotchi) {
+    try {
+      const owner = readWalletFile();
+      if (owner) walletGotchi = await fetchWalletGotchiById(owner, tokenId);
+    } catch {}
+  }
+  const hauntId = walletGotchi?.hauntId != null ? Number(walletGotchi.hauntId) : null;
+  const collAddr = walletGotchi?.collateral || null;
+  const colors = findCollateralColors(collAddr || walletGotchi?.collateralName || "", hauntId || 2);
+  const spirit = colors?.spirit || libraryNameToSpiritId(walletGotchi?.collateralName || collAddr || "") || null;
+
   const r = await call(`/cartridges/${cartridgeId}/bind-owned`, {
     method: "POST",
-    body: { sourceTokenId: String(sourceTokenId), simPay: true },
+    body: {
+      sourceTokenId: tokenId,
+      simPay: true,
+      collateral: spirit || undefined,
+      collateralAddress: collAddr || undefined,
+      hauntId,
+    },
   });
   if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
   const c = r.data.cartridge ?? r.data;
-  const hero = c.cAavegotchi ?? (c.cAavegotchis ?? []).find((h) => h.sourceTokenId === String(sourceTokenId));
-  return hero?.id ?? null;
+  const hero = c.cAavegotchi ?? (c.cAavegotchis ?? []).find((h) => String(h.sourceTokenId) === tokenId)
+    ?? (c.cAavegotchis ?? []).find((h) => h.id === `owned-${tokenId}`)
+    ?? (c.cAavegotchis ?? []).slice(-1)[0];
+  const heroId = hero?.id ?? `owned-${tokenId}`;
+  persistHeroCollateral(heroId, {
+    collateral: spirit || hero?.collateral,
+    collateralAddress: collAddr || hero?.collateralAddress || hero?.collateral,
+    collateralName: colors?.name || walletGotchi?.collateralName || null,
+    hauntId: hauntId || hero?.hauntId,
+    primary: colors?.primary,
+    secondary: colors?.secondary,
+    sourceTokenId: tokenId,
+  });
+  try {
+    const idx = loadWalletGotchiIndex();
+    const rows = [...idx.values()];
+    const row = {
+      gotchiId: tokenId,
+      tokenId,
+      name: walletGotchi?.name || hero?.name || null,
+      hauntId,
+      collateral: collAddr,
+      collateralName: colors?.name || walletGotchi?.collateralName || null,
+    };
+    const filtered = rows.filter((g) => String(g.gotchiId) !== tokenId);
+    filtered.push(row);
+    writeWalletGotchiCache({ owner: readWalletFile(), source: "bind-owned", gotchis: filtered });
+  } catch {}
+  return heroId;
 }
 
 export async function mintSubAgentHero(cartridgeId, collateral) {
@@ -654,7 +719,10 @@ export async function mintSubAgentHero(cartridgeId, collateral) {
   if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
   const c = r.data.cartridge ?? r.data;
   const heroes = c.cAavegotchis ?? [];
-  return heroes[heroes.length - 1]?.id ?? null;
+  const hero = heroes[heroes.length - 1];
+  const heroId = hero?.id ?? null;
+  persistMintedHeroColors(heroId, collateral, hero);
+  return heroId;
 }
 
 export async function selectOrchestratorHero(cartridgeId, heroId) {

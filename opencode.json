@@ -23,30 +23,52 @@
     }
   },
   "agent": {
-    "gotchi": { "order": 1 },
-    "plan": { "order": 2 },
-    "build": { "order": 3 },
-    "ask": { "order": 4 }
+    "gotchi": {
+      "order": 1
+    },
+    "plan": {
+      "order": 2
+    },
+    "build": {
+      "order": 3
+    },
+    "ask": {
+      "order": 4
+    }
   },
   "mcp": {
     "abracadabra": {
       "type": "local",
-      "command": ["abra", "mcp"],
+      "command": [
+        "abra",
+        "mcp"
+      ],
       "enabled": true
     },
     "aarcade-cartridge-schema": {
       "type": "local",
-      "command": ["./scripts/mcp/aarcade-cartridge-schema.sh"],
-      "enabled": true
+      "command": [
+        "./scripts/mcp/aarcade-cartridge-schema.sh"
+      ],
+      "enabled": true,
+      "environment": {
+        "AARCADE_CARTRIDGE_WRITE_BASE": "http://127.0.0.1:8791",
+        "AARCADE_LORE_API_BASE": "http://127.0.0.1:3010",
+        "AARCADE_CARTRIDGE_SIM_ON_LORE": "disabled"
+      }
     },
     "aarcade-hackathon-ideas": {
       "type": "local",
-      "command": ["./scripts/mcp/aarcade-hackathon-ideas.sh"],
+      "command": [
+        "./scripts/mcp/aarcade-hackathon-ideas.sh"
+      ],
       "enabled": true
     },
     "cron402": {
       "type": "local",
-      "command": ["./scripts/mcp/cron402.sh"],
+      "command": [
+        "./scripts/mcp/cron402.sh"
+      ],
       "enabled": true
     },
     "base-mcp": {

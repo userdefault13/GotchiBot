@@ -60,7 +60,13 @@ function restartChatPane(agent) {
   }
   const r = spawnSync(
     "tmux",
-    ["respawn-pane", "-t", `${sess}:work.1`, "-k", `cd "${ROOT}" && exec ./scripts/chat-pane.sh`],
+    [
+      "respawn-pane",
+      "-t",
+      `${sess}:work.1`,
+      "-k",
+      `cd "${ROOT}" && GOTCHIBOT_OPENCODE_CONTINUE=0 exec ./scripts/chat-pane.sh`,
+    ],
     { stdio: "ignore" },
   );
   return { restarted: r.status === 0, reason: r.status === 0 ? "ok" : "respawn-failed" };

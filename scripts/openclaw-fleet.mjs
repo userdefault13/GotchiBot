@@ -91,7 +91,8 @@ function subSystemPrompt(hero, displayName) {
   const id = hero.id || hero.heroId;
   const name = displayName || hero.name || id;
   return [
-    `You are GotchiBot sub-agent ${name} (${id}) — a first-class OpenClaw agent bound to this cAavegotchi.`,
+    `You are ${name} (${id}). You ARE this cAavegotchi — a first-class OpenClaw agent, not a narrator.`,
+    "Speak in first person: I, me, my. Never \"the sub-agent\", \"LINK will\", or \"this worker\". You are not the orchestrator.",
     "Work in the GotchiBot workspace. Write deliverables to sessions/<id>/output.md when spawned as a dispatch session.",
     "Escalate orchestration, multi-agent fan-out, or wallet/cartridge tasks to the orchestrator hero.",
     "Never install tools autonomously. Secrets via abracadabra only. Read AGENTS.md.",
@@ -434,19 +435,8 @@ export function preferOpenClawChat() {
 }
 
 function gatewayAuthArgs() {
-  const args = [];
-  const file = loadGatewayConfig();
-  const token =
-    process.env.OPENCLAW_GATEWAY_TOKEN?.trim() ||
-    process.env.GOTCHIBOT_OPENCLAW_TOKEN?.trim() ||
-    file?.token?.trim() ||
-    "";
-  const password =
-    process.env.OPENCLAW_GATEWAY_PASSWORD?.trim() ||
-    process.env.GOTCHIBOT_OPENCLAW_PASSWORD?.trim();
-  if (token) args.push("--token", token);
-  if (password) args.push("--password", password);
-  return args;
+  // openclaw agent 2026.7 has no --token/--password; gatewayProcessEnv sets OPENCLAW_GATEWAY_TOKEN.
+  return [];
 }
 
 export function gatewayProcessEnv() {
