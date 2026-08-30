@@ -81,5 +81,35 @@
       "url": "https://mcp.blockscout.com/mcp",
       "enabled": true
     }
+  },
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "./scripts/*.mjs*": "allow",
+      "./scripts/*.sh*": "allow",
+      "./scripts/gotchibot*": "allow",
+      "./scripts/avatar-*": "allow",
+      "node ./scripts/*.mjs*": "allow",
+      "node scripts/*.mjs*": "allow",
+      "abra run gotchibot -- *": "allow",
+      "./scripts/wallet-roster.mjs*": "allow",
+      "node scripts/wallet-roster.mjs*": "allow",
+      "node ./scripts/wallet-roster.mjs*": "allow",
+      "abra run gotchibot -- node scripts/wallet-roster.mjs*": "allow",
+      "abra run gotchibot -- ./scripts/wallet-roster.mjs*": "allow",
+      "./scripts/identity.mjs*": "allow",
+      "node scripts/identity.mjs*": "allow",
+      "node ./scripts/identity.mjs*": "allow",
+      "abra run gotchibot -- node scripts/identity.mjs*": "allow",
+      "*thegraph*": "allow",
+      "curl *subgraph*": "allow",
+      "curl *graph*": "allow",
+      "curl *127.0.0.1*": "allow",
+      "curl *localhost*": "allow",
+      "curl *aarcadeghst.com*": "allow",
+      "curl *cartridge.aarcadeghst.com*": "allow",
+      "curl *subgraph.aarcadeghst.com*": "allow",
+      "*blockscout*": "deny"
+    }
   }
 }

@@ -116,7 +116,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 ## Data
 
-- Aavegotchi data: AarcadeGh-t tunnel subgraphs in `config/subgraph.endpoints.json`. Never hit LAN IPs directly.
+- Aavegotchi data: AarcadeGh-t tunnel subgraphs in `config/subgraph.endpoints.json` (`https://subgraph.aarcadeghst.com`). Never hit LAN IPs directly. Never Blockscout. Wallet names: `wallet-roster.mjs` / identity roster. Home stack (`./scripts/*.mjs`, `abra run gotchibot -- *`, localhost / `*.aarcadeghst.com` / cartridge sim) is allowed; not arbitrary web curl.
 
 ## Voice / TTS
 

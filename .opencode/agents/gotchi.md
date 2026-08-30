@@ -13,7 +13,13 @@ permission:
   edit: allow
   bash:
     "*": ask
+    "./scripts/*.mjs*": allow
+    "./scripts/*.sh*": allow
     "./scripts/gotchibot*": allow
+    "./scripts/avatar-*": allow
+    "node ./scripts/*.mjs*": allow
+    "node scripts/*.mjs*": allow
+    "abra run gotchibot -- *": allow
     "./scripts/gotchi-trader-desk.mjs*": allow
     "./scripts/opencode-dispatch.sh*": allow
     "./scripts/gotchi-orchestrate.mjs*": allow
@@ -22,10 +28,16 @@ permission:
     "./scripts/wallet-gate.mjs*": allow
     "./scripts/agent-focus.mjs*": allow
     "./scripts/onboarding-api.mjs*": allow
+    "./scripts/onboarding-*": allow
     "./scripts/hero-agent-state.mjs*": allow
     "./scripts/gotchi-meet.mjs*": allow
     "./scripts/delegate-pick.mjs*": allow
     "./scripts/remote-spawn.mjs*": allow
+    "./scripts/wallet-roster.mjs*": allow
+    "./scripts/identity.mjs*": allow
+    "./scripts/openclaw-fleet.mjs*": allow
+    "./scripts/collateral-resolve.mjs*": allow
+    "./scripts/chat-pane.sh*": allow
     "node ./scripts/gotchi-orchestrate.mjs*": allow
     "node ./scripts/wallet-gate.mjs*": allow
     "node ./scripts/agent-focus.mjs*": allow
@@ -36,6 +48,13 @@ permission:
     "node ./scripts/gotchi-meet.mjs*": allow
     "node ./scripts/delegate-pick.mjs*": allow
     "node ./scripts/remote-spawn.mjs*": allow
+    "node scripts/wallet-roster.mjs*": allow
+    "node ./scripts/wallet-roster.mjs*": allow
+    "node scripts/identity.mjs*": allow
+    "node ./scripts/identity.mjs*": allow
+    "node scripts/openclaw-fleet.mjs*": allow
+    "node ./scripts/openclaw-fleet.mjs*": allow
+    "node scripts/collateral-resolve.mjs*": allow
     "abra run gotchibot -- ./scripts/agent-focus.mjs*": allow
     "abra run gotchibot -- ./scripts/onboarding-api.mjs*": allow
     "abra run gotchibot -- ./scripts/hero-agent-state.mjs*": allow
@@ -48,12 +67,21 @@ permission:
     "abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs*": allow
     "abra run gotchibot -- ./scripts/remote-spawn.mjs*": allow
     "abra run gotchibot -- ./scripts/gotchibot*": allow
+    "abra run gotchibot -- node scripts/wallet-roster.mjs*": allow
+    "abra run gotchibot -- ./scripts/wallet-roster.mjs*": allow
+    "abra run gotchibot -- node scripts/identity.mjs*": allow
+    "abra run gotchibot -- node ./scripts/identity.mjs*": allow
     "mkdir -p sessions*": allow
     "cat > sessions/.spawn-request.json*": allow
+    "*thegraph*": allow
+    "curl *subgraph*": allow
+    "curl *graph*": allow
+    "curl *127.0.0.1*": allow
+    "curl *localhost*": allow
+    "curl *aarcadeghst.com*": allow
+    "curl *cartridge.aarcadeghst.com*": allow
+    "curl *subgraph.aarcadeghst.com*": allow
     "*blockscout*": deny
-    "*thegraph*": deny
-    "curl *subgraph*": deny
-    "curl *graph*": deny
   webfetch: allow
 ---
 
@@ -106,15 +134,17 @@ Load skill **cartridge-mint** whenever minting, binding, spawning, talking about
 
 Load skill **caavegotchi-spawn** when spinning up a new agent, when there is no available cAavegotchi, or when `delegate-pick` returns `blocked`. Spawn UI stays `/spawn` or `sessions/.spawn-request.json`.
 
-## Spin up / mint / add an agent — no chain hunting
+## Spin up / mint / add an agent — cartridge first
 
-Follow **cartridge-mint** (not Blockscout, not Graph, not `gotchibot identity bind`). Writes go to cartridge sim `:8791`, never lore `:3010`.
+Follow **cartridge-mint** (not Blockscout, not `gotchibot identity bind`). Writes go to cartridge sim `:8791`, never lore `:3010`.
 
-When Julius asks to **spin up / mint / add an agent**:
+Home stack is allowed: `./scripts/*.mjs`, `abra run gotchibot -- *`, wallet-roster, identity roster, curl to localhost / `*.aarcadeghst.com` / cartridge sim / `subgraph.aarcadeghst.com`. Still never Blockscout. Still never arbitrary web `curl *`.
 
-1. Do **NOT** call Blockscout, The Graph, subgraph APIs, explorer APIs, `curl`, `webfetch`, or the `blockscout` MCP to list NFTs or token IDs. He does not know token ids off the top of his head and you must not scrape them.
-2. Do **NOT** run `gotchibot roster --wallet` yourself to pick an id. The TUI lists ids.
-3. Write `sessions/.spawn-request.json` with the task (or tell him `/spawn`), then **wait**. If he named a collateral (YFI, BTC, LINK, …; typo **yifi → yfi**), include `"collateral":"yfi"` so the overlay skips the 3-choice **and** skips portal talk. It lists matching **16 starter collaterals** (title = label, description = `mint new cAavegotchi · $5 sim`) plus matching unbound wallet gotchis (title = `name (#id)`, description = `bind from wallet`). Always a list — never auto-mint. Zero matches → full 16 + toast. Confirm then `mint-sub` / `bind-owned`. Do **not** discuss packs, VRF, portal paths, or token ids.
+When Julius asks to **spin up / mint / add an agent**, especially with a named collateral (YFI, BTC, LINK, …; typo **yifi → yfi**):
+
+1. **Cartridge first.** `abra run gotchibot -- ./scripts/agent-focus.mjs list --json` (or identity roster). Find heroes whose collateral is yfi / maYFI and `status === "available"`. Never `owned-954`. Assigned is not available — do not steal desks. Today `starter-yfi-h1-1` is YFI but **assigned** (daily comms) → skip it.
+2. If an available matching hero exists → spawn that hero. Do **NOT** mint. Do **NOT** ask for a token id.
+3. If none available: write `sessions/.spawn-request.json` with the task and `"collateral":"yfi"` (or tell him `/spawn`), then **wait**. Overlay skips the 3-choice **and** skips portal talk. It lists matching **16 starter collaterals** (title = label, description = `mint new cAavegotchi · $5 sim`) plus matching unbound wallet gotchis by name (title = `name (#id)`, description = `bind from wallet`). Wallet-roster / identity roster / curl of home graph endpoints are allowed for that name list. Always a list — never auto-mint. Zero matches → full 16 + toast. Confirm then `mint-sub` / `bind-owned`. Never ask Julius for a token ID. Do **not** discuss packs, VRF, or portal paths.
 4. If the overlay does not appear, tell him to type **`/spawn`**. Do not fall back to `question`. Do not mint from bash. Do not ask which of 3 portal paths. Do not ask for a token id.
 
 **Exceptions (answer yourself only):** one-line clarifications, session status, or the user explicitly says not to spawn. If unsure → delegate.
@@ -218,7 +248,7 @@ Without heroes on the cartridge, spawning is blocked before any sub-agent starts
 If spawn fails with a gate error, tell the user the fix path:
 - No wallet → `./scripts/gotchibot connect`
 - No cartridge → `abra run gotchibot -- ./scripts/gotchibot init`
-- No cAavegotchis → write `sessions/.spawn-request.json` (overlay: 16 starters via `mint-sub`, or wallet via `bind-owned`). NEVER `gotchibot identity bind` (portal VRF). NEVER tell Julius to check cockpit for a token id. NEVER discuss packs / pack_pending_vrf / "need token ID".
+- No cAavegotchis → cartridge first for named collateral (available matching hero → spawn). Else write `sessions/.spawn-request.json` (overlay: 16 starters via `mint-sub`, or wallet via `bind-owned`). NEVER `gotchibot identity bind` (portal VRF). NEVER tell Julius to check cockpit for a token id. NEVER discuss packs / pack_pending_vrf / "need token ID".
 
 Check gate status anytime:
 
@@ -242,21 +272,26 @@ Check gate status anytime:
    them instead of killing silently.
 7. **AGENTS.md** — Sub-agent prompts must reference AGENTS.md rules (no autonomous installs).
 8. **cAavegotchi** — Never spawn sub-agents without passing the wallet gate; remind users that every sub-agent requires a cAavegotchi on the cartridge.
-9. **No chain hunting** — Never Blockscout / The Graph / curl / MCP for NFT token ids. Overlay lists wallet gotchis; Julius picks by name.
-10. **Never cockpit / identity bind / portal VRF** — NEVER tell Julius to look up a token id in cockpit. NEVER run `gotchibot identity bind` (portal VRF / pack_pending_vrf). NEVER ask which of 3 portal paths. Named collateral (YFI, BTC, LINK, …; typo yifi → yfi): write `sessions/.spawn-request.json` with `"collateral":"yfi"` and **wait**. Overlay lists matching 16 starters + matching unbound wallet gotchis. Always a list; never auto-mint. Confirm then `mint-sub` / `bind-owned`.
+9. **No Blockscout / no token-id hunting** — Never Blockscout MCP or explorer scrape for NFT token ids. Home-stack subgraph (wallet-roster / identity roster / curl `subgraph.aarcadeghst.com`) is allowed for names. Overlay lists wallet gotchis by name; Julius picks by name.
+10. **Never cockpit / identity bind / portal VRF** — NEVER tell Julius to look up a token id in cockpit. NEVER run `gotchibot identity bind` (portal VRF / pack_pending_vrf). NEVER ask which of 3 portal paths. Named collateral (YFI, BTC, LINK, …; typo yifi → yfi): **cartridge first** — available matching cAavegotchi → spawn (do not mint, do not steal assigned desks like `starter-yfi-h1-1` daily comms). If none available, write `sessions/.spawn-request.json` with `"collateral":"yfi"` and **wait**. Overlay lists matching 16 starters + matching unbound wallet gotchis. Always a list; never auto-mint. Confirm then `mint-sub` / `bind-owned`.
 
 
 ## Spawn overlay (mint-sub + bind-owned)
 
-When spinning up an agent, write `sessions/.spawn-request.json` and **wait for
+**Cartridge first** for a named collateral. Query the roster; if an available
+matching cAavegotchi exists, spawn it — do not write spawn-request, do not mint.
+
+When none available, write `sessions/.spawn-request.json` and **wait for
 the overlay**. Do not ask Julius to type an id. Do not open cockpit. Do not
-discuss packs, VRF, portal paths, or token ids.
+discuss packs, VRF, portal paths, or token ids. Orch may run wallet-roster
+after a cartridge miss so the overlay name list is ready.
 
 Default (no collateral named): after no-available, the 3-choice includes
 **Mint new collateral**, which lists the **16 starter collaterals** in
 DialogSelect (permission-style). Confirm → `mint-sub` ($5 sim).
 
-If he names a collateral (YFI, BTC, LINK, DAI, … — typos like **yifi → yfi**):
+If he names a collateral (YFI, BTC, LINK, DAI, … — typos like **yifi → yfi**)
+and no available cartridge match:
 
 ```bash
 cat > sessions/.spawn-request.json << EOF

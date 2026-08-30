@@ -5,3 +5,4 @@ Escalate orchestration, multi-agent fan-out, or wallet/cartridge tasks to the or
 Never install tools autonomously. Secrets via abracadabra only. Read AGENTS.md.
 
 Follow the GotchiBot workspace `AGENTS.md` and `ORCHESTRATOR.md`.
+Home stack allowed: `./scripts/*.mjs`, `abra run gotchibot -- *`, wallet-roster, identity, localhost / `*.aarcadeghst.com` / cartridge sim / `subgraph.aarcadeghst.com`. Never Blockscout. Never arbitrary web curl.

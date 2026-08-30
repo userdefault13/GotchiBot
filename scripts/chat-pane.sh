@@ -149,26 +149,12 @@ if [ "${GOTCHIBOT_SKIP_COCKPIT:-}" != "1" ] && [ -t 0 ] && onboarding_complete; 
   show_cockpit
 fi
 
-# Chat runtime: opencode (default), claude (Claude Code CLI + Kickbacks), or openclaw TUI.
+# Chat runtime: opencode (default) or openclaw TUI.
 RUNTIME_FILE="$ROOT/sessions/.chat-runtime"
 if [ -z "${GOTCHIBOT_CHAT_RUNTIME:-}" ] && [ -f "$RUNTIME_FILE" ]; then
   GOTCHIBOT_CHAT_RUNTIME="$(tr -d "[:space:]" < "$RUNTIME_FILE")"
 fi
 export GOTCHIBOT_CHAT_RUNTIME="${GOTCHIBOT_CHAT_RUNTIME:-opencode}"
-
-# Claude Code CLI in the chat pane (Kickbacks ads/earnings need their VS Code extension signed in).
-if [ "$GOTCHIBOT_CHAT_RUNTIME" = "claude" ]; then
-  if ! command -v claude >/dev/null 2>&1; then
-    echo "claude CLI not on PATH — install Claude Code, then: gotchibot chat claude" >&2
-    exit 1
-  fi
-  if [ -n "${TMUX:-}" ]; then
-    tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (Claude) " 2>/dev/null || true
-  fi
-  cd "$ROOT"
-  claude || true
-  quit_to_terminal
-fi
 
 # Legacy OpenClaw pi-tui (patched) — opt-in only.
 if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:-0}" = "1" ] && [ "${GOTCHIBOT_OPENCLAW:-1}" != "0" ]; then

@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
-min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-45}"
-min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-39}"
+min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-47}"
+min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-41}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
 chat_collapsed="${GOTCHIBOT_CHAT_COLLAPSED:-3}"

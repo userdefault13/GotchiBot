@@ -31,29 +31,7 @@ EOF
 
 
 dispatch_runtime() {
-  if [ -n "${GOTCHIBOT_DISPATCH:-}" ]; then
-    echo "$GOTCHIBOT_DISPATCH"
-    return
-  fi
-  if [ "${GOTCHIBOT_CHAT_RUNTIME:-}" = "claude" ]; then
-    echo claude
-    return
-  fi
-  if [ -f "$SESSIONS/.chat-runtime" ]; then
-    local r
-    r="$(tr -d '[:space:]' < "$SESSIONS/.chat-runtime")"
-    [ "$r" = "claude" ] && echo claude && return
-  fi
   echo opencode
-}
-
-claude_model_for() {
-  case "$1" in
-    auto|free|nim|flash|sonnet|"") echo sonnet ;;
-    pro|opus|ultra) echo opus ;;
-    local) echo sonnet ;;
-    *) echo "$1" ;;
-  esac
 }
 
 model_for() {
@@ -116,11 +94,7 @@ spawn() {
 
   {
     RUNTIME="$(dispatch_runtime)"
-    if [ "$RUNTIME" = "claude" ]; then
-      echo "model=$(claude_model_for "$model")"
-    else
-      echo "model=$(model_for "$model")"
-    fi
+    echo "model=$(model_for "$model")"
     echo "tier=$model"
     echo "runtime=$RUNTIME"
     echo "status=running"
@@ -163,35 +137,6 @@ EOF
 
   runner="$dir/runner.sh"
   RUNTIME="$(dispatch_runtime)"
-  if [ "$RUNTIME" = "claude" ]; then
-    CLAUDE_MODEL="$(claude_model_for "$model")"
-    cat > "$runner" <<RUNNER
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$ROOT"
-PROMPT="\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")"
-MODEL="$CLAUDE_MODEL"
-HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-if [ -n "\$HERO" ]; then
-  ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
-  node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" "\$ST" \\
-    --session "$id" --task "\$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')" \\
-    --model "\$MODEL" --host local >/dev/null 2>&1 || true
-fi
-if ! command -v claude >/dev/null 2>&1; then
-  echo "claude CLI not on PATH" >> "$dir/output.log"
-  exit 127
-fi
-PERM="\${GOTCHIBOT_CLAUDE_PERMISSION:-acceptEdits}"
-IDE_FLAGS=()
-if [ "\${GOTCHIBOT_CLAUDE_IDE:-1}" != "0" ]; then
-  IDE_FLAGS+=(--ide)
-fi
-claude -p --output-format text --permission-mode "\$PERM" --model "\$MODEL" -n "gotchibot:$id" "\${IDE_FLAGS[@]}" -- "\$PROMPT" \\
-  > "$dir/output.md" 2> "$dir/output.log"
-exit \$?
-RUNNER
-  else
   cat > "$runner" <<RUNNER
 #!/usr/bin/env bash
 cd "$ROOT"
@@ -239,7 +184,6 @@ if [ \$ec -ne 0 ] && [ "\$MODEL" != "\$FREE_MODEL" ] && node "$ROOT/scripts/mode
 fi
 exit \$ec
 RUNNER
-  fi
   chmod +x "$runner"
 
   ( if "$runner"; then set_field "$dir" status done

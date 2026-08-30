@@ -2,7 +2,8 @@
 name: cartridge-mint
 description: >-
   Load whenever minting, binding, spawning, talking about portals/packs/VRF/cAavegotchi,
-  or using Aarcade cartridge APIs. Beats ad-hoc Blockscout/Graph/identity-bind.
+  or using Aarcade cartridge APIs. Cartridge first for available matching heroes.
+  Beats Blockscout/identity-bind. Home subgraph via wallet-roster is allowed for names.
   Two backends: lore :3010 (SIM disabled) vs cartridge-sim :8791 (only mint/bind writer).
 license: MIT
 compatibility: opencode
@@ -27,20 +28,22 @@ MCP `aarcade-cartridge-schema` is schema-only. Writes still go to sim `:8791`. S
 
 ## cAavegotchi mint paths (ONLY these)
 
-1. **Available hero** — `status === "available"` only. Spawn. Do not mint.
-2. **Mint new collateral** — list the **16 starter collaterals** (DialogSelect / `/spawn`). Julius confirms. Then `onboarding-api.mjs mint-sub <spiritId>` with simPay ($5 sim).
+1. **Available hero** — `status === "available"` only. Spawn. Do not mint. Never `owned-954`. Never steal assigned desks (`starter-yfi-h1-1` is YFI but assigned to daily comms).
+2. **Named collateral first** (`yifi`→`yfi`, `btc`→`wbtc`, maYFI→yfi): query the **cartridge** (`abra run gotchibot -- ./scripts/agent-focus.mjs list --json` or identity roster). If a matching hero is `available` → spawn that hero. Do **not** mint. Do **not** ask for a token id.
+3. **Mint new collateral** — only after cartridge miss. List the **16 starter collaterals** (DialogSelect / `/spawn`). Julius confirms. Then `onboarding-api.mjs mint-sub <spiritId>` with simPay ($5 sim).
    - Spirit ids: `dai weth aave link usdt usdc tusd uni yfi wbtc matic`
    - Labels: maDAI (H1) maWETH (H1) maAAVE (H1) maLINK (H1) maUSDT (H1) maUSDC (H1) maTUSD (H1) maUNI (H1) maYFI (H1) amDAI (H2) amWETH (H2) amAAVE (H2) amUSDT (H2) amUSDC (H2) amWBTC (H2) amWMATIC (H2)
    - Haunt 3 brand names are **not** in the 16.
-3. **Mint from wallet** — list unbound wallet gotchis by **NAME** from cockpit `fetchWalletGotchis` / `wallet-roster.mjs` (never Blockscout, never subgraph scrape, never ask Julius for a token id). Then `bind-owned <tokenId>` (free). Persist collateral on the hero (`bind-owned` used to drop it → wrong avatar color).
-4. **Named collateral** (`yifi`→`yfi`, `btc`→`wbtc`): filter 16-list + wallet matches, **ALWAYS show the list**, confirm, then mint-sub or bind-owned.
-5. **Unassign** — list assigned agents, set available, spawn. Never unassign `owned-954` (orch).
+4. **Mint from wallet** — after cartridge miss. List unbound wallet gotchis by **NAME** via `wallet-roster.mjs` / identity roster / home subgraph (`subgraph.aarcadeghst.com`). Never Blockscout. Never ask Julius for a token id. Then `bind-owned <tokenId>` (free). Persist collateral on the hero (`bind-owned` used to drop it → wrong avatar color).
+5. **Named collateral overlay** (no available cartridge match): `/spawn` with `{collateral:"yfi"}` — filter 16-list + wallet matches, **ALWAYS show the list**, confirm, then mint-sub or bind-owned.
+6. **Unassign** — list assigned agents, set available, spawn. Never unassign `owned-954` (orch).
 
 ## Forbidden
 
 - `gotchibot identity bind` / portal mint / seal / VRF / `pack_pending_vrf` for spinning a worker. That is a different pack-opening flow, not cAavegotchi spawn.
 - Asking Julius for token IDs or to "check cockpit".
 - Hitting `:3010` for mint.
+- Asking Julius for a wallet token ID when YFI/BTC/… is named — cartridge first, then overlay names.
 - Treating idle+assigned as available.
 - Auto-mint without the overlay confirm.
 

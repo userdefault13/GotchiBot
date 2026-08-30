@@ -15,14 +15,14 @@ usage() {
 gotchibot — GotchiBot orchestrator CLI
 
   gotchibot tmux                  open orchestrator (sidebar | chat | avatar)
-  gotchibot chat [claude|opencode]  chat pane runtime (Claude CLI + Kickbacks, or OpenCode)
+  gotchibot chat                    chat pane runtime (OpenCode)
   gotchibot sidebar               toggle medium file explorer (mc)
                                   # in mc: F2 → Add to Gotchi chat (or press a)
   gotchibot files-max             Files full-bleed / chat→bar (Mac: Ctrl-b f)
   gotchibot avatar                show the avatar pane (Ctrl+G or F6)
   gotchibot avatar-max            Avatar full-bleed / chat→bar (Mac: Ctrl-b a)
   gotchibot spawn [--host auto|imac|local] [--model t] "P"   spawn sub-agent (Tailscale iMac when auto/imac)
-  gotchibot new [--model t] "P"   spawn a sub-agent (claude -p when chat runtime is claude)
+  gotchibot new [--model t] "P"   spawn a sub-agent
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
   gotchibot mode [gotchi|verse|plan|build|ask|cycle] [--restart]  OpenCode agent
@@ -94,7 +94,7 @@ cmd_chat() {
     status|"")
       echo "chat runtime: $current"
       ;;
-    claude|opencode)
+    opencode)
       mkdir -p "$SESSIONS"
       printf '%s\n' "$want" > "$file"
       echo "chat runtime → $want"
@@ -105,7 +105,7 @@ cmd_chat() {
       fi
       ;;
     *)
-      echo "usage: gotchibot chat [claude|opencode|status]" >&2
+      echo "usage: gotchibot chat [opencode|status]" >&2
       exit 2
       ;;
   esac

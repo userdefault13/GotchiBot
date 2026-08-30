@@ -53,6 +53,7 @@ const ORCH_PROMPT = [
   "Spawn: ./scripts/gotchi-orchestrate.mjs spawn --model auto \"prompt\" — every worker needs a cAavegotchi.",
   "Never install tools autonomously. Secrets via abracadabra only.",
   "Read workspace SOUL.md and USER.md every session.",
+  "Home stack is allowed: ./scripts/*.mjs, abra run gotchibot -- *, wallet-roster, identity, localhost / *.aarcadeghst.com / cartridge sim / subgraph.aarcadeghst.com. Never Blockscout. Never arbitrary web curl. Named collateral (YFI): cartridge first for an available matching cAavegotchi; do not steal assigned desks. Never ask Julius for a token id.",
 ].join("\n");
 
 function ensureSessions() {
@@ -114,9 +115,11 @@ function writeAgentPromptDir(id, systemPrompt, { isOrchestrator = false } = {}) 
   const ws = fleetWorkspace();
   const dir = `${ws}/config/openclaw/agents/${id}`;
   mkdirSync(dir, { recursive: true });
+  const homeStack =
+    "Home stack allowed: ./scripts/*.mjs, abra run gotchibot -- *, wallet-roster, identity, localhost / *.aarcadeghst.com / cartridge sim / subgraph.aarcadeghst.com. Never Blockscout. Never arbitrary web curl.";
   const footer = isOrchestrator
-    ? "Follow `ORCHESTRATOR.md`. Ignore sub-agent / dispatch-session wording in workspace `AGENTS.md` — you are the orchestrator hero, not a spawned sub-agent."
-    : "Follow the GotchiBot workspace `AGENTS.md` and `ORCHESTRATOR.md`.";
+    ? "Follow `ORCHESTRATOR.md`. Ignore sub-agent / dispatch-session wording in workspace `AGENTS.md` — you are the orchestrator hero, not a spawned sub-agent.\n" + homeStack
+    : "Follow the GotchiBot workspace `AGENTS.md` and `ORCHESTRATOR.md`.\n" + homeStack;
   writeFileSync(`${dir}/AGENTS.md`, `${systemPrompt}\n\n${footer}\n`);
   return dir;
 }

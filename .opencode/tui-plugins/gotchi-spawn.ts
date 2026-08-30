@@ -48,6 +48,7 @@ type Hero = {
   bindType?: string | null
   sourceTokenId?: string | null
   desk?: string | null
+  collateral?: string | null
 }
 
 type WalletGotchi = {
@@ -230,6 +231,12 @@ function asHero(row: any): Hero | null {
     bindType: row?.bindType || null,
     sourceTokenId: row?.sourceTokenId != null ? String(row.sourceTokenId) : owned ? owned[1] : null,
     desk: row?.desk || row?.agentDesk || null,
+    collateral:
+      row?.collateral ||
+      row?.collateralName ||
+      row?.collateralAddress ||
+      row?.collateralType ||
+      null,
   }
 }
 
@@ -406,6 +413,15 @@ function collateralMatches(gotchiCollateral: string | undefined, filter: string)
   if (!c) return false
   if (canonicalSpirit(gotchiCollateral) === spirit) return true
   return c.includes(spirit) || c.includes(normCollateral(filter))
+}
+
+function heroCollateralMatches(h: Hero, filter: string) {
+  if (!filter) return false
+  if (collateralMatches(h.collateral || undefined, filter)) return true
+  const spirit = canonicalSpirit(filter)
+  const blob = normCollateral([h.id, h.name, h.desk, h.collateral].filter(Boolean).join(" "))
+  if (!spirit || !blob) return false
+  return blob.includes(spirit) || blob.includes(normCollateral(filter))
 }
 
 function walletTitle(g: WalletGotchi) {
@@ -1003,11 +1019,27 @@ const tui: TuiPlugin = async (api) => {
       flowBusy = false
       return
     }
-    // Named collateral (YFI / BTC / LINK / …) → skip 3-choice AND skip portal / VRF.
-    // Combined DialogSelect: matching 16 starters + matching unbound wallet gotchis.
-    // Always a list — never auto-mint. identity bind / pack_pending_vrf never used.
+    // Named collateral (YFI / BTC / LINK / …): cartridge FIRST.
+    // Available matching cAavegotchi (never owned-954, never assigned) → spawn.
+    // No match → skip 3-choice AND skip portal / VRF; mint/bind overlay.
     if (req.collateral) {
-      log(rootDir, "flow-collateral", { collateral: req.collateral, spirit: canonicalSpirit(req.collateral) })
+      const matchingAvailable = heroes.filter(
+        (h) => h.status === "available" && !isOrch(h.id) && heroCollateralMatches(h, req.collateral || ""),
+      )
+      log(rootDir, "flow-collateral", {
+        collateral: req.collateral,
+        spirit: canonicalSpirit(req.collateral),
+        availableMatches: matchingAvailable.map((h) => h.id),
+      })
+      if (matchingAvailable.length === 1) {
+        toast(api, `Spawning available ${displaySpirit(req.collateral)} ${heroTitle(matchingAvailable[0])}`, "info")
+        await spawnHero(matchingAvailable[0].id, task)
+        return
+      }
+      if (matchingAvailable.length > 1) {
+        pickAvailable(matchingAvailable, task)
+        return
+      }
       pickNamedCollateral(task, heroes, req.collateral)
       return
     }
