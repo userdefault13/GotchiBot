@@ -4,8 +4,8 @@
  *
  *   node scripts/meet-room-prompter.mjs
  */
-import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin, stdout } from "node:process";
@@ -20,18 +20,36 @@ import {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STAMP = `${ROOT}/sessions/.meet-room.stamp`;
-const PROMPT_ROWS = 3;
+const LEAVE = `${ROOT}/sessions/.meet-leave`;
+const PENDING = `${ROOT}/sessions/.meet-pending.json`;
+const PROMPT_INPUT_ROWS = 3;
+const PROMPT_FOOTER_ROWS = 1;
+const PROMPT_PANEL_ROWS = PROMPT_INPUT_ROWS + PROMPT_FOOTER_ROWS;
+/** Gutter bar + one space before text (matches OpenCode prompt). */
+const INPUT_LEFT = 2;
 
+// Gotchi / OpenCode theme (.opencode/themes/gotchi.json + opencode-palette.ts)
 const T = {
   reset: "\x1b[0m",
   panel: "\x1b[48;2;45;31;66m",
-  border: "\x1b[38;5;240m",
-  prefix: "\x1b[38;5;213m",
-  accent: "\x1b[38;5;255m",
-  text: "\x1b[38;5;252m",
-  muted: "\x1b[38;5;245m",
+  accentBar: "\x1b[48;2;182;80;255m \x1b[0m",
+  brand: "\x1b[38;2;182;80;255m",
+  text: "\x1b[38;2;240;230;255m",
+  muted: "\x1b[38;2;155;139;184m",
+  tick: "\x1b[38;2;74;53;102m",
+  cursor: "\x1b[48;2;255;255;255m \x1b[0m",
   mention: "\x1b[38;5;51m",
   menu: "\x1b[38;5;184m",
+};
+
+const MODEL_LABELS = {
+  "kimi-k3": "Kimi K3",
+  "nemotron-3.5-lightning-free": "Nemotron 3.5 Lightning Free",
+  "hy3-free": "Hy3 Free",
+  "glm-5.3-flash": "GLM 5.3 Flash",
+  "glm-5.3": "GLM 5.3",
+  "gpt-5.6-luna": "GPT 5.6 Luna",
+  "grok-4.6": "Grok 4.6",
 };
 
 function stripAnsi(s) {
@@ -77,42 +95,121 @@ function matchingMentions(query) {
 function pokeChannel() {
   const now = `${new Date().toISOString()}\n`;
   try {
-    writeFileSync(STAMP, now);
     writeFileSync(`${ROOT}/sessions/.meet-channel.stamp`, now);
   } catch {
     /* ok */
   }
   spawnSync("bash", [`${ROOT}/scripts/poke-meet-channel.sh`], { stdio: "ignore" });
+}
+
+function pokeGallery() {
+  const now = `${new Date().toISOString()}\n`;
+  try {
+    writeFileSync(STAMP, now);
+  } catch {
+    /* ok */
+  }
   spawnSync("bash", [`${ROOT}/scripts/poke-meet-room.sh`], { stdio: "ignore" });
+}
+
+let sendBusy = false;
+let sendDots = 1;
+let sendTimer = null;
+let sendError = null;
+let drawing = false;
+let redrawPending = false;
+
+function writePending(text) {
+  try {
+    writeFileSync(
+      PENDING,
+      JSON.stringify({ text, startedAt: new Date().toISOString() }),
+    );
+  } catch {
+    /* ok */
+  }
+}
+
+function clearPending() {
+  try {
+    unlinkSync(PENDING);
+  } catch {
+    /* ok */
+  }
+}
+
+function drawFooterOnly() {
+  const { cols, rows } = paneSize();
+  const top = rows - PROMPT_PANEL_ROWS + 1;
+  drawInputPanel(top, cols);
+}
+
+function startSendTimer() {
+  if (sendTimer) return;
+  sendTimer = setInterval(() => {
+    sendDots = (sendDots % 3) + 1;
+    drawFooterOnly();
+  }, 400);
+}
+
+function stopSendTimer() {
+  if (sendTimer) clearInterval(sendTimer);
+  sendTimer = null;
+  sendDots = 1;
 }
 
 function sayToRoom(msg) {
   const text = String(msg || "").trim();
-  if (!text) return;
-  spawnSync(process.execPath, [`${ROOT}/scripts/gotchi-meet.mjs`, "say", text], {
-    cwd: ROOT,
-    stdio: "inherit",
-  });
+  if (!text || sendBusy) return;
+  sendBusy = true;
+  sendError = null;
+  writePending(text);
   pokeChannel();
+  startSendTimer();
+  draw();
+
+  const child = spawn(process.execPath, [`${ROOT}/scripts/gotchi-meet.mjs`, "say", text], {
+    cwd: ROOT,
+    stdio: "ignore",
+    env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1" },
+  });
+  child.on("error", () => {
+    sendBusy = false;
+    clearPending();
+    stopSendTimer();
+    sendError = "send failed";
+    pokeChannel();
+    draw();
+  });
+  child.on("close", (code) => {
+    sendBusy = false;
+    clearPending();
+    stopSendTimer();
+    pokeChannel();
+    if (code !== 0) sendError = "send failed";
+    draw();
+  });
+}
+
+function requestLeave(kind) {
+  const mode = kind === "chat" ? "chat" : "end";
+  try {
+    writeFileSync(LEAVE, `${mode}\n`);
+  } catch {
+    /* ok */
+  }
+  stopSendTimer();
+  clearPending();
+  teardown();
+  process.exit(0);
 }
 
 function endMeeting() {
-  spawnSync(process.execPath, [`${ROOT}/scripts/gotchi-meet.mjs`, "end"], {
-    cwd: ROOT,
-    stdio: "ignore",
-  });
-  if (process.env.TMUX) {
-    spawnSync("bash", [`${ROOT}/scripts/orchestrator-layout.sh`, "leave-meet-gallery"], {
-      cwd: ROOT,
-      stdio: "ignore",
-      env: {
-        ...process.env,
-        GOTCHIBOT_TMUX_SESSION: process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot",
-      },
-    });
-  }
-  teardown();
-  process.exit(0);
+  requestLeave("end");
+}
+
+function backToChat() {
+  requestLeave("chat");
 }
 
 function pagePrev() {
@@ -129,6 +226,103 @@ function padPanelLine(text, cols) {
   const n = visLen(text);
   const pad = Math.max(0, cols - n);
   return `${text}${T.panel}${" ".repeat(pad)}${T.reset}`;
+}
+
+function loadPinnedModelId() {
+  try {
+    const chat = readFileSync(`${ROOT}/sessions/.chat-model`, "utf8").trim();
+    if (chat) return chat;
+  } catch {
+    /* fall through */
+  }
+  try {
+    const pin = readFileSync(`${ROOT}/sessions/.gotchi-model.env`, "utf8");
+    const m = pin.match(/^export GOTCHIBOT_OPENCODE_MODEL=(.+)$/m);
+    if (m?.[1]?.trim()) return m[1].trim();
+  } catch {
+    /* fall through */
+  }
+  return process.env.GOTCHIBOT_OPENCODE_MODEL?.trim() || "opencode-go/kimi-k3";
+}
+
+function loadModelFooterLabel() {
+  const raw = loadPinnedModelId();
+  const slug = raw.split("/").pop() || raw;
+  if (MODEL_LABELS[slug]) return MODEL_LABELS[slug];
+  return slug
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function footerTicks(cols, used) {
+  const n = Math.max(0, cols - used);
+  if (n <= 0) return "";
+  return `${T.panel}${T.tick}${"╎".repeat(n)}${T.reset}`;
+}
+
+/** Split buffer across input rows (OpenCode-style — no meet › prefix). */
+function layoutInput(buffer, cursor, cols) {
+  const width = Math.max(1, cols - INPUT_LEFT);
+  const segments = [];
+  let pos = 0;
+  for (let i = 0; i < PROMPT_INPUT_ROWS; i++) {
+    const text = buffer.slice(pos, pos + width);
+    segments.push({ text, start: pos });
+    pos += text.length;
+  }
+
+  let cursorRow = 0;
+  let cursorCol = INPUT_LEFT;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const end = seg.start + seg.text.length;
+    if (cursor <= end || i === segments.length - 1) {
+      cursorRow = i;
+      cursorCol = INPUT_LEFT + Math.max(0, cursor - seg.start);
+      break;
+    }
+  }
+  return { segments, cursorRow, cursorCol };
+}
+
+function drawInputPanel(top, cols) {
+  const { segments, cursorRow, cursorCol } = layoutInput(editor.buffer, editor.cursor, cols);
+
+  for (let i = 0; i < PROMPT_INPUT_ROWS; i++) {
+    const seg = segments[i];
+    const off = Math.max(0, editor.cursor - seg.start);
+    const before = seg.text.slice(0, off);
+    const after = seg.text.slice(off);
+    const showCursor = i === cursorRow;
+    let body;
+    if (showCursor && before.length === 0 && after.length === 0) {
+      body = T.cursor;
+    } else if (showCursor) {
+      body = `${T.text}${before}${T.reset}${T.cursor}${T.text}${after}${T.reset}`;
+    } else {
+      body = seg.text ? `${T.text}${seg.text}${T.reset}` : "";
+    }
+    const line = `${T.accentBar}${T.panel} ${body}`;
+    writeAt(top + i, 1, padPanelLine(line, cols));
+  }
+
+  const model = loadModelFooterLabel();
+  let footerCore;
+  if (sendError) {
+    footerCore =
+      `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${sendError}${T.reset}`;
+  } else if (sendBusy) {
+    const dots = ".".repeat(sendDots);
+    footerCore =
+      `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}Sending${dots}${T.reset}`;
+  } else {
+    footerCore =
+      `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
+      `${T.panel}${T.muted} · meeting room${T.reset}`;
+  }
+  writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols, visLen(footerCore)), cols));
+
+  stdout.write(`\x1b[${top + cursorRow};${Math.min(cols, cursorCol + 1)}H`);
 }
 
 function writeAt(row, col, text) {
@@ -220,6 +414,7 @@ class Prompter {
     this.clear();
     if (!line) return "noop";
     if (line === "/end" || line === "/quit" || line === "/leave") return "end";
+    if (line === "/chat" || line === "/opencode" || line === "/desk") return "chat";
     if (line === "/prev" || line === ",") {
       pagePrev();
       return "redraw";
@@ -237,9 +432,10 @@ class Prompter {
 
 const editor = new Prompter();
 
-function draw() {
+function drawBody() {
   const { cols, rows } = paneSize();
-  const galleryRows = Math.max(8, rows - PROMPT_ROWS);
+  const mentionRow = rows - PROMPT_PANEL_ROWS;
+  const galleryRows = Math.max(8, rows - PROMPT_PANEL_ROWS - 1);
   const page = loadPage();
   const gallery = renderMeetRoom({
     cols,
@@ -251,7 +447,7 @@ function draw() {
   stdout.write("\x1b[H\x1b[J");
   stdout.write(gallery);
 
-  const top = rows - PROMPT_ROWS + 1;
+  const top = rows - PROMPT_PANEL_ROWS + 1;
   const q = activeMentionQuery(editor.buffer);
   const matches = q != null ? matchingMentions(q) : [];
 
@@ -260,23 +456,37 @@ function draw() {
       .slice(0, 6)
       .map((m, i) => `${i === editor.menuIdx % matches.length ? T.menu : T.mention}${m.tag}${T.reset}`)
       .join(`${T.muted}  ${T.reset}`);
-    writeAt(Math.max(1, top - 1), 1, padPanelLine(`${T.panel}${T.muted}  ${menu}${T.reset}`, cols));
+    writeAt(
+      Math.max(1, mentionRow),
+      1,
+      padPanelLine(`${T.accentBar}${T.panel} ${T.muted}${menu}${T.reset}`, cols),
+    );
   }
 
-  writeAt(top, 1, `${T.border}${"─".repeat(Math.max(0, cols))}${T.reset}`);
+  drawInputPanel(top, cols);
+}
 
-  const before = editor.buffer.slice(0, editor.cursor);
-  const after = editor.buffer.slice(editor.cursor);
-  const prefixVis = " meet › ";
-  const inputLine = `${T.panel}${T.prefix}meet${T.reset}${T.panel}${T.muted} › ${T.text}${before}${T.accent}▌${T.text}${after}${T.reset}`;
-  writeAt(top + 1, 1, padPanelLine(inputLine, cols));
-
-  const pages = pageCount(listMeetMembers());
-  const hint = `${T.panel}${T.muted}  @mention · Enter send · ↑↓ history · Tab complete · /end leave · page ${loadPage() + 1}/${pages}${T.reset}`;
-  writeAt(top + 2, 1, padPanelLine(hint, cols));
-
-  const cursorCol = Math.min(cols, 1 + visLen(prefixVis) + visLen(before) + 1);
-  stdout.write(`\x1b[${top + 1};${cursorCol}H`);
+function draw() {
+  if (drawing) {
+    redrawPending = true;
+    return;
+  }
+  drawing = true;
+  try {
+    drawBody();
+  } catch (e) {
+    try {
+      stdout.write(`\x1b[H\x1b[J${T.text}meet room render error — retrying…${T.reset}\n`);
+    } catch {
+      /* ok */
+    }
+  } finally {
+    drawing = false;
+    if (redrawPending) {
+      redrawPending = false;
+      setImmediate(() => draw());
+    }
+  }
 }
 
 function teardown() {
@@ -383,16 +593,17 @@ function handleEsc(seq) {
 
 function ensureMeetGalleryLayout() {
   if (!process.env.TMUX) return;
-  // Channel-only repair — never respawn work.1 while this prompter is running here.
-  spawnSync("bash", [`${ROOT}/scripts/orchestrator-layout.sh`, "refresh-meet-gallery"], {
-    cwd: ROOT,
-    stdio: "ignore",
-    env: {
-      ...process.env,
-      GOTCHIBOT_TMUX_SESSION: process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot",
-      GOTCHIBOT_MEET_LAYOUT_ONLY: "1",
-    },
-  });
+  // Via tmux server — never spawnSync(bash) from work.1 (layout kill/respawn suicides the room).
+  const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
+  const script = `${ROOT}/scripts/orchestrator-layout.sh`;
+  spawnSync(
+    "tmux",
+    [
+      "run-shell",
+      `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" GOTCHIBOT_MEET_LAYOUT_ONLY=1 "${script}" refresh-meet-gallery`,
+    ],
+    { cwd: ROOT, stdio: "ignore", env: { ...process.env, GOTCHIBOT_TMUX_SESSION: sess } },
+  );
 }
 
 function markTmuxPane() {
@@ -411,13 +622,20 @@ function main() {
   setup();
   draw();
 
-  process.on("SIGUSR1", () => draw());
+  process.on("SIGUSR1", () => {
+    if (sendBusy) drawFooterOnly();
+    else draw();
+  });
   process.on("SIGWINCH", () => draw());
   process.on("SIGTERM", () => {
+    stopSendTimer();
     teardown();
     process.exit(0);
   });
-  process.on("exit", teardown);
+  process.on("exit", () => {
+    stopSendTimer();
+    teardown();
+  });
   process.on("SIGINT", () => {
     editor.clear();
     draw();
@@ -430,6 +648,7 @@ function main() {
       const action = handleEsc(escBuf);
       escBuf = "";
       if (action === "end") endMeeting();
+      else if (action === "chat") backToChat();
       else if (action === "redraw") draw();
     }
     return;
@@ -442,6 +661,7 @@ function main() {
     }
     const action = handleEsc(chunk);
     if (action === "end") endMeeting();
+    else if (action === "chat") backToChat();
     else if (action === "redraw") draw();
     return;
   }
@@ -457,6 +677,10 @@ function main() {
     const action = handleKey(ch);
     if (action === "end") {
       endMeeting();
+      return;
+    }
+    if (action === "chat") {
+      backToChat();
       return;
     }
     if (action === "redraw") draw();

@@ -34,9 +34,24 @@ layout_ready() {
   [ "$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')" -eq 3 ]
 }
 
+# Destructive rebuild must not run as a subprocess of work.1/work.2 — kill-pane -a
+# would abort the script mid-flight and leave only the Files sidebar.
+layout_caller_is_side_pane() {
+  local side
+  [ -n "${TMUX_PANE:-}" ] || return 1
+  side="$(tmux display -p -t "$sess:work.0" '#{pane_id}' 2>/dev/null || true)"
+  [ -n "$side" ] || return 1
+  [ "$TMUX_PANE" != "$side" ]
+}
+
 require_three_panes() {
   tmux resize-pane -Z -t "$sess:work" 2>/dev/null || true
   layout_ready && return 0
+  if layout_caller_is_side_pane; then
+    tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" require-three"
+    layout_ready || return 1
+    return 0
+  fi
   rebuild_panes || return 1
   layout_ready || {
     echo "orchestrator layout failed: need 3 panes (sidebar | chat | avatar)" >&2
@@ -302,8 +317,13 @@ build_meet_gallery_tiles() {
   fi
 
   # Channel first — respawning work.1 kills the shell that invoked enter-meet-gallery.
+  # Only respawn when the pane is wrong; always-respawn looks like an iMessage "crash".
   tmux set-option -p -t "$sess:work.2" -u @gotchibot-avatar 2>/dev/null || true
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/meet-channel-pane.sh" 2>/dev/null || true
+  local c2
+  c2="$(pane_start_cmd 2)"
+  if [[ "$c2" != *meet-channel* ]]; then
+    tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/meet-channel-pane.sh" 2>/dev/null || true
+  fi
   tmux set-option -p -t "$sess:work.2" @gotchibot-meet-channel 1 2>/dev/null || true
   tmux set-option -t "$sess:work.2" pane-border-format ' # meet ' 2>/dev/null || true
 
@@ -380,12 +400,14 @@ leave_meet_gallery() {
   if [ "$(layout_mode)" != "meet-gallery" ]; then
     return 0
   fi
+  # Mark normal before respawns so resize hooks don't re-enter meet-gallery.
+  set_layout_mode normal
   if [ "$(pane_count)" -lt 3 ]; then
     require_three_panes || true
   fi
   collapse_to_three_panes || true
+  # Sidebar + avatar before chat — respawn-pane -k on work.1 may kill the caller.
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
   mark_avatar_pane
   collapse_sidebar
@@ -393,11 +415,11 @@ leave_meet_gallery() {
   tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
   tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
   tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
-  set_layout_mode normal
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
   signal_panes
   install_avatar_mouse 2>/dev/null || true
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
 }
 
 # Files take remaining width; chat collapses to a thin Gotchi bar; avatar stays.
@@ -831,6 +853,11 @@ case "$cmd" in
   leave-meet-gallery)
     leave_meet_gallery
     ;;
+  require-three)
+    # Invoked via run-shell from a side pane so rebuild is not aborted mid-flight.
+    rebuild_panes || exit 1
+    layout_ready || exit 1
+    ;;
   fit)
     fit_window
     install_ui_theme
@@ -839,7 +866,7 @@ case "$cmd" in
     install_avatar_mouse
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|fit|install-mouse]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|require-three|fit|install-mouse]" >&2
     exit 2
     ;;
 esac

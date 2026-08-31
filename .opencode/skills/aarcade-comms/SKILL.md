@@ -82,6 +82,29 @@ Response contract for `/run` (and `/run-all` items):
 The standalone helper `scripts/comms-agent-cron.mjs` implements steps 1–3 and
 writes a markdown summary to stdout + `sessions/comms-logs/`.
 
+## Scheduling (iMac — owned-22899 / WBTC)
+
+Daily cron owner: **`owned-22899`** (amWBTC), role `aarcade-comms-handler`.
+
+Install / refresh the iMac crontab (from MBP, secrets via abra):
+
+```sh
+abra run gotchibot -- ./scripts/gotchibot comms-cron-deploy
+# or: abra run gotchibot -- node scripts/comms-agent-cron-deploy.mjs
+```
+
+Default schedule: `0 16 * * *` UTC (~09:00 America/Los_Angeles). Override with
+`COMMS_CRON_SCHEDULE`. Logs land in `sessions/comms-logs/`.
+
+Commsies itself must run on the iMac (Ollama), not Vercel/Workers:
+
+```sh
+abra run gotchibot -- ./scripts/gotchibot commsies-imac-deploy
+```
+
+Then set Aarcade Vercel `COMMSIES_URL` to the cloudflared hostname that proxies
+iMac `:3003` (intended: `https://commsies.aarcadeghst.com`).
+
 ## Required Setup
 
 - `AARCADE_API_BASE`: API origin. Default `https://aarcadeghst.com`.

@@ -216,7 +216,7 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
   const lines = [];
   lines.push(`${C.topic}# ${meeting.topic || "Untitled meeting"}${C.reset}`);
   lines.push(
-    `${C.dim}${members.length} in room · ${GRID_COLS}×${GRID_ROWS} grid · /end leave${C.reset}`,
+    `${C.dim}${members.length} in room · ${GRID_COLS}×${GRID_ROWS} grid · /chat desk · /end leave${C.reset}`,
   );
   lines.push(`${C.bar}${"─".repeat(Math.min(cols - 2, 58))}${C.reset}`);
   lines.push("");

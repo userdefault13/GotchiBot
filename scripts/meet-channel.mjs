@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MEETINGS = `${ROOT}/sessions/meetings`;
+const PENDING = `${ROOT}/sessions/.meet-pending.json`;
 const THUMB_FALLBACK = `${ROOT}/assets/gotchi-thumb.ascii`;
 const THUMB_W = 14;
 const SCROLLBAR_COLS = 2;
@@ -163,6 +164,44 @@ function renderHeader(meeting, cols) {
   ];
 }
 
+function loadPending() {
+  try {
+    return JSON.parse(readFileSync(PENDING, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function pendingDots(startedAt) {
+  const t = startedAt ? new Date(startedAt).getTime() : Date.now();
+  return ".".repeat((Math.floor((Date.now() - t) / 400) % 3) + 1);
+}
+
+function renderPendingTail(meeting, cols, turns) {
+  const pending = loadPending();
+  if (!pending?.text) return [];
+  const userId =
+    meeting.participants?.find((p) => p.role === "user")?.id || "userdefault";
+  const dots = pendingDots(pending.startedAt);
+  const inTranscript = turns.some(
+    (t) => t.role === "user" && t.speaker === userId && t.text === pending.text,
+  );
+  const lines = [];
+  if (!inTranscript) {
+    lines.push(
+      ...renderTurn(
+        { speaker: userId, role: "user", text: pending.text, ts: pending.startedAt },
+        meeting,
+        cols,
+      ),
+    );
+    lines.push(`${C.dim}  sending${dots}${C.reset}`, "");
+  } else {
+    lines.push(`${C.dim}  ${C.chair}Gotchi${C.reset}${C.dim} is typing${dots}${C.reset}`, "");
+  }
+  return lines;
+}
+
 function renderTurn(turn, meeting, cols) {
   const { name, role, id } = participantInfo(meeting, turn.speaker);
   const thumb = getThumb(id);
@@ -198,6 +237,7 @@ export function buildMeetChannelLines(meeting, cols, contentCols = cols) {
   } else {
     for (const t of turns) lines.push(...renderTurn(t, meeting, contentCols));
   }
+  lines.push(...renderPendingTail(meeting, cols, turns));
   return lines;
 }
 

@@ -112,11 +112,34 @@ function meetBashPermissionYaml(roleId, playbook) {
     allows["./scripts/infra-monitor-cron.mjs*"] = "allow";
     allows["abra run gotchibot -- ./scripts/infra-monitor-cron.mjs*"] = "allow";
   }
+  if (reportCmd.startsWith("./scripts/comms-agent-cron.mjs") || roleId === "aarcade-comms-handler") {
+    allows["./scripts/comms-agent-cron.mjs*"] = "allow";
+    allows["abra run gotchibot -- ./scripts/comms-agent-cron.mjs*"] = "allow";
+  }
   const lines = ["  bash:", '    "*": deny'];
   for (const [pattern, action] of Object.entries(allows)) {
     lines.push(`    "${pattern}": ${action}`);
   }
   return lines.join("\n");
+}
+
+function meetPinnedModel() {
+  const fromEnv = process.env.GOTCHIBOT_OPENCODE_MODEL?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const pin = readFileSync(`${ROOT}/sessions/.gotchi-model.env`, "utf8");
+    const m = pin.match(/^export GOTCHIBOT_OPENCODE_MODEL=(.+)$/m);
+    if (m?.[1]?.trim()) return m[1].trim();
+  } catch {
+    /* fall through */
+  }
+  try {
+    const chat = readFileSync(`${ROOT}/sessions/.chat-model`, "utf8").trim();
+    if (chat) return chat;
+  } catch {
+    /* fall through */
+  }
+  return "opencode-go/kimi-k3";
 }
 
 function meetMentionAgentBody({ slug, name, heroId, meetingRole, topic, roleId, playbook }) {
@@ -135,7 +158,7 @@ function meetMentionAgentBody({ slug, name, heroId, meetingRole, topic, roleId, 
   return `---
 description: ${jobLabel}
 mode: subagent
-model: opencode/nemotron-3.5-lightning-free
+model: ${meetPinnedModel()}
 color: "#B650FF"
 permission:
   edit: deny
@@ -169,16 +192,26 @@ Prefer transcripted room turns: \`/meet say "… @${slug}"\`.
 
 function pokeMeetChannel() {
   const stamp = `${ROOT}/sessions/.meet-channel.stamp`;
-  const roomStamp = `${ROOT}/sessions/.meet-room.stamp`;
   const now = `${new Date().toISOString()}\n`;
   try {
     writeFileSync(stamp, now);
-    writeFileSync(roomStamp, now);
   } catch {
     /* ok */
   }
   if (!process.env.TMUX) return;
   spawnSync("bash", [`${ROOT}/scripts/poke-meet-channel.sh`], { stdio: "ignore" });
+}
+
+/** Gallery carousel — only when participants/layout change, not on every say. */
+function pokeMeetRoomGallery() {
+  const roomStamp = `${ROOT}/sessions/.meet-room.stamp`;
+  const now = `${new Date().toISOString()}\n`;
+  try {
+    writeFileSync(roomStamp, now);
+  } catch {
+    /* ok */
+  }
+  if (!process.env.TMUX) return;
   spawnSync("bash", [`${ROOT}/scripts/poke-meet-room.sh`], { stdio: "ignore" });
 }
 
@@ -211,11 +244,35 @@ function meetGalleryLayout(cmd) {
     ...process.env,
     GOTCHIBOT_TMUX_SESSION: sess,
   };
-  if (cmd === "enter-meet-gallery") {
+  // Detached from meet/chat panes — respawning work.1 must not kill this script mid-flight.
+  if (cmd === "leave-meet-gallery") {
+    // Background + prefer work.0 so a caller on work.1 can exit / teardown cleanly.
+    const args = [
+      "run-shell",
+      "-b",
+      "-t",
+      `${sess}:work.0`,
+      `sleep 0.15; cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" leave-meet-gallery`,
+    ];
+    const r = spawnSync("tmux", args, { cwd: ROOT, stdio: "ignore", env });
+    if (r.status !== 0) {
+      spawnSync(
+        "tmux",
+        [
+          "run-shell",
+          "-b",
+          `sleep 0.15; cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" leave-meet-gallery`,
+        ],
+        { cwd: ROOT, stdio: "ignore", env },
+      );
+    }
+    return;
+  }
+  if (cmd === "enter-meet-gallery" || cmd === "refresh-meet-gallery") {
     spawnSync(
       "tmux",
-      ["run-shell", `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" enter-meet-gallery`],
-      { cwd: ROOT, stdio: "inherit", env },
+      ["run-shell", `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" ${cmd}`],
+      { cwd: ROOT, stdio: cmd === "enter-meet-gallery" ? "inherit" : "ignore", env },
     );
     return;
   }
@@ -684,6 +741,7 @@ export async function inviteParticipant(query) {
   meeting.updatedAt = new Date().toISOString();
   saveMeeting(meeting);
   syncMeetMentionAgents(loadMeeting(meeting.id) || meeting);
+  pokeMeetRoomGallery();
   pokeAvatar();
   if (readLayoutMode() === "meet-gallery") refreshMeetGallery();
   return { meeting, participant: p };
@@ -1002,6 +1060,7 @@ async function agentReply(meeting, speakerId) {
 }
 
 function printMeetingBlock(meeting, turns, { pick } = {}) {
+  if (process.env.GOTCHIBOT_MEET_QUIET === "1") return;
   const w = 56;
   const bar = `${"─".repeat(w)}`;
   console.log(bar);
@@ -1040,6 +1099,7 @@ export async function sayTurn(userText) {
   printed.push(
     appendTranscript(meeting.id, { speaker: user.id, role: "user", text }),
   );
+  pokeMeetChannel();
 
   const pick = await chairPickSpeakers(meeting, text);
   const speakerTurns = [];
@@ -1118,7 +1178,7 @@ function writeMinutes(meeting) {
   return { path: `${meetingDir(meeting.id)}/minutes.md`, endedAt, md };
 }
 
-export async function endMeeting() {
+export async function endMeeting({ keepLayout = false } = {}) {
   const meeting = requireOpenMeeting();
   const { path, endedAt } = writeMinutes(meeting);
   meeting.status = "ended";
@@ -1129,7 +1189,7 @@ export async function endMeeting() {
   clearMeetMentionAgents();
   clearCurrent();
   pokeAvatar();
-  leaveMeetGallery();
+  if (!keepLayout) leaveMeetGallery();
   return { meeting, minutesPath: path };
 }
 
@@ -1270,7 +1330,8 @@ async function main() {
   }
 
   if (cmd === "end") {
-    const { meeting, minutesPath } = await endMeeting();
+    const keepLayout = argv.includes("--keep-layout") || argv.includes("--no-layout");
+    const { meeting, minutesPath } = await endMeeting({ keepLayout });
     console.log(`meeting ended  ${meeting.id}`);
     console.log(`minutes  ${minutesPath}`);
     return;

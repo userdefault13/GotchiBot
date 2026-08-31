@@ -23,13 +23,16 @@ Empty `$ARGUMENTS` (`/meet`) prints status of the current meeting.
 | `/meet invite all` | `invite all` |
 | `/meet` | `status` |
 | `/meet say let's recap @LINK` | `say "…"` — the working turn (prefer this for transcript) |
-| `/meet end` | `end` (writes minutes, clears current) |
+| `/meet end` | `end` (writes minutes, restores OpenCode chat + avatar) |
+| `/chat` | leave meet room UI → OpenCode chat + avatar (`gotchibot chat`) |
 
 **Only** use `gotchi-meet.mjs` for meeting flow. Meet **menu** opens **meet-gallery** layout:
-collapsed files + **Meet · room** (Zoom carousel + OpenCode-style **meet ›** prompter — **no OpenCode**) + **# meet**
+collapsed files + **Meet · room** (Zoom carousel + OpenCode-style prompter — **no OpenCode**) + **# meet**
 (iMessage-style transcript with thumbnail gotchi avatars). Type in the prompter
-(`@LINK …`); Tab completes @mentions; `/end` leaves.
-`/meet end` restores orch chat. Slash `/meet` from OpenCode still works when not in the room UI.
+(`@LINK …`); Tab completes @mentions.
+- `/end` — end meeting + restore orch desk (OpenCode + avatar)
+- `/chat` — restore orch desk without ending (rejoin with `/meet open`)
+`/meet end` from OpenCode also restores orch chat. Slash `/meet` from OpenCode still works when not in the room UI.
 
 While a meeting is open, `@` autocomplete lists invited gotchis (restart OpenCode /
 reload if new invites don't appear). Meeting `@` stubs call headless

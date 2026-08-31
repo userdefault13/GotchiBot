@@ -21,6 +21,7 @@
     "input_select_all": "super+a"
   },
   "plugin": [
+    "./tui-plugins/gotchi-logo.tsx",
     "./tui-plugins/gotchi-thought-tts.ts",
     "./tui-plugins/gotchi-sidebar-hide.ts",
     "./tui-plugins/gotchi-spawn.ts",

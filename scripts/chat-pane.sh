@@ -22,11 +22,18 @@ export PATH="${HOME}/.openclaw/bin:${PATH}"
 # Persisted remote gateway (iMac) — sessions/.openclaw-gateway.json
 # shellcheck source=/dev/null
 [ -f "$ROOT/scripts/openclaw-gateway-env.sh" ] && source "$ROOT/scripts/openclaw-gateway-env.sh"
+# Keep OpenCode Go catalog registered so /models shows the OpenCode Go group.
+node "$ROOT/scripts/sync-opencode-go-provider.mjs" >/dev/null 2>&1 || true
 if [ -z "${GOTCHIBOT_OPENCODE_MODEL:-}" ]; then
-  MODEL="$(node "$ROOT/scripts/model-auto.mjs" pick 2>/dev/null || echo opencode/nemotron-3.5-lightning-free)"
+  MODEL="$(node "$ROOT/scripts/model-auto.mjs" pick 2>/dev/null || echo opencode-go/kimi-k3)"
   export GOTCHIBOT_OPENCODE_MODEL="$MODEL"
 else
   MODEL="$GOTCHIBOT_OPENCODE_MODEL"
+fi
+# Prefer OpenCode Go over Zen when OPENCODE_API_KEY is present.
+if command -v node >/dev/null 2>&1; then
+  eval "$(node "$ROOT/scripts/model-go-guard.mjs" env "$MODEL" 2>/dev/null)" || true
+  MODEL="${GOTCHIBOT_OPENCODE_MODEL:-$MODEL}"
 fi
 mkdir -p "$ROOT/sessions"
 # Cockpit Settings → sessions/.tui-prefs.json (do not override explicit env).
@@ -142,6 +149,21 @@ show_cockpit() {
   elif [ "$st" -ne 0 ]; then
     exit "$st"
   fi
+  ensure_desk_after_cockpit
+}
+
+# If cockpit/meet left a broken 1-pane window, rebuild via tmux server then exit so
+# the respawned chat-pane continues (do not launch OpenCode full-bleed on Files).
+ensure_desk_after_cockpit() {
+  [ -n "${TMUX:-}" ] || return 0
+  local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+  local count
+  count="$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${count:-0}" -eq 3 ]; then
+    return 0
+  fi
+  tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" refresh"
+  exit 0
 }
 
 # /cockpit — mint cAavegotchi · change orchestrator avatar (in chat pane).

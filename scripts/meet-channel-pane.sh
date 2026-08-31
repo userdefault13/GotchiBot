@@ -6,7 +6,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SESSIONS="$ROOT/sessions"
 STAMP="$SESSIONS/.meet-channel.stamp"
 SCROLL_FILE="$SESSIONS/.meet-channel-scroll"
-POLL="${GOTCHIBOT_MEET_CHANNEL_POLL:-0.15}"
+PENDING_FILE="$SESSIONS/.meet-pending.json"
+# macOS /bin/bash 3.2: `read -t` only accepts integers. Fractional timeouts
+# error immediately → busy-loop + full channel re-render (pane looks crashed).
+POLL="${GOTCHIBOT_MEET_CHANNEL_POLL:-1}"
+case "$POLL" in
+  ''|*[!0-9]*) POLL=1 ;;
+esac
+[ "$POLL" -lt 1 ] && POLL=1
 
 alt_enter() { printf '\033[?1049h\033[?7l\033[?25l'; }
 alt_leave() { printf '\033[?25h\033[?7h\033[?1049l'; }
@@ -124,7 +131,14 @@ handle_key() {
   return 1
 }
 
-on_usr1() { render_once; }
+rendering=0
+on_usr1() {
+  # Nested USR1 during node render blanks / storms the pane.
+  [ "$rendering" = "1" ] && return 0
+  rendering=1
+  render_once
+  rendering=0
+}
 
 trap 'alt_leave' EXIT
 trap on_usr1 USR1
@@ -133,13 +147,29 @@ alt_enter
 mark_self
 printf '%s\n' 0 > "$SCROLL_FILE"
 
+rendering=1
 render_once
-last_stamp=""
+rendering=0
+last_stamp="$(cat "$STAMP" 2>/dev/null || true)"
+last_pending_draw=0
 while true; do
   cur="$(cat "$STAMP" 2>/dev/null || true)"
+  need=0
   if [ "$cur" != "$last_stamp" ]; then
-    render_once
+    need=1
     last_stamp="$cur"
+  elif [ -f "$PENDING_FILE" ]; then
+    # Animate "sending…" at ~1Hz — never spin-render while pending.
+    now="$(date +%s 2>/dev/null || echo 0)"
+    if [ $((now - last_pending_draw)) -ge 1 ]; then
+      need=1
+      last_pending_draw="$now"
+    fi
+  fi
+  if [ "$need" = "1" ]; then
+    rendering=1
+    render_once
+    rendering=0
   fi
   if read -rsn1 -t "$POLL" key 2>/dev/null; then
     handle_key "$key" || true

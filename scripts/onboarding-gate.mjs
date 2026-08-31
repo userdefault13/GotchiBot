@@ -44,19 +44,20 @@ function meetGalleryLayout(cmd) {
     ...process.env,
     GOTCHIBOT_TMUX_SESSION: sess,
   };
-  if (cmd === "enter-meet-gallery") {
-    spawnSync(
-      "tmux",
-      ["run-shell", `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" enter-meet-gallery`],
-      { cwd: ROOT, stdio: "inherit", env },
-    );
-    return;
-  }
-  spawnSync("bash", [script, cmd], {
-    cwd: ROOT,
-    stdio: "ignore",
-    env,
-  });
+  // Always run via tmux server (not as a child of work.1). Layout rebuild does
+  // kill-pane -a / respawn-pane -k on the chat pane; spawnSync(bash) from chat
+  // aborts mid-flight and leaves only the Files sidebar.
+  const allowed = new Set([
+    "enter-meet-gallery",
+    "leave-meet-gallery",
+    "refresh-meet-gallery",
+  ]);
+  if (!allowed.has(cmd)) return;
+  spawnSync(
+    "tmux",
+    ["run-shell", `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" ${cmd}`],
+    { cwd: ROOT, stdio: "ignore", env },
+  );
 }
 
 function enterMeetGalleryLayout() {

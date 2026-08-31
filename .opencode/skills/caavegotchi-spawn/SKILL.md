@@ -48,7 +48,7 @@ If he names a collateral (YFI, BTC, LINK, DAI, … — typo **yifi → yfi**):
 
 1. **Cartridge first.** `abra run gotchibot -- ./scripts/agent-focus.mjs list --json`
    (or identity roster). Match collateral yfi / maYFI with `status === "available"`.
-   Never `owned-954`. Today `starter-yfi-h1-1` is YFI but **assigned** (daily comms)
+   Never `owned-954`. Today `starter-yfi-h1-1` is YFI but **assigned** (infra-monitor); `owned-22899` (WBTC) owns daily comms
    — not available; do not steal it. If a match exists → spawn that hero. Do not
    mint. Do not ask for a token id.
 2. If none available, write spawn-request with that spirit and **wait for the overlay**.
@@ -101,7 +101,7 @@ abra run gotchibot -- node scripts/wallet-roster.mjs --json
 - **Collateral named (YFI / BTC / LINK / …; yifi → yfi):** only spawn if that
   available hero's collateral matches (yfi / maYFI). Otherwise it is not a
   candidate — go to step 3 with `"collateral":"yfi"`. Never treat assigned
-  (`starter-yfi-h1-1` daily comms) as available.
+  (`starter-yfi-h1-1` infra-monitor / `owned-22899` daily comms) as available.
 
 ```bash
 GOTCHIBOT_HERO_ID=<hero> abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs spawn --host auto --model auto "<original task>"

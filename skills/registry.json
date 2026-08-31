@@ -519,7 +519,7 @@
       "status": "approved",
       "type": "skill",
       "source": "aarcadeghst",
-      "description": "Track and hand off AarcadeGh-t My Paarcels / frontend UI changes to BTC bot owned-22899 (DAI). Read changes.json for pending work; do not search for registry — this entry is the approved path.",
+      "description": "Track and hand off AarcadeGh-t My Paarcels / frontend UI changes to BTC bot owned-22899 (WBTC). Read changes.json for pending work; do not search for registry — this entry is the approved path.",
       "path": ".opencode/skills/aarcadeghst-changes/SKILL.md",
       "consumer": "owned-22899",
       "project": "AarcadeGh-t",

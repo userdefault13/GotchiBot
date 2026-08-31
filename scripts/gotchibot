@@ -61,6 +61,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot remote-push               rsync GotchiBot tree to iMac (empty-git fix)
   gotchibot remote-openclaw [--http-only]  iMac OpenClaw: full deploy, or just enable /v1/chat/completions
   gotchibot remote-serve              start/restart iMac orchestrator opencode serve
+  gotchibot comms-cron-deploy         install WBTC daily comms cron on iMac
+  gotchibot commsies-imac-deploy      keep Commsies (:3002 + Ollama) alive on iMac
   gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
   gotchibot tunnel status|restart     subgraph.aarcadeghst.com health + iMac cloudflared restart
   gotchibot menubar install|uninstall|preview|path|open  macOS menu bar ghost + agent count (SwiftBar)
@@ -86,26 +88,38 @@ sync_openclaw_fleet() {
 
 
 cmd_chat() {
-  local want="${1:-status}"
+  local want="${1:-opencode}"
   local file="$SESSIONS/.chat-runtime"
   local current="opencode"
+  local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+  local layout="$ROOT/scripts/orchestrator-layout.sh"
   [ -f "$file" ] && current="$(tr -d "[:space:]" < "$file")"
   case "$want" in
-    status|"")
+    status)
       echo "chat runtime: $current"
+      if [ -f "$SESSIONS/.layout-mode" ]; then
+        echo "layout: $(tr -d '[:space:]' < "$SESSIONS/.layout-mode")"
+      fi
       ;;
-    opencode)
+    opencode|restore|desk|"")
       mkdir -p "$SESSIONS"
-      printf '%s\n' "$want" > "$file"
-      echo "chat runtime → $want"
-      if [ -n "${TMUX:-}" ]; then
-        tmux respawn-pane -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh" 2>/dev/null || true
+      printf 'opencode\n' > "$file"
+      echo "chat runtime → opencode"
+      if [ -n "${TMUX:-}" ] && tmux has-session -t "$sess" 2>/dev/null; then
+        # Leave meet room UI if present, else just respawn OpenCode + avatar.
+        if [ -f "$SESSIONS/.layout-mode" ] && [ "$(tr -d '[:space:]' < "$SESSIONS/.layout-mode")" = "meet-gallery" ]; then
+          GOTCHIBOT_TMUX_SESSION="$sess" "$layout" leave-meet-gallery 2>/dev/null || true
+        else
+          tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+          tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+          tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+        fi
       else
-        echo "respawn chat: gotchibot tmux"
+        echo "respawn chat: ./scripts/gotchibot tmux"
       fi
       ;;
     *)
-      echo "usage: gotchibot chat [opencode|status]" >&2
+      echo "usage: gotchibot chat [opencode|restore|status]" >&2
       exit 2
       ;;
   esac
@@ -496,6 +510,8 @@ case "$cmd" in
   remote-push) abra_or_node "$ROOT/scripts/remote-push.mjs" ;;
   remote-openclaw) abra_or_node "$ROOT/scripts/remote-openclaw-deploy.mjs" "$@" ;;
   remote-serve) abra_or_node "$ROOT/scripts/remote-serve.mjs" ;;
+  comms-cron-deploy) abra_or_node "$ROOT/scripts/comms-agent-cron-deploy.mjs" ;;
+  commsies-imac-deploy) abra_or_node "$ROOT/scripts/commsies-imac-deploy.mjs" ;;
   remote-setup) cmd_remote_setup ;;
   remote-status) abra_or_node "$ROOT/scripts/remote-status.mjs" ;;
   tunnel)

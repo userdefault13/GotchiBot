@@ -19,5 +19,12 @@
     "skills": ["delegate-first"],
     "reportCmd": "./scripts/agent-focus.mjs status",
     "autonomy": "Delegate-first; merge results; stay gotchi/ORCH."
+  },
+  "aarcade-comms-handler": {
+    "title": "Aarcade daily comms",
+    "summary": "Own newsfeed + tweet-draft pipeline (Commsies on iMac; tweets stay approve-gated).",
+    "skills": ["aarcade-comms"],
+    "reportCmd": "./scripts/comms-agent-cron.mjs",
+    "autonomy": "On schedule/cron (daily) and when asked: poll /communications-agent/queue, run pending repos, report sessions/comms-logs; never post to X; never print secrets."
   }
 }

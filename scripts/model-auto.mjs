@@ -149,10 +149,14 @@ function hasOpencodeKey() {
   return !!(process.env.OPENCODE_API_KEY || process.env.OPENCODE_ZEN_API_KEY);
 }
 
+function hasOpencodeGoKey() {
+  return !!process.env.OPENCODE_API_KEY;
+}
+
 function buildPrefer(cfg) {
   const skip = new Set((cfg.skip || []).map(oc));
   const base = (cfg.prefer || []).map(oc).filter((id) => !skip.has(id));
-  if (!hasOpencodeKey()) return base;
+  if (!hasOpencodeGoKey()) return base;
   const go = (cfg.goPrefer || []).map(oc).filter((id) => !skip.has(id));
   const seen = new Set(go);
   return [...go, ...base.filter((id) => !seen.has(id))];
@@ -161,7 +165,7 @@ function aliases() {
   return {
     auto: "AUTO",
     free: "AUTO",
-    go: hasOpencodeKey() ? "opencode-go/kimi-k3" : "AUTO",
+    go: hasOpencodeGoKey() ? "opencode-go/kimi-k3" : "AUTO",
     hy3: "opencode/nemotron-3.5-lightning-free",
     nim: "opencode/nemotron-3.5-lightning-free",
     fast: "opencode/nemotron-3.5-lightning-free",
