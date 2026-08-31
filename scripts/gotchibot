@@ -25,7 +25,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot new [--model t] "P"   spawn a sub-agent
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
-  gotchibot mode [gotchi|verse|plan|build|ask|cycle] [--restart]  OpenCode agent
+  gotchibot mode [gotchi|sub|verse|plan|build|ask|cycle] [--restart]  OpenCode agent
   gotchibot gotchi-mode [status|env|model|ensure] [--json]  OpenCode TUI → iMac orchestrator session
   gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
   gotchibot list                  session table
@@ -33,7 +33,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot switch [n|id]         list agents, or switch avatar+direct chat (/switch)
   gotchibot focus <n|id>          pin avatar + SUB chat focus
   gotchibot cockpit               mint / avatar / Settings (/cockpit)
-  gotchibot meet start|invite|status|say|end   shared meeting room (/meet)
+  gotchibot meet start|open|invite|status|say|end   shared meeting room (/meet)
   gotchibot orch                  restore orchestrator focus (/orch)
   gotchibot openclaw sync|list|status|chat|install|point  OpenClaw fleet + CLI
   gotchibot delegate [--json] [hint]  pick next local/remote agent (/delegate)
@@ -121,12 +121,14 @@ cmd_tmux() {
   local layout="$ROOT/scripts/orchestrator-layout.sh"
 
   if tmux has-session -t "$sess" 2>/dev/null; then
+    # Always boot to cockpit on attach — leave meet-gallery / meet room if persisted.
+    "$layout" leave-meet-gallery 2>/dev/null || true
     "$layout" refresh
     exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
   fi
   tmux new-session -d -s "$sess" -n work
   node "$ROOT/scripts/agent-focus.mjs" orch >/dev/null 2>&1 || true
-  "$layout" refresh
+  "$layout" ensure
   exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
 }
 
@@ -230,7 +232,8 @@ cmd_mode() {
   local sub="${1:-get}"
   shift || true
   case "$sub" in
-    gotchi|verse|plan|build|ask)
+    gotchi|sub|sub-agent|verse|plan|build|ask)
+      case "$sub" in sub-agent) sub=sub ;; esac
       exec node "$ROOT/scripts/agent-mode.mjs" set "$sub" "$@"
       ;;
     cycle)
@@ -240,7 +243,7 @@ cmd_mode() {
       exec node "$ROOT/scripts/agent-mode.mjs" get "$@"
       ;;
     *)
-      echo "unknown mode: $sub (use gotchi|verse|plan|build|ask)" >&2
+      echo "unknown mode: $sub (use gotchi|sub|verse|plan|build|ask)" >&2
       exit 2
       ;;
   esac
@@ -507,7 +510,7 @@ case "$cmd" in
   menubar) cmd_menubar "$@" ;;
   mesh) exec node "$ROOT/scripts/mesh-status.mjs" "$@" ;;
   trader) exec node "$ROOT/scripts/gotchi-trader-desk.mjs" "$@" ;;
-  model) exec node "$ROOT/scripts/model-auto.mjs" "$@" ;;
+  model) abra_or_node "$ROOT/scripts/model-auto.mjs" "$@" ;;
   sidebar) exec "$ROOT/scripts/orchestrator-layout.sh" sidebar ;;
   files-max|explorer) exec "$ROOT/scripts/orchestrator-layout.sh" files-max ;;
   avatar-max) exec "$ROOT/scripts/orchestrator-layout.sh" avatar-max ;;

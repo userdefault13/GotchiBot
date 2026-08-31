@@ -100,6 +100,22 @@
       ],
       "addedAt": "2026-08-26"
     },
+    "mcp-github": {
+      "status": "approved",
+      "type": "mcp",
+      "source": "github",
+      "description": "GitHub repos, issues, pull requests via official github-mcp-server (Docker). PAT: GOTCHIBOT_GITHUB_PAT in abra.",
+      "config": "config/mcp.stack.json",
+      "command": [
+        "./scripts/mcp/github.sh"
+      ],
+      "project": "GotchiBot",
+      "repo": "https://github.com/github/github-mcp-server",
+      "secrets": [
+        "GOTCHIBOT_GITHUB_PAT"
+      ],
+      "addedAt": "2026-08-30"
+    },
     "mcp-mongodb": {
       "status": "approved",
       "type": "mcp",
@@ -518,6 +534,17 @@
       "path": ".opencode/skills/aarcade-comms/SKILL.md",
       "project": "AarcadeGh-t",
       "addedAt": "2026-08-30"
+    },
+    "goball-teammate": {
+      "status": "approved",
+      "type": "skill",
+      "source": "aarcadeghst",
+      "description": "GoBall agent teammate — poll Aarcade invites, LLM-play one Home seat, release hero when done.",
+      "path": ".opencode/skills/goball-teammate/SKILL.md",
+      "script": "./scripts/goball-teammate.mjs",
+      "project": "AarcadeGh-t",
+      "secrets": ["GOBALL_AGENT_SECRET"],
+      "addedAt": "2026-08-31"
     },
     "thread-continuity": {
       "status": "approved",

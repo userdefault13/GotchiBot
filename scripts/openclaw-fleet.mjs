@@ -48,7 +48,7 @@ const ORCH_PROMPT = [
   "When asked if you are orch or a sub: you are the orchestrator, the main bot.",
   "Job: hear Julius, assign the right bot, watch them, merge, report. Do not become LINK. Do not DIY the trader desk.",
   "Reply first. Real beats only. Lead with the result. Close the loop. On it is not the answer.",
-  "Models: --model auto (hy3-free) for basic delegation. Lightning for faster gateway chat. Ultra/heavy only for retune or hard debug. Never Ultra for hello.",
+  "Models: opencode-go/kimi-k3 (gateway default). --model auto for workers. Ultra/heavy only for retune or hard debug.",
   "Trader: LINK owns the paper desk. Delegate monitor/improve/news. Stay paper. Open-mark is mark not PnL. News is a veto.",
   "Spawn: ./scripts/gotchi-orchestrate.mjs spawn --model auto \"prompt\" — every worker needs a cAavegotchi.",
   "Never install tools autonomously. Secrets via abracadabra only.",
@@ -88,16 +88,58 @@ function collateralEmoji(collateral) {
   return "🤖";
 }
 
+function readJsonFile(path, fallback = null) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+/** Thin load of role id + playbook for a hero (duplicated in gotchi-meet — avoid circular imports). */
+function loadRoleForHero(heroId) {
+  const id = String(heroId || "").trim();
+  if (!id) return { roleId: null, playbook: null };
+  const roles = readJsonFile(`${ROOT}/config/agent-roles.json`, {}) || {};
+  const playbooks = readJsonFile(`${ROOT}/config/agent-role-playbooks.json`, {}) || {};
+  const roleId = roles[id] || null;
+  if (!roleId) return { roleId: null, playbook: null };
+  const playbook = playbooks[roleId] || null;
+  return { roleId, playbook };
+}
+
+function roleJobBlock(heroId) {
+  const { roleId, playbook } = loadRoleForHero(heroId);
+  if (!roleId || !playbook) return "";
+  const skills = Array.isArray(playbook.skills) ? playbook.skills.join(", ") : "";
+  return [
+    "",
+    "## Your job",
+    `Role: ${playbook.title || roleId} (\`${roleId}\`)`,
+    playbook.summary || "",
+    `Autonomy: ${playbook.autonomy || ""}`,
+    skills ? `Skills to load: ${skills}` : "",
+    playbook.reportCmd
+      ? `Status report (verbatim): \`${playbook.reportCmd}\``
+      : "",
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+}
+
 function subSystemPrompt(hero, displayName) {
   const id = hero.id || hero.heroId;
   const name = displayName || hero.name || id;
-  return [
+  const lines = [
     `You are ${name} (${id}). You ARE this cAavegotchi — a first-class OpenClaw agent, not a narrator.`,
     "Speak in first person: I, me, my. Never \"the sub-agent\", \"LINK will\", or \"this worker\". You are not the orchestrator.",
     "Work in the GotchiBot workspace. Write deliverables to sessions/<id>/output.md when spawned as a dispatch session.",
     "Escalate orchestration, multi-agent fan-out, or wallet/cartridge tasks to the orchestrator hero.",
     "Never install tools autonomously. Secrets via abracadabra only. Read AGENTS.md.",
-  ].join("\n");
+  ];
+  const job = roleJobBlock(id);
+  if (job) lines.push(job);
+  return lines.join("\n");
 }
 
 /** Canonical workspace path — must match Docker bind mount on iMac (capital Dev). */
@@ -519,21 +561,94 @@ export function runAgentTurn(agentId, message, { json = false, timeout = 600, se
   };
 }
 
+export function tuiSessionKey(agentId) {
+  return `agent:${agentId}:main`;
+}
+
+function gatewayToken() {
+  const file = loadGatewayConfig();
+  return (
+    process.env.OPENCLAW_GATEWAY_TOKEN?.trim() ||
+    process.env.GOTCHIBOT_OPENCLAW_TOKEN?.trim() ||
+    file?.token?.trim() ||
+    ""
+  );
+}
+
+function openaiContent(data) {
+  const c = data?.choices?.[0]?.message?.content;
+  if (typeof c === "string" && c.trim()) return c.trim();
+  if (Array.isArray(c)) {
+    return c
+      .map((p) => (typeof p === "string" ? p : p?.text || ""))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  return "";
+}
+
+/** Headless HTTP chat — works even when `openclaw` CLI config is invalid. */
+export async function chatViaHttp(agentId, message, { timeoutMs = 120_000, sessionKey } = {}) {
+  const gateway = gatewayUrl().replace(/\/$/, "");
+  const token = gatewayToken();
+  const id = heroToAgentId(agentId);
+  const key = (sessionKey || tuiSessionKey(id)).trim();
+  try {
+    const r = await fetch(`${gateway}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "x-openclaw-session-key": key,
+        "x-openclaw-agent-id": id,
+      },
+      body: JSON.stringify({
+        model: "openclaw/default",
+        stream: false,
+        messages: [{ role: "user", content: String(message || "") }],
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const raw = await r.text();
+    if (!r.ok) {
+      return { ok: false, reason: `http-${r.status}`, stdout: raw, sessionKey: key };
+    }
+    let text = raw;
+    try {
+      text = openaiContent(JSON.parse(raw)) || raw;
+    } catch {
+      /* keep raw */
+    }
+    if (!String(text || "").trim()) {
+      return { ok: false, reason: "empty-http-reply", stdout: raw, sessionKey: key };
+    }
+    return { ok: true, stdout: text.endsWith("\n") ? text : `${text}\n`, sessionKey: key, via: "http" };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message || e), sessionKey: key };
+  }
+}
+
 export async function chatViaOpenClaw(agentId, message, { json = false, sessionKey } = {}) {
   if (!preferOpenClawChat()) {
     return { ok: false, reason: "openclaw-disabled" };
   }
-  if (!findOpenclawBin()) {
-    return { ok: false, reason: "openclaw-not-installed" };
-  }
   if (!(await gatewayReachable())) {
     return { ok: false, reason: "gateway-unreachable", gateway: gatewayUrl() };
   }
-  return runAgentTurn(agentId, message, { json, sessionKey: sessionKey || tuiSessionKey(agentId) });
-}
 
-export function tuiSessionKey(agentId) {
-  return `agent:${agentId}:main`;
+  // Prefer HTTP when CLI is missing or known-broken (invalid ~/.openclaw config).
+  const bin = findOpenclawBin();
+  if (bin) {
+    const cli = runAgentTurn(agentId, message, { json, sessionKey: sessionKey || tuiSessionKey(agentId) });
+    if (cli.ok) return { ...cli, via: "cli" };
+    const http = await chatViaHttp(agentId, message, { sessionKey: sessionKey || tuiSessionKey(agentId) });
+    if (http.ok) return http;
+    return { ...cli, httpFallback: http.reason };
+  }
+
+  return chatViaHttp(agentId, message, { sessionKey: sessionKey || tuiSessionKey(agentId) });
 }
 
 function cmdList(json) {

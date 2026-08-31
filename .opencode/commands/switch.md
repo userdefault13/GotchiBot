@@ -1,11 +1,14 @@
 ---
 description: List all agents and switch avatar + chat to the selected one
-agent: gotchi
 ---
 
-Switch GotchiBot focus between cAavegotchis / sessions. This pins the avatar,
-registers the hero as an **OpenClaw agent** (via `openclaw-fleet.mjs sync`), and
-makes **this chat prompt that agent directly** (SUB focus).
+Switch GotchiBot focus between cAavegotchis / sessions. Pins the avatar and sets
+**SUB focus** so later messages go to that OpenClaw agent. Does **not** restart
+the chat pane.
+
+Best in **Sub** mode (`./scripts/gotchibot mode sub` / cyan Tab) — desk for the
+roster **excluding** orch. From Gotchi mode, `/switch` still works; orch hero
+selection restores ORCH.
 
 ## No argument — list everyone
 
@@ -13,54 +16,41 @@ makes **this chat prompt that agent directly** (SUB focus).
 abra run gotchibot -- ./scripts/agent-focus.mjs switch
 ```
 
-If abracadabra is unavailable:
+Fallback: `./scripts/agent-focus.mjs switch`
 
-```bash
-./scripts/agent-focus.mjs switch
-```
-
-Show the numbered list to the user and tell them to run `/switch <n>` or
-`/switch <id>` (e.g. `/switch 2` or `/switch starter-link-h1-1`).
-
-Each cAavegotchi hero id is also its OpenClaw agent id (`owned-954`, `starter-link-h1-1`, …).
+Show the numbered list; tell Julius to run `/switch <n>` or `/switch <id>`
+(e.g. `/switch LINK` or `/switch starter-link-h1-1`).
 
 ## With argument — switch now
 
-`$ARGUMENTS` is a number or id. Run:
+`$ARGUMENTS` is a number or id:
 
 ```bash
 abra run gotchibot -- ./scripts/agent-focus.mjs switch $ARGUMENTS
 ```
 
-Fallback:
+Fallback: `./scripts/agent-focus.mjs switch $ARGUMENTS`
 
-```bash
-./scripts/agent-focus.mjs switch $ARGUMENTS
-```
+**Pane stay-alive:** no OpenCode restart. Optional `--respawn` / `--restart` only
+if Julius needs a full reload. `--no-respawn` / `--no-restart` are no-ops.
 
 After a successful switch:
 
-1. Confirm avatar pinned to that hero and `focus → SUB`.
-2. Confirm OpenClaw agent id matches the hero id.
-3. **CRITICAL — direct chat mode:** every following user message in this
-   conversation (until `/orch`) MUST be routed with:
+1. Confirm avatar pinned + `focus → SUB`.
+2. OpenClaw agent id = hero id.
+3. **CRITICAL — every following user message until `/orch`:**
 
    ```bash
-   abra run gotchibot -- ./scripts/agent-focus.mjs chat "<exact user message>"
+   ./scripts/agent-focus.mjs chat --sub "<exact user message>"
    ```
 
-   When the OpenClaw gateway is reachable, this uses
-   `openclaw agent --agent <hero-id>`. Otherwise it falls back to OpenCode
-   dispatch on local/iMac.
+   OpenClaw HTTP/CLI only. Do **not** spawn `opencode-dispatch`, `gotchi-orchestrate`,
+   or Task `@LINK` for chit-chat. If OpenClaw fails, surface the error — do not DIY.
+   Escape hatch (rare): `chat --dispatch "…"` or `GOTCHIBOT_SUB_CHAT_DISPATCH=1`.
 
-   Do **not** answer as the orchestrator. Do **not** DIY their task yourself.
-   The selected agent runs it.
+4. Remind: `/orch` returns to the orchestrator.
 
-4. Remind them: `/orch` returns to the orchestrator avatar + chat.
-
-Selecting the orchestrator hero id restores ORCH focus (same as `/orch`).
+Selecting the orchestrator hero id restores ORCH (same as `/orch`).
 
 Do not invent agents — only what the script prints.
-
-Fleet config (iMac gateway): `./scripts/gotchibot openclaw sync` then merge
-`config/openclaw.install.json5` into `~/.openclaw/openclaw.json`.
+Prefer `/switch` over `/list` (same roster; `/list` is legacy alias).

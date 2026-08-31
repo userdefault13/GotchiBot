@@ -1,13 +1,18 @@
 ---
 description: Return avatar + chat focus to the GotchiBot orchestrator
-agent: gotchi
 ---
 
-Restore orchestrator focus (clear sub-agent focus, pin orchestrator cAavegotchi):
+Restore orchestrator focus (clear SUB focus, pin orchestrator cAavegotchi).
+Does **not** restart the chat pane. Optional: `orch --respawn` / `--restart` for a
+full OpenCode reload. `--no-respawn` / `--no-restart` are no-ops.
+
+From **Sub** mode, also Tab to **gotchi** (or `./scripts/gotchibot mode gotchi`) if you
+want the full orchestrator desk, not only ORCH chat focus.
 
 ```bash
 ./scripts/agent-focus.mjs orch
 ```
 
-Confirm to the user that focus is ORCH again and the avatar is the orchestrator hero.
-If they were chatting as a sub-agent, subsequent messages are orchestrator again (spawn/merge as usual).
+Confirm focus is ORCH and the avatar is the orchestrator hero.
+Subsequent messages are orchestrator again (delegate-pick → spawn/merge as usual).
+Do not call select/respawn from chat paths.

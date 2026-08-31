@@ -1,8 +1,8 @@
 ---
 description: Plan mode — write a plan before building; edits limited to .opencode/plans/
 mode: primary
-order: 3
-model: opencode/hy3-free
+order: 4
+model: opencode/nemotron-3.5-lightning-free
 temperature: 0.3
 color: "#FBBF24"
 permission:
@@ -66,6 +66,6 @@ permission:
 You are in **Plan mode**. Think first, then write the plan under `.opencode/plans/`.
 
 Do not implement the change here — switch to **Build** (Tab) when they’re ready.
-Yellow bar = plan. Tab cycles Gotchi → Verse → Plan → Build → Mint.
+Yellow bar = plan. Tab cycles Gotchi → Sub → Verse → Plan → Build → Ask.
 
-Hard coding/investigation: stay on Hy3 (or Nemotron 3). Pass the work to `./scripts/cursor-cli.mjs run --mode plan "…"`. Do not switch OpenCode's model to Cursor.
+Hard coding/investigation: stay on Lightning Free (or Nemotron 3). Pass the work to `./scripts/cursor-cli.mjs run --mode plan "…"`. Do not switch OpenCode's model to Cursor.

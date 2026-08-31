@@ -1,6 +1,16 @@
 {
+  "goPrefer": [
+    "opencode-go/kimi-k3",
+    "opencode-go/glm-5.3-flash",
+    "opencode-go/glm-5.3",
+    "opencode-go/glm-5.2",
+    "opencode-go/gpt-5.6-luna",
+    "opencode-go/grok-4.6"
+  ],
   "prefer": [
-    "opencode/hy3-free",
+    "opencode/nemotron-3.5-lightning-free",
+    "opencode/nemotron-3-ultra-free",
+    "opencode/mimo-v2.5-free",
     "openrouter/nvidia/nemotron-3.5-lightning:free",
     "openrouter/z-ai/glm-5.2:free",
     "openrouter/google/gemma-4-31b-it:free",
@@ -10,10 +20,11 @@
     "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
   ],
   "skip": [
+    "opencode/hy3-free",
     "openrouter/nvidia/nemotron-3.5-content-safety:free",
     "openrouter/openrouter/free"
   ],
-  "lastResort": "opencode/hy3-free",
+  "lastResort": "opencode/nemotron-3.5-lightning-free",
   "ttlOkSec": 0,
   "ttlFailSec": 1800
 }

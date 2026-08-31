@@ -3,15 +3,17 @@
  * Agent roster + focus for gotchi mode.
  *
  *   node scripts/agent-focus.mjs list [--json]
- *   node scripts/agent-focus.mjs switch [index|id]  # list all, or switch avatar+direct chat
- *   node scripts/agent-focus.mjs select <index|id> [--host local|imac]
- *   node scripts/agent-focus.mjs orch
+ *   node scripts/agent-focus.mjs switch [index|id]  # list all, or switch avatar+direct chat (headless)
+ *   node scripts/agent-focus.mjs select <index|id> [--host local|imac] [--respawn]
+ *   node scripts/agent-focus.mjs orch [--respawn]
  *   node scripts/agent-focus.mjs status [--json]
  *   node scripts/agent-focus.mjs chat "prompt…"   # route to focused sub-agent
  *
  * /switch, /list, and /orch OpenCode commands call this. Switching a gotchi pins
  * the avatar and sets SUB focus so chat prompts that agent directly; /orch returns
- * to the orchestrator hero.
+ * to the orchestrator hero. In OpenCode primary mode `sub`, /switch lists exclude
+ * the orchestrator. select/switch/orch are headless by default (chat pane
+ * stays up); pass --respawn/--restart to reload OpenCode. cockpit/meet still respawn.
  */
 import {
   readFileSync,
@@ -277,11 +279,48 @@ async function buildRoster({ syncFleet = false, useCacheMs = 0 } = {}) {
   return { numbered, remote, heroes: heroes.length, local: local.length, cached: false };
 }
 
-function printRoster({ numbered, remote }, { switchMode = false } = {}) {
+/** OpenCode primary agent from sessions/.agent-mode.json (gotchi|sub|verse|…). */
+function openCodePrimaryMode() {
+  try {
+    const data = JSON.parse(readFileSync(`${ROOT}/sessions/.agent-mode.json`, "utf8"));
+    const a = String(data.agent || "").toLowerCase();
+    if (a === "sub-agent" || a === "subagent") return "sub";
+    return a || "gotchi";
+  } catch {
+    return "gotchi";
+  }
+}
+
+function isOrchHeroEntry(e, orchId = orchestratorHeroId()) {
+  if (!e || e.kind !== "hero") return false;
+  if (e.bindType === "orchestrator") return true;
+  const id = e.id || e.hero;
+  return id && id === orchId;
+}
+
+/** Roster for Sub desk — heroes excluding orchestrator; renumbered for /switch. */
+function forSubDesk(roster) {
+  const orch = orchestratorHeroId();
+  const numbered = (roster.numbered || [])
+    .filter((e) => !isOrchHeroEntry(e, orch))
+    .map((e, i) => ({ ...e, index: i + 1 }));
+  return {
+    ...roster,
+    numbered,
+    heroes: numbered.filter((e) => e.kind === "hero").length,
+    subDesk: true,
+  };
+}
+
+function printRoster({ numbered, remote }, { switchMode = false, subDesk = false } = {}) {
   console.log(
     switchMode
-      ? "GotchiBot /switch — pick an agent (avatar + direct chat)"
-      : "GotchiBot agents — select with: /switch <n|id>   or   ./scripts/agent-focus.mjs switch <n|id>",
+      ? subDesk
+        ? "GotchiBot /switch — sub-agents only (orch excluded)"
+        : "GotchiBot /switch — pick an agent (avatar + direct chat)"
+      : subDesk
+        ? "GotchiBot agents — sub desk (orch excluded)"
+        : "GotchiBot agents — select with: /switch <n|id>   or   ./scripts/agent-focus.mjs switch <n|id>",
   );
   console.log("");
 
@@ -290,7 +329,11 @@ function printRoster({ numbered, remote }, { switchMode = false } = {}) {
   const imac = numbered.filter((e) => e.host === "imac");
 
   if (heroes.length) {
-    console.log("cAavegotchis (OpenClaw agent id = hero id)");
+    console.log(
+      subDesk
+        ? "cAavegotchis — sub roster (OpenClaw agent id = hero id)"
+        : "cAavegotchis (OpenClaw agent id = hero id)",
+    );
     for (const e of heroes) {
       const coll = e.collateral ? ` · ${String(e.collateral).slice(0, 12)}` : "";
       const bt = e.bindType ? ` · ${e.bindType}` : "";
@@ -543,28 +586,36 @@ export async function exportRosterCsv(outPath, { syncFleet = true } = {}) {
   };
 }
 
-function resolveEntry(arg, hostFilter) {
+function resolveEntry(arg, hostFilter, { subDesk = false } = {}) {
   let cache;
   try {
     cache = JSON.parse(readFileSync(LIST_CACHE, "utf8"));
   } catch {
     cache = null;
   }
-  const entries = (cache?.entries || []).filter((e) =>
+  let all = cache?.entries || [];
+  if (subDesk) {
+    const orch = orchestratorHeroId();
+    all = all
+      .filter((e) => !isOrchHeroEntry(e, orch))
+      .map((e, i) => ({ ...e, index: i + 1 }));
+  }
+  const entries = all.filter((e) =>
     hostFilter ? e.host === hostFilter || (hostFilter === "local" && e.host === "cartridge") : true,
   );
   if (/^\d+$/.test(arg)) {
     const n = Number(arg);
-    const hit = (cache?.entries || []).find((e) => e.index === n);
+    const hit = all.find((e) => e.index === n);
     if (!hit) throw new Error(`no entry #${n} — run list first`);
     return hit;
   }
-  const hit =
-    (cache?.entries || []).find((e) => e.id === arg) ||
-    entries.find((e) => e.id === arg);
+  const hit = all.find((e) => e.id === arg) || entries.find((e) => e.id === arg);
   if (hit) return hit;
   // Allow selecting a hero id even without fresh list
   if (arg.startsWith("starter-") || arg.startsWith("owned-") || arg.startsWith("s20")) {
+    if (subDesk && (arg === orchestratorHeroId() || arg === "owned-954")) {
+      throw new Error("orch excluded in Sub mode — Tab to gotchi or /orch");
+    }
     return {
       kind: arg.startsWith("s20") ? "session" : "hero",
       host: arg.startsWith("s20") ? "local" : "cartridge",
@@ -597,14 +648,15 @@ function orchestratorHeroId() {
   return meta?.activeHeroId || "owned-954";
 }
 
-async function cmdSelect(arg, { host, via = "select" } = {}) {
+async function cmdSelect(arg, { host, via = "select", respawn = false } = {}) {
   if (!arg) {
-    console.error(`usage: agent-focus.mjs ${via} <index|id>`);
+    console.error(`usage: agent-focus.mjs ${via} <index|id> [--respawn]`);
     process.exit(2);
   }
+  const subDesk = openCodePrimaryMode() === "sub";
   // Always refresh roster so indexes match what the user just saw
   await buildRoster({ syncFleet: true, useCacheMs: 0 });
-  const entry = resolveEntry(arg, host);
+  const entry = resolveEntry(arg, host, { subDesk });
   let heroId = entry.hero || (entry.kind === "hero" ? entry.id : null);
   let sessionId = entry.kind === "session" ? entry.id : null;
 
@@ -622,9 +674,14 @@ async function cmdSelect(arg, { host, via = "select" } = {}) {
     process.exit(1);
   }
 
-  // Selecting the orchestrator hero returns to ORCH focus
+  // Selecting the orchestrator hero returns to ORCH focus (not from Sub desk)
   if (heroId === orchestratorHeroId() && entry.kind === "hero") {
-    await cmdOrch();
+    if (subDesk) {
+      console.error("orch excluded in Sub mode — Tab to gotchi, or: ./scripts/gotchibot mode gotchi");
+      console.error("then /orch if you only need ORCH chat focus");
+      process.exit(2);
+    }
+    await cmdOrch({ respawn });
     return;
   }
 
@@ -681,27 +738,30 @@ async function cmdSelect(arg, { host, via = "select" } = {}) {
   console.log(`focus   → SUB (OpenClaw agent ${heroId})`);
   console.log("");
   console.log("DIRECT_CHAT=1 — every following user message goes to this OpenClaw agent:");
-  console.log(`  ./scripts/agent-focus.mjs chat "<their message>"`);
-  console.log("  (falls back to OpenCode dispatch when OpenClaw gateway is unreachable)");
+  console.log(`  ./scripts/agent-focus.mjs chat --sub "<their message>"`);
+  console.log("  (OpenClaw only — no auto dispatch; --dispatch / --spawn / GOTCHIBOT_SUB_CHAT_DISPATCH=1 to force)");
   console.log("Back to orchestrator: /orch   or   ./scripts/agent-focus.mjs orch");
-  respawnChatPane();
+  if (respawn) respawnChatPane();
+  else console.log("pane    kept (use --respawn to reload OpenCode)");
 }
 
 /** /switch — list all agents, or switch to one (avatar + direct chat). */
-async function cmdSwitch(arg, { host, json } = {}) {
+async function cmdSwitch(arg, { host, json, respawn = false } = {}) {
   if (!arg) {
-    const roster = await buildRoster({ syncFleet: false, useCacheMs: 30_000 });
+    let roster = await buildRoster({ syncFleet: false, useCacheMs: 30_000 });
+    const subDesk = openCodePrimaryMode() === "sub";
+    if (subDesk) roster = forSubDesk(roster);
     if (json) {
       console.log(JSON.stringify(roster, null, 2));
     } else {
-      printRoster(roster, { switchMode: true });
+      printRoster(roster, { switchMode: true, subDesk });
       if (roster.cached) {
         console.log("(cached roster — run /switch again to refresh remote sessions)");
       }
     }
     return;
   }
-  await cmdSelect(arg, { host, via: "switch" });
+  await cmdSelect(arg, { host, via: "switch", respawn });
 }
 
 function respawnChatPane(extraEnv = {}) {
@@ -748,7 +808,7 @@ async function cmdCockpit() {
 
 async function cmdMeet() {
   if (process.env.TMUX) {
-    console.log("Opening GotchiBot meeting room in chat pane…");
+    console.log("Opening GotchiBot meeting room (Zoom gallery)…");
     respawnChatPane({ GOTCHIBOT_MEET: "1" });
     return;
   }
@@ -761,7 +821,7 @@ async function cmdMeet() {
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-async function cmdOrch() {
+async function cmdOrch({ respawn = false } = {}) {
   const heroId = orchestratorHeroId();
   pinAvatar(heroId, { asOrchestrator: true });
   signalAvatar(heroId);
@@ -783,7 +843,8 @@ async function cmdOrch() {
   console.log(`orchestrator focus restored`);
   console.log(`avatar → ${heroId}`);
   console.log(`OpenClaw agent → ${heroId}`);
-  respawnChatPane();
+  if (respawn) respawnChatPane();
+  else console.log("pane    kept (use --respawn to reload OpenCode)");
 }
 
 function cmdStatus(json) {
@@ -902,30 +963,51 @@ async function cmdChat(prompt, { force, spawnOnEscalate = false } = {}) {
     return;
   }
 
-  const env = {
-    ...process.env,
-    GOTCHIBOT_HERO_ID: focus.heroId || "",
-    GOTCHIBOT_SKIP_ABRA: process.env.GOTCHIBOT_SKIP_ABRA || "1",
-    GOTCHIBOT_AUTO_APPROVE: "1",
-  };
-
   const agentId = focus.openclawAgentId || focus.heroId;
+  const allowDispatch =
+    spawnOnEscalate ||
+    process.env.GOTCHIBOT_SUB_CHAT_DISPATCH === "1" ||
+    process.argv.includes("--dispatch");
+
   try {
-    const { chatViaOpenClaw, findOpenclawBin, gatewayReachable } = await import(
-      "./openclaw-fleet.mjs"
-    );
-    if (findOpenclawBin() && (await gatewayReachable())) {
+    const { chatViaOpenClaw, gatewayReachable } = await import("./openclaw-fleet.mjs");
+    if (await gatewayReachable()) {
       console.log(`sub chat → OpenClaw agent ${agentId} (${classification.reason})`);
       const oc = await chatViaOpenClaw(agentId, prompt.trim());
       if (oc.ok) {
         if (oc.stdout) process.stdout.write(oc.stdout);
         return;
       }
-      console.error(`openclaw chat failed (${oc.reason}), falling back to dispatch`);
+      console.error(
+        `openclaw chat failed (${oc.reason}${oc.httpFallback ? `; http=${oc.httpFallback}` : ""})`,
+      );
+      if (!allowDispatch) {
+        console.error(
+          "hint: fix OpenClaw gateway / run openclaw doctor — dispatch fallback is off (pass --dispatch or GOTCHIBOT_SUB_CHAT_DISPATCH=1 to force)",
+        );
+        process.exit(1);
+      }
+      console.error("falling back to opencode dispatch (--dispatch)");
+    } else if (!allowDispatch) {
+      console.error("openclaw gateway unreachable — cannot chat while SUB-focused");
+      console.error(
+        "hint: check Tailscale / openclaw status; dispatch fallback is off (pass --dispatch to force)",
+      );
+      process.exit(1);
     }
-  } catch {
-    /* fall through to dispatch */
+  } catch (e) {
+    if (!allowDispatch) {
+      console.error(`openclaw chat error: ${e?.message || e}`);
+      process.exit(1);
+    }
   }
+
+  const env = {
+    ...process.env,
+    GOTCHIBOT_HERO_ID: focus.heroId || "",
+    GOTCHIBOT_SKIP_ABRA: process.env.GOTCHIBOT_SKIP_ABRA || "1",
+    GOTCHIBOT_AUTO_APPROVE: "1",
+  };
 
   const wrapped = [
     `You are ${focus.heroId || focus.label}. Speak in first person (I, me, my). You are this gotchi, not a narrator and not the orchestrator.`,
@@ -937,7 +1019,7 @@ async function cmdChat(prompt, { force, spawnOnEscalate = false } = {}) {
     .join("\n");
 
   if (focus.host === "imac") {
-    console.log(`sub chat → ${focus.heroId || focus.label} on imac (${classification.reason})`);
+    console.log(`sub chat → ${focus.heroId || focus.label} on imac (dispatch fallback)`);
     const r = spawnSync(
       process.execPath,
       [
@@ -954,11 +1036,10 @@ async function cmdChat(prompt, { force, spawnOnEscalate = false } = {}) {
     process.exit(r.status ?? 1);
   }
 
-  console.log(`sub chat → ${focus.heroId || focus.label} local (${classification.reason})`);
-
+  console.log(`sub chat → ${focus.heroId || focus.label} local (dispatch fallback)`);
   const r = spawnSync(
     `${ROOT}/scripts/opencode-dispatch.sh`,
-    ["new", "--model", "auto", wrapped],
+    ["new", "--model", "nim", wrapped],
     { cwd: ROOT, env, encoding: "utf8" },
   );
   if (r.stdout) process.stdout.write(r.stdout);
@@ -972,11 +1053,13 @@ async function main() {
 
   if (!cmd || cmd === "list" || cmd === "agents") {
     const hostIdx = rest.indexOf("--host");
-    const roster = await buildRoster({ syncFleet: false, useCacheMs: 30_000 });
+    let roster = await buildRoster({ syncFleet: false, useCacheMs: 30_000 });
+    const subDesk = openCodePrimaryMode() === "sub";
+    if (subDesk) roster = forSubDesk(roster);
     if (json) {
       console.log(JSON.stringify(roster, null, 2));
     } else {
-      printRoster(roster);
+      printRoster(roster, { subDesk });
     }
     return;
   }
@@ -984,21 +1067,43 @@ async function main() {
   if (cmd === "select" || cmd === "focus") {
     const hostIdx = rest.indexOf("--host");
     const host = hostIdx >= 0 ? rest[hostIdx + 1] : null;
-    const arg = rest.find((a) => a !== "--host" && a !== host && a !== "--json");
-    await cmdSelect(arg, { host });
+    // Opt-in pane kill; --no-respawn/--no-restart kept as accepted no-ops (compat)
+    const respawn = rest.includes("--respawn") || rest.includes("--restart");
+    const skip = new Set([
+      "--host",
+      "--json",
+      "--respawn",
+      "--restart",
+      "--no-respawn",
+      "--no-restart",
+    ]);
+    if (host) skip.add(host);
+    const arg = rest.find((a) => !skip.has(a));
+    await cmdSelect(arg, { host, respawn });
     return;
   }
 
   if (cmd === "switch") {
     const hostIdx = rest.indexOf("--host");
     const host = hostIdx >= 0 ? rest[hostIdx + 1] : null;
-    const arg = rest.find((a) => a !== "--host" && a !== host && a !== "--json");
-    await cmdSwitch(arg, { host, json });
+    const respawn = rest.includes("--respawn") || rest.includes("--restart");
+    const skip = new Set([
+      "--host",
+      "--json",
+      "--respawn",
+      "--restart",
+      "--no-respawn",
+      "--no-restart",
+    ]);
+    if (host) skip.add(host);
+    const arg = rest.find((a) => !skip.has(a));
+    await cmdSwitch(arg, { host, json, respawn });
     return;
   }
 
   if (cmd === "orch" || cmd === "orchestrator") {
-    await cmdOrch();
+    const respawn = rest.includes("--respawn") || rest.includes("--restart");
+    await cmdOrch({ respawn });
     return;
   }
 
@@ -1060,7 +1165,14 @@ async function main() {
     const forceSub = rest.includes("--sub");
     const spawnOnEscalate = rest.includes("--spawn");
     const prompt = rest
-      .filter((a) => a !== "--json" && a !== "--orch" && a !== "--sub" && a !== "--spawn")
+      .filter(
+        (a) =>
+          a !== "--json" &&
+          a !== "--orch" &&
+          a !== "--sub" &&
+          a !== "--spawn" &&
+          a !== "--dispatch",
+      )
       .join(" ")
       .trim();
     await cmdChat(prompt, {
@@ -1072,16 +1184,17 @@ async function main() {
 
   console.error(`usage:
   agent-focus.mjs list [--json]
-  agent-focus.mjs switch [index|id]     # list, or switch avatar+direct chat
-  agent-focus.mjs select <index|id>
-  agent-focus.mjs orch
+  agent-focus.mjs switch [index|id] [--respawn]  # list, or headless avatar+SUB focus (pane stays up)
+  agent-focus.mjs select <index|id> [--respawn]  # same; --respawn/--restart reloads OpenCode pane
+  agent-focus.mjs orch [--respawn]               # headless ORCH focus; --respawn reloads pane
   agent-focus.mjs roster              # full MBP + iMac OpenClaw roster (cockpit)
   agent-focus.mjs roster --csv [path] # export roster to CSV (default: sessions/roster-<timestamp>.csv)
-  agent-focus.mjs cockpit              # mint / change orchestrator avatar menu
-  agent-focus.mjs meet                 # shared meeting room (start / invite, then chat)
+  agent-focus.mjs cockpit              # mint / change orchestrator avatar menu (respawns pane)
+  agent-focus.mjs meet                 # shared meeting room menu (respawns pane)
   agent-focus.mjs status [--json]
   agent-focus.mjs classify "prompt" [--json]
-  agent-focus.mjs chat "prompt" [--orch|--sub] [--spawn]`);
+  agent-focus.mjs chat "prompt" [--orch|--sub] [--spawn] [--dispatch]
+    # SUB chat = OpenClaw only by default; --dispatch enables opencode-dispatch fallback`);
   process.exit(2);
 }
 

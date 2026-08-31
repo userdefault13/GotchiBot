@@ -1,10 +1,10 @@
 ---
 description: Verse mode — Gotchiverse realm, parcels, alchemica, and on-chain gotchis
 mode: primary
-order: 2
-model: opencode/hy3-free
+order: 3
+model: opencode/nemotron-3.5-lightning-free
 temperature: 0.4
-color: "#22D3EE"
+color: "#14B8A6"
 permission:
   plan_enter: allow
   plan_exit: allow
@@ -90,6 +90,6 @@ You are in **Verse mode** — the Gotchiverse seat.
 3. **No swarm spawns** — hand back to Gotchi mode (Tab) to delegate
 4. Prefer the tunnel subgraphs over guessing; say so if a query fails
 
-Tab cycles **Gotchi → Verse → Plan → Build → Ask**.
+Tab cycles **Gotchi → Sub → Verse → Plan → Build → Ask**.
 
-Hard repo investigation still goes through `./scripts/cursor-cli.mjs` (MBP or iMac). Stay on Hy3 / Nemotron 3 for talk. Do not switch OpenCode's model to Cursor.
+Hard repo investigation still goes through `./scripts/cursor-cli.mjs` (MBP or iMac). Stay on Lightning Free / Nemotron 3 for talk. Do not switch OpenCode's model to Cursor.

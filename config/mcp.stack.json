@@ -68,6 +68,15 @@
       "project": "GotchiBot",
       "note": "Onchain balances/tokens/contracts ~100 chains. Key optional for hosted tier."
     },
+    "github": {
+      "command": "./scripts/mcp/github.sh",
+      "cwd": ".",
+      "project": "GotchiBot",
+      "env": {
+        "GOTCHIBOT_GITHUB_PAT": "{abra:gotchibot:GOTCHIBOT_GITHUB_PAT}"
+      },
+      "note": "Official ghcr.io/github/github-mcp-server — repos, issues, PRs. PAT in abra only."
+    },
     "mongodb": {
       "command": "npx",
       "args": ["-y", "mongodb-mcp-server"],
@@ -90,7 +99,7 @@
   "projects": {
     "AarcadeGh-t": ["aarcade-cartridge-schema", "aarcade-hackathon-ideas", "base-mcp", "vercel", "snapshot", "reown-docs", "mongodb"],
     "Aarcade-AIBot": ["mongodb", "reown-docs"],
-    "GotchiBot": ["abracadabra", "aarcade-cartridge-schema", "blockscout", "base-mcp", "pixellab"],
+    "GotchiBot": ["abracadabra", "aarcade-cartridge-schema", "blockscout", "github", "base-mcp", "pixellab"],
     "ai-cron-site": ["abracadabra", "cron402", "coinbase-developer", "vercel"],
     "Gotchi-Trader": ["base-mcp", "blockscout", "mongodb"],
     "aavegotchi-envio-indexers": ["blockscout", "base-mcp"],

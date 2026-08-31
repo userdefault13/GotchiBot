@@ -23,6 +23,7 @@
   "plugin": [
     "./.opencode/tui-plugins/gotchi-thought-tts.ts",
     "./.opencode/tui-plugins/gotchi-sidebar-hide.ts",
-    "./.opencode/tui-plugins/gotchi-spawn.ts"
+    "./.opencode/tui-plugins/gotchi-spawn.ts",
+    "./.opencode/tui-plugins/gotchi-queue-multitask.ts"
   ]
 }

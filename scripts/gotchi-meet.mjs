@@ -4,11 +4,14 @@
  *
  *   ./scripts/gotchi-meet.mjs start ["topic"]
  *   ./scripts/gotchi-meet.mjs invite <n|id|name>
+ *   ./scripts/gotchi-meet.mjs invite all
  *   ./scripts/gotchi-meet.mjs status [--json]
  *   ./scripts/gotchi-meet.mjs say "user message"
  *   ./scripts/gotchi-meet.mjs end
+ *   ./scripts/gotchi-meet.mjs sync-mentions
  *
  * Stay in OpenCode. Chair-led turn-taking. One open meeting (v1).
+ * Open meetings sync invited gotchis into .opencode/agents/*.md for @ autocomplete.
  */
 import {
   readFileSync,
@@ -21,6 +24,7 @@ import {
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { printSlackTurns } from "./meet-channel.mjs";
 import { loadMeta } from "./identity.mjs";
 import {
   ROOT,
@@ -42,6 +46,23 @@ import {
 const MEETINGS = `${SESSIONS}/meetings`;
 const CURRENT = `${MEETINGS}/.current`;
 const LIST_CACHE = `${SESSIONS}/.focus-list.json`;
+const MEET_AGENTS_DIR = `${ROOT}/.opencode/agents`;
+const MEET_AGENT_STATE = `${MEETINGS}/.mention-agents.json`;
+const MEET_AGENT_MARKER = "gotchibot-meet-agent";
+const RESERVED_AGENT_NAMES = new Set([
+  "gotchi",
+  "verse",
+  "build",
+  "plan",
+  "ask",
+  "gotchiverse-map",
+  "explore",
+  "general",
+  "scout",
+  "title",
+  "summary",
+  "compaction",
+]);
 const TURN_TIMEOUT_S = 90;
 const CHAIR_TIMEOUT_S = 60;
 
@@ -62,8 +83,263 @@ function writeJson(path, obj) {
   writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
 }
 
+/** Thin load of role id + playbook (duplicated in openclaw-fleet — avoid circular imports). */
+function loadRoleForHero(heroId) {
+  const id = String(heroId || "").trim();
+  if (!id) return { roleId: null, playbook: null };
+  const roles = readJson(`${ROOT}/config/agent-roles.json`, {}) || {};
+  const playbooks = readJson(`${ROOT}/config/agent-role-playbooks.json`, {}) || {};
+  const roleId = roles[id] || null;
+  if (!roleId) return { roleId: null, playbook: null };
+  return { roleId, playbook: playbooks[roleId] || null };
+}
+
+function meetBashPermissionYaml(roleId, playbook) {
+  // Headless OpenClaw chat only — never agent-focus select (that respawns the pane).
+  const allows = {
+    "./scripts/openclaw-fleet.mjs chat*": "allow",
+    "node ./scripts/openclaw-fleet.mjs*": "allow",
+    "abra run gotchibot -- ./scripts/openclaw-fleet.mjs chat*": "allow",
+    "./scripts/gotchi-meet.mjs status*": "allow",
+    "node ./scripts/gotchi-meet.mjs status*": "allow",
+  };
+  const reportCmd = String(playbook?.reportCmd || "").trim();
+  if (reportCmd.startsWith("./scripts/gotchi-trader-desk.mjs") || roleId === "trader-desk") {
+    allows["./scripts/gotchi-trader-desk.mjs*"] = "allow";
+    allows["abra run gotchibot -- ./scripts/gotchi-trader-desk.mjs*"] = "allow";
+  }
+  if (reportCmd.startsWith("./scripts/infra-monitor-cron.mjs") || roleId === "infra-monitor") {
+    allows["./scripts/infra-monitor-cron.mjs*"] = "allow";
+    allows["abra run gotchibot -- ./scripts/infra-monitor-cron.mjs*"] = "allow";
+  }
+  const lines = ["  bash:", '    "*": deny'];
+  for (const [pattern, action] of Object.entries(allows)) {
+    lines.push(`    "${pattern}": ${action}`);
+  }
+  return lines.join("\n");
+}
+
+function meetMentionAgentBody({ slug, name, heroId, meetingRole, topic, roleId, playbook }) {
+  const jobLabel = playbook?.title
+    ? `${slug} · ${roleId} — direct chat / verbatim report`
+    : `${slug} — direct chat / verbatim report`;
+  const skills = Array.isArray(playbook?.skills) ? playbook.skills.join(", ") : "(none)";
+  const reportCmd = playbook?.reportCmd || "(none)";
+  const autonomy =
+    playbook?.autonomy ||
+    "No persistent playbook — still relay via headless openclaw-fleet chat.";
+  const summary = playbook?.summary || "No role assigned in config/agent-roles.json.";
+  const roleLine = roleId
+    ? `Persistent job role: ${playbook?.title || roleId} (\`${roleId}\`).`
+    : "Persistent job role: none.";
+  return `---
+description: ${jobLabel}
+mode: subagent
+model: opencode/nemotron-3.5-lightning-free
+color: "#B650FF"
+permission:
+  edit: deny
+${meetBashPermissionYaml(roleId, playbook)}
+---
+<!-- ${MEET_AGENT_MARKER} -->
+You are ${name} (${heroId}). Meeting role label: ${meetingRole}.
+${roleLine}
+Summary: ${summary}
+Autonomy: ${autonomy}
+Skills: ${skills}
+reportCmd: \`${reportCmd}\`
+
+Topic (meeting context only): ${topic}.
+
+**NOT for Task tool** from gotchi orch. You are a meeting @mention stub only.
+**Scope:** Only for explicit @mentions while a GotchiBot meeting is open.
+If invoked outside an open meeting (\`./scripts/gotchi-meet.mjs status\` fails / says none), reply with exactly one line and stop:
+\`use /switch ${heroId} then chat, or /meet say\`
+Do not invent a report. Do not run agent-focus select/switch (pane restart). Do not spawn opencode-dispatch.
+
+**When @invoked during an open meeting**:
+0. Confirm open meeting via \`./scripts/gotchi-meet.mjs status\` — else the one-liner above.
+1. \`./scripts/openclaw-fleet.mjs chat --agent ${heroId} "<user message>"\` (full user text; headless)
+2. Reply with that stdout **verbatim** — no paraphrase, no wrapper.
+
+If status/report asked and chat fails, run reportCmd and paste stdout **verbatim**.
+Prefer transcripted room turns: \`/meet say "… @${slug}"\`.
+`;
+}
+
+function pokeMeetChannel() {
+  const stamp = `${ROOT}/sessions/.meet-channel.stamp`;
+  const roomStamp = `${ROOT}/sessions/.meet-room.stamp`;
+  const now = `${new Date().toISOString()}\n`;
+  try {
+    writeFileSync(stamp, now);
+    writeFileSync(roomStamp, now);
+  } catch {
+    /* ok */
+  }
+  if (!process.env.TMUX) return;
+  spawnSync("bash", [`${ROOT}/scripts/poke-meet-channel.sh`], { stdio: "ignore" });
+  spawnSync("bash", [`${ROOT}/scripts/poke-meet-room.sh`], { stdio: "ignore" });
+}
+
 function pokeAvatar() {
+  pokeMeetChannel();
   spawnSync("bash", [`${ROOT}/scripts/poke-avatar.sh`], { stdio: "ignore" });
+}
+
+/** Gotchibot tmux session — works even when CLI runs outside tmux (no $TMUX). */
+function tmuxSessionName() {
+  const env = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
+  if (process.env.TMUX) return env;
+  const r = spawnSync("tmux", ["has-session", "-t", env], { stdio: "ignore" });
+  return r.status === 0 ? env : null;
+}
+
+function readLayoutMode() {
+  try {
+    return readFileSync(`${ROOT}/sessions/.layout-mode`, "utf8").trim() || "normal";
+  } catch {
+    return "normal";
+  }
+}
+
+function meetGalleryLayout(cmd) {
+  const sess = tmuxSessionName();
+  if (!sess) return;
+  const script = `${ROOT}/scripts/orchestrator-layout.sh`;
+  const env = {
+    ...process.env,
+    GOTCHIBOT_TMUX_SESSION: sess,
+  };
+  if (cmd === "enter-meet-gallery") {
+    spawnSync(
+      "tmux",
+      ["run-shell", `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" enter-meet-gallery`],
+      { cwd: ROOT, stdio: "inherit", env },
+    );
+    return;
+  }
+  spawnSync("bash", [script, cmd], {
+    cwd: ROOT,
+    stdio: "ignore",
+    env,
+  });
+}
+
+/** Refresh tiles if already in meet-gallery (no-op otherwise). */
+function refreshMeetGallery() {
+  meetGalleryLayout("refresh-meet-gallery");
+}
+
+/** Restore orch 3-pane layout after meeting ends / menu cancel. */
+function leaveMeetGallery() {
+  meetGalleryLayout("leave-meet-gallery");
+}
+
+/** Enter gallery (meet menu). Idempotent. */
+export function enterMeetGallery() {
+  meetGalleryLayout("enter-meet-gallery");
+}
+
+/** Enter meet layout when starting a meeting; refresh if already there. */
+function ensureMeetGallery() {
+  if (!tmuxSessionName()) return;
+  if (readLayoutMode() === "meet-gallery") refreshMeetGallery();
+  else enterMeetGallery();
+}
+
+export { refreshMeetGallery, leaveMeetGallery };
+
+function sanitizeAgentSlug(raw) {
+  return String(raw || "")
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+function agentSlugFor(p, used) {
+  const taken = used instanceof Set ? used : new Set(used || []);
+  const trySlug = (raw) => {
+    const slug = sanitizeAgentSlug(raw);
+    if (!slug) return null;
+    const key = slug.toLowerCase();
+    if (RESERVED_AGENT_NAMES.has(key) || taken.has(key)) return null;
+    return slug;
+  };
+  const fromName = trySlug(p?.name);
+  if (fromName) return fromName;
+  const fromId = trySlug(p?.id);
+  if (fromId) return fromId;
+  // Last resort: id with numeric suffix so we never collide with reserved files.
+  const base = sanitizeAgentSlug(p?.id) || "participant";
+  for (let i = 2; i < 100; i++) {
+    const candidate = `${base}-${i}`;
+    const key = candidate.toLowerCase();
+    if (!RESERVED_AGENT_NAMES.has(key) && !taken.has(key)) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
+function clearMeetMentionAgents() {
+  const state = readJson(MEET_AGENT_STATE, null);
+  const files = Array.isArray(state?.files) ? state.files : [];
+  for (const file of files) {
+    const base = String(file || "").replace(/^.*\//, "");
+    if (!base || base.includes("..") || !base.endsWith(".md")) continue;
+    const slug = base.slice(0, -3);
+    if (RESERVED_AGENT_NAMES.has(slug.toLowerCase())) continue;
+    const path = `${MEET_AGENTS_DIR}/${base}`;
+    try {
+      if (!existsSync(path)) continue;
+      const body = readFileSync(path, "utf8");
+      if (!body.includes(MEET_AGENT_MARKER)) continue;
+      unlinkSync(path);
+    } catch {
+      /* best-effort */
+    }
+  }
+  try {
+    unlinkSync(MEET_AGENT_STATE);
+  } catch {
+    /* ok */
+  }
+}
+
+function syncMeetMentionAgents(meeting) {
+  clearMeetMentionAgents();
+  if (!meeting || meeting.status !== "open") return [];
+  mkdirSync(MEET_AGENTS_DIR, { recursive: true });
+  ensureMeetings();
+  const used = new Set();
+  const files = [];
+  const topic = String(meeting.topic || "Untitled meeting").replace(/\n/g, " ");
+  for (const p of meeting.participants || []) {
+    if (!p || p.role === "user") continue;
+    const slug = agentSlugFor(p, used);
+    used.add(slug.toLowerCase());
+    const name = p.name || p.id;
+    const heroId = p.id;
+    const { roleId, playbook } = loadRoleForHero(heroId);
+    const body = meetMentionAgentBody({
+      slug,
+      name,
+      heroId,
+      meetingRole: p.role || "agent",
+      topic,
+      roleId,
+      playbook,
+    });
+    const file = `${slug}.md`;
+    writeFileSync(`${MEET_AGENTS_DIR}/${file}`, body);
+    files.push(file);
+  }
+  writeJson(MEET_AGENT_STATE, {
+    meetingId: meeting.id,
+    files,
+    updatedAt: new Date().toISOString(),
+  });
+  return files;
 }
 
 function userParticipant() {
@@ -357,6 +633,7 @@ export async function startMeeting(topic = "Untitled meeting") {
       `meeting ${open.id} is already open (topic: ${open.topic || "—"})\nend it first: ./scripts/gotchi-meet.mjs end`,
     );
   }
+  clearMeetMentionAgents();
   const chair = chairHero();
   const user = userParticipant();
   const id = newMeetingId();
@@ -378,6 +655,7 @@ export async function startMeeting(topic = "Untitled meeting") {
   };
   saveMeeting(meeting);
   setCurrent(id);
+  syncMeetMentionAgents(meeting);
   pokeAvatar();
   return meeting;
 }
@@ -405,8 +683,54 @@ export async function inviteParticipant(query) {
   meeting.participants.push(p);
   meeting.updatedAt = new Date().toISOString();
   saveMeeting(meeting);
+  syncMeetMentionAgents(loadMeeting(meeting.id) || meeting);
   pokeAvatar();
+  if (readLayoutMode() === "meet-gallery") refreshMeetGallery();
   return { meeting, participant: p };
+}
+
+export async function inviteAllParticipants() {
+  let meeting = requireOpenMeeting();
+  const roster = await loadInviteRoster({ refresh: true });
+  const inRoom = new Set((meeting.participants || []).map((p) => p.id));
+  const userId = userParticipant().id;
+  const ids = [];
+  const seen = new Set();
+
+  for (const e of roster) {
+    let hero;
+    try {
+      hero = heroFromEntry(e);
+    } catch {
+      continue; // session-without-hero
+    }
+    const id = hero?.id;
+    if (!id || seen.has(id)) continue;
+    if (inRoom.has(id)) continue;
+    if (id === userId) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+
+  const invited = [];
+  const skipped = [];
+  const errors = [];
+
+  for (const id of ids) {
+    try {
+      const r = await inviteParticipant(id);
+      invited.push(r.participant);
+    } catch (e) {
+      const msg = String(e?.message || e);
+      if (/already/i.test(msg)) skipped.push(id);
+      else errors.push({ id, error: msg });
+    }
+  }
+
+  meeting = loadCurrentMeeting() || requireOpenMeeting();
+  syncMeetMentionAgents(meeting);
+  if (readLayoutMode() === "meet-gallery") refreshMeetGallery();
+  return { meeting, invited, skipped, errors };
 }
 
 function extractJsonObject(text) {
@@ -643,11 +967,19 @@ async function chairPickSpeakers(meeting, userText) {
 async function agentReply(meeting, speakerId) {
   const p = meeting.participants.find((x) => x.id === speakerId);
   const turns = readTranscript(meeting.id);
+  const { roleId, playbook } = loadRoleForHero(speakerId);
+  const jobLines = roleId
+    ? [
+        `Persistent job: ${playbook?.title || roleId} (${roleId})`,
+        `Autonomy: ${playbook?.autonomy || ""}`,
+      ]
+    : ["Persistent job: none"];
   const prompt = [
     "You are in a GotchiBot meeting. Reply in 3–8 sentences as this gotchi. Don't chair unless you are the chair. Don't repeat others.",
     `Your id: ${speakerId}`,
     `Your name: ${p?.name || speakerId}`,
-    `Your role: ${p?.role || "agent"}`,
+    `Your meeting role: ${p?.role || "agent"}`,
+    ...jobLines,
     `Topic: ${meeting.topic}`,
     `Participants: ${(meeting.participants || []).map((x) => `${x.name || x.id} (${x.role})`).join(", ")}`,
     "",
@@ -671,35 +1003,30 @@ async function agentReply(meeting, speakerId) {
 
 function printMeetingBlock(meeting, turns, { pick } = {}) {
   const w = 56;
-  const bar = "─".repeat(w);
+  const bar = `${"─".repeat(w)}`;
   console.log(bar);
-  console.log(`GotchiBot meeting  ${meeting.id}  [${meeting.status}]`);
-  console.log(`topic   ${meeting.topic}`);
+  console.log(`# ${meeting.topic || "Untitled meeting"}  ·  ${meeting.id}`);
   const names = meeting.participants
-    .map((p) => `${p.name || p.id} (${p.role})`)
-    .join(" · ");
-  console.log(`room    ${names}`);
+    .filter((p) => p.role !== "user")
+    .map((p) => p.name || p.id)
+    .join(", ");
+  console.log(`room: ${names}`);
   if (pick?.fallback) {
-    console.log(`chair   fallback (${pick.note || "chair call failed"})`);
+    console.log(`(chair fallback: ${pick.note || "chair call failed"})`);
   } else if (pick?.note) {
-    console.log(`chair   ${pick.note}`);
+    console.log(`(chair: ${pick.note})`);
   }
   console.log(bar);
   if (!turns?.length) {
-    console.log("(no new lines this turn)");
-  }
-  for (const t of turns || []) {
-    console.log("");
-    console.log(`${participantLabel(meeting, t.speaker)}`);
-    for (const line of String(t.text || "").split("\n")) {
-      console.log(`  ${line}`);
-    }
+    console.log("(no new lines — see meet room)");
+  } else {
+    printSlackTurns(meeting, turns, { pick });
   }
   console.log("");
   console.log(bar);
   if (meeting.status === "open") {
-    console.log('next  ./scripts/gotchi-meet.mjs say "…"');
-    console.log("end   ./scripts/gotchi-meet.mjs end");
+    console.log('next  /meet say "…"');
+    console.log("end   /meet end");
   }
 }
 
@@ -799,8 +1126,10 @@ export async function endMeeting() {
   meeting.endedAt = endedAt;
   meeting.minutesPath = path;
   saveMeeting(meeting);
+  clearMeetMentionAgents();
   clearCurrent();
   pokeAvatar();
+  leaveMeetGallery();
   return { meeting, minutesPath: path };
 }
 
@@ -840,16 +1169,20 @@ function printStatus(meeting, { json } = {}) {
   console.log("");
   console.log('say    ./scripts/gotchi-meet.mjs say "…"');
   console.log("invite ./scripts/gotchi-meet.mjs invite <n|id|name>");
+  console.log("       ./scripts/gotchi-meet.mjs invite all");
   console.log("end    ./scripts/gotchi-meet.mjs end");
 }
 
 function usage() {
   console.error(`usage:
   gotchi-meet.mjs start ["topic"]
+  gotchi-meet.mjs open|room          enter meet-gallery UI (tmux)
   gotchi-meet.mjs invite <n|id|name>
+  gotchi-meet.mjs invite all
   gotchi-meet.mjs status [--json]
   gotchi-meet.mjs say "user message"
-  gotchi-meet.mjs end`);
+  gotchi-meet.mjs end
+  gotchi-meet.mjs sync-mentions`);
 }
 
 async function main() {
@@ -862,21 +1195,61 @@ async function main() {
   if (cmd === "start") {
     const topic = rest.join(" ").trim() || "Untitled meeting";
     const m = await startMeeting(topic);
+    ensureMeetGallery();
     console.log(`meeting started  ${m.id}`);
     console.log(`topic   ${m.topic}`);
     console.log(`chair   ${m.chairId}`);
     console.log(`you     ${m.participants.find((p) => p.role === "user")?.id}`);
     console.log("");
     console.log("invite  ./scripts/gotchi-meet.mjs invite <n|id|name>");
+    console.log("        ./scripts/gotchi-meet.mjs invite all");
     console.log('say     ./scripts/gotchi-meet.mjs say "…"');
+    if (tmuxSessionName()) {
+      console.log("layout  meet gallery (Meet · room | # meet)");
+    } else {
+      console.log("layout  attach tmux first: ./scripts/gotchibot tmux");
+    }
+    return;
+  }
+
+  if (cmd === "open" || cmd === "room" || cmd === "ui") {
+    const m = loadCurrentMeeting();
+    if (!m) {
+      console.error("no open meeting — start one: gotchibot meet start");
+      process.exit(1);
+    }
+    if (!tmuxSessionName()) {
+      console.error("no gotchibot tmux session — run: gotchibot tmux");
+      process.exit(1);
+    }
+    ensureMeetGallery();
+    console.log(`meet room open  ${m.id}`);
+    console.log(`topic           ${m.topic || "—"}`);
+    console.log("panes           Meet · room | # meet");
     return;
   }
 
   if (cmd === "invite") {
     const query = rest.join(" ").trim();
     if (!query) {
-      console.error("usage: gotchi-meet.mjs invite <n|id|name>");
+      console.error("usage: gotchi-meet.mjs invite <n|id|name|all>");
       process.exit(2);
+    }
+    if (query === "all" || query === "--all") {
+      const { meeting, invited, skipped, errors } = await inviteAllParticipants();
+      for (const p of invited) {
+        console.log(`invited ${p.id}  (${p.name || p.role})`);
+      }
+      for (const e of errors) {
+        console.log(`error ${e.id}  ${e.error}`);
+      }
+      console.log(
+        `summary invited ${invited.length}  skipped ${skipped.length}  errors ${errors.length}`,
+      );
+      console.log(
+        `room    ${meeting.participants.map((p) => `${p.name || p.id} (${p.role})`).join(" · ")}`,
+      );
+      return;
     }
     const { meeting, participant } = await inviteParticipant(query);
     console.log(`invited ${participant.id}  (${participant.name || participant.role})`);
@@ -900,6 +1273,18 @@ async function main() {
     const { meeting, minutesPath } = await endMeeting();
     console.log(`meeting ended  ${meeting.id}`);
     console.log(`minutes  ${minutesPath}`);
+    return;
+  }
+
+  if (cmd === "sync-mentions" || cmd === "sync_mentions") {
+    const meeting = loadCurrentMeeting();
+    const files = syncMeetMentionAgents(meeting);
+    if (!meeting) {
+      console.log("no open meeting — mention agents cleared");
+      return;
+    }
+    console.log(`synced ${files.length} mention agent(s) for ${meeting.id}`);
+    for (const f of files) console.log(`  · ${f.replace(/\.md$/, "")}`);
     return;
   }
 

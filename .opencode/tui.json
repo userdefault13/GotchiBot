@@ -23,6 +23,7 @@
   "plugin": [
     "./tui-plugins/gotchi-thought-tts.ts",
     "./tui-plugins/gotchi-sidebar-hide.ts",
-    "./tui-plugins/gotchi-spawn.ts"
+    "./tui-plugins/gotchi-spawn.ts",
+    "./tui-plugins/gotchi-queue-multitask.ts"
   ]
 }

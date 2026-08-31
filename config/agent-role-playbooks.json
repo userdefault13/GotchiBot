@@ -1,0 +1,23 @@
+{
+  "trader-desk": {
+    "title": "Trader desk",
+    "summary": "Own Gotchi-Trader paper desk health and PnL reporting.",
+    "skills": ["gotchi-trader-monitor", "gotchi-trader-improve", "market-news-feed"],
+    "reportCmd": "./scripts/gotchi-trader-desk.mjs status",
+    "autonomy": "On schedule/cron and when asked: check desk health; alert first; never live execution; never print secrets."
+  },
+  "infra-monitor": {
+    "title": "Infra home monitor",
+    "summary": "Own iMac Docker/subgraph/tunnel health.",
+    "skills": ["infra-recover"],
+    "reportCmd": "./scripts/infra-monitor-cron.mjs --json",
+    "autonomy": "Cron ticks the checks; when asked report latest sessions/infra-logs; on degrade follow infra-recover (paper-only)."
+  },
+  "orchestrator": {
+    "title": "Orchestrator",
+    "summary": "Chair/delegate — do not DIY sub-agent jobs.",
+    "skills": ["delegate-first"],
+    "reportCmd": "./scripts/agent-focus.mjs status",
+    "autonomy": "Delegate-first; merge results; stay gotchi/ORCH."
+  }
+}

@@ -34,9 +34,9 @@ const __DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__DIR, "..");
 const RELAY_SCRIPT = `${ROOT}/scripts/opencode-gotchi-relay.mjs`;
 const RELAY_STATE = `${ROOT}/sessions/.gotchi-relay.json`;
-const LOCAL_MODEL = (process.env.GOTCHIBOT_OPENCODE_MODEL || "opencode/hy3-free").trim();
+const LOCAL_MODEL = (process.env.GOTCHIBOT_OPENCODE_MODEL || "opencode/nemotron-3.5-lightning-free").trim();
 const OPENCLAW_MODEL = (process.env.GOTCHIBOT_OPENCLAW_OPENCODE_MODEL || "openclaw/orchestrator").trim();
-// Gotchi TUI always starts on Hy3. Orchestrator model is status-only unless forced.
+// Gotchi TUI always starts on Lightning Free. Orchestrator model is status-only unless forced.
 const TUI_MODEL = process.env.GOTCHIBOT_GOTCHI_TUI_MODEL?.trim() || LOCAL_MODEL;
 const RELAY_PORT = Number(process.env.GOTCHIBOT_GOTCHI_RELAY_PORT || 18791);
 

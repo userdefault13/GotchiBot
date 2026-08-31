@@ -14,10 +14,25 @@ import { assertRemoteReady, materializeKey, runSsh } from "./remote-lib.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OPENCLAW_REPO = `${ROOT}/../openclaw`;
-const OPENROUTER_DEFAULT_MODEL =
+const PINNED_MODEL_PATH = `${ROOT}/sessions/.gotchi-model.env`;
+const OPENCODE_GO_DEFAULT_MODEL =
   process.env.GOTCHIBOT_OPENCLAW_MODEL?.trim() ||
+  readPinnedOpencodeModel() ||
+  "opencode-go/kimi-k3";
+const OPENROUTER_DEFAULT_MODEL =
+  process.env.GOTCHIBOT_OPENCLAW_OPENROUTER_MODEL?.trim() ||
   "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free";
 const CF_FALLBACK_MODEL = "cloudflare-wai/@cf/zai-org/glm-4.7-flash";
+
+function readPinnedOpencodeModel() {
+  try {
+    const pin = readFileSync(PINNED_MODEL_PATH, "utf8");
+    const m = pin.match(/^export GOTCHIBOT_OPENCODE_MODEL=(.+)$/m);
+    return m?.[1]?.trim() || "";
+  } catch {
+    return "";
+  }
+}
 
 function shellQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -41,6 +56,11 @@ function resolveProviderSecrets(localEnv = readLocalOpenclawEnv()) {
   let cloudflareAccount = process.env.CLOUDFLARE_ACCOUNT_ID || envMatch(localEnv, "CLOUDFLARE_ACCOUNT_ID");
   let cloudflareToken = process.env.CLOUDFLARE_API_TOKEN || envMatch(localEnv, "CLOUDFLARE_API_TOKEN");
   let openrouterKey = process.env.OPENROUTER_API_KEY || envMatch(localEnv, "OPENROUTER_API_KEY");
+  let opencodeKey =
+    process.env.OPENCODE_API_KEY ||
+    process.env.OPENCODE_ZEN_API_KEY ||
+    envMatch(localEnv, "OPENCODE_API_KEY") ||
+    envMatch(localEnv, "OPENCODE_ZEN_API_KEY");
   if (!gatewayToken) {
     gatewayToken = spawnSync("openssl", ["rand", "-hex", "32"], { encoding: "utf8" }).stdout.trim();
   }
@@ -48,16 +68,26 @@ function resolveProviderSecrets(localEnv = readLocalOpenclawEnv()) {
   let primaryModel = CF_FALLBACK_MODEL;
   if (explicitModel) {
     primaryModel = explicitModel;
+  } else if (opencodeKey) {
+    primaryModel = OPENCODE_GO_DEFAULT_MODEL;
   } else if (openrouterKey) {
     primaryModel = OPENROUTER_DEFAULT_MODEL;
   } else if (cloudflareToken && cloudflareAccount) {
     primaryModel = CF_FALLBACK_MODEL;
   }
-  return { gatewayToken, cloudflareAccount, cloudflareToken, openrouterKey, primaryModel };
+  return {
+    gatewayToken,
+    cloudflareAccount,
+    cloudflareToken,
+    openrouterKey,
+    opencodeKey,
+    primaryModel,
+  };
 }
 
-function buildOpenclawEnvBody({ openrouterKey, cloudflareAccount, cloudflareToken }) {
+function buildOpenclawEnvBody({ openrouterKey, cloudflareAccount, cloudflareToken, opencodeKey }) {
   const lines = ["# GotchiBot — provider credentials for OpenClaw gateway"];
+  if (opencodeKey) lines.push(`OPENCODE_API_KEY=${opencodeKey}`);
   if (openrouterKey) lines.push(`OPENROUTER_API_KEY=${openrouterKey}`);
   if (cloudflareAccount) lines.push(`CLOUDFLARE_ACCOUNT_ID=${cloudflareAccount}`);
   if (cloudflareToken) lines.push(`CLOUDFLARE_API_TOKEN=${cloudflareToken}`);
@@ -89,7 +119,6 @@ cfg.gateway.http=cfg.gateway.http||{};
 cfg.gateway.http.endpoints=cfg.gateway.http.endpoints||{};
 cfg.gateway.http.endpoints.chatCompletions={ enabled:true };
 cfg.gateway.http.endpoints.responses={ enabled:true };
-cfg.meta={ ...(cfg.meta||{}), lastTouchedAt:new Date().toISOString() };
 const bak=cfgPath+'.bak-http-'+Date.now();
 fs.copyFileSync(cfgPath, bak);
 fs.writeFileSync(cfgPath, JSON.stringify(cfg,null,2)+'\\n');
@@ -165,13 +194,32 @@ async function main() {
 
     // Merge GotchiBot fleet into iMac ~/.openclaw/openclaw.json (preserve gateway/models).
     const secrets = resolveProviderSecrets();
-    const { gatewayToken, cloudflareAccount, cloudflareToken, openrouterKey, primaryModel } = secrets;
-    if (openrouterKey) {
+    const {
+      gatewayToken,
+      cloudflareAccount,
+      cloudflareToken,
+      openrouterKey,
+      opencodeKey,
+      primaryModel,
+    } = secrets;
+    if (opencodeKey) {
+      console.log(`→ OpenClaw primary model: ${primaryModel} (OpenCode Go)`);
+    } else if (openrouterKey) {
       console.log(`→ OpenClaw primary model: ${primaryModel} (OpenRouter)`);
     } else {
       console.warn(
-        `⚠ OPENROUTER_API_KEY missing — gateway stays on ${CF_FALLBACK_MODEL}. Run: abra set gotchibot OPENROUTER_API_KEY`,
+        `⚠ OPENCODE_API_KEY / OPENROUTER_API_KEY missing — gateway stays on ${CF_FALLBACK_MODEL}. Run: abra set gotchibot OPENCODE_API_KEY`,
       );
+    }
+
+    console.log("→ repair ~/.openclaw/openclaw.json on iMac…");
+    const repairCmd = `export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"; cd ${shellQuote(gotchiDir)} && GOTCHIBOT_OPENCLAW_MODEL=${shellQuote(primaryModel)} node scripts/openclaw-repair-config.mjs`;
+    r = runSsh(cfg, keyMat.path, repairCmd, { stdio: "pipe" });
+    if (r.stdout) process.stdout.write(r.stdout);
+    if (r.stderr) process.stderr.write(r.stderr);
+    if (r.status !== 0) {
+      console.error("config repair failed");
+      process.exit(r.status ?? 1);
     }
 
     console.log("→ merge ~/.openclaw/openclaw.json on iMac…");
@@ -200,8 +248,10 @@ try { cfg=JSON.parse(fs.readFileSync(cfgPath,'utf8')); } catch { cfg={ gateway:{
 cfg.agents=cfg.agents||{};
 const inc='\\x24include';
 cfg.agents.defaults={ ...(cfg.agents.defaults||{}), [inc]:'./gotchibot.defaults.json5', sandbox:{ mode:'off' }, model:{ primary } };
-cfg.agents.list={ [inc]:'./gotchibot-fleet.list.json5' };
-cfg.messages={ messagePrefix:'[Gotchi] ' };
+cfg.agents.entries={ [inc]:'./gotchibot-fleet.entries.json5' };
+delete cfg.agents.list;
+delete cfg.messages;
+if (cfg.meta) delete cfg.meta.lastTouchedAt;
 cfg.gateway=cfg.gateway||{};
 cfg.gateway.http=cfg.gateway.http||{};
 cfg.gateway.http.endpoints=cfg.gateway.http.endpoints||{};
@@ -214,7 +264,6 @@ try {
 } catch (e) {
   console.warn('models merge skipped:', modelsPath, e.message);
 }
-cfg.meta={ ...(cfg.meta||{}), lastTouchedAt:new Date().toISOString() };
 fs.writeFileSync(cfgPath, JSON.stringify(cfg,null,2)+'\\n');
 console.log('merged', cfgPath, 'primary='+primary);
 "
@@ -227,7 +276,12 @@ console.log('merged', cfgPath, 'primary='+primary);
       process.exit(r.status ?? 1);
     }
 
-    const envBody = buildOpenclawEnvBody({ openrouterKey, cloudflareAccount, cloudflareToken });
+    const envBody = buildOpenclawEnvBody({
+      openrouterKey,
+      cloudflareAccount,
+      cloudflareToken,
+      opencodeKey,
+    });
     if (envBody.trim()) {
       console.log("→ write ~/.openclaw/.env (provider credentials)…");
       const envScript = `
@@ -243,7 +297,7 @@ echo wrote "$OC/.env"
       if (r.stdout) process.stdout.write(r.stdout);
       if (r.stderr) process.stderr.write(r.stderr);
     } else {
-      console.warn("⚠ No provider credentials — set OPENROUTER_API_KEY and/or Cloudflare vars in abra");
+      console.warn("⚠ No provider credentials — set OPENCODE_API_KEY and/or OPENROUTER_API_KEY in abra");
     }
 
     // Docker extra mount + bootstrap openclaw repo if needed, then restart gateway.
@@ -276,6 +330,7 @@ OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:latest
 OPENCLAW_EXTRA_MOUNTS=${gotchiDir}:${gotchiDir}:rw
 OPENCLAW_SKIP_ONBOARDING=1
 OPENROUTER_API_KEY=${openrouterKey}
+OPENCODE_API_KEY=${opencodeKey}
 CLOUDFLARE_ACCOUNT_ID=${cloudflareAccount}
 CLOUDFLARE_API_TOKEN=${cloudflareToken}
 ENV

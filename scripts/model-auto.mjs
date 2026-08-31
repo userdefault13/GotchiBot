@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Auto-pick a free, currently listed model.
- *   node scripts/model-auto.mjs pick [--probe] [--json]
+ *   node scripts/model-auto.mjs pin [--probe] [--json]
  *   node scripts/model-auto.mjs list [--json]
  *   node scripts/model-auto.mjs resolve <alias>
  *
@@ -14,11 +14,20 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CFG_PATH = `${ROOT}/config/models.auto.json`;
 const CACHE_PATH = `${ROOT}/sessions/.model-auto.json`;
+const PIN_PATH = `${ROOT}/sessions/.gotchi-model.env`;
 const CATALOG_URL = "https://openrouter.ai/api/v1/models";
 const KEY_URL = "https://openrouter.ai/api/v1/key";
 const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 const DEFAULT_CFG = {
+  goPrefer: [
+    "opencode-go/kimi-k3",
+    "opencode-go/glm-5.3-flash",
+    "opencode-go/glm-5.3",
+    "opencode-go/glm-5.2",
+    "opencode-go/gpt-5.6-luna",
+    "opencode-go/grok-4.6",
+  ],
   prefer: [
     "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
     "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
@@ -29,10 +38,11 @@ const DEFAULT_CFG = {
     "openrouter/minimax/minimax-m2.7:free",
   ],
   skip: [
+    "opencode/hy3-free",
     "openrouter/nvidia/nemotron-3.5-content-safety:free",
     "openrouter/openrouter/free",
   ],
-  lastResort: "opencode/hy3-free",
+  lastResort: "opencode/nemotron-3.5-lightning-free",
   ttlOkSec: 0,
   ttlFailSec: 1800,
 };
@@ -61,7 +71,14 @@ function saveCache(data) {
 function oc(id) {
   const s = String(id || "").trim();
   if (!s) return "";
-  if (s.startsWith("openrouter/") || s.startsWith("opencode/") || s.startsWith("ollama/") || s.startsWith("nvidia-nim/")) return s;
+  if (
+    s.startsWith("openrouter/") ||
+    s.startsWith("opencode-go/") ||
+    s.startsWith("opencode/") ||
+    s.startsWith("ollama/") ||
+    s.startsWith("nvidia-nim/") ||
+    s.startsWith("deepseek/")
+  ) return s;
   return `openrouter/${s}`;
 }
 
@@ -128,13 +145,26 @@ async function ollamaUp() {
   }
 }
 
+function hasOpencodeKey() {
+  return !!(process.env.OPENCODE_API_KEY || process.env.OPENCODE_ZEN_API_KEY);
+}
+
+function buildPrefer(cfg) {
+  const skip = new Set((cfg.skip || []).map(oc));
+  const base = (cfg.prefer || []).map(oc).filter((id) => !skip.has(id));
+  if (!hasOpencodeKey()) return base;
+  const go = (cfg.goPrefer || []).map(oc).filter((id) => !skip.has(id));
+  const seen = new Set(go);
+  return [...go, ...base.filter((id) => !seen.has(id))];
+}
 function aliases() {
   return {
     auto: "AUTO",
     free: "AUTO",
-    hy3: "opencode/hy3-free",
-    nim: "opencode/hy3-free",
-    fast: "opencode/hy3-free",
+    go: hasOpencodeKey() ? "opencode-go/kimi-k3" : "AUTO",
+    hy3: "opencode/nemotron-3.5-lightning-free",
+    nim: "opencode/nemotron-3.5-lightning-free",
+    fast: "opencode/nemotron-3.5-lightning-free",
     heavy: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
     ultra: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
     lightning: "openrouter/nvidia/nemotron-3.5-lightning:free",
@@ -142,6 +172,11 @@ function aliases() {
     pro: "deepseek/deepseek-v4-pro",
     local: "ollama/qwen2.5:3b",
   };
+}
+
+function pinModel(model) {
+  mkdirSync(`${ROOT}/sessions`, { recursive: true });
+  writeFileSync(PIN_PATH, `export GOTCHIBOT_OPENCODE_MODEL=${model}\n`);
 }
 
 export async function pickModel({ probe = false, json = false } = {}) {
@@ -172,7 +207,7 @@ export async function pickModel({ probe = false, json = false } = {}) {
   }
 
   const skip = new Set((cfg.skip || []).map(oc));
-  const prefer = (cfg.prefer || []).map(oc).filter((id) => !skip.has(id));
+  const prefer = buildPrefer(cfg);
   const extras = [...listed].filter((id) => !prefer.includes(id) && !skip.has(id));
   extras.sort();
   const candidates = [...prefer, ...extras, cfg.lastResort];
@@ -247,14 +282,27 @@ if (isCli) {
   const rest = argv.filter((a) => !a.startsWith("--") && a !== cmd);
   const out = async () => {
     if (cmd === "pick") return pickModel({ probe, json: true });
+    if (cmd === "pin") {
+      const r = await pickModel({ probe, json: true });
+      pinModel(r.model);
+      return { ...r, pinned: PIN_PATH };
+    }
     if (cmd === "list") {
       const cfg = loadCfg();
       let listed = [];
       try { listed = [...await fetchCatalog()].sort(); } catch { listed = []; }
-      return { prefer: cfg.prefer, lastResort: cfg.lastResort, listed, cache: loadCache() };
+      return {
+        goPrefer: cfg.goPrefer,
+        prefer: cfg.prefer,
+        effectivePrefer: buildPrefer(cfg),
+        opencodeKey: hasOpencodeKey(),
+        lastResort: cfg.lastResort,
+        listed,
+        cache: loadCache(),
+      };
     }
     if (cmd === "resolve") return resolveAlias(rest[0] || "auto", { probe, json: true });
-    throw new Error("usage: model-auto.mjs pick|list|resolve [alias] [--json] [--probe]");
+    throw new Error("usage: model-auto.mjs pick|pin|list|resolve [alias] [--json] [--probe]");
   };
   out()
     .then((r) => {

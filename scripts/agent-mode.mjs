@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Persist OpenCode primary agent (gotchi | verse | plan | build | ask).
+ * Persist OpenCode primary agent (gotchi | sub | verse | plan | build | ask).
  *
  * usage:
  *   node scripts/agent-mode.mjs
- *   node scripts/agent-mode.mjs set ask
+ *   node scripts/agent-mode.mjs set sub
  *   node scripts/agent-mode.mjs cycle [--reverse] [--restart]
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
@@ -14,9 +14,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE = `${ROOT}/sessions/.agent-mode.json`;
-const ALIAS = { mint: "ask" };
-const MODES = new Set(["gotchi", "verse", "plan", "build", "ask"]);
-const CYCLE = ["gotchi", "verse", "plan", "build", "ask"];
+const ALIAS = { mint: "ask", "sub-agent": "sub", subagent: "sub" };
+const MODES = new Set(["gotchi", "sub", "verse", "plan", "build", "ask"]);
+const CYCLE = ["gotchi", "sub", "verse", "plan", "build", "ask"];
 
 function load() {
   try {
@@ -37,6 +37,8 @@ function paneLabel(agent) {
   switch (agent) {
     case "ask":
       return " Ask ";
+    case "sub":
+      return " Sub ";
     case "verse":
       return " Verse ";
     case "plan":
@@ -110,7 +112,7 @@ if (cmd === "set") {
   const raw = rest.find((a) => !a.startsWith("--"));
   const agent = ALIAS[raw] || raw;
   if (!agent || !MODES.has(agent)) {
-    console.error(`usage: agent-mode.mjs set gotchi|verse|plan|build|ask [--restart]`);
+    console.error(`usage: agent-mode.mjs set gotchi|sub|verse|plan|build|ask [--restart]`);
     process.exit(2);
   }
   save(agent);
@@ -131,5 +133,5 @@ if (cmd === "set") {
   process.exit(0);
 }
 
-console.error(`usage: agent-mode.mjs [get] | set gotchi|verse|plan|build|ask [--restart] | cycle [--reverse] [--restart]`);
+console.error(`usage: agent-mode.mjs [get] | set gotchi|sub|verse|plan|build|ask [--restart] | cycle [--reverse] [--restart]`);
 process.exit(2);

@@ -276,10 +276,20 @@ handle_key() {
 
 pin() { printf '%s\n' "$1" > "$PIN"; }
 
+# Gallery / tile mode: GOTCHIBOT_AVATAR_HERO pins this pane to one hero.
+gallery_hero() {
+  local h="${GOTCHIBOT_AVATAR_HERO:-}"
+  [ -n "$h" ] || return 0
+  printf '%s\n' "$h"
+}
+
 active_status() {
-  if [ -f "$PIN" ]; then
-    local k
+  local k
+  k="$(gallery_hero)"
+  if [ -z "$k" ] && [ -f "$PIN" ]; then
     k="$(tr -d '[:space:]' < "$PIN")"
+  fi
+  if [ -n "$k" ]; then
     case "$k" in
       s*) [ -f "$SESSIONS/$k/state.env" ] && grep -oE '^status=[a-z]+' "$SESSIONS/$k/state.env" | cut -d= -f2 && return ;;
     esac
@@ -310,6 +320,10 @@ active_status() {
         echo "$st"
         return
       fi
+    fi
+    if [ -n "$(gallery_hero)" ]; then
+      echo "idle"
+      return
     fi
   fi
   for d in "$SESSIONS"/s*/state.env; do
@@ -365,6 +379,10 @@ put_line() {
 }
 
 role_label() {
+  if [ -n "$(gallery_hero)" ]; then
+    echo "${GOTCHIBOT_AVATAR_LABEL:-gallery}"
+    return
+  fi
   if [ -f "$FOCUS" ] && grep -q '"mode": "sub"' "$FOCUS" 2>/dev/null; then
     echo "sub-agent"
   else
@@ -383,6 +401,12 @@ orch_id() {
 }
 
 focus_hero() {
+  local g
+  g="$(gallery_hero)"
+  if [ -n "$g" ]; then
+    printf '%s\n' "$g"
+    return
+  fi
   [ -f "$FOCUS" ] || return 0
   node -e '
     const fs=require("fs");
@@ -715,13 +739,20 @@ render() {
 
   local role roster_raw
   role="$(role_label)"
-  roster_raw="$(load_roster_json)"
+  local gallery=0
+  [ -n "$(gallery_hero)" ] && gallery=1
 
   local grid_budget=14
   [ "$pane_h" -lt 28 ] && grid_budget=10
   [ "$pane_h" -gt 40 ] && grid_budget=18
   local main_budget=$((pane_h - grid_budget - 3))
   [ "$main_budget" -lt 10 ] && main_budget=10
+  # Meet-gallery tiles: face + caption only (no roster strip).
+  if [ "$gallery" = 1 ]; then
+    main_budget=$((pane_h - 2))
+    [ "$main_budget" -lt 6 ] && main_budget=6
+    grid_budget=0
+  fi
 
   # Pinned header from row 0 — orch face never moves. Pagination swaps the 3-col row.
   # (main art + ── orchestrator ── caption + "other cAavegotchis" label)
@@ -741,6 +772,7 @@ render() {
 
   local role_color=$'\033[38;5;39m'
   [ "$role" = "sub-agent" ] && role_color=$'\033[38;5;213m'
+  [ "$gallery" = 1 ] && role_color=$'\033[38;5;51m'
   local status_color=$'\033[38;5;250m'
   case "$status" in
     working|running|occupied) status_color=$'\033[38;5;208m' ;;
@@ -770,11 +802,19 @@ render() {
   done
   put_line "$row" "$(block_pad_line "$caption" "$cols" "$block_lp")"
   row=$((row + 1))
+
+  if [ "$gallery" = 1 ]; then
+    printf '\033[1;1H'
+    return
+  fi
+
   put_line "$row" ""
   row=$((row + 1))
 
   put_line "$row" $'\033[38;5;245mother cAavegotchis\033[0m'
   row=$((row + 1))
+
+  roster_raw="$(load_roster_json)"
 
   local ids
   ids="$(printf '%s' "$roster_raw" | node -e '

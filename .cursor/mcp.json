@@ -13,6 +13,9 @@
     "cron402": {
       "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/cron402.sh"
     },
+    "github": {
+      "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/github.sh"
+    },
     "base-mcp": {
       "url": "https://mcp.base.org"
     },

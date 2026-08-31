@@ -77,7 +77,7 @@ they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
 
 | Tier | Model | Use |
 |---|---|---|
-| default | `opencode/hy3-free` (`--model nim`) | talk, route, spawn, summarize (no API key) |
+| default | `opencode/nemotron-3.5-lightning-free` (`--model nim`; hy3 retired) | talk, route, spawn, summarize (no API key) |
 | task | Nemotron 3 Lightning / Ultra | also fine for tasking; `/model heavy` = Ultra |
 | hard logic | `./scripts/cursor-cli.mjs` → `cursor-agent` | coding / debug / patches (Cursor Pro+ on **MBP or iMac**) |
 | escalation | `deepseek/deepseek-v4-pro` | paid OpenCode fallback (needs DEEPSEEK_API_KEY) |
@@ -111,6 +111,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 - Everything through abracadabra. `abra run gotchibot -- <cmd>`
 - Never ask Julius to paste a key. Never write secrets to disk, session logs, or `output.md`.
+- **GitHub MCP:** `GOTCHIBOT_GITHUB_PAT` in abra project `gotchibot` → `./scripts/mcp/github.sh` (Docker `ghcr.io/github/github-mcp-server`).
 
 ## Orchestration commands
 
@@ -130,7 +131,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 ## Models
 
-- Bot task / routing / talk: `opencode/hy3-free` (`nim`, default). Nemotron 3 Lightning/Ultra is also fine for tasking. `/model heavy` is still Ultra. Do not switch OpenCode to a Cursor provider.
+- Bot task / routing / talk: `opencode/nemotron-3.5-lightning-free` (`nim`, default; Hy3 Free retired on Zen). Nemotron 3 Ultra is also fine for tasking. `/model heavy` is still Ultra. Do not switch OpenCode to a Cursor provider.
 - Hard coding / debugging / investigation: `./scripts/cursor-cli.mjs run "…"` → `cursor-agent` (Julius's logged-in Cursor Pro+ on **MBP or iMac**). Never `--api-key`.
 - Paid OpenCode fallback: `deepseek/deepseek-v4-pro` (needs `DEEPSEEK_API_KEY` via abra)
 - Private/offline: local Ollama on the iMac

@@ -1,6 +1,5 @@
 ---
 description: Shared meeting room — start, invite, say, end (chair-led, in OpenCode)
-agent: gotchi
 ---
 
 Run immediately, do not ask. `$ARGUMENTS` is the meet subcommand.
@@ -21,8 +20,27 @@ Empty `$ARGUMENTS` (`/meet`) prints status of the current meeting.
 | --- | --- |
 | `/meet start` or `/meet start trader desk` | `start ["topic"]` |
 | `/meet invite LINK` | `invite <n\|id\|name>` — same roster as `/switch` |
+| `/meet invite all` | `invite all` |
 | `/meet` | `status` |
-| `/meet say let's recap @LINK` | `say "…"` — the working turn |
+| `/meet say let's recap @LINK` | `say "…"` — the working turn (prefer this for transcript) |
 | `/meet end` | `end` (writes minutes, clears current) |
 
-Show the script stdout to Julius (the meeting block). Do not invent agents — only cartridge / OpenClaw ids the script resolves. Stay in this TUI; do not open Discord or a new TUI.
+**Only** use `gotchi-meet.mjs` for meeting flow. Meet **menu** opens **meet-gallery** layout:
+collapsed files + **Meet · room** (Zoom carousel + OpenCode-style **meet ›** prompter — **no OpenCode**) + **# meet**
+(iMessage-style transcript with thumbnail gotchi avatars). Type in the prompter
+(`@LINK …`); Tab completes @mentions; `/end` leaves.
+`/meet end` restores orch chat. Slash `/meet` from OpenCode still works when not in the room UI.
+
+While a meeting is open, `@` autocomplete lists invited gotchis (restart OpenCode /
+reload if new invites don't appear). Meeting `@` stubs call headless
+`openclaw-fleet.mjs chat --agent <id>` and return stdout **verbatim**.
+
+**`@LINK` only when a meeting is open** and Julius explicitly @mentions. Outside a
+meeting, stubs reply with one line: use `/switch <id>` then chat, or `/meet say`.
+Prefer telling Julius: `/meet say "… @LINK"` for transcripted turns.
+
+Roles: `config/agent-roles.json` + `config/agent-role-playbooks.json`. After role
+changes: `./scripts/openclaw-fleet.mjs sync` (and `/meet` invite / `sync-mentions`
+for `@` stubs).
+
+Show script stdout to Julius. Do not invent agents. Stay in this TUI.

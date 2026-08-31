@@ -2,7 +2,7 @@
 description: Gotchiverse map — list Paarcel travel cities (Daark Forest, Citadel, …)
 mode: subagent
 color: "#22D3EE"
-model: opencode/hy3-free
+model: opencode/nemotron-3.5-lightning-free
 temperature: 0.2
 permission:
   edit: deny

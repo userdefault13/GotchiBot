@@ -79,7 +79,7 @@ If one coherent task, return a single-element array.`;
     [
       "run",
       "-m",
-      "opencode/hy3-free",
+      "opencode/nemotron-3.5-lightning-free",
       "--title",
       "gotchibot:multitask",
       `${system}\n\nRequest:\n${text}`,

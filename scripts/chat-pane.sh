@@ -23,7 +23,7 @@ export PATH="${HOME}/.openclaw/bin:${PATH}"
 # shellcheck source=/dev/null
 [ -f "$ROOT/scripts/openclaw-gateway-env.sh" ] && source "$ROOT/scripts/openclaw-gateway-env.sh"
 if [ -z "${GOTCHIBOT_OPENCODE_MODEL:-}" ]; then
-  MODEL="$(node "$ROOT/scripts/model-auto.mjs" pick 2>/dev/null || echo opencode/hy3-free)"
+  MODEL="$(node "$ROOT/scripts/model-auto.mjs" pick 2>/dev/null || echo opencode/nemotron-3.5-lightning-free)"
   export GOTCHIBOT_OPENCODE_MODEL="$MODEL"
 else
   MODEL="$GOTCHIBOT_OPENCODE_MODEL"
@@ -75,6 +75,14 @@ refresh_avatar_pane() {
   fi
 }
 
+poke_meet_channel_pane() {
+  if [ -n "${TMUX:-}" ]; then
+    local pid
+    pid="$(tmux display -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.2" '#{pane_pid}' 2>/dev/null || true)"
+    [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true
+  fi
+}
+
 onboarding_complete() {
   node "$ROOT/scripts/onboarding-lib.mjs" check 2>/dev/null
 }
@@ -95,9 +103,28 @@ run_onboarding_gate() {
   if [ "$st" -eq 2 ]; then
     quit_to_terminal
   fi
+  # 4 = cockpit finished meet setup; caller switches to meet room layout.
+  if [ "$st" -eq 4 ]; then
+    return 4
+  fi
   if [ "$st" -ne 0 ]; then
     exit "$st"
   fi
+  return 0
+}
+
+enter_meet_room() {
+  export GOTCHIBOT_SKIP_COCKPIT=1
+  export GOTCHIBOT_SKIP_ONBOARDING=1
+  if [ -n "${TMUX:-}" ]; then
+    local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+    tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" enter-meet-gallery" || {
+      echo "gotchibot: meet layout failed (window too small?)" >&2
+    }
+    # If layout respawned work.1 we never reach here; otherwise start room in-place.
+    exec "$ROOT/scripts/meet-room-pane.sh"
+  fi
+  exec "$ROOT/scripts/meet-room-pane.sh"
 }
 
 show_cockpit() {
@@ -105,8 +132,16 @@ show_cockpit() {
     echo "GotchiBot cockpit needs an interactive terminal." >&2
     exit 1
   fi
+  set +e
   run_onboarding_gate --cockpit
+  local st=$?
+  set -e
   refresh_avatar_pane
+  if [ "$st" -eq 4 ]; then
+    enter_meet_room
+  elif [ "$st" -ne 0 ]; then
+    exit "$st"
+  fi
 }
 
 # /cockpit — mint cAavegotchi · change orchestrator avatar (in chat pane).
@@ -120,14 +155,20 @@ show_meet() {
     echo "GotchiBot meeting room needs an interactive terminal." >&2
     exit 1
   fi
+  set +e
   run_onboarding_gate --meet
-  refresh_avatar_pane
+  local st=$?
+  set -e
+  if [ "$st" -eq 4 ]; then
+    enter_meet_room
+  elif [ "$st" -ne 0 ]; then
+    exit "$st"
+  fi
 }
 
-# /meet — shared meeting room (setup in chat pane, then OpenCode).
+# /meet — shared meeting room (setup in chat pane, then meet room UI).
 if [ "${GOTCHIBOT_MEET:-}" = "1" ]; then
   show_meet
-  export GOTCHIBOT_SKIP_COCKPIT=1
 fi
 
 # Welcome / sign-in gate until onboarding is complete.
@@ -202,7 +243,7 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
       if [ ! -x "$OPENCLAW_BIN" ]; then
         OPENCLAW_BIN=openclaw
       fi
-      if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}" ] \
+      if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ] \
         && [ "${GOTCHIBOT_SKIP_ABRA:-}" != "1" ] \
         && command -v abra >/dev/null 2>&1; then
         abra run gotchibot -- "$OPENCLAW_BIN" "${TUI_ARGS[@]}" || true
@@ -217,11 +258,11 @@ fi
 # Resolve gotchi mode (OpenCode → OpenClaw orchestrator) before launching OpenCode.
 if [ "$AGENT" = "gotchi" ] && command -v node >/dev/null 2>&1; then
   eval "$(node "$ROOT/scripts/opencode-gotchi-mode.mjs" env 2>/dev/null)" || true
-  # Gotchi TUI pins Hy3 on load (gotchi-mode now exports hy3 as GOTCHIBOT_GOTCHI_MODEL).
+  # Gotchi TUI pins Lightning Free on load (gotchi-mode exports GOTCHIBOT_GOTCHI_MODEL).
   if [ -n "${GOTCHIBOT_GOTCHI_MODEL:-}" ]; then
     MODEL="$GOTCHIBOT_GOTCHI_MODEL"
   else
-    MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/hy3-free}"
+    MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/nemotron-3.5-lightning-free}"
   fi
   if [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ] && [ -n "${TMUX:-}" ]; then
     tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (OpenClaw) " 2>/dev/null || true
@@ -262,7 +303,7 @@ fi
 
 # Inject NVIDIA/OpenRouter/etc via abracadabra when keys aren't already in env.
 # Without this, NIM models fail with "Missing Authentication header".
-if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}" ] \
+if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ] \
   && [ "${GOTCHIBOT_SKIP_ABRA:-}" != "1" ] \
   && command -v abra >/dev/null 2>&1; then
   abra run gotchibot -- opencode "${args[@]}" "$ROOT" || true

@@ -1,17 +1,17 @@
 ---
-description: List cAavegotchis + local/remote sessions; optional select N to focus avatar
-agent: gotchi
+description: Legacy alias of /switch — list agents; optional select to focus
 ---
 
-Prefer **`/switch`** for the same flow (list + switch avatar/chat). `/list` remains for compatibility.
+**Prefer `/switch`.** `/list` is the same roster for compatibility — do not run both
+or give parallel instructions. In **Sub** mode the list excludes the orchestrator.
 
-If `$ARGUMENTS` is empty, run:
+If `$ARGUMENTS` is empty:
 
 ```bash
 abra run gotchibot -- ./scripts/agent-focus.mjs list
 ```
 
-If `$ARGUMENTS` is a number or an id, prefer switch so direct-chat mode is enabled:
+If `$ARGUMENTS` is a number or id, route through switch (SUB + direct chat):
 
 ```bash
 abra run gotchibot -- ./scripts/agent-focus.mjs switch $ARGUMENTS
@@ -19,9 +19,6 @@ abra run gotchibot -- ./scripts/agent-focus.mjs switch $ARGUMENTS
 
 Fallback without abracadabra: `./scripts/agent-focus.mjs list` / `switch $ARGUMENTS`.
 
-After select/switch, tell the user:
-- Avatar pane now shows that gotchi
-- Further prompts route with `./scripts/agent-focus.mjs chat "…"` while focus is SUB
-- `/orch` returns to the orchestrator
-
-Do not invent agents. Only show what the script prints.
+After switch: avatar pinned, further messages →
+`./scripts/agent-focus.mjs chat --sub "…"`, `/orch` to return.
+Do not invent agents.

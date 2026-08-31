@@ -29,6 +29,61 @@ import {
 } from "./onboarding-lib.mjs";
 import { loadMeta, saveMeta } from "./identity.mjs";
 
+function tmuxSessionName() {
+  const env = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
+  if (process.env.TMUX) return env;
+  const r = spawnSync("tmux", ["has-session", "-t", env], { stdio: "ignore" });
+  return r.status === 0 ? env : null;
+}
+
+function meetGalleryLayout(cmd) {
+  const sess = tmuxSessionName();
+  if (!sess) return;
+  const script = `${ROOT}/scripts/orchestrator-layout.sh`;
+  const env = {
+    ...process.env,
+    GOTCHIBOT_TMUX_SESSION: sess,
+  };
+  if (cmd === "enter-meet-gallery") {
+    spawnSync(
+      "tmux",
+      ["run-shell", `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" enter-meet-gallery`],
+      { cwd: ROOT, stdio: "inherit", env },
+    );
+    return;
+  }
+  spawnSync("bash", [script, cmd], {
+    cwd: ROOT,
+    stdio: "ignore",
+    env,
+  });
+}
+
+function enterMeetGalleryLayout() {
+  meetGalleryLayout("enter-meet-gallery");
+}
+
+/** Switch tmux to meet room — must use tmux run-shell (not chat-pane child). */
+function openMeetRoomFromPane() {
+  try {
+    rl.close();
+  } catch {}
+  if (!tmuxSessionName()) {
+    console.log("\n  ✗ attach tmux first: ./scripts/gotchibot tmux\n");
+    process.exit(1);
+  }
+  enterMeetGalleryLayout();
+  process.exit(0);
+}
+
+function refreshMeetGalleryLayout() {
+  meetGalleryLayout("refresh-meet-gallery");
+}
+
+function leaveMeetGalleryLayout() {
+  meetGalleryLayout("leave-meet-gallery");
+}
+
 const rl = readline.createInterface({ input, output });
 
 function clear() {
@@ -771,24 +826,39 @@ async function startMeetingMenu(heroes) {
   } catch (e) {
     console.log(`  ✗ failed to load meeting room: ${e.message || e}`);
     await pause();
+    leaveMeetGalleryLayout();
     return false;
   }
   const open = meet.loadCurrentMeeting();
   if (open) {
     console.log(`  A meeting is already open: ${open.id}`);
     console.log(`  topic  ${open.topic || "—"}`);
-    console.log("  End it first: ./scripts/gotchi-meet.mjs end\n");
+    console.log("  Resume to rejoin, or end first: ./scripts/gotchi-meet.mjs end\n");
     const next = await choose("Meeting", [
+      { key: "resume", label: "Resume current meeting" },
       { key: "end", label: "End current meeting, then start a new one" },
       { key: "back", label: "Back to cockpit" },
     ]);
-    if (next?.key !== "end") return false;
+    if (!next || next.key === "back") {
+      leaveMeetGalleryLayout();
+      return false;
+    }
+    if (next.key === "resume") {
+      console.log(`\n  Meeting ${open.id} is open.`);
+      console.log('  In meet room: type a message · ,/. page · /end');
+      return true;
+    }
+    if (next.key !== "end") {
+      leaveMeetGalleryLayout();
+      return false;
+    }
     try {
       await meet.endMeeting();
       console.log("  ✓ ended");
     } catch (e) {
       console.log(`  ✗ ${e.message || e}`);
       await pause();
+      leaveMeetGalleryLayout();
       return false;
     }
   }
@@ -800,6 +870,7 @@ async function startMeetingMenu(heroes) {
   } catch (e) {
     console.log(`\n  ✗ ${e.message || e}`);
     await pause();
+    leaveMeetGalleryLayout();
     return false;
   }
   console.log(`\n  ✓ meeting ${meeting.id}`);
@@ -820,10 +891,31 @@ async function startMeetingMenu(heroes) {
         id: h.id,
         label: `${h.id}${h.collateral ? ` · ${h.collateral}` : ""}${h.name ? ` · ${h.name}` : ""}`,
       })),
+      { key: "all", label: "Invite all gotchis" },
       { key: "done", label: "Done inviting" },
     ];
     const pick = await choose("Invite who?", options);
     if (!pick || pick.key === "done") break;
+    if (pick.key === "all") {
+      try {
+        const r = await meet.inviteAllParticipants();
+        for (const p of r.invited) {
+          console.log(`  ✓ invited ${p.id} (${p.name || p.role})`);
+        }
+        for (const id of r.skipped) {
+          console.log(`  · skipped ${id}`);
+        }
+        for (const e of r.errors) {
+          console.log(`  ✗ error ${e.id}  ${e.error}`);
+        }
+        console.log(
+          `  summary invited ${r.invited.length}  skipped ${r.skipped.length}  errors ${r.errors.length}`,
+        );
+      } catch (e) {
+        console.log(`  ✗ ${e.message || e}`);
+      }
+      continue;
+    }
     try {
       const r = await meet.inviteParticipant(pick.id);
       console.log(`  ✓ invited ${r.participant.id} (${r.participant.name || r.participant.role})`);
@@ -836,11 +928,11 @@ async function startMeetingMenu(heroes) {
   if (!final) {
     console.log("  (no open meeting)");
     await pause();
+    leaveMeetGalleryLayout();
     return false;
   }
   console.log(`\n  Meeting ${final.id} is open.`);
-  console.log('  In OpenCode: /meet say "…"   ·   /meet end');
-  await pause("Press Enter to open the meeting room (chat)");
+  console.log('  In meet room: type a message · ,/. page · /end');
   return true;
 }
 
@@ -901,14 +993,15 @@ async function mainMenu(wallet, cartridgeId) {
     if (pick.key === "meet") {
       const opened = await startMeetingMenu(heroes);
       if (opened) {
-        // Leave cockpit — chat-pane.sh continues into OpenCode (the room).
-        if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") return;
+        if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") {
+          openMeetRoomFromPane();
+        }
         rl.close();
         const chatPane = `${ROOT}/scripts/chat-pane.sh`;
         spawnSync(chatPane, [], {
           cwd: ROOT,
           stdio: "inherit",
-          env: { ...process.env, GOTCHIBOT_SKIP_ONBOARDING: "1", GOTCHIBOT_SKIP_COCKPIT: "1" },
+          env: { ...process.env, GOTCHIBOT_SKIP_ONBOARDING: "1", GOTCHIBOT_SKIP_COCKPIT: "1", GOTCHIBOT_MEET: "1" },
         });
         process.exit(0);
       }
@@ -1017,7 +1110,7 @@ async function runCockpit() {
   }
 }
 
-/** /meet — start/invite then return so chat-pane.sh opens OpenCode. */
+/** /meet — start/invite then return so chat-pane.sh opens meet room (not OpenCode). */
 async function runMeet() {
   try {
     clearStaleSessionPin();
@@ -1028,7 +1121,19 @@ async function runMeet() {
     const cartridgeId = await ensureCartridge(wallet);
     const heroes = await loadCartridgeHeroesQuiet(cartridgeId);
     await ensureOrchestratorHero(heroes);
-    await startMeetingMenu(heroes);
+    const opened = await startMeetingMenu(heroes);
+    if (!opened) return;
+    if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") {
+      openMeetRoomFromPane();
+    }
+    rl.close();
+    const chatPane = `${ROOT}/scripts/chat-pane.sh`;
+    spawnSync(chatPane, [], {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: { ...process.env, GOTCHIBOT_SKIP_ONBOARDING: "1", GOTCHIBOT_SKIP_COCKPIT: "1", GOTCHIBOT_MEET: "1" },
+    });
+    process.exit(0);
   } finally {
     rl.close();
   }

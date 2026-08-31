@@ -37,14 +37,14 @@ dispatch_runtime() {
 model_for() {
   case "$1" in
     auto|free) node "$ROOT/scripts/model-auto.mjs" pick ;;
-    nim) echo "opencode/hy3-free" ;;
+    nim) echo "opencode/nemotron-3.5-lightning-free" ;;
     ultra) echo "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free" ;;
-    # OpenCode Zen lightning-free currently 404s; prefer NIM when key present.
+    # Prefer NIM when key present; else OpenCode Zen lightning-free.
     lightning)
       if [ -n "${NVIDIA_API_KEY:-}" ]; then
         echo "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b"
       else
-        echo "opencode/hy3-free"
+        echo "opencode/nemotron-3.5-lightning-free"
       fi
       ;;
     flash) echo "deepseek/deepseek-v4-flash" ;;
@@ -142,7 +142,7 @@ EOF
 cd "$ROOT"
 PROMPT="\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")"
 MODEL="$(model_for "$model")"
-FREE_MODEL="\$(node "$ROOT/scripts/model-fallback.mjs" free-model 2>/dev/null || echo opencode/hy3-free)"
+FREE_MODEL="\$(node "$ROOT/scripts/model-fallback.mjs" free-model 2>/dev/null || echo opencode/nemotron-3.5-lightning-free)"
 HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 if [ -n "\$HERO" ]; then
   ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
@@ -156,7 +156,7 @@ if [ "\${GOTCHIBOT_AUTO_APPROVE:-1}" = "1" ]; then
 fi
 run_opencode() {
   local m="\$1"
-  if [ "\${GOTCHIBOT_SKIP_ABRA:-}" = "1" ] || [ -n "\${NVIDIA_API_KEY:-}\${OPENROUTER_API_KEY:-}\${DEEPSEEK_API_KEY:-}" ]; then
+      if [ "\${GOTCHIBOT_SKIP_ABRA:-}" = "1" ] || [ -n "\${NVIDIA_API_KEY:-}\${OPENROUTER_API_KEY:-}\${DEEPSEEK_API_KEY:-}\${OPENCODE_API_KEY:-}\${OPENCODE_ZEN_API_KEY:-}" ]; then
     opencode run -m "\$m" --title "gotchibot:$id" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" \
       > "$dir/output.md" 2> "$dir/output.log"
   elif command -v abra >/dev/null 2>&1; then

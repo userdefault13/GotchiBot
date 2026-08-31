@@ -57,6 +57,15 @@ layout_correct() {
   [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *avatar-pane* ]]
 }
 
+meet_gallery_correct() {
+  layout_ready || return 1
+  local c0 c1 c2
+  c0="$(pane_start_cmd 0)"
+  c1="$(pane_start_cmd 1)"
+  c2="$(pane_start_cmd 2)"
+  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *meet-room* ]] && [[ "$c2" == *meet-channel* ]]
+}
+
 rebuild_panes() {
   local need=$((sidebar_collapsed + min_center + min_right + 2))
   tmux resize-window -t "$sess:work" -x "$win_w_default" -y "$win_h_default" 2>/dev/null || true
@@ -67,6 +76,11 @@ rebuild_panes() {
   tmux select-pane -t "$sess:work.0"
   tmux split-window -h -b -t "$sess:work.0" -l "$sidebar_collapsed"
   layout_ready || { echo "orchestrator layout failed (window too small? need ${need} cols)" >&2; return 1; }
+  # Splits reuse the surviving pane as center — respawn all three so work.1 is always chat.
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+  mark_avatar_pane
 }
 
 save_layout() {
@@ -100,6 +114,36 @@ mark_avatar_pane() {
 }
 
 # Mouse on for prev/next clicks. Wheel on the avatar pane is ignored.
+# Meet gallery: wheel on # meet scrolls transcript.
+install_meet_gallery_mouse() {
+  local ch_if='#{==:#{@gotchibot-meet-channel},1}'
+  local av_if='#{==:#{@gotchibot-avatar},1}'
+  local scroll_up="$ROOT/scripts/meet-channel-scroll.sh up"
+  local scroll_down="$ROOT/scripts/meet-channel-scroll.sh down"
+  local def_wheel='if-shell -F "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"'
+  local def_drag='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
+
+  tmux set-option -g mouse on 2>/dev/null || true
+  tmux set-option -t "$sess" mouse on 2>/dev/null || true
+
+  tmux unbind-key -n WheelUpPane 2>/dev/null || true
+  tmux unbind-key -n WheelDownPane 2>/dev/null || true
+  tmux unbind-key -n MouseDown1Pane 2>/dev/null || true
+  tmux unbind-key -n MouseDrag1Pane 2>/dev/null || true
+
+  tmux bind-key -n WheelUpPane \
+    if-shell -F "$ch_if" "run-shell '$scroll_up'" \
+    "if-shell -F \"#{!=:#{@gotchibot-avatar},1}\" \"$def_wheel\"" 2>/dev/null || true
+  tmux bind-key -n WheelDownPane \
+    if-shell -F "$ch_if" "run-shell '$scroll_down'" \
+    "if-shell -F \"#{!=:#{@gotchibot-avatar},1}\" \"$def_wheel\"" 2>/dev/null || true
+  tmux bind-key -n MouseDown1Pane \
+    if-shell -F "$av_if" "run-shell '$ROOT/scripts/avatar-pane.sh sb-click #{mouse_x} #{mouse_y} #{pane_pid}'" \
+    'select-pane -t = ; send-keys -M' 2>/dev/null || true
+  tmux bind-key -n MouseDrag1Pane \
+    if-shell -F "#{&&:#{!=:#{@gotchibot-meet-channel},1},#{!=:#{@gotchibot-avatar},1}}" "$def_drag" 2>/dev/null || true
+}
+
 # Chat/files/cockpit keep default (OpenCode mouse / send-keys -M).
 # NEVER send-keys -t #{pane_id} — that format is empty and errors in the status bar.
 # Match avatar ONLY via @gotchibot-avatar=1 (never pane_index).
@@ -197,8 +241,168 @@ expand_sidebar() {
   set_layout_mode normal
 }
 
+guard_not_meet_gallery() {
+  if [ "$(layout_mode)" = "meet-gallery" ]; then
+    tmux display-message -t "$sess" "meet gallery — /meet end (or leave menu) to change layout" 2>/dev/null || true
+    return 1
+  fi
+  return 0
+}
+
+pane_count() {
+  tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' '
+}
+
+# Shrink window back to files | chat | one right pane (kill meet tiles).
+collapse_to_three_panes() {
+  local count
+  count="$(pane_count)"
+  while [ "${count:-0}" -gt 3 ]; do
+    tmux kill-pane -t "$sess:work.$((count - 1))" 2>/dev/null || break
+    count="$(pane_count)"
+  done
+  if [ "${count:-0}" -lt 3 ]; then
+    require_three_panes || return 1
+  fi
+  return 0
+}
+
+mark_meet_tile() {
+  local target="$1" hero="${2:-}"
+  tmux set-option -p -t "$target" @gotchibot-meet-tile 1 2>/dev/null || true
+  if [ -n "$hero" ]; then
+    tmux set-option -p -t "$target" @gotchibot-hero "$hero" 2>/dev/null || true
+  fi
+  tmux set-option -p -t "$target" history-limit 0 2>/dev/null || true
+  # Allow mouse clicks on avatar tiles (same as main avatar).
+  tmux set-option -p -t "$target" @gotchibot-avatar 1 2>/dev/null || true
+}
+
+short_border_label() {
+  local label="$1"
+  label="$(printf '%s' "$label" | tr -d '\n' | cut -c1-12)"
+  printf ' %s ' "$label"
+}
+
+# Rebuild meet layout: Zoom carousel + prompt (work.1) + iMessage transcript (work.2).
+build_meet_gallery_tiles() {
+  collapse_to_three_panes || return 1
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  collapse_sidebar
+  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
+
+  local channel_w
+  channel_w=$(( $(window_width) * 42 / 100 ))
+  [ "$channel_w" -lt 44 ] && channel_w=44
+  [ "$channel_w" -gt 72 ] && channel_w=72
+
+  if [ "$(pane_count)" -lt 3 ]; then
+    tmux split-window -h -t "$sess:work.1" -l "$channel_w" \
+      "cd \"$ROOT\" && exec ./scripts/meet-channel-pane.sh" 2>/dev/null || true
+  fi
+
+  # Channel first — respawning work.1 kills the shell that invoked enter-meet-gallery.
+  tmux set-option -p -t "$sess:work.2" -u @gotchibot-avatar 2>/dev/null || true
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/meet-channel-pane.sh" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" @gotchibot-meet-channel 1 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' # meet ' 2>/dev/null || true
+
+  local c1
+  c1="$(pane_start_cmd 1)"
+  if [[ "$c1" != *meet-room* ]]; then
+    if [ "${GOTCHIBOT_MEET_LAYOUT_ONLY:-}" = "1" ]; then
+      # Prompter refresh — never respawn the live meet-room pane.
+      :
+    else
+      tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh" 2>/dev/null || true
+    fi
+  fi
+  tmux set-option -p -t "$sess:work.1" @gotchibot-meet-room 1 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' Meet · room ' 2>/dev/null || true
+  # Drop overflow tiles beyond room + channel.
+  while [ "$(pane_count)" -gt 3 ]; do
+    tmux kill-pane -t "$sess:work.3" 2>/dev/null || break
+  done
+  apply_meet_gallery_sizes
+  printf '0\n' > "$ROOT/sessions/.meet-channel-scroll" 2>/dev/null || true
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/sessions/.meet-room.stamp" 2>/dev/null || true
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/sessions/.meet-channel.stamp" 2>/dev/null || true
+  install_meet_gallery_mouse 2>/dev/null || true
+}
+
+apply_meet_gallery_sizes() {
+  local win_w channel_w room_w
+  win_w="$(window_width)"
+  collapse_sidebar
+  channel_w=$(( win_w * 42 / 100 ))
+  [ "$channel_w" -lt 44 ] && channel_w=44
+  [ "$channel_w" -gt 72 ] && channel_w=72
+  room_w=$((win_w - sidebar_collapsed - channel_w - 2))
+  [ "$room_w" -lt 40 ] && room_w=40
+  tmux resize-pane -t "$sess:work.0" -x "$sidebar_collapsed" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.2" -x "$channel_w" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.1" -x "$room_w" 2>/dev/null || true
+}
+
+enter_meet_gallery() {
+  tmux has-session -t "$sess" 2>/dev/null || return 1
+  apply_window_policy
+  # Leave other max modes back to a base 3-pane shell first.
+  if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ] || [ "$(layout_mode)" = "chat-max" ]; then
+    set_layout_mode normal
+    collapse_to_three_panes || true
+    tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  fi
+  if [ "$(layout_mode)" != "meet-gallery" ]; then
+    require_three_panes || return 1
+  fi
+  set_layout_mode meet-gallery
+  build_meet_gallery_tiles || return 1
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  save_layout
+}
+
+refresh_meet_gallery() {
+  if [ "$(layout_mode)" != "meet-gallery" ]; then
+    return 0
+  fi
+  if ! meet_gallery_correct; then
+    build_meet_gallery_tiles || return 1
+  else
+    apply_meet_gallery_sizes
+    install_meet_gallery_mouse 2>/dev/null || true
+  fi
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  save_layout
+}
+
+leave_meet_gallery() {
+  if [ "$(layout_mode)" != "meet-gallery" ]; then
+    return 0
+  fi
+  if [ "$(pane_count)" -lt 3 ]; then
+    require_three_panes || true
+  fi
+  collapse_to_three_panes || true
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+  mark_avatar_pane
+  collapse_sidebar
+  apply_pane_sizes
+  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  set_layout_mode normal
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  save_layout
+  signal_panes
+  install_avatar_mouse 2>/dev/null || true
+}
+
 # Files take remaining width; chat collapses to a thin Gotchi bar; avatar stays.
 enter_files_max() {
+  if ! guard_not_meet_gallery; then return 1; fi
   require_three_panes || return 1
   if [ "$(layout_mode)" = "avatar-max" ]; then
     # Leave avatar-max without restoring chat yet — we collapse chat again below.
@@ -221,6 +425,7 @@ enter_files_max() {
 
 # Avatar takes remaining width; chat → bar; files stay collapsed.
 enter_avatar_max() {
+  if ! guard_not_meet_gallery; then return 1; fi
   require_three_panes || return 1
   if [ "$(layout_mode)" = "files-max" ]; then
     tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
@@ -242,6 +447,7 @@ enter_avatar_max() {
 }
 
 enter_chat_max() {
+  if ! guard_not_meet_gallery; then return 1; fi
   require_three_panes || return 1
   if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ]; then
     tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
@@ -275,6 +481,7 @@ apply_chat_max_sizes() {
 # OpenCode's info sidebar is internal (not a tmux pane) and can hide work.2
 # when chat goes wide; this splits avatar back out.
 restore_avatar_pane() {
+  if ! guard_not_meet_gallery; then return 1; fi
   local count
   count="$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')"
   if [ "${count:-0}" -lt 3 ]; then
@@ -308,6 +515,10 @@ toggle_chat_max() {
 }
 
 restore_normal_layout() {
+  if [ "$(layout_mode)" = "meet-gallery" ]; then
+    leave_meet_gallery
+    return
+  fi
   layout_ready || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh"
@@ -341,6 +552,10 @@ toggle_avatar_max() {
 
 toggle_sidebar() {
   local pw
+  if [ "$(layout_mode)" = "meet-gallery" ]; then
+    guard_not_meet_gallery
+    return
+  fi
   if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ]; then
     restore_normal_layout
     return
@@ -384,6 +599,14 @@ fit_quiet() {
   fi
   if [ "$(layout_mode)" = "chat-max" ]; then
     apply_chat_max_sizes
+    return 0
+  fi
+  if [ "$(layout_mode)" = "meet-gallery" ]; then
+    if ! meet_gallery_correct; then
+      build_meet_gallery_tiles || true
+    else
+      apply_meet_gallery_sizes
+    fi
     return 0
   fi
   apply_pane_sizes
@@ -454,6 +677,9 @@ install_agent_keys() {
   install_layout_keys gotchi-avatar
   # Pagination clicks on avatar; wheel unbound there (orch face stays pinned).
   install_avatar_mouse
+  if [ "$(layout_mode)" = "meet-gallery" ]; then
+    install_meet_gallery_mouse 2>/dev/null || true
+  fi
   # Orchestrator focus — F3 / prefix o / Option+O
   tmux bind-key -T gotchi-chat F3 run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T prefix o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
@@ -537,7 +763,9 @@ case "$cmd" in
     finish_ensure
     ;;
   refresh-soft)
-    if ! layout_ready; then
+    if [ "$(layout_mode)" = "meet-gallery" ]; then
+      refresh_meet_gallery
+    elif ! layout_ready; then
       disable_resize_hook
       rm -f "$LAYOUT_FILE"
       require_three_panes || exit 1
@@ -557,6 +785,10 @@ case "$cmd" in
     fit_quiet
     ;;
   refresh)
+    if [ "$(layout_mode)" = "meet-gallery" ]; then
+      leave_meet_gallery
+      exit 0
+    fi
     disable_resize_hook
     rm -f "$LAYOUT_FILE"
     ensure_panes
@@ -590,6 +822,15 @@ case "$cmd" in
   enter-chat-max)
     enter_chat_max
     ;;
+  enter-meet-gallery|meet-gallery)
+    enter_meet_gallery
+    ;;
+  refresh-meet-gallery)
+    refresh_meet_gallery
+    ;;
+  leave-meet-gallery)
+    leave_meet_gallery
+    ;;
   fit)
     fit_window
     install_ui_theme
@@ -598,7 +839,7 @@ case "$cmd" in
     install_avatar_mouse
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|fit|install-mouse]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|fit|install-mouse]" >&2
     exit 2
     ;;
 esac
