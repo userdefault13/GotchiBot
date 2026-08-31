@@ -60,6 +60,9 @@ function restartChatPane(agent) {
   if (!hasTmux) {
     return { restarted: false, reason: "no-tmux" };
   }
+  // Pin agent explicitly. Non-gotchi forces local OpenCode (no OpenClaw relay env).
+  const localGuard =
+    agent === "gotchi" ? "" : " GOTCHIBOT_GOTCHI_BACKEND=local GOTCHIBOT_OPENCODE_CONTINUE=0";
   const r = spawnSync(
     "tmux",
     [
@@ -67,7 +70,7 @@ function restartChatPane(agent) {
       "-t",
       `${sess}:work.1`,
       "-k",
-      `cd "${ROOT}" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 GOTCHIBOT_OPENCODE_CONTINUE=0 exec ./scripts/chat-pane.sh`,
+      `cd "${ROOT}" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 GOTCHIBOT_OPENCODE_CONTINUE=0 GOTCHIBOT_OPENCODE_AGENT=${agent}${localGuard} exec ./scripts/chat-pane.sh`,
     ],
     { stdio: "ignore" },
   );

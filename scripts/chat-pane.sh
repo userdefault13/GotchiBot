@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Interactive OpenCode TUI — the GotchiBot chat pane (native OpenCode UX).
-# Gotchi mode (default): agent=gotchi relays each prompt into the iMac OpenClaw
-# orchestrator TUI session (agent:<orchId>:main) via local gotchi relay.
-# Ask/plan/build stay local OpenCode models.
+# Gotchi mode (default): agent=gotchi orchestrates via OpenClaw spawn/relay env;
+# OpenCode TUI stays on a local model (openclaw/* as -m hangs when relay stalls).
+# Ask/plan/build/sub/verse stay local OpenCode agents (no OpenClaw relay).
 # Legacy OpenClaw native TUI: GOTCHIBOT_OPENCLAW_TUI=1
 # Scroll past responses: replay on by default (GOTCHIBOT_OPENCODE_REPLAY=1).
 # Mouse wheel scrolls message history (OpenClaw: GOTCHIBOT_TUI_MOUSE=1; OpenCode: config/tui.json).
@@ -95,10 +95,8 @@ onboarding_complete() {
 }
 
 quit_to_terminal() {
-  local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
-  if [ -n "${TMUX:-}" ]; then
-    tmux kill-session -t "$sess" 2>/dev/null || true
-  fi
+  # Exit this pane only — never kill the whole gotchibot session (that left Julius
+  # with a dead desk whenever OpenCode/abra exited).
   exit 0
 }
 
@@ -274,8 +272,10 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
       if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ] \
         && [ "${GOTCHIBOT_SKIP_ABRA:-}" != "1" ] \
         && command -v abra >/dev/null 2>&1; then
-        abra run gotchibot -- "$OPENCLAW_BIN" "${TUI_ARGS[@]}" || true
-        quit_to_terminal
+        if abra run gotchibot -- "$OPENCLAW_BIN" "${TUI_ARGS[@]}"; then
+          quit_to_terminal
+        fi
+        echo "gotchibot: abra inject failed — launching OpenClaw TUI without vault keys" >&2
       fi
       "$OPENCLAW_BIN" "${TUI_ARGS[@]}" || true
       quit_to_terminal
@@ -283,25 +283,49 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
   fi
 fi
 
-# Resolve gotchi mode (OpenCode → OpenClaw orchestrator) before launching OpenCode.
+# Resolve model/backend: OpenClaw swarm orchestration is reserved for gotchi mode.
+# Build / ask / plan / sub / verse always use a local OpenCode agent + model.
+# Gotchi keeps a local OpenCode TUI model (stable); OpenClaw env is for spawn/relay,
+# not as OpenCode's -m (openclaw/orchestrator hangs the desk when the relay stalls).
 if [ "$AGENT" = "gotchi" ] && command -v node >/dev/null 2>&1; then
   eval "$(node "$ROOT/scripts/opencode-gotchi-mode.mjs" env 2>/dev/null)" || true
-  # Gotchi TUI pins Lightning Free on load (gotchi-mode exports GOTCHIBOT_GOTCHI_MODEL).
   if [ -n "${GOTCHIBOT_GOTCHI_MODEL:-}" ]; then
     MODEL="$GOTCHIBOT_GOTCHI_MODEL"
   else
     MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/nemotron-3.5-lightning-free}"
   fi
+  # Never boot the TUI on openclaw/* — that path times out and suicides the session.
+  case "$MODEL" in
+    openclaw/*) MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode-go/kimi-k3}" ;;
+  esac
   if [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ] && [ -n "${TMUX:-}" ]; then
     tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (OpenClaw) " 2>/dev/null || true
   fi
+else
+  unset GOTCHIBOT_GOTCHI_BACKEND GOTCHIBOT_GOTCHI_MODEL GOTCHIBOT_GOTCHI_RELAY \
+    GOTCHIBOT_OPENCLAW_HTTP_V1 GOTCHIBOT_OPENCLAW_SESSION_KEY GOTCHIBOT_OPENCLAW_ORCH_ID \
+    GOTCHIBOT_OPENCLAW_OPENCODE_MODEL
+  export GOTCHIBOT_GOTCHI_BACKEND=local
+  # Strip any sticky OpenClaw model from a prior gotchi session / continue.
+  case "$MODEL" in
+    openclaw/*)
+      MODEL="$(node "$ROOT/scripts/model-auto.mjs" pick 2>/dev/null || true)"
+      if [[ "$MODEL" == *"\"model\""* ]]; then
+        MODEL="$(node -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.model||'')}catch{process.stdout.write('')}" "$MODEL")"
+      fi
+      MODEL="${MODEL:-opencode/nemotron-3.5-lightning-free}"
+      ;;
+  esac
 fi
 
 args=(--agent "$AGENT" -m "$MODEL")
 # Resume last OpenCode session (`opencode --continue`). Fresh: GOTCHIBOT_OPENCODE_CONTINUE=0
 # Pin a session: GOTCHIBOT_OPENCODE_SESSION=<id>
+# Non-gotchi: fresh session so build/ask/plan do not resume a gotchi transcript.
 if [ -n "${GOTCHIBOT_OPENCODE_SESSION:-}" ]; then
   args+=(--session "$GOTCHIBOT_OPENCODE_SESSION")
+elif [ "$AGENT" != "gotchi" ]; then
+  :
 elif [ "${GOTCHIBOT_OPENCODE_CONTINUE:-1}" = "1" ]; then
   args+=(--continue)
 fi
@@ -331,11 +355,15 @@ fi
 
 # Inject NVIDIA/OpenRouter/etc via abracadabra when keys aren't already in env.
 # Without this, NIM models fail with "Missing Authentication header".
+# If abra fails (keychain / no GUI), fall through to bare opencode — never
+# kill the tmux session before the TUI has actually started.
 if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ] \
   && [ "${GOTCHIBOT_SKIP_ABRA:-}" != "1" ] \
   && command -v abra >/dev/null 2>&1; then
-  abra run gotchibot -- opencode "${args[@]}" "$ROOT" || true
-  quit_to_terminal
+  if abra run gotchibot -- opencode "${args[@]}" "$ROOT"; then
+    quit_to_terminal
+  fi
+  echo "gotchibot: abra inject failed — launching opencode without vault keys" >&2
 fi
 
 opencode "${args[@]}" "$ROOT" || true

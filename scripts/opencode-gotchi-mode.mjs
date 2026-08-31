@@ -301,6 +301,10 @@ async function printEnv(mode) {
     shellExport("GOTCHIBOT_OPENCLAW_SESSION_KEY", mode.sessionKey),
     shellExport("GOTCHIBOT_OPENCLAW_ORCH_ID", mode.orchestratorId),
   ];
+  // When relay is live, chat-pane launches OpenCode with this model (OpenClaw path).
+  if (mode.enabled && mode.backend === "openclaw-gateway") {
+    lines.push(shellExport("GOTCHIBOT_OPENCLAW_OPENCODE_MODEL", mode.backendModel || OPENCLAW_MODEL));
+  }
   if (auth.token) lines.push(shellExport("OPENCLAW_GATEWAY_TOKEN", auth.token));
   else if (auth.password) lines.push(shellExport("OPENCLAW_GATEWAY_TOKEN", auth.password));
   if (auth.password) lines.push(shellExport("OPENCLAW_GATEWAY_PASSWORD", auth.password));

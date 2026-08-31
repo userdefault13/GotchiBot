@@ -285,7 +285,7 @@ if (isCli) {
   const cmd = argv.find((a) => !a.startsWith("--")) || "pick";
   const rest = argv.filter((a) => !a.startsWith("--") && a !== cmd);
   const out = async () => {
-    if (cmd === "pick") return pickModel({ probe, json: true });
+    if (cmd === "pick") return pickModel({ probe, json });
     if (cmd === "pin") {
       const r = await pickModel({ probe, json: true });
       pinModel(r.model);

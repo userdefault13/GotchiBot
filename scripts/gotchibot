@@ -131,21 +131,32 @@ cmd_chat() {
 cmd_tmux() {
   command -v tmux >/dev/null || { echo "tmux missing: brew install tmux" >&2; exit 1; }
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
-  # API keys are injected inside chat/sub-agent panes when needed.
+  # Alias GotchiBot must be: cd … && ./scripts/gotchibot tmux
+  # Secrets are injected inside chat/sub-agent panes when needed.
   sync_openclaw_fleet
   local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
   local min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-42}"
   local layout="$ROOT/scripts/orchestrator-layout.sh"
 
+  if [ ! -t 0 ] || [ ! -t 1 ]; then
+    echo "gotchibot tmux needs a real terminal (don't wrap in abra)." >&2
+    echo "  run:  ./scripts/gotchibot tmux" >&2
+    echo "  or:   GotchiBot   # after: source ~/.zshrc" >&2
+    exit 1
+  fi
+
   if tmux has-session -t "$sess" 2>/dev/null; then
-    # Always boot to cockpit on attach — leave meet-gallery / meet room if persisted.
+    # Leave meet-gallery if persisted, then refresh desk into OpenCode (not cockpit).
     "$layout" leave-meet-gallery 2>/dev/null || true
-    "$layout" refresh
+    "$layout" refresh 2>/dev/null || "$layout" ensure 2>/dev/null || true
     exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
   fi
-  tmux new-session -d -s "$sess" -n work
+  # Explicit size so ensure can split when started from a narrow/odd client.
+  tmux new-session -d -s "$sess" -n work -x "${GOTCHIBOT_TMUX_WIDTH:-200}" -y "${GOTCHIBOT_TMUX_HEIGHT:-50}"
   node "$ROOT/scripts/agent-focus.mjs" orch >/dev/null 2>&1 || true
-  "$layout" ensure
+  if ! "$layout" ensure; then
+    echo "gotchibot: layout ensure failed — attaching anyway (try Ctrl-b then resize)." >&2
+  fi
   exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
 }
 
