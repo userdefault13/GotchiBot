@@ -14,7 +14,10 @@ fi
 # If chat is collapsed (files-max / avatar-max), restore so OpenCode can receive keys.
 mode="$(tr -d '[:space:]' < "$ROOT/sessions/.layout-mode" 2>/dev/null || echo normal)"
 if [ "$mode" = "files-max" ] || [ "$mode" = "avatar-max" ]; then
-  "$ROOT/scripts/orchestrator-layout.sh" "$mode" >/dev/null 2>&1 || true
+  # Via tmux server — never run layout as a child of the files/chat pane.
+  tmux run-shell -t "$SESS:work.0" \
+    "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$SESS\" \"$ROOT/scripts/orchestrator-layout.sh\" $mode" \
+    >/dev/null 2>&1 || true
 fi
 
 tmux has-session -t "$SESS" 2>/dev/null || {

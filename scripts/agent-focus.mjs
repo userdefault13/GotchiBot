@@ -34,6 +34,7 @@ import {
 import { resolveThumbCollateral } from "./collateral-resolve.mjs";
 import { classifyFocusRoute } from "./focus-classify.mjs";
 import { loadAgentMap, gatewayUrl, loadOpenClawFocus } from "./openclaw-fleet.mjs";
+import { runLayout } from "./tmux-layout.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -784,14 +785,7 @@ function respawnChatPane(extraEnv = {}) {
 
 async function cmdCockpit() {
   if (process.env.TMUX) {
-    spawnSync("bash", [`${ROOT}/scripts/orchestrator-layout.sh`, "enter-chat-max"], {
-      cwd: ROOT,
-      env: {
-        ...process.env,
-        GOTCHIBOT_TMUX_SESSION: process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot",
-      },
-      stdio: "ignore",
-    });
+    runLayout("enter-chat-max");
     console.log("Opening GotchiBot cockpit in chat pane…");
     console.log("  mint cAavegotchi · change orchestrator avatar · return to chat");
     respawnChatPane({ GOTCHIBOT_COCKPIT: "1" });

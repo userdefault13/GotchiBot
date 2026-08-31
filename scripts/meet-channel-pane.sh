@@ -63,6 +63,33 @@ render_once() {
   node "$ROOT/scripts/meet-channel.mjs" --render --cols "$cols" --rows "$rows" --scroll "$scroll" 2>/dev/null || true
 }
 
+# Drop sticky pending once the user line is already in the transcript (send finished
+# but prompter died before clearPending).
+clear_stale_pending() {
+  [ -f "$PENDING_FILE" ] || return 0
+  node -e "
+    import { readFileSync, unlinkSync, existsSync } from 'node:fs';
+    const root = process.argv[1];
+    const pendingPath = root + '/sessions/.meet-pending.json';
+    try {
+      const pending = JSON.parse(readFileSync(pendingPath, 'utf8'));
+      if (!pending?.text) { unlinkSync(pendingPath); process.exit(0); }
+      const cur = (readFileSync(root + '/sessions/meetings/.current', 'utf8') || '').trim();
+      if (!cur) { unlinkSync(pendingPath); process.exit(0); }
+      const tr = root + '/sessions/meetings/' + cur + '/transcript.jsonl';
+      if (!existsSync(tr)) process.exit(0);
+      const lines = readFileSync(tr, 'utf8').split('\\n').filter(Boolean);
+      const hit = lines.some((l) => {
+        try {
+          const o = JSON.parse(l);
+          return o.role === 'user' && o.text === pending.text;
+        } catch { return false; }
+      });
+      if (hit) unlinkSync(pendingPath);
+    } catch { /* keep pending */ }
+  " "$ROOT" 2>/dev/null || true
+}
+
 scroll_via_script() {
   "$ROOT/scripts/meet-channel-scroll.sh" "$1" 2>/dev/null || true
   render_once
@@ -146,6 +173,7 @@ trap on_usr1 USR1
 alt_enter
 mark_self
 printf '%s\n' 0 > "$SCROLL_FILE"
+clear_stale_pending
 
 rendering=1
 render_once
@@ -153,6 +181,9 @@ rendering=0
 last_stamp="$(cat "$STAMP" 2>/dev/null || true)"
 last_pending_draw=0
 while true; do
+  if [ -f "$PENDING_FILE" ]; then
+    clear_stale_pending
+  fi
   cur="$(cat "$STAMP" 2>/dev/null || true)"
   need=0
   if [ "$cur" != "$last_stamp" ]; then

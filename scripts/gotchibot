@@ -34,6 +34,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot focus <n|id>          pin avatar + SUB chat focus
   gotchibot cockpit               mint / avatar / Settings (/cockpit)
   gotchibot meet start|open|invite|status|say|end   shared meeting room (/meet)
+  gotchibot layout-check [check|desk|meet]  verify tmux panes (non-destructive)
   gotchibot orch                  restore orchestrator focus (/orch)
   gotchibot openclaw sync|list|status|chat|install|point  OpenClaw fleet + CLI
   gotchibot delegate [--json] [hint]  pick next local/remote agent (/delegate)
@@ -108,7 +109,9 @@ cmd_chat() {
       if [ -n "${TMUX:-}" ] && tmux has-session -t "$sess" 2>/dev/null; then
         # Leave meet room UI if present, else just respawn OpenCode + avatar.
         if [ -f "$SESSIONS/.layout-mode" ] && [ "$(tr -d '[:space:]' < "$SESSIONS/.layout-mode")" = "meet-gallery" ]; then
-          GOTCHIBOT_TMUX_SESSION="$sess" "$layout" leave-meet-gallery 2>/dev/null || true
+          tmux run-shell -b -t "$sess:work.0" \
+            "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$layout\" leave-meet-gallery" \
+            2>/dev/null || true
         else
           tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
           tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
@@ -470,6 +473,7 @@ case "$cmd" in
   focus) cmd_focus "$@" ;;
   cockpit|onboarding) cmd_cockpit "$@" ;;
   meet) cmd_meet "$@" ;;
+  layout-check|layout-smoke) exec "$ROOT/scripts/layout-smoke.sh" "$@" ;;
   orch) cmd_orch "$@" ;;
   openclaw) cmd_openclaw "$@" ;;
   delegate) cmd_delegate "$@" ;;

@@ -984,13 +984,13 @@ case "${1:-watch}" in
     [ -n "$read_t" ] || read_t=8
     watch_enter
     refresh_roster
-    render "$(active_status)"
+    render "$(active_status)" || true
     refresh_roster_async
     while true; do
       key=""
       if read -rsn1 -t "$read_t" key; then
         if handle_key "$key"; then
-          render "$(active_status)"
+          render "$(active_status)" || true
           continue
         fi
         continue
@@ -1002,7 +1002,7 @@ case "${1:-watch}" in
       role="$(role_label)"
       stamp="$(cat "$SESSIONS/.avatar-roster.stamp" 2>/dev/null || true)"
       if [ "$sig" != "$last" ] || [ "$cols" != "$last_cols" ] || [ "$role" != "$last_role" ] || [ "$stamp" != "$last_stamp" ]; then
-        render "$sig"
+        render "$sig" || true
         last="$sig"
         last_cols="$cols"
         last_role="$role"

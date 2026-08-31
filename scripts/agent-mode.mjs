@@ -67,7 +67,7 @@ function restartChatPane(agent) {
       "-t",
       `${sess}:work.1`,
       "-k",
-      `cd "${ROOT}" && GOTCHIBOT_OPENCODE_CONTINUE=0 exec ./scripts/chat-pane.sh`,
+      `cd "${ROOT}" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 GOTCHIBOT_OPENCODE_CONTINUE=0 exec ./scripts/chat-pane.sh`,
     ],
     { stdio: "ignore" },
   );

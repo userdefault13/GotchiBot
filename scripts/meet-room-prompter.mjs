@@ -17,6 +17,7 @@ import {
   listMeetMembers,
   clampPage,
 } from "./meet-room.mjs";
+import { runLayout } from "./tmux-layout.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STAMP = `${ROOT}/sessions/.meet-room.stamp`;
@@ -490,6 +491,7 @@ function draw() {
 }
 
 function teardown() {
+  clearPending();
   try {
     stdin.setRawMode(false);
   } catch {
@@ -593,17 +595,9 @@ function handleEsc(seq) {
 
 function ensureMeetGalleryLayout() {
   if (!process.env.TMUX) return;
-  // Via tmux server — never spawnSync(bash) from work.1 (layout kill/respawn suicides the room).
-  const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
-  const script = `${ROOT}/scripts/orchestrator-layout.sh`;
-  spawnSync(
-    "tmux",
-    [
-      "run-shell",
-      `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" GOTCHIBOT_MEET_LAYOUT_ONLY=1 "${script}" refresh-meet-gallery`,
-    ],
-    { cwd: ROOT, stdio: "ignore", env: { ...process.env, GOTCHIBOT_TMUX_SESSION: sess } },
-  );
+  runLayout("refresh-meet-gallery", {
+    env: { GOTCHIBOT_MEET_LAYOUT_ONLY: "1" },
+  });
 }
 
 function markTmuxPane() {

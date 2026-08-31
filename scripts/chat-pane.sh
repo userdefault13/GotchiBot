@@ -125,7 +125,7 @@ enter_meet_room() {
   export GOTCHIBOT_SKIP_ONBOARDING=1
   if [ -n "${TMUX:-}" ]; then
     local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
-    tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" enter-meet-gallery" || {
+    tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" enter-meet-gallery" || {
       echo "gotchibot: meet layout failed (window too small?)" >&2
     }
     # If layout respawned work.1 we never reach here; otherwise start room in-place.
@@ -157,12 +157,18 @@ show_cockpit() {
 ensure_desk_after_cockpit() {
   [ -n "${TMUX:-}" ] || return 0
   local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
-  local count
+  local count c1 c2
   count="$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')"
-  if [ "${count:-0}" -eq 3 ]; then
+  c1="$(tmux display -p -t "$sess:work.1" '#{pane_start_command}' 2>/dev/null || true)"
+  c2="$(tmux display -p -t "$sess:work.2" '#{pane_start_command}' 2>/dev/null || true)"
+  if [ "${count:-0}" -eq 3 ] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *avatar-pane* ]]; then
     return 0
   fi
-  tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" refresh"
+  # Meet gallery is a valid 3-pane state — do not force desk refresh over it.
+  if [ "${count:-0}" -eq 3 ] && [[ "$c1" == *meet-room* ]] && [[ "$c2" == *meet-channel* ]]; then
+    return 0
+  fi
+  tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" refresh"
   exit 0
 }
 

@@ -44,11 +44,25 @@ layout_caller_is_side_pane() {
   [ "$TMUX_PANE" != "$side" ]
 }
 
+# Re-enter via tmux run-shell so kill/respawn cannot abort a pane-child mid-flight.
+# GOTCHIBOT_LAYOUT_SAFE=1 breaks re-dispatch loops when run-shell still sets TMUX_PANE.
+layout_safe_reexec() {
+  local c="$1"
+  [ "${GOTCHIBOT_LAYOUT_SAFE:-}" = "1" ] && return 1
+  layout_caller_is_side_pane || return 1
+  case "$c" in
+    # Soft / idempotent — safe to run in-pane (no kill-pane -a).
+    fit|install-mouse) return 1 ;;
+  esac
+  tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" $c"
+  exit 0
+}
+
 require_three_panes() {
   tmux resize-pane -Z -t "$sess:work" 2>/dev/null || true
   layout_ready && return 0
-  if layout_caller_is_side_pane; then
-    tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" require-three"
+  if layout_caller_is_side_pane && [ "${GOTCHIBOT_LAYOUT_SAFE:-}" != "1" ]; then
+    tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" require-three"
     layout_ready || return 1
     return 0
   fi
@@ -93,7 +107,7 @@ rebuild_panes() {
   layout_ready || { echo "orchestrator layout failed (window too small? need ${need} cols)" >&2; return 1; }
   # Splits reuse the surviving pane as center — respawn all three so work.1 is always chat.
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
   mark_avatar_pane
 }
@@ -543,7 +557,7 @@ restore_normal_layout() {
   fi
   layout_ready || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-pane.sh"
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh"
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   collapse_sidebar
   apply_pane_sizes
@@ -775,6 +789,8 @@ finish_ensure() {
 }
 
 cmd="${1:-ensure}"
+layout_safe_reexec "$cmd"
+
 case "$cmd" in
   ensure)
     disable_resize_hook

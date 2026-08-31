@@ -252,7 +252,7 @@ function meetGalleryLayout(cmd) {
       "-b",
       "-t",
       `${sess}:work.0`,
-      `sleep 0.15; cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" leave-meet-gallery`,
+      `sleep 0.15; cd "${ROOT}" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" leave-meet-gallery`,
     ];
     const r = spawnSync("tmux", args, { cwd: ROOT, stdio: "ignore", env });
     if (r.status !== 0) {
@@ -261,7 +261,7 @@ function meetGalleryLayout(cmd) {
         [
           "run-shell",
           "-b",
-          `sleep 0.15; cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" leave-meet-gallery`,
+          `sleep 0.15; cd "${ROOT}" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" leave-meet-gallery`,
         ],
         { cwd: ROOT, stdio: "ignore", env },
       );
@@ -269,18 +269,19 @@ function meetGalleryLayout(cmd) {
     return;
   }
   if (cmd === "enter-meet-gallery" || cmd === "refresh-meet-gallery") {
+    const layoutOnly =
+      cmd === "refresh-meet-gallery" ? 'GOTCHIBOT_MEET_LAYOUT_ONLY=1 ' : "";
     spawnSync(
       "tmux",
-      ["run-shell", `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" ${cmd}`],
+      [
+        "run-shell",
+        `cd "${ROOT}" && GOTCHIBOT_LAYOUT_SAFE=1 ${layoutOnly}GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" ${cmd}`,
+      ],
       { cwd: ROOT, stdio: cmd === "enter-meet-gallery" ? "inherit" : "ignore", env },
     );
     return;
   }
-  spawnSync("bash", [script, cmd], {
-    cwd: ROOT,
-    stdio: "ignore",
-    env,
-  });
+  // unknown cmd: no-op — never spawnSync(bash, layout) from a pane child
 }
 
 /** Refresh tiles if already in meet-gallery (no-op otherwise). */
@@ -1188,6 +1189,11 @@ export async function endMeeting({ keepLayout = false } = {}) {
   saveMeeting(meeting);
   clearMeetMentionAgents();
   clearCurrent();
+  try {
+    unlinkSync(`${ROOT}/sessions/.meet-pending.json`);
+  } catch {
+    /* ok */
+  }
   pokeAvatar();
   if (!keepLayout) leaveMeetGallery();
   return { meeting, minutesPath: path };

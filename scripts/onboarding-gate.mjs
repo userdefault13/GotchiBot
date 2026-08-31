@@ -28,36 +28,16 @@ import {
   pinAvatar,
 } from "./onboarding-lib.mjs";
 import { loadMeta, saveMeta } from "./identity.mjs";
+import { runLayout, tmuxSessionName as layoutSession } from "./tmux-layout.mjs";
 
 function tmuxSessionName() {
-  const env = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
-  if (process.env.TMUX) return env;
-  const r = spawnSync("tmux", ["has-session", "-t", env], { stdio: "ignore" });
-  return r.status === 0 ? env : null;
+  return layoutSession();
 }
 
 function meetGalleryLayout(cmd) {
-  const sess = tmuxSessionName();
-  if (!sess) return;
-  const script = `${ROOT}/scripts/orchestrator-layout.sh`;
-  const env = {
-    ...process.env,
-    GOTCHIBOT_TMUX_SESSION: sess,
-  };
-  // Always run via tmux server (not as a child of work.1). Layout rebuild does
-  // kill-pane -a / respawn-pane -k on the chat pane; spawnSync(bash) from chat
-  // aborts mid-flight and leaves only the Files sidebar.
-  const allowed = new Set([
-    "enter-meet-gallery",
-    "leave-meet-gallery",
-    "refresh-meet-gallery",
-  ]);
-  if (!allowed.has(cmd)) return;
-  spawnSync(
-    "tmux",
-    ["run-shell", `cd "${ROOT}" && GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" ${cmd}`],
-    { cwd: ROOT, stdio: "ignore", env },
-  );
+  const background = cmd === "leave-meet-gallery";
+  const target = background ? "work.0" : undefined;
+  runLayout(cmd, { background, target, inheritStdio: cmd === "enter-meet-gallery" });
 }
 
 function enterMeetGalleryLayout() {
@@ -74,7 +54,8 @@ function openMeetRoomFromPane() {
     process.exit(1);
   }
   enterMeetGalleryLayout();
-  process.exit(0);
+  // 4 = chat-pane show_cockpit / show_meet → enter_meet_room (do not boot OpenCode).
+  process.exit(4);
 }
 
 function refreshMeetGalleryLayout() {
