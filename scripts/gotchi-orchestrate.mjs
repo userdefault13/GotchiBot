@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkSpawnGate } from "./wallet-gate.mjs";
+import { getTopology } from "./topology.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DISPATCH = `${ROOT}/scripts/opencode-dispatch.sh`;
@@ -19,7 +20,7 @@ const REMOTE_SPAWN = `${ROOT}/scripts/remote-spawn.mjs`;
 function usage() {
   console.error(`usage:
   gotchi-orchestrate.mjs gate [--json]
-  gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--model nim|pro|local|<provider/model>] "PROMPT"
+  gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--model sub|nim|pro|local|<provider/model>] "PROMPT"
   gotchi-orchestrate.mjs list
   gotchi-orchestrate.mjs wait [--host local|imac] [<id>...]
   gotchi-orchestrate.mjs output [--host local|imac] <id>`);
@@ -74,6 +75,9 @@ function parseHostAndRest(argv) {
 
 async function resolveHost(want) {
   if (want === "local") return "local";
+  const topology = getTopology();
+  // Explicit --host imac always probes (power users / tests). Solo only
+  // changes the `auto` default so we don't break intentional remote spawns.
   if (want === "imac") {
     const ok = await probeRemote();
     if (!ok) {
@@ -84,7 +88,8 @@ async function resolveHost(want) {
     }
     return "imac";
   }
-  // auto
+  // auto: solo → local; legacy/fleet → prefer remote when reachable
+  if (topology.mode === "solo") return "local";
   return (await probeRemote()) ? "imac" : "local";
 }
 
@@ -130,7 +135,7 @@ async function cmdSpawn(argv) {
     process.exit(gate.code === "wallet" ? 10 : gate.code === "cartridge" ? 11 : 12);
   }
 
-  let model = "auto";
+  let model = "sub";
   const rest = [];
   for (let i = 0; i < argv2.length; i++) {
     if (argv2[i] === "--model" && argv2[i + 1]) {
@@ -144,13 +149,70 @@ async function cmdSpawn(argv) {
   const prompt = rest.join(" ").trim();
   if (!prompt) usage();
 
-  const id = runDispatch(["new", "--model", model, prompt], { capture: true });
+  // If model is explicitly set to a non-chain value (e.g. nim, pro, local, or a full model id),
+  // use it directly and skip the subagent chain.
+  const explicitModel = model !== "sub" && model !== "auto";
+
+  let resolvedModel;
+  let route;
+
+  if (!explicitModel) {
+    // Resolve via subagent chain: glm-5.2 → grok-4.6 → gpt-5 → cursor-cli → nemotron
+    const { spawnSync } = await import("node:child_process");
+    const r = spawnSync("node", ["scripts/model-auto.mjs", "subagent", "--json"], {
+      cwd: ROOT, encoding: "utf8",
+    });
+    const result = JSON.parse(String(r.stdout || r.stderr || "").trim());
+    route = result.route || "spawn";
+    resolvedModel = result.model;
+  } else {
+    explicitModel = model; // keep the explicit model id
+    resolvedModel = model;
+    route = "spawn"; // will dispatch with explicit model
+  }
+
+  let id;
+  if (route === "spawn") {
+    id = runDispatch(["new", "--model", resolvedModel, prompt], { capture: true });
+  } else if (route === "cursor-cli") {
+    // Run the cursor-cli skill: pass the prompt to cursor-agent and work off its output.
+    // cursor-cli.mjs run spawns cursor-agent with the prompt and creates a session dir.
+    const { spawnSync } = await import("node:child_process");
+    const cr = spawnSync("node", ["scripts/cursor-cli.mjs", prompt, "--cwd", ROOT], {
+      encoding: "utf8",
+      cwd: ROOT,
+      timeout: 600_000,
+    });
+    const cursorOutput = (cr.stdout || "").trim();
+    const cursorErr = (cr.stderr || "").trim();
+    const cursorOk = cr.status === 0;
+    // Write a minimal output.md capturing the cursor agent's result, and note the chat id.
+    // cursor-cli creates its own session; we create a marker here for orchestrator tracking.
+    const cursorChatId = cursorOk ? String(cr.exitCode || "").trim() : "";
+    // Store cursor result in a session-visible way: write to a temp file or the prompt dir.
+    // Since we don't have a session dir for cursor, write to the output log and note the chat.
+    // For now, just include the output in the JSON report.
+    // Skip poke-avatar: no cAavegotchi hero bound to this session.
+    id = `cursor-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  } else {
+    // fallback: should not happen, but dispatch with the explicit model
+    id = runDispatch(["new", "--model", resolvedModel, prompt], { capture: true });
+  }
+
   spawnSync("bash", [`${ROOT}/scripts/poke-avatar.sh`], { stdio: "ignore" });
   if (process.argv.includes("--json") || argv2.includes("--json")) {
-    console.log(JSON.stringify({ ok: true, host: "local", sessionId: id, model, gate }, null, 2));
+    const base = { ok: true, host: "local", sessionId: id, model: resolvedModel, gate };
+    if (route === "cursor-cli") {
+      Object.assign(base, {
+        route: "cursor-cli",
+        cursorOutput,
+        cursorOk,
+      });
+    }
+    console.log(JSON.stringify(base, null, 2));
   } else {
     console.log(id);
-    console.error(`spawned ${id} on local (model=${model}, hero=${gate.activeHeroId ?? "roster"})`);
+    console.error(`spawned ${id} on local (model=${resolvedModel}, hero=${gate.activeHeroId ?? "roster"})${route === "cursor-cli" ? ` (cursor-agent)` : ""}`);
   }
 }
 

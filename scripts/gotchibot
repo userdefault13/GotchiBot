@@ -45,6 +45,12 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot output <id>           print a session deliverable
   gotchibot requests              pending skill requests
   gotchibot init                first-run setup: connect wallet, sim-mint cartridge
+  gotchibot onboard             Solo one-shot: wallet → register → init → doctor
+  gotchibot setup               print Solo checklist (or run onboard above)
+  gotchibot topology solo|fleet|status [--json]   Solo vs Fleet spawn host
+  gotchibot doctor              env checklist (node/tmux/abra/topology/referral/wallet/infra/fleet probe)
+  gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
+  gotchibot infra-usage [--json]    operator: install-token usage report (Mongo / cost proxy)
   gotchibot connect            open browser wallet-connect (MetaMask)
   gotchibot wallet             show connected wallet address
   gotchibot roster --wallet    list your real on-chain gotchis
@@ -131,32 +137,21 @@ cmd_chat() {
 cmd_tmux() {
   command -v tmux >/dev/null || { echo "tmux missing: brew install tmux" >&2; exit 1; }
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
-  # Alias GotchiBot must be: cd … && ./scripts/gotchibot tmux
-  # Secrets are injected inside chat/sub-agent panes when needed.
+  # API keys are injected inside chat/sub-agent panes when needed.
   sync_openclaw_fleet
   local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
   local min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-42}"
   local layout="$ROOT/scripts/orchestrator-layout.sh"
 
-  if [ ! -t 0 ] || [ ! -t 1 ]; then
-    echo "gotchibot tmux needs a real terminal (don't wrap in abra)." >&2
-    echo "  run:  ./scripts/gotchibot tmux" >&2
-    echo "  or:   GotchiBot   # after: source ~/.zshrc" >&2
-    exit 1
-  fi
-
   if tmux has-session -t "$sess" 2>/dev/null; then
     # Leave meet-gallery if persisted, then refresh desk into OpenCode (not cockpit).
     "$layout" leave-meet-gallery 2>/dev/null || true
-    "$layout" refresh 2>/dev/null || "$layout" ensure 2>/dev/null || true
+    "$layout" refresh
     exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
   fi
-  # Explicit size so ensure can split when started from a narrow/odd client.
-  tmux new-session -d -s "$sess" -n work -x "${GOTCHIBOT_TMUX_WIDTH:-200}" -y "${GOTCHIBOT_TMUX_HEIGHT:-50}"
+  tmux new-session -d -s "$sess" -n work
   node "$ROOT/scripts/agent-focus.mjs" orch >/dev/null 2>&1 || true
-  if ! "$layout" ensure; then
-    echo "gotchibot: layout ensure failed — attaching anyway (try Ctrl-b then resize)." >&2
-  fi
+  "$layout" ensure
   exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
 }
 
@@ -287,11 +282,14 @@ cmd_identity() {
 
 cmd_remote_setup() {
   cat <<'EOF'
-GotchiBot — iMac orchestrator (Tailscale)
+GotchiBot — Fleet / iMac orchestrator (Tailscale)
 
   iPhone ─┐
           ├─→ iMac :4096  opencode serve (gotchi) → sub-agents on iMac
   MBP    ─┘
+
+Pin this machine:  ./scripts/gotchibot topology fleet
+(Leave topology unset for legacy = same prefer-remote behavior.)
 
 1) MBP vault: SSH key + REMOTE_USER/HOST + OPENCODE_SERVER_PASSWORD
 2) iMac: Remote Login, Tailscale CLI, pubkey, ~/Dev/GotchiBot
@@ -303,7 +301,7 @@ GotchiBot — iMac orchestrator (Tailscale)
    iPhone: http://$REMOTE_HOST:4096  user opencode
            password: abra get gotchibot OPENCODE_SERVER_PASSWORD
 
-See DEPLOYMENT.md Phase 11.
+See DEPLOYMENT.md Phase 11 + docs/SOLO-AND-FLEET.md.
 EOF
 }
 
@@ -502,7 +500,31 @@ case "$cmd" in
     [ $# -eq 1 ] || usage
     cmd_avatar "$1"
     ;;
-  init) exec node "$ROOT/scripts/init.mjs" ;;
+  init)
+    if command -v abra >/dev/null 2>&1 && [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+      exec abra run gotchibot -- node "$ROOT/scripts/init.mjs"
+    else
+      exec node "$ROOT/scripts/init.mjs"
+    fi
+    ;;
+  onboard) exec node "$ROOT/scripts/solo-onboard.mjs" "$@" ;;
+  setup) exec node "$ROOT/scripts/topology.mjs" setup "$@" ;;
+  topology) exec node "$ROOT/scripts/topology.mjs" "$@" ;;
+  doctor)
+    if command -v abra >/dev/null 2>&1 && [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+      exec abra run gotchibot -- node "$ROOT/scripts/doctor.mjs" "$@"
+    else
+      exec node "$ROOT/scripts/doctor.mjs" "$@"
+    fi
+    ;;
+  infra)
+    shift
+    case "${1:-}" in
+      register|status) exec node "$ROOT/scripts/infra-token.mjs" "$@" ;;
+      *) echo "usage: gotchibot infra register|status" >&2; exit 2 ;;
+    esac
+    ;;
+  infra-usage|usage-report) exec node "$ROOT/scripts/infra-usage-report.mjs" "$@" ;;
   connect) exec node "$ROOT/scripts/wallet-connect.mjs" ;;
   wallet) cmd_wallet ;;
   roster) cmd_roster "$@" ;;

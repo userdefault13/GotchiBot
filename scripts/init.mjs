@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { call, loadMeta, saveMeta, GAME_ID } from "./identity.mjs";
+import { getTopology, setTopology, topologyFileExists } from "./topology.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WALLET_PATH = `${ROOT}/sessions/.wallet.json`;
@@ -54,10 +55,11 @@ async function main() {
   step(1, `wallet: ${owner}`);
 
   step(2, "sim-minting gotchibot cartridge");
-  if (!process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET) {
-    console.log("    service key not in env — run init through abracadabra:");
-    console.log("      abra run gotchibot -- ./scripts/gotchibot init");
-    console.log("    (wallet step already saved — rerun skips it)");
+  const hasToken = Boolean(String(process.env.GOTCHIBOT_INFRA_TOKEN || "").trim());
+  if (!process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET && !hasToken) {
+    console.log("    infra auth not in env — run the Solo one-shot:");
+    console.log("      ./scripts/gotchibot onboard");
+    console.log("    (wallet step already saved — onboard skips connect if done)");
     saveMeta({ owner });
     process.exit(2);
   }
@@ -88,6 +90,24 @@ async function main() {
       ok(`orchestrator hero: ${active}`);
     }
   }
+
+  // Fresh Solo default only — never retro-write Julius/fleet installs that
+  // already have REMOTE_* (abra) or an existing topology file/env.
+  try {
+    const t = getTopology();
+    const fleetish = Boolean(
+      process.env.REMOTE_HOST ||
+        process.env.GOTCHIBOT_REMOTE_HOST ||
+        process.env.GOTCHIBOT_REMOTE_USER ||
+        process.env.REMOTE_USER,
+    );
+    if (!topologyFileExists() && t.source === "default" && !fleetish) {
+      setTopology("solo");
+      ok("topology → solo (fresh default; change with gotchibot topology fleet)");
+    } else if (!topologyFileExists() && fleetish) {
+      ok("topology left legacy (REMOTE_* present — run gotchibot topology fleet to pin)");
+    }
+  } catch {}
 
   console.log("\ninit complete. next steps:");
   console.log("  ./scripts/gotchibot identity mint            # portal pack for agent identities");

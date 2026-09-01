@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getTopology } from "./topology.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FOCUS = `${ROOT}/sessions/.focus.json`;
@@ -72,10 +73,12 @@ function main() {
     null;
 
   const remoteOk = Boolean(roster.remote?.ok);
+  const topology = getTopology();
+  const solo = topology.mode === "solo"; // solo → never prefer imac (local only)
   // Prefer iMac when reachable (always-on host); else local MBP.
-  let host = remoteOk ? "imac" : "local";
+  let host = remoteOk && !solo ? "imac" : "local";
   if (/\b(local|mbp|laptop)\b/i.test(hint)) host = "local";
-  if (/\b(imac|remote|home)\b/i.test(hint)) host = remoteOk ? "imac" : "local";
+  if (/\b(imac|remote|home)\b/i.test(hint) && !solo) host = remoteOk ? "imac" : "local";
 
   let decision;
   if (focus.mode === "sub" && focus.heroId) {
@@ -98,8 +101,8 @@ function main() {
   } else {
     const spawnCmd =
       host === "imac"
-        ? `GOTCHIBOT_HERO_ID=${idleHero.id} abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs spawn --host imac --model auto "<self-contained prompt>"`
-        : `GOTCHIBOT_HERO_ID=${idleHero.id} ./scripts/gotchi-orchestrate.mjs spawn --host local --model auto "<self-contained prompt>"`;
+        ? `GOTCHIBOT_HERO_ID=${idleHero.id} abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs spawn --host imac --model sub "<self-contained prompt>"`
+        : `GOTCHIBOT_HERO_ID=${idleHero.id} ./scripts/gotchi-orchestrate.mjs spawn --host local --model sub "<self-contained prompt>"`;
     decision = {
       action: "spawn",
       reason: remoteOk && host === "imac"

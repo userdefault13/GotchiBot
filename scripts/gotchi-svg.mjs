@@ -15,6 +15,7 @@ import { spawnSync, execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { call, loadMeta } from "./identity.mjs";
+import { resolveSubgraphUrl, infraHeaders } from "./infra-client.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -22,22 +23,19 @@ const AVATARS = `${SESSIONS}/.avatars`;
 const PIN = `${SESSIONS}/.pin`;
 
 const endpoints = JSON.parse(readFileSync(`${ROOT}/config/subgraph.endpoints.json`, "utf8"));
-const CORE =
-  process.env.GOTCHIBOT_SUBGRAPH_CORE_URL?.trim() ||
-  endpoints.subgraphs["aavegotchi-core-base"].url;
+function coreSubgraphUrl() {
+  return process.env.GOTCHIBOT_SUBGRAPH_CORE_URL?.trim() || resolveSubgraphUrl("aavegotchi-core-base");
+}
 const DIAMOND = "0xA99c4B08201F2913Db8D28e71d020c4298F29dBF";
 const CAST_BIN = process.env.CAST_BIN ?? "/Users/juliuswong/.foundry/bin/cast";
 const BASE_RPC = process.env.GOTCHIBOT_BASE_RPC ?? "https://mainnet.base.org";
 
 function subgraphHeaders() {
-  const headers = { "Content-Type": "application/json", Accept: "application/json" };
-  const key = (process.env.GOTCHIBOT_SUBGRAPH_PROXY_KEY || process.env.SUBGRAPH_PROXY_SECRET || "").trim();
-  if (key) headers[endpoints.auth?.header || "X-Subgraph-Proxy-Key"] = key;
-  return headers;
+  return { "Content-Type": "application/json", ...infraHeaders() };
 }
 
 async function postSubgraph(query, variables) {
-  const res = await fetch(CORE, {
+  const res = await fetch(coreSubgraphUrl(), {
     method: "POST",
     headers: subgraphHeaders(),
     body: JSON.stringify({ query, variables }),

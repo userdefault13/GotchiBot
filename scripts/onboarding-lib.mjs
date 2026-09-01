@@ -8,6 +8,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { call, loadMeta, saveMeta, GAME_ID } from "./identity.mjs";
 import { persistHeroCollateral, findCollateralColors, writeWalletGotchiCache, loadWalletGotchiIndex } from "./collateral-resolve.mjs";
+import { resolveSubgraphUrl, infraHeaders } from "./infra-client.mjs";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const SESSIONS = `${ROOT}/sessions`;
@@ -109,10 +110,13 @@ export const COLLATERALS_16 = loadBaseStarterCollaterals().map((c) => c.id);
 const endpoints = JSON.parse(
   readFileSync(`${ROOT}/config/subgraph.endpoints.json`, "utf8"),
 );
-const CORE =
-  process.env.GOTCHIBOT_SUBGRAPH_CORE_URL?.trim() ||
-  process.env.AAVEGOTCHI_SUBGRAPH_UPSTREAM_AAVEGOTCHI_CORE_BASE?.trim() ||
-  endpoints.subgraphs["aavegotchi-core-base"].url;
+function coreSubgraphUrl() {
+  return (
+    process.env.GOTCHIBOT_SUBGRAPH_CORE_URL?.trim() ||
+    process.env.AAVEGOTCHI_SUBGRAPH_UPSTREAM_AAVEGOTCHI_CORE_BASE?.trim() ||
+    resolveSubgraphUrl("aavegotchi-core-base")
+  );
+}
 
 const USERS_GOTCHIS_QUERY = `query GotchisOwnedByUser($owner: String!, $first: Int!, $skip: Int!) {
   users(where: { id: $owner }) {
@@ -373,12 +377,7 @@ async function fetchWalletGotchisFromRpc(owner) {
 }
 
 function subgraphHeaders() {
-  const headers = { "Content-Type": "application/json", Accept: "application/json" };
-  const key = (process.env.GOTCHIBOT_SUBGRAPH_PROXY_KEY || process.env.SUBGRAPH_PROXY_SECRET || "").trim();
-  if (key) {
-    headers[endpoints.auth?.header || "X-Subgraph-Proxy-Key"] = key;
-  }
-  return headers;
+  return { "Content-Type": "application/json", ...infraHeaders() };
 }
 
 async function postSubgraph(query, variables, { timeoutMs = 15_000 } = {}) {
@@ -386,7 +385,7 @@ async function postSubgraph(query, variables, { timeoutMs = 15_000 } = {}) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
-    res = await fetch(CORE, {
+    res = await fetch(coreSubgraphUrl(), {
       method: "POST",
       headers: subgraphHeaders(),
       body: JSON.stringify({ query, variables }),

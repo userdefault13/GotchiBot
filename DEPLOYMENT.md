@@ -1,5 +1,12 @@
 # GotchiBot Deployment Runbook
 
+**Ship topology:** new installs → Solo (`gotchibot setup` / `topology solo`).
+This dual-machine Fleet path is the power template — see
+[docs/SOLO-AND-FLEET.md](docs/SOLO-AND-FLEET.md) and
+[docs/DO-INFRA-CUTOVER.md](docs/DO-INFRA-CUTOVER.md) (DO hosts subgraph + Aarcade API;
+Vercel stays SPA-only). Solo install auth:
+[docs/FRIENDS-BETA-ROLLOUT.md](docs/FRIENDS-BETA-ROLLOUT.md). Missing `sessions/.topology.json` keeps legacy prefer-remote behavior.
+
 Test on this MacBook Pro first, then migrate to the home iMac. Both gateways
 stay running after migration.
 

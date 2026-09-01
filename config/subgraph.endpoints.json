@@ -21,7 +21,9 @@
   },
   "auth": {
     "header": "X-Subgraph-Proxy-Key",
-    "note": "Compat proxy supports optional proxy key; currently not enforced. Set GOTCHIBOT_SUBGRAPH_PROXY_KEY in abracadabra if enforcement is enabled."
+    "installTokenHeader": "X-GotchiBot-Install-Token",
+    "soloApiBase": "https://www.aarcadeghst.com",
+    "note": "Solo: GOTCHIBOT_INFRA_TOKEN → www /api/subgraph/* and /api/cartridge-sim (see config/infra.auth.json). Legacy operator: GOTCHIBOT_SUBGRAPH_PROXY_KEY / AARCADE_GOTCHIBOT_SERVICE_SECRET in abra. Tunnel subgraph.aarcadeghst.com rejects anonymous GraphQL when SUBGRAPH_PROXY_ENFORCE=hard."
   },
   "health": {
     "status": "verified 2026-08-25",

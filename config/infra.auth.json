@@ -1,0 +1,8 @@
+{
+  "installTokenHeader": "X-GotchiBot-Install-Token",
+  "clientHeader": "X-GotchiBot-Client",
+  "clientHeaderValue": "gotchibot",
+  "registerUrl": "https://www.aarcadeghst.com/api/gotchibot/register",
+  "statusUrl": "https://www.aarcadeghst.com/api/gotchibot/install/status",
+  "soloApiBase": "https://www.aarcadeghst.com"
+}
