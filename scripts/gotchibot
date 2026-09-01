@@ -49,6 +49,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot setup               print Solo checklist (or run onboard above)
   gotchibot topology solo|fleet|status [--json]   Solo vs Fleet spawn host
   gotchibot doctor              env checklist (node/tmux/abra/topology/referral/wallet/infra/fleet probe)
+  gotchibot update [--check|--apply|--force]  check/install GotchiBot updates (CDN or git)
   gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
   gotchibot infra-usage [--json]    operator: install-token usage report (Mongo / cost proxy)
   gotchibot connect            open browser wallet-connect (MetaMask)
@@ -134,8 +135,14 @@ cmd_chat() {
   esac
 }
 
+maybe_update_check() {
+  command -v node >/dev/null 2>&1 || return 0
+  node "$ROOT/scripts/update-check.mjs" --launch 2>/dev/null || true
+}
+
 cmd_tmux() {
   command -v tmux >/dev/null || { echo "tmux missing: brew install tmux" >&2; exit 1; }
+  maybe_update_check
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
   # API keys are injected inside chat/sub-agent panes when needed.
   sync_openclaw_fleet
@@ -328,6 +335,7 @@ cmd_remote_sync() {
 }
 
 cmd_attach() {
+  maybe_update_check
   if [ -n "${OPENCODE_SERVER_PASSWORD:-}" ] && [ -n "${REMOTE_HOST:-}${GOTCHIBOT_OPENCODE_URL:-}" ]; then
     exec node "$ROOT/scripts/attach-imac.mjs" "$@"
   fi
@@ -517,10 +525,10 @@ case "$cmd" in
       exec node "$ROOT/scripts/doctor.mjs" "$@"
     fi
     ;;
+  update) exec node "$ROOT/scripts/update-check.mjs" "$@" ;;
   infra)
-    shift
     case "${1:-}" in
-      register|status) exec node "$ROOT/scripts/infra-token.mjs" "$@" ;;
+      register|status) exec node "$ROOT/scripts/infra-token.mjs" "$1" "${@:2}" ;;
       *) echo "usage: gotchibot infra register|status" >&2; exit 2 ;;
     esac
     ;;

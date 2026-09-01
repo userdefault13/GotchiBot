@@ -62,6 +62,14 @@ async function main() {
   const args = process.argv.slice(2);
   const force = args.includes("--force");
 
+  if (!force) {
+    spawnSync(process.execPath, [`${ROOT}/scripts/update-check.mjs`, "--launch"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      encoding: "utf8",
+    });
+  }
+
   const total = 5;
   console.log("GotchiBot Solo onboard");
   console.log("======================");
