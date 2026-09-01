@@ -1,0 +1,10 @@
+sessions/
+.cursor/
+tmp/
+.git/
+KNOWLEDGE.md
+USER.md
+.mc.menu
+.opencode/node_modules/
+**/.DS_Store
+*.log

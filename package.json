@@ -1,0 +1,51 @@
+{
+  "name": "@userdefault/gotchibot",
+  "version": "0.2.1",
+  "description": "GotchiBot — Aavegotchi agent orchestrator (OpenClaw / OpenCode, macOS)",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/userdefault13/GotchiBot.git"
+  },
+  "homepage": "https://www.aarcadeghst.com",
+  "bugs": {
+    "url": "https://github.com/userdefault13/GotchiBot/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "gotchibot": "scripts/gotchibot"
+  },
+  "files": [
+    "scripts/",
+    "config/",
+    "skills/",
+    ".opencode/",
+    "assets/",
+    "docs/",
+    "mcp-servers/",
+    "patches/",
+    "docker/",
+    "AGENTS.md",
+    "SOUL.md",
+    "ORCHESTRATOR.md",
+    "IDENTITY_SYSTEM.md",
+    "IDENTITY.md",
+    "DEPLOYMENT.md",
+    "opencode.json",
+    "LICENSE",
+    "COMMERCIAL.md",
+    "README.md"
+  ],
+  "scripts": {
+    "prepublishOnly": "node scripts/update-check.mjs --check"
+  },
+  "keywords": [
+    "aavegotchi",
+    "gotchibot",
+    "openclaw",
+    "opencode",
+    "agents"
+  ]
+}
