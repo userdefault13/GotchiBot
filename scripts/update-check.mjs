@@ -21,6 +21,8 @@ const VERSION_FILE = join(ROOT, "config", "version.json");
 const CACHE_FILE = join(ROOT, "sessions", ".update-cache.json");
 const DEFAULT_CDN =
   process.env.GOTCHIBOT_CDN_LATEST ?? "https://cdn.aarcadeghst.com/releases/gotchibot/latest.json";
+const DEFAULT_WWW =
+  process.env.GOTCHIBOT_WWW_LATEST ?? "https://www.aarcadeghst.com/releases/gotchibot/latest.json";
 const DEFAULT_GITHUB =
   process.env.GOTCHIBOT_GITHUB_LATEST ??
   "https://raw.githubusercontent.com/userdefault13/GotchiBot/main/config/latest.json";
@@ -105,10 +107,13 @@ function parseManifest(raw) {
 }
 
 async function fetchCdnLatest() {
-  for (const url of [DEFAULT_CDN, DEFAULT_GITHUB]) {
+  for (const url of [DEFAULT_CDN, DEFAULT_WWW, DEFAULT_GITHUB]) {
     const raw = await fetchJson(url);
     const m = parseManifest(raw);
-    if (m) return { manifest: m, source: url.includes("github") ? "github" : "cdn" };
+    if (m) {
+      const source = url.includes("github") ? "github" : url.includes("www.") ? "www" : "cdn";
+      return { manifest: m, source };
+    }
   }
   return null;
 }
