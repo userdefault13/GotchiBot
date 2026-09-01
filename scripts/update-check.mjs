@@ -22,7 +22,7 @@ const CACHE_FILE = join(ROOT, "sessions", ".update-cache.json");
 const DEFAULT_CDN =
   process.env.GOTCHIBOT_CDN_LATEST ?? "https://cdn.aarcadeghst.com/releases/gotchibot/latest.json";
 const DEFAULT_WWW =
-  process.env.GOTCHIBOT_WWW_LATEST ?? "https://www.aarcadeghst.com/releases/gotchibot/latest.json";
+  process.env.GOTCHIBOT_WWW_LATEST ?? "https://www.aarcadeghst.com/api/release-manifest?product=gotchibot";
 const DEFAULT_GITHUB =
   process.env.GOTCHIBOT_GITHUB_LATEST ??
   "https://raw.githubusercontent.com/userdefault13/GotchiBot/main/config/latest.json";
