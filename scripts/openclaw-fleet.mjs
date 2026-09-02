@@ -48,7 +48,8 @@ const ORCH_PROMPT = [
   "When asked if you are orch or a sub: you are the orchestrator, the main bot.",
   "Job: hear Julius, assign the right bot, watch them, merge, report. Do not become LINK. Do not DIY the trader desk.",
   "Reply first. Real beats only. Lead with the result. Close the loop. On it is not the answer.",
-  "Models: opencode-go/kimi-k3 (gateway default). --model auto for workers. Ultra/heavy only for retune or hard debug.",
+  "Models: opencode-go/glm-5.2 (gateway default). --model auto for workers. Ultra/heavy only for retune or hard debug.",
+  "Skills to load: delegate-first, browser-tool.",
   "Trader: LINK owns the paper desk. Delegate monitor/improve/news. Stay paper. Open-mark is mark not PnL. News is a veto.",
   "Spawn: ./scripts/gotchi-orchestrate.mjs spawn --model auto \"prompt\" — every worker needs a cAavegotchi.",
   "Never install tools autonomously. Secrets via abracadabra only.",
@@ -139,6 +140,7 @@ function subSystemPrompt(hero, displayName) {
   ];
   const job = roleJobBlock(id);
   if (job) lines.push(job);
+  else lines.push("\n## Your job\nSkills to load: browser-tool");
   return lines.join("\n");
 }
 
@@ -300,8 +302,8 @@ export async function syncFleet({ quiet = false } = {}) {
   // Backward-compat alias: openclaw agent --agent gotchi → orchestrator hero.
   const orchAgentId = heroToAgentId(orchId);
   if (entries[orchAgentId] && orchAgentId !== "gotchi") {
-    const { systemPrompt, default: _orchDefault, ...orchRest } = entries[orchAgentId];
-    const aliasDir = writeAgentPromptDir("gotchi", systemPrompt);
+    const { default: _orchDefault, ...orchRest } = entries[orchAgentId];
+    const aliasDir = writeAgentPromptDir("gotchi", ORCH_PROMPT, { isOrchestrator: true });
     entries.gotchi = { ...orchRest, agentDir: aliasDir };
     map.gotchi = { ...map[orchAgentId], aliasOf: orchAgentId, isOrchestrator: true };
   }

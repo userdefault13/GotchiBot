@@ -10,10 +10,18 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { getTopology, setTopology, topologyFileExists } from "./topology.mjs";
 import { hasInstallToken, hasOperatorServiceKey } from "./infra-client.mjs";
-import { readWallet, registerInstall, hasAbra } from "./infra-token.mjs";
+import { readWallet, registerInstall } from "./infra-token.mjs";
+import {
+  commandExists,
+  hasAbra,
+  runAbraDoctor,
+  runNodeWithAbra,
+  abraInstallHint,
+  tmuxInstallHint,
+  platformLabel,
+} from "./platform.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const WALLET_PATH = `${ROOT}/sessions/.wallet.json`;
 const IDENTITY_PATH = `${ROOT}/sessions/.identity.json`;
 
 const step = (n, total, msg) => console.log(`\n[${n}/${total}] ${msg}`);
@@ -22,22 +30,6 @@ const die = (msg, code = 1) => {
   console.error(`    ✗ ${msg}`);
   process.exit(code);
 };
-
-function which(bin) {
-  return spawnSync("bash", ["-c", `command -v ${bin}`], { encoding: "utf8" }).status === 0;
-}
-
-function abraRun(script, args = []) {
-  const nodeArgs = [script, ...args];
-  if (hasAbra() && !process.env.SSH_PRIVATE_KEY) {
-    return spawnSync("abra", ["run", "gotchibot", "--", "node", ...nodeArgs], {
-      cwd: ROOT,
-      stdio: "inherit",
-      encoding: "utf8",
-    });
-  }
-  return spawnSync(process.execPath, nodeArgs, { cwd: ROOT, stdio: "inherit", encoding: "utf8" });
-}
 
 function hasCartridge() {
   try {
@@ -73,25 +65,29 @@ async function main() {
   const total = 5;
   console.log("GotchiBot Solo onboard");
   console.log("======================");
+  console.log(`Platform: ${platformLabel()}`);
   console.log("One command: wallet → register → cartridge → doctor\n");
 
   if (!force && hasCartridge() && readWallet()) {
     console.log("Already set up (wallet + cartridge cached).");
     console.log("  ./scripts/gotchibot tmux");
-    console.log("  ./scripts/gotchibot doctor   re-check env");
+    console.log("  abra run gotchibot -- ./scripts/gotchibot doctor");
     console.log("  ./scripts/gotchibot onboard --force   redo register/init");
     process.exit(0);
   }
 
   step(1, total, "check deps");
-  if (!which("tmux")) die("tmux missing — brew install tmux");
+  if (!commandExists("tmux")) die(`tmux missing — ${tmuxInstallHint()}`);
   ok("node + tmux");
-  if (!hasAbra()) {
-    console.log("    ! abra not found — install abracadabra for secret storage");
-    console.log("      https://github.com/user-defaults/abracadabra");
-  } else {
-    ok("abra on PATH");
+  if (!hasAbra()) die(`abracadabra required — ${abraInstallHint()}`);
+  ok("abra on PATH");
+  const ad = runAbraDoctor();
+  if (!ad.ok) {
+    if (ad.stdout) console.log(ad.stdout);
+    if (ad.stderr) console.error(ad.stderr);
+    die("abra doctor failed — see docs/SOLO-LINUX-WINDOWS.md");
   }
+  ok("abra doctor");
 
   const fleetish = Boolean(
     process.env.REMOTE_HOST ||
@@ -134,19 +130,21 @@ async function main() {
   if (hasCartridge()) {
     ok("cartridge already cached — skipping init");
   } else {
-    const r = abraRun(`${ROOT}/scripts/init.mjs`);
+    const r = runNodeWithAbra(`${ROOT}/scripts/init.mjs`, [], { cwd: ROOT, stdio: "inherit" });
     if (r.status !== 0) die("init failed — fix above, then rerun: ./scripts/gotchibot onboard", r.status || 1);
     ok("cartridge ready");
   }
 
   step(5, total, "doctor");
-  const dr = abraRun(`${ROOT}/scripts/doctor.mjs`);
+  const dr = runNodeWithAbra(`${ROOT}/scripts/doctor.mjs`, [], { cwd: ROOT, stdio: "inherit" });
   if (dr.status !== 0) die("doctor reported failures — fix above", dr.status || 1);
 
   console.log("\n════════════════════════════════════");
   console.log("Solo onboard complete.");
   console.log("  ./scripts/gotchibot tmux          open the cockpit");
+  console.log("  abra run gotchibot -- ./scripts/gotchibot doctor");
   console.log("  ./scripts/gotchibot openclaw install   if OpenClaw CLI not yet installed");
+  console.log("  docs/SOLO-LINUX-WINDOWS.md        Linux / Windows notes");
   console.log("════════════════════════════════════\n");
 }
 

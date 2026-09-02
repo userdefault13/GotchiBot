@@ -2,7 +2,7 @@
 description: Plan mode — write a plan before building; edits limited to .opencode/plans/
 mode: primary
 order: 4
-model: opencode/nemotron-3.5-lightning-free
+model: opencode-go/glm-5.2
 temperature: 0.3
 color: "#FBBF24"
 permission:

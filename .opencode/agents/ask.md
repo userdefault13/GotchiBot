@@ -2,7 +2,7 @@
 description: Read-only Q&A — explain code and answer questions without edits or spawns
 mode: primary
 order: 6
-model: opencode/nemotron-3.5-lightning-free
+model: opencode-go/glm-5.2
 temperature: 0.3
 color: "#98FFB3"
 permission:

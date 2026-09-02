@@ -16,6 +16,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { call, loadMeta } from "./identity.mjs";
 import { resolveSubgraphUrl, infraHeaders } from "./infra-client.mjs";
+import { resolveCastBin, commandExists } from "./platform.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -27,7 +28,8 @@ function coreSubgraphUrl() {
   return process.env.GOTCHIBOT_SUBGRAPH_CORE_URL?.trim() || resolveSubgraphUrl("aavegotchi-core-base");
 }
 const DIAMOND = "0xA99c4B08201F2913Db8D28e71d020c4298F29dBF";
-const CAST_BIN = process.env.CAST_BIN ?? "/Users/juliuswong/.foundry/bin/cast";
+
+const CAST_BIN = resolveCastBin();
 const BASE_RPC = process.env.GOTCHIBOT_BASE_RPC ?? "https://mainnet.base.org";
 
 function subgraphHeaders() {

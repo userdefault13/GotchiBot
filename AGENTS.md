@@ -82,6 +82,7 @@ they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
 | hard logic | `./scripts/cursor-cli.mjs` → `cursor-agent` | coding / debug / patches (Cursor Pro+ on **MBP or iMac**) |
 | escalation | `deepseek/deepseek-v4-pro` | paid OpenCode fallback (needs DEEPSEEK_API_KEY) |
 | fallback | `ollama/qwen2.5:3b` | offline/private |
+| sub-agent delegation | `sub` (glm-5.2 → grok-4.6 → gpt-5 → cursor-cli → nemotron) | default model alias for spawned sub-agents; resolves via `config/models.auto.json` `subagentPrefer` chain; see `skills/delegate-model/SKILL.md` |
 
 NVIDIA_API_KEY flows through abracadabra (`abra run gotchibot -- ...`); opencode
 reads it via `{env:NVIDIA_API_KEY}` — it is never written to disk.

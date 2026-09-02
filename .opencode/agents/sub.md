@@ -2,7 +2,7 @@
 description: Sub-agent desk — switch/chat the cartridge roster excluding the orchestrator
 mode: primary
 order: 2
-model: opencode/nemotron-3.5-lightning-free
+model: opencode-go/glm-5.2
 temperature: 0.4
 color: "#22D3EE"
 permission:

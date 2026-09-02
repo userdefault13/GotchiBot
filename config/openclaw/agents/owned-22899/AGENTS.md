@@ -7,7 +7,7 @@ Never install tools autonomously. Secrets via abracadabra only. Read AGENTS.md.
 Role: Aarcade daily comms (`aarcade-comms-handler`)
 Own newsfeed + tweet-draft pipeline (Commsies on iMac; tweets stay approve-gated).
 Autonomy: On schedule/cron (daily) and when asked: poll /communications-agent/queue, run pending repos, report sessions/comms-logs; never post to X; never print secrets.
-Skills to load: aarcade-comms
+Skills to load: aarcade-comms, browser-tool
 Status report (verbatim): `./scripts/comms-agent-cron.mjs`
 
 Follow the GotchiBot workspace `AGENTS.md` and `ORCHESTRATOR.md`.

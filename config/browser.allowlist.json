@@ -1,0 +1,25 @@
+{
+  "allowedHosts": ["localhost", "127.0.0.1", "::1", "*.aarcadeghst.com"],
+  "blockedClickPatterns": [
+    "submit",
+    "checkout",
+    "place-order",
+    "place order",
+    "purchase",
+    "buy",
+    "pay now",
+    "complete order"
+  ],
+  "sensitiveFieldPatterns": [
+    "password",
+    "passwd",
+    "card",
+    "cc-number",
+    "cvv",
+    "cvc",
+    "payment",
+    "secret",
+    "token"
+  ],
+  "_comment": "Host allowlist for scripts/browser-tool.mjs. Navigation to non-listed hosts fails — Julius adds hosts by editing this file manually. Wildcard subdomain via *.domain.com. Example: to allow a grocery store later add \"staterbros.com\" and \"*.staterbros.com\" to allowedHosts. blockedClickPatterns gate destructive clicks unless --confirm is passed. sensitiveFieldPatterns drive value masking in all output."
+}

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { call, loadMeta, saveMeta, GAME_ID } from "./identity.mjs";
 import { persistHeroCollateral, findCollateralColors, writeWalletGotchiCache, loadWalletGotchiIndex } from "./collateral-resolve.mjs";
 import { resolveSubgraphUrl, infraHeaders } from "./infra-client.mjs";
+import { resolveCastBin } from "./platform.mjs";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const SESSIONS = `${ROOT}/sessions`;
@@ -151,7 +152,8 @@ const GOTCHIS_BY_OWNER_NESTED_QUERY = `query GotchisByOwnerNested($owner: String
 }`;
 
 const AAVEGOTCHI_DIAMOND = "0xA99c4B08201F2913Db8D28e71d020c4298F29dBF";
-const CAST_BIN = process.env.CAST_BIN ?? "/Users/juliuswong/.foundry/bin/cast";
+
+const CAST_BIN = resolveCastBin();
 const BASE_RPC_URLS = [
   process.env.GOTCHIBOT_BASE_RPC,
   process.env.BASE_RPC_URL,

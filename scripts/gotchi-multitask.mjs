@@ -21,8 +21,8 @@ const GROUPS = `${SESSIONS}/.multitask`;
 
 function usage() {
   console.error(`usage:
-  gotchi-multitask.mjs run [--model nim|pro|local] [--wait] [--merge] [--max N] "request"
-  gotchi-multitask.mjs run --tasks "task one" "task two" [--model nim]
+  gotchi-multitask.mjs run [--model sub|nim|pro|local] [--wait] [--merge] [--max N] "request"
+  gotchi-multitask.mjs run --tasks "task one" "task two" [--model sub]
   gotchi-multitask.mjs status <groupId>
   gotchi-multitask.mjs wait <groupId>`);
   process.exit(2);
@@ -97,7 +97,7 @@ If one coherent task, return a single-element array.`;
     if (!tasks?.length) return null;
     return tasks.slice(0, max).map((t) => ({
       prompt: String(t.prompt || t.task || "").trim(),
-      model: ["nim", "pro", "local"].includes(t.model) ? t.model : "nim",
+      model: ["sub", "nim", "pro", "local"].includes(t.model) ? t.model : "sub",
     })).filter((t) => t.prompt);
   } catch {
     return null;
@@ -105,7 +105,7 @@ If one coherent task, return a single-element array.`;
 }
 
 async function resolveTasks(argv) {
-  let model = "auto";
+  let model = "sub";
   let max = 5;
   let explicit = false;
   const tasks = [];

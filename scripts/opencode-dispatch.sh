@@ -50,6 +50,7 @@ model_for() {
     flash) echo "deepseek/deepseek-v4-flash" ;;
     pro) echo "deepseek/deepseek-v4-pro" ;;
     local) echo "ollama/qwen2.5:3b" ;;
+    sub) node "$ROOT/scripts/model-auto.mjs" subagent ;;
     *) echo "$1" ;;
   esac
 }

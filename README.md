@@ -1,7 +1,7 @@
 # GotchiBot
 
-Open-source **Aavegotchi agent orchestrator** for macOS — OpenClaw / OpenCode cockpit,
-cAavegotchi heroes, and Solo or Fleet topology.
+Open-source **Aavegotchi agent orchestrator** — macOS, Linux, and Windows (WSL2 for tmux cockpit).
+OpenClaw / OpenCode cockpit, cAavegotchi heroes, and Solo or Fleet topology.
 
 **npm:** [`@userdefault/gotchibot`](https://www.npmjs.com/package/@userdefault/gotchibot) ·
 **Source:** [github.com/userdefault13/GotchiBot](https://github.com/userdefault13/GotchiBot) (public) ·
@@ -15,7 +15,7 @@ and official hosted infra require a separate entitlement — see [COMMERCIAL.md]
 
 | What you need | Why |
 |---|---|
-| [**abracadabra**](https://www.npmjs.com/package/@userdefault/abracadabra) | Model keys and secrets in a Touch ID vault — never in repo files |
+| [**abracadabra**](https://www.npmjs.com/package/@userdefault/abracadabra) | Secrets vault (Keychain / keytar) — never in repo files |
 | **GotchiBot install token** | Authenticates your install with official AarcadeGh$t API (subgraph proxy, cartridge sim) |
 | **Abra License NFT** (for abra) | Full abracadabra activation when using the vault alongside GotchiBot |
 
@@ -27,10 +27,14 @@ abra set gotchibot OPENCODE_API_KEY
 
 ## Requirements
 
-- macOS
+- **macOS**, **Linux**, or **Windows** (WSL2 recommended for `gotchibot tmux`)
 - Node ≥ 18
-- `tmux` (`brew install tmux`)
-- [abracadabra](https://www.npmjs.com/package/@userdefault/abracadabra) for secrets
+- `tmux` — [platform install hints](docs/SOLO-LINUX-WINDOWS.md)
+- [abracadabra](https://www.npmjs.com/package/@userdefault/abracadabra) for secrets (`abra doctor`)
+
+Linux: `sudo apt install libsecret-1-dev build-essential` before `npm i -g @userdefault/abracadabra`.
+
+See [docs/SOLO-LINUX-WINDOWS.md](docs/SOLO-LINUX-WINDOWS.md) for full cross-platform onboarding. **Windows:** use WSL2 (`gotchibot wsl`).
 
 ## Install
 
@@ -38,6 +42,7 @@ abra set gotchibot OPENCODE_API_KEY
 
 ```bash
 npm install -g @userdefault/gotchibot @userdefault/abracadabra
+abra doctor
 gotchibot onboard
 ```
 

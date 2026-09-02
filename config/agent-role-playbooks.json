@@ -2,28 +2,28 @@
   "trader-desk": {
     "title": "Trader desk",
     "summary": "Own Gotchi-Trader paper desk health and PnL reporting.",
-    "skills": ["gotchi-trader-monitor", "gotchi-trader-improve", "market-news-feed"],
+    "skills": ["gotchi-trader-monitor", "gotchi-trader-improve", "market-news-feed", "browser-tool"],
     "reportCmd": "./scripts/gotchi-trader-desk.mjs status",
     "autonomy": "On schedule/cron and when asked: check desk health; alert first; never live execution; never print secrets."
   },
   "infra-monitor": {
     "title": "Infra home monitor",
     "summary": "Own iMac Docker/subgraph/tunnel health.",
-    "skills": ["infra-recover"],
+    "skills": ["infra-recover", "browser-tool"],
     "reportCmd": "./scripts/infra-monitor-cron.mjs --json",
     "autonomy": "Cron ticks the checks; when asked report latest sessions/infra-logs; on degrade follow infra-recover (paper-only)."
   },
   "orchestrator": {
     "title": "Orchestrator",
     "summary": "Chair/delegate — do not DIY sub-agent jobs.",
-    "skills": ["delegate-first"],
+    "skills": ["delegate-first", "browser-tool"],
     "reportCmd": "./scripts/agent-focus.mjs status",
     "autonomy": "Delegate-first; merge results; stay gotchi/ORCH."
   },
   "aarcade-comms-handler": {
     "title": "Aarcade daily comms",
     "summary": "Own newsfeed + tweet-draft pipeline (Commsies on iMac; tweets stay approve-gated).",
-    "skills": ["aarcade-comms"],
+    "skills": ["aarcade-comms", "browser-tool"],
     "reportCmd": "./scripts/comms-agent-cron.mjs",
     "autonomy": "On schedule/cron (daily) and when asked: poll /communications-agent/queue, run pending repos, report sessions/comms-logs; never post to X; never print secrets."
   }

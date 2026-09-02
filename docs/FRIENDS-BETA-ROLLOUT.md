@@ -35,10 +35,10 @@ Do these on **Vercel (AarcadeGh-t / www)** and the **iMac Envio proxy**. Code is
 
 ### Friend
 
-1. Install **abra** (Mac secrets vault) + `tmux` + Node ≥ 18.
-2. `./scripts/gotchibot onboard` (wallet → register → cartridge → doctor).
+1. Install **abracadabra** + `tmux` + Node ≥ 18 (macOS, Linux, or Windows/WSL2 — see [SOLO-LINUX-WINDOWS.md](./SOLO-LINUX-WINDOWS.md)).
+2. `npm i -g @userdefault/abracadabra @userdefault/gotchibot` → `abra doctor` → `./scripts/gotchibot onboard`.
 3. BYO models: `abra set gotchibot OPENCODE_API_KEY` (never paste into chat/git).
-4. `./scripts/gotchibot tmux`.
+4. `./scripts/gotchibot tmux` (WSL2 on Windows).
 
 No Julius operator secrets. Token lives only in **their** abra as `GOTCHIBOT_INFRA_TOKEN`.
 
@@ -85,12 +85,14 @@ Expected: doctor shows `solo install token` + valid status; init mints cartridge
 Without `GOTCHIBOT_INFRA_TOKEN` in abra:
 
 ```bash
-abra run gotchibot -- ./scripts/gotchibot doctor
-abra run gotchibot -- ./scripts/gotchibot init   # if needed
-abra run gotchibot -- ./scripts/gotchibot roster --wallet
+abra run gotchibot -- bash -c 'unset GOTCHIBOT_INFRA_TOKEN; ./scripts/gotchibot doctor'
+abra run gotchibot -- bash -c 'unset GOTCHIBOT_INFRA_TOKEN; ./scripts/gotchibot init'   # if needed
+abra run gotchibot -- bash -c 'unset GOTCHIBOT_INFRA_TOKEN; ./scripts/gotchibot roster --wallet'
 ```
 
 Expected: `legacy operator secrets`; direct tunnel + service key path unchanged.
+
+**Status (2026-09-01):** ✓ doctor → legacy operator secrets; tunnel subgraph 200; roster 23 gotchis; init idempotent.
 
 ## Phase 4 — flip API enforcement
 

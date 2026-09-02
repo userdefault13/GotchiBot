@@ -3,9 +3,9 @@ description: GotchiBot orchestrator — delegate-first to local/remote agents, t
 mode: primary
 order: 1
 color: "#B650FF"
-# Gotchi mode loads on Nemotron 3.5 Lightning Free. OpenClaw orch is opt-in via
+# Gotchi mode loads on OpenCode Go GLM 5.2. OpenClaw orch is opt-in via
 # GOTCHIBOT_GOTCHI_BACKEND=openclaw-gateway / GOTCHIBOT_OPENCLAW_OPENCODE_MODEL.
-model: opencode/nemotron-3.5-lightning-free
+model: opencode-go/glm-5.2
 temperature: 0.5
 permission:
   plan_enter: allow

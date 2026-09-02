@@ -8,6 +8,17 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { getTopology, topologyPath } from "./topology.mjs";
 import { authMode, AUTH_CFG } from "./infra-client.mjs";
+import {
+  commandExists,
+  hasAbra,
+  runAbraDoctor,
+  abraInstallHint,
+  tmuxInstallHint,
+  platformLabel,
+  isWsl,
+  isNativeWindows,
+  WSL_DOC,
+} from "./platform.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -20,15 +31,51 @@ const fail = (msg) => {
   fails++;
   console.log(`fail  ${msg}`);
 };
-const which = (bin) =>
-  spawnSync("bash", ["-c", `command -v ${bin}`], { encoding: "utf8" }).status === 0;
 
 /* ─── 1. runtime deps ─────────────────────────────────────────── */
+ok(`platform ${platformLabel()}`);
+if (isWsl()) ok("runtime: WSL2 (full Linux path — tmux cockpit supported)");
+else if (isNativeWindows()) warn(`native Windows — tmux cockpit unavailable; use WSL2 (${WSL_DOC})`);
 ok(`node ${process.version}`);
-if (which("tmux")) ok("tmux on PATH");
-else fail("tmux missing — brew install tmux");
-if (which("abra")) ok("abra on PATH");
-else warn("abra missing — secrets require abracadabra (abra run gotchibot -- …)");
+if (commandExists("tmux")) ok("tmux on PATH");
+else if (isNativeWindows()) warn(`tmux missing on native Windows — run inside WSL2: gotchibot wsl`);
+else fail(`tmux missing — ${tmuxInstallHint()}`);
+
+const topoEarly = getTopology();
+if (hasAbra()) {
+  ok("abra on PATH");
+  const ad = runAbraDoctor();
+  if (ad.ok) ok("abra doctor");
+  else if (topoEarly.mode === "solo") fail("abra doctor failed — see docs/SOLO-LINUX-WINDOWS.md");
+  else warn("abra doctor failed — secrets may not inject until fixed");
+} else if (topoEarly.mode === "solo") {
+  fail(`abracadabra required — ${abraInstallHint()}`);
+} else {
+  warn(`abra missing — fleet/legacy: abra run gotchibot -- … (${abraInstallHint()})`);
+}
+if (commandExists("aseprite")) ok("aseprite CLI on PATH (gotchibot aseprite check)");
+else warn("aseprite missing — pixel art export unavailable; install Aseprite or set ASEPRITE_BIN");
+
+try {
+  const aseCfg = JSON.parse(readFileSync(`${ROOT}/config/aseprite.json`, "utf8"));
+  const home = process.env.HOME || "";
+  const expand = (p) => {
+    const m = String(p).match(/^\$\{([A-Z0-9_]+):-([^}]*)\}$/);
+    const raw = m ? process.env[m[1]] || m[2] : p;
+    if (String(raw).startsWith("~/")) return `${home}/${String(raw).slice(2)}`;
+    return raw;
+  };
+  for (const [key, envName, marker] of [
+    ["svgImporter", "GOTCHIBOT_SVG_IMPORTER", "svg-importer-cli.lua"],
+    ["svgExporter", "GOTCHIBOT_SVG_EXPORTER", "svg-generator.lua"],
+  ]) {
+    const dir = expand(aseCfg.extensions?.[key] || "");
+    if (dir && existsSync(`${dir}/${marker}`)) ok(`aseprite ${key}: ${dir}`);
+    else warn(`aseprite ${key} missing — set ${envName} or config/aseprite.json extensions.${key}`);
+  }
+} catch {
+  warn("config/aseprite.json unreadable — SVG import/export paths unknown");
+}
 
 /* ─── 2. topology ─────────────────────────────────────────────── */
 const topo = getTopology();

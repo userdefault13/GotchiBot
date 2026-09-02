@@ -553,6 +553,24 @@
       "description": "Before broad search, reuse prior turns and sessions/.thread-anchor.json (files, selectors, parents). Follow-ups: parent/tighter/same. Bridges: HANDOFF, aarcadeghst-changes, cursor-cli resume. Full-tree search last.",
       "path": ".opencode/skills/thread-continuity/SKILL.md",
       "addedAt": "2026-08-30"
+    },
+    "browser-tool": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Safe Playwright browser CLI: host allowlist, destructive-click confirm gate, value masking, persistent sessions. Tests pass pre-install; setup is manual-only.",
+      "path": ".opencode/skills/browser-tool/SKILL.md",
+      "script": "scripts/browser-tool.mjs",
+      "addedAt": "2026-08-31"
+    },
+    "aseprite-tool": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Aseprite CLI wrapper: batch export, init tilesets/sprites, SVG import/export (aesprite-svgimporter + Aseprite-SVGexporter), Lua scripts, list layers/tags.",
+      "path": ".opencode/skills/aseprite-tool/SKILL.md",
+      "script": "scripts/aseprite-tool.mjs",
+      "addedAt": "2026-09-01"
     }
   },
   "sources": {

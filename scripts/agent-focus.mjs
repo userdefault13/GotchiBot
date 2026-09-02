@@ -909,12 +909,12 @@ async function escalateToOrch(prompt, { reason, spawn = false } = {}) {
   ].join("\n");
   const orchPath = `${ROOT}/scripts/gotchi-orchestrate.mjs`;
   const r = existsSync(orchPath)
-    ? spawnSync(process.execPath, [orchPath, "spawn", "--model", "auto", wrapped], {
+    ? spawnSync(process.execPath, [orchPath, "spawn", "--model", "sub", wrapped], {
         cwd: ROOT,
         env,
         encoding: "utf8",
       })
-    : spawnSync(`${ROOT}/scripts/opencode-dispatch.sh`, ["new", "--model", "auto", wrapped], {
+    : spawnSync(`${ROOT}/scripts/opencode-dispatch.sh`, ["new", "--model", "sub", wrapped], {
         cwd: ROOT,
         env,
         encoding: "utf8",
@@ -1033,7 +1033,7 @@ async function cmdChat(prompt, { force, spawnOnEscalate = false } = {}) {
   console.log(`sub chat → ${focus.heroId || focus.label} local (dispatch fallback)`);
   const r = spawnSync(
     `${ROOT}/scripts/opencode-dispatch.sh`,
-    ["new", "--model", "nim", wrapped],
+    ["new", "--model", "sub", wrapped],
     { cwd: ROOT, env, encoding: "utf8" },
   );
   if (r.stdout) process.stdout.write(r.stdout);

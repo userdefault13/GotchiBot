@@ -59,7 +59,11 @@ function authHeaders(secret) {
 
 async function apiGet(path, secret) {
   const r = await fetch(`${API_BASE}${path}`, { headers: authHeaders(secret) });
-  const data = await r.json().catch(() => ({}));
+  const ct = r.headers.get("content-type") || "";
+  const data = ct.includes("application/json") ? await r.json().catch(() => ({})) : {};
+  if (!ct.includes("application/json")) {
+    throw new Error(`${path} → ${r.status}: non-JSON response (is communications-agent deployed?)`);
+  }
   if (!r.ok) throw new Error(`${path} → ${r.status}: ${data.error || ""}`);
   return data;
 }
@@ -70,7 +74,11 @@ async function apiPost(path, body, secret) {
     headers: authHeaders(secret),
     body: JSON.stringify(body),
   });
-  const data = await r.json().catch(() => ({}));
+  const ct = r.headers.get("content-type") || "";
+  const data = ct.includes("application/json") ? await r.json().catch(() => ({})) : {};
+  if (!ct.includes("application/json")) {
+    throw new Error(`${path} → ${r.status}: non-JSON response (is communications-agent deployed?)`);
+  }
   if (!r.ok) throw new Error(`${path} → ${r.status}: ${data.error || ""}`);
   return data;
 }

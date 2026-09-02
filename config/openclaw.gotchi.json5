@@ -6,6 +6,6 @@
   // OpenClaw bundled plugin: opencode-go (uses OPENCODE_API_KEY).
 
   workspace: "~/Dev/GotchiBot",
-  model: "opencode-go/kimi-k3",
+  model: "opencode-go/glm-5.2",
   thinkingDefault: "off",
 }

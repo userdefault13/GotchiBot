@@ -2,7 +2,7 @@
 description: Verse mode — Gotchiverse realm, parcels, alchemica, and on-chain gotchis
 mode: primary
 order: 3
-model: opencode/nemotron-3.5-lightning-free
+model: opencode-go/glm-5.2
 temperature: 0.4
 color: "#14B8A6"
 permission:

@@ -1,6 +1,6 @@
 {
   "//": "Sub-agent definitions consumed by scripts/opencode-dispatch.sh and the OpenClaw gateway.",
-  "defaultModel": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+  "defaultModel": "opencode-go/glm-5.2",
   "orchestrator": {
     "id": "gotchi",
     "openclawAgentId": "owned-954",
@@ -15,17 +15,17 @@
   },
   "agents": {
     "sub-coder": {
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "opencode-go/glm-5.2",
       "role": "volume coding tasks",
       "sandbox": "workspace-only"
     },
     "sub-hard": {
-      "model": "deepseek/deepseek-v4-pro",
+      "model": "opencode-go/glm-5.2",
       "role": "escalation: hard reasoning / architecture / gnarly bugs",
       "sandbox": "workspace-only"
     },
     "sub-local": {
-      "model": "ollama/deepseek-r1:8b",
+      "model": "opencode-go/glm-5.2",
       "endpoint": "http://192.168.1.162:11434",
       "role": "offline/private fallback (via tunnel after migration)",
       "sandbox": "workspace-only"

@@ -183,6 +183,78 @@ function pinModel(model) {
   writeFileSync(PIN_PATH, `export GOTCHIBOT_OPENCODE_MODEL=${model}\n`);
 }
 
+export async function pickSubagentModel({ json = false } = {}) {
+  const cfg = loadCfg();
+  const cache = loadCache();
+  const now = Date.now();
+  const ttlOk = Number(cfg.ttlOkSec ?? 0) * 1000;
+  const ttlFail = (cfg.ttlFailSec || 1800) * 1000;
+
+  // Check if OpenCode Go key is present (needed for opencode-go models)
+  const goKeyPresent = hasOpencodeGoKey();
+
+  if (goKeyPresent) {
+    const prefer = (cfg.subagentPrefer || []).map(oc);
+    for (const model of prefer) {
+      if (cache.cooldown?.[model] && now < cache.cooldown[model]) {
+        continue; // skip model on cooldown
+      }
+      // Model is available: Go key present + not in cooldown
+      const result = {
+        route: "spawn",
+        model,
+        reason: "subagent-prefer",
+        cached: false,
+      };
+      if (json) return result;
+      process.stdout.write(model);
+      return;
+    }
+    // No subagent models available despite Go key — fall through to cursor/fallback
+    const fallback = cfg.subagentFallback || "opencode/nemotron-3.5-lightning-free";
+    const result2 = {
+      route: "spawn",
+      model: fallback,
+      reason: "subagent-fallback",
+      cached: false,
+    };
+    if (json) return result2;
+    process.stdout.write(fallback);
+    return;
+  }
+
+  // No OpenCode Go key — check cursor-agent binary availability
+  try {
+    const { spawnSync } = await import("node:child_process");
+    const r = spawnSync("command", ["-v", "cursor-agent"], {
+      encoding: "utf8",
+      shell: true,
+    });
+    const found = (r.stdout || "").trim().split("\n")[0];
+    if (found && require("node:fs").existsSync(found)) {
+      const result = {
+        route: "cursor-cli",
+        reason: "cursor-available",
+        cached: false,
+      };
+      if (json) return result;
+      process.stdout.write("cursor-cli");
+      return;
+    }
+  } catch {}
+
+  // Full fallback: nemotron
+  const fallback = cfg.subagentFallback || "opencode/nemotron-3.5-lightning-free";
+  const result3 = {
+    route: "spawn",
+    model: fallback,
+    reason: "subagent-fallback",
+    cached: false,
+  };
+  if (json) return result3;
+  process.stdout.write(fallback);
+}
+
 export async function pickModel({ probe = false, json = false } = {}) {
   const cfg = loadCfg();
   const cache = loadCache();
@@ -274,6 +346,11 @@ export async function resolveAlias(name, opts = {}) {
   const key = String(name || "auto").trim();
   if (!key || key === "auto" || key === "free") return pickModel(opts);
   if (a[key] && a[key] !== "AUTO") return opts.json ? { model: a[key], reason: "alias" } : a[key];
+  if (key === "sub") {
+    const picked = pickSubagentModel({ json: opts.json });
+    if (opts.json) return picked;
+    return picked.model;
+  }
   return opts.json ? { model: key, reason: "passthrough" } : key;
 }
 
@@ -306,6 +383,14 @@ if (isCli) {
       };
     }
     if (cmd === "resolve") return resolveAlias(rest[0] || "auto", { probe, json: true });
+if (cmd === "subagent") {
+  const r = await pickSubagentModel({ json: argv.includes("--json") });
+  if (argv.includes("--json")) {
+    return r;
+  } else {
+    return r.model;
+  }
+}
     throw new Error("usage: model-auto.mjs pick|pin|list|resolve [alias] [--json] [--probe]");
   };
   out()

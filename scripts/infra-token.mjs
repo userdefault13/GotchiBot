@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * GotchiBot install token — register + status (store token in abra only).
+ * GotchiBot install token — register + status (store token in abra).
  */
 import http from "node:http";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
@@ -9,6 +9,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { AUTH_CFG } from "./infra-client.mjs";
+import {
+  hasAbra,
+  resolveCastBin,
+  saveSecretToAbra,
+  abraInstallHint,
+  GOTCHIBOT_ABRA_PROJECT,
+} from "./platform.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -39,31 +46,20 @@ function buildRegisterMessage(wallet, installId) {
 }
 
 function castBin() {
-  return process.env.CAST_BIN ?? "/Users/juliuswong/.foundry/bin/cast";
-}
-
-function hasAbra() {
-  return spawnSync("bash", ["-c", "command -v abra"], { encoding: "utf8" }).status === 0;
+  return resolveCastBin();
 }
 
 function saveTokenToAbra(token) {
   if (!hasAbra()) {
-    console.log("\nStore the token in abracadabra (never in git):");
-    console.log("  echo '<token>' | abra set gotchibot GOTCHIBOT_INFRA_TOKEN --stdin");
+    console.log(`\nabracadabra required — ${abraInstallHint()}`);
+    console.log(`Then: echo '<token>' | abra set ${GOTCHIBOT_ABRA_PROJECT} GOTCHIBOT_INFRA_TOKEN --stdin`);
     return false;
   }
-  const r = spawnSync("abra", ["set", "gotchibot", "GOTCHIBOT_INFRA_TOKEN", "--stdin"], {
-    input: token,
-    encoding: "utf8",
-    stdio: ["pipe", "inherit", "inherit"],
-  });
-  if (r.status !== 0) {
-    console.error("\nCould not save to abra — store manually:");
-    console.error("  echo '<token>' | abra set gotchibot GOTCHIBOT_INFRA_TOKEN --stdin");
-    return false;
+  const ok = saveSecretToAbra("GOTCHIBOT_INFRA_TOKEN", token);
+  if (ok) {
+    console.log(`    ✓ GOTCHIBOT_INFRA_TOKEN saved in abra (${GOTCHIBOT_ABRA_PROJECT} project)`);
   }
-  console.log("    ✓ GOTCHIBOT_INFRA_TOKEN saved in abra (gotchibot project)");
-  return true;
+  return ok;
 }
 
 function openBrowser(url) {
@@ -106,57 +102,142 @@ function renderSignPage(wallet, message) {
        align-items:center;justify-content:center;min-height:100vh;margin:0;padding:1rem}
   .card{background:#1e1b2e;padding:2rem 3rem;border-radius:16px;text-align:center;max-width:520px}
   button{background:#8b5cf6;color:#fff;border:0;border-radius:10px;padding:.9rem 2rem;
-         font-size:1rem;cursor:pointer;width:100%;max-width:280px}
+         font-size:1rem;cursor:pointer;width:100%;max-width:280px;margin:.35rem 0}
+  button.secondary{background:#312e81}
   button:hover{background:#7c3aed}
+  button.secondary:hover{background:#4338ca}
   button:disabled{opacity:.5;cursor:not-allowed}
   .status{margin-top:1rem;font-size:.9rem;line-height:1.4;color:#a78bfa;min-height:1.4em}
   .ok{color:#4ade80}.err{color:#f87171}
   .hint{color:#888;font-size:.85rem;margin-top:.75rem}
+  .wallets{color:#c4b5fd;font-size:.85rem;margin:.5rem 0;min-height:1.2em}
   pre{background:#0f0d18;padding:.75rem;border-radius:8px;text-align:left;font-size:.75rem;
       white-space:pre-wrap;word-break:break-word;color:#c4b5fd}
+  .steps{text-align:left;font-size:.85rem;color:#a78bfa;margin:1rem 0;line-height:1.5}
+  .steps li{margin:.25rem 0}
 </style></head>
 <body><div class="card">
   <h2>Register GotchiBot</h2>
   <p>Sign to prove wallet ownership. No transaction, no fee.</p>
-  <p class="hint">Wallet: <code id="wallet"></code></p>
+  <p class="hint">Use Chrome or Brave with MetaMask — not Safari.</p>
+  <ol class="steps">
+    <li><strong>Connect</strong> — unlock MetaMask and pick the wallet below</li>
+    <li><strong>Sign</strong> — approve the registration message</li>
+  </ol>
+  <p class="hint">Expected wallet: <code id="wallet"></code></p>
+  <div class="wallets" id="wallets"></div>
+  <button type="button" class="secondary" id="connect">1. Connect MetaMask</button>
+  <button type="button" id="sign" disabled>2. Sign message</button>
   <pre id="msg"></pre>
-  <button type="button" id="sign">Sign message</button>
   <div class="status" id="status"></div>
 </div>
 <script>
 const WALLET = ${w};
 const MESSAGE = ${m};
+const discovered = [];
+let connectedAccount = null;
+
 document.getElementById('wallet').textContent = WALLET;
 document.getElementById('msg').textContent = MESSAGE;
+
+window.addEventListener('eip6963:announceProvider', (event) => {
+  if (event?.detail?.provider) discovered.push(event.detail);
+});
+window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+function friendlyError(e) {
+  const msg = String(e?.message || e || '');
+  if (/metamask extension not found/i.test(msg)) {
+    return 'MetaMask not found — install in Chrome/Brave, reload, then Connect.';
+  }
+  if (/user rejected|rejected the request|4001/i.test(msg)) {
+    return 'Cancelled in wallet — unlock MetaMask and try again.';
+  }
+  if (/already pending/i.test(msg)) {
+    return 'Wallet popup already open — check MetaMask.';
+  }
+  return msg || 'Unknown error';
+}
+
+function pickWallet() {
+  const mm6963 = discovered.find((d) => /metamask/i.test(d?.info?.name || ''));
+  if (mm6963?.provider) return { provider: mm6963.provider, label: mm6963.info.name || 'MetaMask' };
+  if (window.ethereum?.isMetaMask) return { provider: window.ethereum, label: 'MetaMask' };
+  if (discovered.length) {
+    const d = discovered[0];
+    return { provider: d.provider, label: d.info?.name || 'Browser wallet' };
+  }
+  if (window.ethereum) return { provider: window.ethereum, label: 'Browser wallet' };
+  return null;
+}
+
+function showDetectedWallets() {
+  const el = document.getElementById('wallets');
+  const names = discovered.map((d) => d.info?.name).filter(Boolean);
+  if (window.ethereum?.isMetaMask && !names.some((n) => /metamask/i.test(n))) names.unshift('MetaMask');
+  if (!names.length && !window.ethereum) {
+    el.textContent = 'No wallet detected — install MetaMask, then reload.';
+    return;
+  }
+  el.textContent = names.length
+    ? 'Detected: ' + names.join(', ')
+    : 'Wallet provider detected.';
+}
 
 function toHexUtf8(text) {
   const bytes = new TextEncoder().encode(text);
   return '0x' + [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function pickWallet() {
-  if (window.ethereum?.isMetaMask) return window.ethereum;
-  return window.ethereum || null;
-}
-
-async function sign() {
-  const btn = document.getElementById('sign');
+async function connectWallet() {
+  const btn = document.getElementById('connect');
+  const signBtn = document.getElementById('sign');
   const s = document.getElementById('status');
   btn.disabled = true;
   s.className = 'status';
   try {
-    const provider = pickWallet();
-    if (!provider) throw new Error('No wallet extension — use Chrome/Brave with MetaMask.');
-    s.textContent = 'Connecting wallet…';
-    const accounts = await provider.request({ method: 'eth_requestAccounts' });
-    const address = (accounts[0] || '').toLowerCase();
-    if (address !== WALLET) {
-      throw new Error('Switch to wallet ' + WALLET + ' (got ' + address + ')');
+    const wallet = pickWallet();
+    if (!wallet?.provider) {
+      throw new Error('No wallet extension — use Chrome/Brave with MetaMask.');
     }
-    s.textContent = 'Approve the signature in your wallet…';
-    const signature = await provider.request({
+    s.textContent = 'Unlock MetaMask if needed, then approve Connect…';
+    const accounts = await wallet.provider.request({ method: 'eth_requestAccounts' });
+    const address = (accounts[0] || '').toLowerCase();
+    if (!address) throw new Error('No account returned');
+    if (address !== WALLET) {
+      throw new Error('Switch MetaMask to ' + WALLET + ' (connected ' + address + ')');
+    }
+    connectedAccount = accounts[0];
+    s.className = 'status ok';
+    s.textContent = 'Connected ' + address.slice(0, 6) + '…' + address.slice(-4) + ' — now Sign.';
+    signBtn.disabled = false;
+    btn.textContent = 'Connected ✓';
+  } catch (e) {
+    s.className = 'status err';
+    s.textContent = friendlyError(e);
+    btn.disabled = false;
+    signBtn.disabled = true;
+    connectedAccount = null;
+  }
+}
+
+async function signMessage() {
+  const btn = document.getElementById('sign');
+  const s = document.getElementById('status');
+  if (!connectedAccount) {
+    s.className = 'status err';
+    s.textContent = 'Connect MetaMask first (step 1).';
+    return;
+  }
+  btn.disabled = true;
+  s.className = 'status';
+  try {
+    const wallet = pickWallet();
+    if (!wallet?.provider) throw new Error('Wallet disconnected — Connect again.');
+    s.textContent = 'Approve the signature in MetaMask…';
+    const signature = await wallet.provider.request({
       method: 'personal_sign',
-      params: [toHexUtf8(MESSAGE), accounts[0]],
+      params: [toHexUtf8(MESSAGE), connectedAccount],
     });
     s.textContent = 'Saving…';
     const res = await fetch('/callback', {
@@ -173,11 +254,15 @@ async function sign() {
     }
   } catch (e) {
     s.className = 'status err';
-    s.textContent = String(e?.message || e);
+    s.textContent = friendlyError(e);
     btn.disabled = false;
   }
 }
-document.getElementById('sign').addEventListener('click', () => sign());
+
+document.getElementById('connect').addEventListener('click', () => connectWallet());
+document.getElementById('sign').addEventListener('click', () => signMessage());
+showDetectedWallets();
+setTimeout(showDetectedWallets, 400);
 </script></body></html>`;
 }
 
@@ -229,7 +314,7 @@ function signMessageBrowser(wallet, message) {
 
     server.on("error", (e) => reject(e));
     server.listen(SIGN_PORT, "127.0.0.1", () => {
-      console.log("    open browser → sign with your wallet (Chrome/Brave + MetaMask)");
+      console.log("    open browser → Connect MetaMask, then Sign (Chrome/Brave)");
       console.log(`    ${url}`);
       openBrowser(url);
     });
@@ -296,7 +381,11 @@ async function registerInstall({ saveAbra = true, preferBrowser = true, quiet = 
     throw new Error(`register failed HTTP ${res.status}: ${JSON.stringify(body)}`);
   }
   if (!body.token) throw new Error("register response missing token");
-  if (saveAbra) saveTokenToAbra(body.token);
+  if (saveAbra && !saveTokenToAbra(body.token)) {
+    throw new Error(
+      "could not save GOTCHIBOT_INFRA_TOKEN to abra — run: abra doctor (see docs/SOLO-LINUX-WINDOWS.md)",
+    );
+  }
   return { token: body.token, wallet, installId, expiresAt: body.expiresAt ?? null };
 }
 
@@ -363,4 +452,5 @@ if (isDirectRun()) {
   });
 }
 
-export { buildRegisterMessage, ensureInstallId, readWallet, registerInstall, saveTokenToAbra, hasAbra };
+export { buildRegisterMessage, ensureInstallId, readWallet, registerInstall, saveTokenToAbra };
+export { hasAbra } from "./platform.mjs";

@@ -7,7 +7,7 @@ Never install tools autonomously. Secrets via abracadabra only. Read AGENTS.md.
 Role: Infra home monitor (`infra-monitor`)
 Own iMac Docker/subgraph/tunnel health.
 Autonomy: Cron ticks the checks; when asked report latest sessions/infra-logs; on degrade follow infra-recover (paper-only).
-Skills to load: infra-recover
+Skills to load: infra-recover, browser-tool
 Status report (verbatim): `./scripts/infra-monitor-cron.mjs --json`
 
 Follow the GotchiBot workspace `AGENTS.md` and `ORCHESTRATOR.md`.

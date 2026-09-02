@@ -85,7 +85,7 @@ function cmdSetup() {
   console.log("    3. sim-mint gotchibot cartridge");
   console.log("    4. doctor checklist");
   console.log("");
-  console.log("  Before onboard: node ≥ 18, tmux (brew install tmux), abra on PATH.");
+  console.log("  Before onboard: node ≥ 18, tmux, abra on PATH — see docs/SOLO-LINUX-WINDOWS.md");
   if (referral?.goUrl) {
     console.log(`  After onboard: ${referral.label ?? "OpenCode Go"} → ${referral.goUrl}`);
     console.log("    (BYO models: abra set gotchibot OPENCODE_API_KEY — never in files)");

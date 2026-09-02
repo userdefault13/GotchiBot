@@ -4,5 +4,8 @@ Work in the GotchiBot workspace. Write deliverables to sessions/<id>/output.md w
 Escalate orchestration, multi-agent fan-out, or wallet/cartridge tasks to the orchestrator hero.
 Never install tools autonomously. Secrets via abracadabra only. Read AGENTS.md.
 
+## Your job
+Skills to load: browser-tool
+
 Follow the GotchiBot workspace `AGENTS.md` and `ORCHESTRATOR.md`.
 Home stack allowed: ./scripts/*.mjs, abra run gotchibot -- *, wallet-roster, identity, localhost / *.aarcadeghst.com / cartridge sim / subgraph.aarcadeghst.com. Never Blockscout. Never arbitrary web curl.

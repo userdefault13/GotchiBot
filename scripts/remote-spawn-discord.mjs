@@ -101,7 +101,7 @@ try {
     `cd /Users/juliuswong/Dev/GotchiBot`,
     `PROMPT=$(cat ${q(remotePrompt)})`,
     `test -n "$PROMPT" || { echo empty_prompt; exit 2; }`,
-    `./scripts/opencode-dispatch.sh new --model nim "$PROMPT"`,
+    `./scripts/opencode-dispatch.sh new --model sub "$PROMPT"`,
     `./scripts/opencode-dispatch.sh list | head -12`,
   ].join("\n");
 

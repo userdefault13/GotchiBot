@@ -49,9 +49,11 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot setup               print Solo checklist (or run onboard above)
   gotchibot topology solo|fleet|status [--json]   Solo vs Fleet spawn host
   gotchibot doctor              env checklist (node/tmux/abra/topology/referral/wallet/infra/fleet probe)
+  gotchibot wsl [--check]       WSL2 install guide (Windows) or in-WSL readiness check
   gotchibot update [--check|--apply|--force]  check/install GotchiBot updates (CDN or git)
   gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
   gotchibot infra-usage [--json]    operator: install-token usage report (Mongo / cost proxy)
+  gotchibot aseprite check|export|init-tileset|init-sprite|script|info|svg-import|svg-export   Aseprite CLI (pixel art)
   gotchibot connect            open browser wallet-connect (MetaMask)
   gotchibot wallet             show connected wallet address
   gotchibot roster --wallet    list your real on-chain gotchis
@@ -141,7 +143,11 @@ maybe_update_check() {
 }
 
 cmd_tmux() {
-  command -v tmux >/dev/null || { echo "tmux missing: brew install tmux" >&2; exit 1; }
+  if ! command -v tmux >/dev/null 2>&1; then
+    node "$ROOT/scripts/wsl-setup.mjs" 2>/dev/null || true
+    echo "tmux missing — see: gotchibot wsl" >&2
+    exit 1
+  fi
   maybe_update_check
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
   # API keys are injected inside chat/sub-agent panes when needed.
@@ -525,6 +531,7 @@ case "$cmd" in
       exec node "$ROOT/scripts/doctor.mjs" "$@"
     fi
     ;;
+  wsl) exec node "$ROOT/scripts/wsl-setup.mjs" "$@" ;;
   update) exec node "$ROOT/scripts/update-check.mjs" "$@" ;;
   infra)
     case "${1:-}" in
@@ -533,6 +540,7 @@ case "$cmd" in
     esac
     ;;
   infra-usage|usage-report) exec node "$ROOT/scripts/infra-usage-report.mjs" "$@" ;;
+  aseprite) exec node "$ROOT/scripts/aseprite-tool.mjs" "$@" ;;
   connect) exec node "$ROOT/scripts/wallet-connect.mjs" ;;
   wallet) cmd_wallet ;;
   roster) cmd_roster "$@" ;;

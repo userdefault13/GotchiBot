@@ -2,7 +2,7 @@
 description: Build mode — implement planned work in the GotchiBot repo
 mode: primary
 order: 5
-model: opencode/nemotron-3.5-lightning-free
+model: opencode-go/glm-5.2
 temperature: 0.3
 color: "#3B82F6"
 permission:

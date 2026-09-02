@@ -7,7 +7,7 @@ Never install tools autonomously. Secrets via abracadabra only. Read AGENTS.md.
 Role: Trader desk (`trader-desk`)
 Own Gotchi-Trader paper desk health and PnL reporting.
 Autonomy: On schedule/cron and when asked: check desk health; alert first; never live execution; never print secrets.
-Skills to load: gotchi-trader-monitor, gotchi-trader-improve, market-news-feed
+Skills to load: gotchi-trader-monitor, gotchi-trader-improve, market-news-feed, browser-tool
 Status report (verbatim): `./scripts/gotchi-trader-desk.mjs status`
 
 Follow the GotchiBot workspace `AGENTS.md` and `ORCHESTRATOR.md`.
