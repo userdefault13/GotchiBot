@@ -1,4 +1,5 @@
 # GotchiBot
+A macOS / Linux / Windows orchestrator for Aavegotchi agents — manage your fleet from the home iMac.
 
 Open-source **Aavegotchi agent orchestrator** — macOS, Linux, and Windows (WSL2 for tmux cockpit).
 OpenClaw / OpenCode cockpit, cAavegotchi heroes, and Solo or Fleet topology.
@@ -90,12 +91,24 @@ Shared subgraph, cartridge sim, and install auth are operated at
 [www.aarcadeghst.com](https://www.aarcadeghst.com). Solo clients authenticate with a
 per-install token obtained during onboarding — not operator secrets.
 
+## Home iMac fleet (for agents & humans)
+
+This repo runs on the home iMac via a Cloudflare tunnel (`cartridge.aarcadeghst.com` →
+cartridge SIM Docker on `127.0.0.1:8791`), aarcade-mongo (`127.0.0.1:27017`), Commsies
+(`:3002` + Ollama), and the AarcadeGh-t cartridge SIM backend. Agents are bound to
+cAavegotchi heroes on the cartridge; first-time users run `gotchibot onboard` to
+connect a wallet, grab an install token, and pick a starter hero (YFI, BTC, LINK, etc.).
+The `gotchibot tmux` command opens the OpenClaw cockpit for fleet management, agent
+spawning, and PnL monitoring. GoBall cartridges and the GoBall SIM follow the same
+pattern — see the `cartridge-mint` skill for mint/bind workflows.
+
 ## Docs
 
 | Doc | Purpose |
 |-----|---------|
-| [AGENTS.md](AGENTS.md) | Agent rules |
+| [AGENTS.md](AGENTS.md) | Agent rules and model tiers |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Fleet / Solo deployment |
-| [docs/SOLO-AND-FLEET.md](docs/SOLO-AND-FLEET.md) | Topology |
+| [docs/SOLO-AND-FLEET.md](docs/SOLO-AND-FLEET.md) | Topology overview |
 | [docs/FRIENDS-BETA-ROLLOUT.md](docs/FRIENDS-BETA-ROLLOUT.md) | Install token beta |
 | [COMMERCIAL.md](COMMERCIAL.md) | NFT entitlements & commercial licensing |
+| [ORCHESTRATOR.md](ORCHESTRATOR.md) | Orchestrator configuration |
