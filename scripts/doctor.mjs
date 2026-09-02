@@ -96,20 +96,6 @@ process.env.OPENCODE_API_KEY
   ? ok("OPENCODE_API_KEY appears set (value never printed)")
   : warn("OPENCODE_API_KEY unset in env — BYO models; keep it in abra, never in files");
 
-const themeSrc = `${ROOT}/.opencode/themes/gotchi.json`;
-const themeUser = `${process.env.XDG_CONFIG_HOME || `${process.env.HOME}/.config`}/opencode/themes/gotchi.json`;
-if (!existsSync(themeSrc)) {
-  warn("repo OpenCode theme missing (.opencode/themes/gotchi.json)");
-} else {
-  const inst = spawnSync("bash", [`${ROOT}/scripts/install-opencode-theme.sh`, "--quiet"], {
-    cwd: ROOT,
-    encoding: "utf8",
-  });
-  if (inst.status === 0 && existsSync(themeUser)) ok(`OpenCode theme gotchi → ${themeUser}`);
-  else if (inst.status === 0) ok("OpenCode theme gotchi (project .opencode/themes)");
-  else warn("OpenCode theme install failed — run: ./scripts/gotchibot theme install");
-}
-
 /* ─── 4. wallet / cartridge (soft) ────────────────────────────── */
 const walletPath = `${SESSIONS}/.wallet.json`;
 const identityPath = `${SESSIONS}/.identity.json`;

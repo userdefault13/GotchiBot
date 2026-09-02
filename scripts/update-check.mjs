@@ -218,12 +218,6 @@ function applyGitPull() {
 async function applyUpdate(latest, gitBehind) {
   if (gitDir() && (gitBehind ?? 0) > 0) {
     const ok = applyGitPull();
-    if (ok) {
-      spawnSync("bash", [`${ROOT}/scripts/install-opencode-theme.sh`], {
-        cwd: ROOT,
-        stdio: "inherit",
-      });
-    }
     if (ok && latest?.manifest?.version && latest.manifest.version !== "git") {
       writeLocalVersion(latest.manifest.version);
     }

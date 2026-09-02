@@ -49,7 +49,6 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot setup               print Solo checklist (or run onboard above)
   gotchibot topology solo|fleet|status [--json]   Solo vs Fleet spawn host
   gotchibot doctor              env checklist (node/tmux/abra/topology/referral/wallet/infra/fleet probe)
-  gotchibot theme install       install OpenCode gotchi theme (~/.config/opencode/themes)
   gotchibot wsl [--check]       WSL2 install guide (Windows) or in-WSL readiness check
   gotchibot update [--check|--apply|--force]  check/install GotchiBot updates (CDN or git)
   gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
@@ -157,7 +156,6 @@ cmd_tmux() {
   maybe_update_check
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
   # API keys are injected inside chat/sub-agent panes when needed.
-  "$ROOT/scripts/install-opencode-theme.sh" --quiet 2>/dev/null || true
   sync_openclaw_fleet
   local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
   local layout="$ROOT/scripts/orchestrator-layout.sh"
@@ -545,12 +543,6 @@ case "$cmd" in
     else
       exec node "$ROOT/scripts/doctor.mjs" "$@"
     fi
-    ;;
-  theme)
-    case "${1:-install}" in
-      install|"") exec "$ROOT/scripts/install-opencode-theme.sh" "${@:2}" ;;
-      *) echo "usage: gotchibot theme install" >&2; exit 2 ;;
-    esac
     ;;
   wsl) exec node "$ROOT/scripts/wsl-setup.mjs" "$@" ;;
   update) exec node "$ROOT/scripts/update-check.mjs" "$@" ;;
