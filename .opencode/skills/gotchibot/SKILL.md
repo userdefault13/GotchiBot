@@ -97,17 +97,16 @@ When the user wants **Cursor Agent** instead of gated sub-agents:
 
 The gotchi bundles handoff + sub-agent context automatically. See skill `cursor-cli`.
 
-## Claude Code on Hub (`@claudemode` model)
+## Claude Code on Hub (`@claudemode` tool)
 
-Switch OpenCode model (not Tab agent):
+**Stay on big-pickle.** Do not `/model @claudemode`.
 
 ```bash
-./scripts/gotchibot claudemode-proxy   # once, Desk :45680
-# then in chat: /model @claudemode
+abra run gotchibot -- node ./scripts/claudemode-ask.mjs "hard logic question…"
+# then continue the task using that reply
 ```
 
-One-shot: `abra run gotchibot -- ./scripts/gotchibot bridge "prompt"`.
-Skill: **`gotchibot-bridge`**.
+Skill: **`gotchibot-bridge`**. Commands: `/claudemode`, `/bridge`.
 
 ## Hard rules
 

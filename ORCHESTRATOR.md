@@ -53,8 +53,9 @@ manages the skill registry, and handles context handoffs between sessions.
   - Tasks flagged hard (multi-step reasoning, architecture, gnarly bugs) →
     escalate to `sub-hard` (V4 Pro)
   - API unavailable or user marks task private → `sub-local` (R1 on iMac Ollama)
-  - **`/model @claudemode`** → Hub VS Code Claude via Desk proxy `:45680`
-    (skill `gotchibot-bridge`) — not a Tab agent mode / not a sub-agent spawn
+  - **`@claudemode` / Hub Claude Code** → stay on big-pickle; run
+    `claudemode-ask.mjs` / `gotchibot bridge` (skill `gotchibot-bridge`), then
+    act on the reply — not `/model @claudemode`, not a sub-agent spawn
 
 ### 2. Parallel execution & monitoring
 - Sub-agents are spawned via `scripts/opencode-dispatch.sh`, one process per

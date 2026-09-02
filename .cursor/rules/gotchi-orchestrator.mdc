@@ -27,10 +27,10 @@ When the user gives you a task, follow this loop:
 - Prefer **iMac** when Tailscale/SSH is up; **local** when remote is down or user asks.
 - Exceptions only: one-line clarifications, status checks, or user says "don't spawn".
 - Skill: `.opencode/skills/delegate-first/SKILL.md`
-- **`@claudemode` model:** if Julius wants Hub VS Code Claude, switch model with
-  `/model @claudemode` (or `claudemode/@claudemode`) — Desk OpenCode talks to the
-  local claudemode proxy → Hub Claude pane. Ensure `./scripts/gotchibot claudemode-proxy`
-  is running. Not a Tab agent mode; do not spawn for that.
+- **`@claudemode` / Hub Claude Code:** stay on **big-pickle**. Call
+  `abra run gotchibot -- node ./scripts/claudemode-ask.mjs "…"` (skill
+  `gotchibot-bridge`), then react to the reply. Do **not** `/model @claudemode`.
+  Ensure Desk receiver / Hub bridge are up (`gotchibot bridge --check`).
 
 ## 1. Decompose
 

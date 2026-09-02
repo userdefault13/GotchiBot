@@ -122,9 +122,10 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 - List / switch / orch: `/list` `/switch` `/orch` (or the `agent-focus.mjs` equivalents)
 - Wallet gate: `./scripts/wallet-gate.mjs`
 - Hub monitor: `./scripts/gotchibot hub` / `/hub` (skill `gotchibot-hub`)
-- **`@claudemode` model (Hub VS Code Claude):** `/model @claudemode` after
-  `./scripts/gotchibot claudemode-proxy` (Desk `:45680`). Skill `gotchibot-bridge`.
-  One-shot: `./scripts/gotchibot bridge "…"`. Not a Tab agent mode.
+- **`@claudemode` (Hub Claude Code tool):** stay on `opencode/big-pickle`.
+  `abra run gotchibot -- node ./scripts/claudemode-ask.mjs "…"` → Hub VS Code
+  Claude pane → reply on stdout → you continue the task. Skill `gotchibot-bridge`.
+  Commands: `/claudemode`, `/bridge`. Do **not** `/model @claudemode`.
 
 ## Data
 

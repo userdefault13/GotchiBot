@@ -77,7 +77,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot hub [status|--infra|--live|--json]  Hub monitor (iMac OpenClaw fleet + Docker)
   gotchibot bridge|bridge-prompt [--host auto|imac|local] [--wait] "…"
                                   Desk→Hub Claude VS Code; reply on Desk
-  gotchibot claudemode-proxy [--check]  local OpenAI proxy for /model @claudemode (:45680)
+  gotchibot claude-ask|claudemode-ask "…"  bridge ask (reply-only; orch stays on big-pickle)
+  gotchibot claudemode-proxy [--check]  optional OpenAI proxy for /model @claudemode (:45680)
   gotchibot tunnel status|restart     subgraph.aarcadeghst.com health + iMac cloudflared restart
   gotchibot menubar install|uninstall|preview|path|open  macOS menu bar ghost + agent count (SwiftBar)
   gotchibot mesh [ping] [--live] [--json]  agent count + status across MBP and iMac (Tailscale SSH)
@@ -592,11 +593,15 @@ case "$cmd" in
     # Desk → Hub VS Code Claude → Desk receiver :45679 (needs abra for SSH).
     abra_or_node "$ROOT/scripts/bridge-prompt.mjs" "$@"
     ;;
+  claude-ask|claudemode-ask)
+    # Orchestrator tool: stay on big-pickle; print Hub Claude reply only.
+    abra_or_node "$ROOT/scripts/claudemode-ask.mjs" "$@"
+    ;;
   claudemode-proxy|claude-proxy)
-    # OpenAI-compatible proxy so OpenCode /model @claudemode hits Hub Claude.
+    # Optional OpenAI proxy if someone still uses /model @claudemode — prefer claude-ask.
     if [ "${1:-}" = "--check" ]; then
       curl -sf --max-time 2 http://127.0.0.1:45680/health && exit 0
-      echo "claudemode proxy down on :45680" >&2
+      echo "claudemode proxy down on :45680 (optional; prefer gotchibot claude-ask)" >&2
       exit 1
     fi
     exec node "$ROOT/scripts/claudemode-proxy.mjs" "$@"

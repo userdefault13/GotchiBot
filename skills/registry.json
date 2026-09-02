@@ -459,9 +459,9 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Desk\u2192Hub Claude Code bridge: prompt VS Code Claude on iMac (pane, terminal fallback), wait for Desk reply.",
+      "description": "Stay on big-pickle; ask Hub VS Code Claude via claudemode-ask/bridge, then react to the reply.",
       "path": ".opencode/skills/gotchibot-bridge/SKILL.md",
-      "script": "scripts/bridge-prompt.mjs",
+      "script": "scripts/claudemode-ask.mjs",
       "addedAt": "2026-09-02"
     },
     "gotchi-trader-monitor": {

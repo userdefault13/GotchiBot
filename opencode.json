@@ -596,6 +596,14 @@
         "./scripts/mcp/github.sh"
       ],
       "enabled": true
+    },
+    "gotchibot-claude": {
+      "type": "local",
+      "command": [
+        "./scripts/mcp/gotchibot-claude.sh"
+      ],
+      "enabled": true,
+      "timeout": 360000
     }
   },
   "permission": {

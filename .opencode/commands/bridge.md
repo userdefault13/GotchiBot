@@ -1,16 +1,8 @@
 ---
-description: Bridge — Desk→Hub Claude Code (VS Code pane, terminal fallback)
+description: Bridge — ask Hub VS Code Claude; stay on big-pickle and react
 ---
 
-Send a prompt from Desk to Claude Code on the Hub (iMac VS Code).
-
-**Prefer the model path** so the reply is a normal Desk assistant bubble:
-
-```
-/model @claudemode
-```
-
-(proxy: `./scripts/gotchibot claudemode-proxy`)
+**Do not** `/model @claudemode`. Orchestrator stays on **big-pickle**.
 
 If `$ARGUMENTS` is empty, `--check`, or `check`:
 
@@ -18,12 +10,13 @@ If `$ARGUMENTS` is empty, `--check`, or `check`:
 abra run gotchibot -- ./scripts/gotchibot bridge --check
 ```
 
-Otherwise, for a one-shot CLI (not via `/model`):
+Otherwise:
 
 ```bash
-abra run gotchibot -- ./scripts/gotchibot bridge $ARGUMENTS
+abra run gotchibot -- node ./scripts/claudemode-ask.mjs $ARGUMENTS
 ```
 
-Then **reply as the assistant** with Claude's text only (no "Hub Claude:" prefix,
-no System/tool bubble as the final answer). Do not invent the response.
-Do not modify theme or color files.
+or `abra run gotchibot -- ./scripts/gotchibot bridge $ARGUMENTS`.
+
+Use the reply as Claude Code's logic output, then continue the task yourself.
+Do not invent the response. Do not modify theme files.

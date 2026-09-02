@@ -68,6 +68,24 @@ cfg.gateway.http.endpoints = cfg.gateway.http.endpoints || {};
 cfg.gateway.http.endpoints.chatCompletions = { enabled: true };
 cfg.gateway.http.endpoints.responses = { enabled: true };
 
+// Hub Claude Code as a named MCP tool (claude_ask) for Desk Gotchi / owned-954.
+const gotchiRoot =
+  process.env.GOTCHIBOT_OPENCLAW_WORKSPACE?.trim() ||
+  join(homedir(), "Dev/GotchiBot");
+cfg.mcp = cfg.mcp || {};
+cfg.mcp.servers = {
+  ...(cfg.mcp.servers || {}),
+  "gotchibot-claude": {
+    command: "node",
+    args: [`${gotchiRoot}/scripts/mcp/gotchibot-claude.mjs`],
+    cwd: gotchiRoot,
+    enabled: true,
+    requestTimeoutMs: 360000,
+    connectionTimeoutMs: 15000,
+  },
+};
+
 writeFileSync(path, `${JSON.stringify(cfg, null, 2)}\n`);
 console.log(`repaired ${path}`);
 console.log(`primary=${cfg.agents.defaults.model.primary}`);
+console.log(`mcp.gotchibot-claude → ${gotchiRoot}/scripts/mcp/gotchibot-claude.mjs`);
