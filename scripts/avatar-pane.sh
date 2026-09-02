@@ -2,8 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# shellcheck source=/dev/null
-[ -f "$ROOT/scripts/terminal-color-env.sh" ] && source "$ROOT/scripts/terminal-color-env.sh"
+[ -z "${TMUX:-}" ] && export COLORTERM="${COLORTERM:-truecolor}"
 SESSIONS="$ROOT/sessions"
 PIN="$SESSIONS/.pin"
 FOCUS="$SESSIONS/.focus.json"
