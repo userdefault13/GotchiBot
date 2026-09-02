@@ -148,23 +148,37 @@ cmd_tmux() {
     echo "tmux missing — see: gotchibot wsl" >&2
     exit 1
   fi
+  if [ ! -t 0 ] || [ ! -t 1 ]; then
+    echo "gotchibot tmux needs an interactive terminal (not piped/background)." >&2
+    echo "  Run from Terminal/iTerm:  GotchiBot   or   ./scripts/gotchibot tmux" >&2
+    exit 1
+  fi
   maybe_update_check
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
   # API keys are injected inside chat/sub-agent panes when needed.
   sync_openclaw_fleet
   local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
-  local min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-42}"
   local layout="$ROOT/scripts/orchestrator-layout.sh"
+  # Launcher must run layout in-process — if TMUX_PANE is set (nested/relaunch from
+  # chat/avatar), orchestrator-layout.sh would tmux run-shell + exit 0 and drop us here.
+  export GOTCHIBOT_LAYOUT_SAFE=1
 
   if tmux has-session -t "$sess" 2>/dev/null; then
-    # Leave meet-gallery if persisted, then refresh desk into OpenCode (not cockpit).
     "$layout" leave-meet-gallery 2>/dev/null || true
-    "$layout" refresh
+    if ! "$layout" refresh; then
+      echo "orchestrator layout refresh failed — try: tmux kill-session -t $sess && ./scripts/gotchibot tmux" >&2
+      exit 1
+    fi
     exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
   fi
   tmux new-session -d -s "$sess" -n work
+  if ! "$layout" ensure; then
+    echo "orchestrator layout ensure failed — try: tmux kill-session -t $sess && ./scripts/gotchibot tmux" >&2
+    exit 1
+  fi
+  # Orch calls poke-avatar — must run after 3-pane layout (USR1 on work.2 before
+  # that hits the lone boot shell and kills the tmux server).
   node "$ROOT/scripts/agent-focus.mjs" orch >/dev/null 2>&1 || true
-  "$layout" ensure
   exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
 }
 
@@ -173,8 +187,7 @@ cmd_avatar() {
   rm -f "$SESSIONS/.avatars/$1.svg"
   node "$ROOT/scripts/gotchi-svg.mjs" --force "$1" >/dev/null 2>&1 || true
   if [ -n "${TMUX:-}" ]; then
-    pid="$(tmux display -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.2" '#{pane_pid}' 2>/dev/null || true)"
-    [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true
+    "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
   fi
   echo "pinned avatar: $1"
 }

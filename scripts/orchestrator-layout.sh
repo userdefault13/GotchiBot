@@ -124,7 +124,10 @@ apply_window_policy() {
 }
 
 ensure_panes() {
-  tmux has-session -t "$sess" 2>/dev/null || return 1
+  if ! tmux has-session -t "$sess" 2>/dev/null; then
+    echo "orchestrator layout: tmux session '$sess' not found" >&2
+    return 1
+  fi
   apply_window_policy
   if layout_correct; then
     return 0
