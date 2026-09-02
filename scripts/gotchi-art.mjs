@@ -57,9 +57,10 @@ function colorEnabled() {
   return Boolean(process.stdout.isTTY);
 }
 
-/** Inside tmux default to xterm-256; opt in with GOTCHIBOT_TRUECOLOR=1. */
+/** Inside tmux / avatar profile default to xterm-256; opt in with GOTCHIBOT_TRUECOLOR=1. */
 function trueColorEnabled() {
   if (process.env.GOTCHIBOT_TRUECOLOR === "1") return true;
+  if (process.env.GOTCHIBOT_TRUECOLOR === "0") return false;
   if (process.env.TMUX) return false;
   return true;
 }
@@ -73,12 +74,8 @@ function hexTo256(hex) {
     if (r > 248) return 231;
     return Math.round(((r - 8) / 247) * 23) + 232;
   }
-  return (
-    16 +
-    36 * Math.round((r / 255) * 5) +
-    6 * Math.round((g / 255) * 5) +
-    Math.round((b / 255) * 5)
-  );
+  const clamp5 = (v) => Math.min(5, Math.max(0, Math.round((v / 255) * 5)));
+  return 16 + 36 * clamp5(r) + 6 * clamp5(g) + clamp5(b);
 }
 
 function paint(text, hex) {
