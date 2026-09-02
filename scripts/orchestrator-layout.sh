@@ -752,8 +752,9 @@ install_ui_theme() {
   tmux set-option -g allow-passthrough on 2>/dev/null || true
   tmux set-option -t "$sess" allow-passthrough on 2>/dev/null || true
   install_avatar_mouse
-  # Truecolor for Gotchi collateral art + chalk bgHex (Tc on all 256-color terms).
-  tmux set-option -g terminal-overrides ",*256color*:Tc" 2>/dev/null || true
+  # Truecolor for Gotchi message backgrounds (chalk bgHex needs Tc in tmux).
+  tmux set-option -g terminal-overrides ",tmux-256color:Tc" 2>/dev/null || true
+  tmux set-option -g terminal-overrides ",xterm-256color:Tc" 2>/dev/null || true
   install_agent_keys
   tmux set-option -t "$sess" pane-border-lines heavy 2>/dev/null || true
   tmux set-option -t "$sess" pane-border-style 'fg=colour53' 2>/dev/null || true

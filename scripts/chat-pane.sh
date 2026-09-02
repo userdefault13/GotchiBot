@@ -18,7 +18,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export GOTCHIBOT_ROOT="$ROOT"
-export COLORTERM="${COLORTERM:-truecolor}"
 export PATH="${HOME}/.openclaw/bin:${PATH}"
 # Persisted remote gateway (iMac) — sessions/.openclaw-gateway.json
 # shellcheck source=/dev/null
@@ -250,6 +249,7 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
       export GOTCHIBOT_TUI_PROSE_TTS="${GOTCHIBOT_TUI_PROSE_TTS:-1}"
       export GOTCHIBOT_TUI_LOAD_PROGRESS="${GOTCHIBOT_TUI_LOAD_PROGRESS:-1}"
       export GOTCHIBOT_TUI_PROMPT_LINES="${GOTCHIBOT_TUI_PROMPT_LINES:-5}"
+      export COLORTERM="${COLORTERM:-truecolor}"
       TUI_ARGS=(tui --url "$WS" --session "$SESSION")
       if [ -n "${OPENCLAW_GATEWAY_TOKEN:-${GOTCHIBOT_OPENCLAW_TOKEN:-}}" ]; then
         TUI_ARGS+=(--token "${OPENCLAW_GATEWAY_TOKEN:-${GOTCHIBOT_OPENCLAW_TOKEN}}")

@@ -57,36 +57,9 @@ function colorEnabled() {
   return Boolean(process.stdout.isTTY);
 }
 
-/** tmux without COLORTERM=truecolor (or Tc) cannot render 38;2 truecolor. */
-function trueColorEnabled() {
-  if (process.env.COLORTERM === "truecolor") return true;
-  if (process.env.TMUX && process.env.COLORTERM !== "truecolor") return false;
-  return true;
-}
-
-function hexTo256(hex) {
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  if (r === g && g === b) {
-    if (r < 8) return 16;
-    if (r > 248) return 231;
-    return Math.round((r - 8) / 10) + 232;
-  }
-  return (
-    16 +
-    36 * Math.round((r / 255) * 5) +
-    6 * Math.round((g / 255) * 5) +
-    Math.round((b / 255) * 5)
-  );
-}
-
 function paint(text, hex) {
   const h = hexNormalize(hex);
   if (!h) return text;
-  if (!trueColorEnabled()) {
-    return `\x1b[38;5;${hexTo256(h)}m${text}\x1b[0m`;
-  }
   const r = parseInt(h.slice(0, 2), 16);
   const g = parseInt(h.slice(2, 4), 16);
   const b = parseInt(h.slice(4, 6), 16);
@@ -304,14 +277,10 @@ async function main() {
       process.stdout.write("\x1b[38;5;252m");
       return;
     }
-    if (trueColorEnabled()) {
-      const r = parseInt(hex.slice(0, 2), 16);
-      const g = parseInt(hex.slice(2, 4), 16);
-      const b = parseInt(hex.slice(4, 6), 16);
-      process.stdout.write(`\x1b[38;2;${r};${g};${b}m`);
-    } else {
-      process.stdout.write(`\x1b[38;5;${hexTo256(hex)}m`);
-    }
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    process.stdout.write(`\x1b[38;2;${r};${g};${b}m`);
     return;
   }
 
