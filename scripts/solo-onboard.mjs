@@ -62,11 +62,11 @@ async function main() {
     });
   }
 
-  const total = 5;
+  const total = 6;
   console.log("GotchiBot Solo onboard");
   console.log("======================");
   console.log(`Platform: ${platformLabel()}`);
-  console.log("One command: wallet → register → cartridge → doctor\n");
+  console.log("One command: wallet → register → cartridge → theme → doctor\n");
 
   if (!force && hasCartridge() && readWallet()) {
     console.log("Already set up (wallet + cartridge cached).");
@@ -135,7 +135,15 @@ async function main() {
     ok("cartridge ready");
   }
 
-  step(5, total, "doctor");
+  step(5, total, "OpenCode gotchi theme");
+  const theme = spawnSync("bash", [`${ROOT}/scripts/install-opencode-theme.sh`], {
+    cwd: ROOT,
+    stdio: "inherit",
+  });
+  if (theme.status === 0) ok("OpenCode gotchi theme installed");
+  else console.log("    · theme install skipped (non-fatal)");
+
+  step(6, total, "doctor");
   const dr = runNodeWithAbra(`${ROOT}/scripts/doctor.mjs`, [], { cwd: ROOT, stdio: "inherit" });
   if (dr.status !== 0) die("doctor reported failures — fix above", dr.status || 1);
 
