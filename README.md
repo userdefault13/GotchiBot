@@ -98,8 +98,10 @@ cartridge SIM Docker on `127.0.0.1:8791`), aarcade-mongo (`127.0.0.1:27017`), Co
 (`:3002` + Ollama), and the AarcadeGh-t cartridge SIM backend. Agents are bound to
 cAavegotchi heroes on the cartridge; first-time users run `gotchibot onboard` to
 connect a wallet, grab an install token, and pick a starter hero (YFI, BTC, LINK, etc.).
-The `gotchibot tmux` command opens the OpenClaw cockpit for fleet management, agent
-spawning, and PnL monitoring. GoBall cartridges and the GoBall SIM follow the same
+The `gotchibot tmux` command opens the Desk (OpenClaw cockpit) for fleet management, agent
+spawning, and PnL monitoring. From the Desk, `gotchibot hub` / `/hub` monitors the Hub
+(always-on iMac): SSH, OpenClaw gateway, sessions, tunnel, and Docker (`hub --infra` for
+the container table). GoBall cartridges and the GoBall SIM follow the same
 pattern — see the `cartridge-mint` skill for mint/bind workflows.
 
 ## Docs

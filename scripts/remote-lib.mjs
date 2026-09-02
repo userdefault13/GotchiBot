@@ -95,9 +95,11 @@ function shellQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
-export function runSsh(cfg, keyPath, remoteCommand, { stdio = "inherit" } = {}) {
+export function runSsh(cfg, keyPath, remoteCommand, { stdio = "inherit", timeout } = {}) {
   const args = sshArgs(cfg, keyPath, remoteCommand);
-  return spawnSync("ssh", args, { stdio, encoding: "utf8" });
+  const opts = { stdio, encoding: "utf8" };
+  if (timeout != null) opts.timeout = timeout;
+  return spawnSync("ssh", args, opts);
 }
 
 export function runScp(cfg, keyPath, localPaths, remoteSubdir = "sessions") {

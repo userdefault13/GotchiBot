@@ -41,6 +41,59 @@ if (commandExists("tmux")) ok("tmux on PATH");
 else if (isNativeWindows()) warn(`tmux missing on native Windows — run inside WSL2: gotchibot wsl`);
 else fail(`tmux missing — ${tmuxInstallHint()}`);
 
+/* ─── 1b. OpenCode gotchi theme ───────────────────────────────── */
+{
+  const themeSrc = `${ROOT}/.opencode/themes/gotchi.json`;
+  const installScript = `${ROOT}/scripts/install-gotchi-theme.mjs`;
+  const themeDest = `${process.env.HOME}/.config/opencode/themes/gotchi.json`;
+
+  // COLORTERM: warn if unset, but do not fail
+  if (!process.env.COLORTERM) warn("COLORTERM not set — truecolor may not be active");
+
+  if (!existsSync(themeSrc)) {
+    fail(`gotchi theme missing — expected ${themeSrc}`);
+  } else if (!existsSync(installScript)) {
+    warn("scripts/install-gotchi-theme.mjs missing — skip theme install");
+  } else {
+    // ok if dest already exists and matches the source
+    if (existsSync(themeDest)) {
+      const srcContent = readFileSync(themeSrc, "utf8");
+      const dstContent = readFileSync(themeDest, "utf8");
+      if (srcContent === dstContent) {
+        ok(`gotchi theme already installed at ${themeDest} (matches source)`);
+      } else {
+        const inst = spawnSync(process.execPath, [installScript], {
+          cwd: ROOT,
+          encoding: "utf8",
+        });
+        if (inst.status === 0) {
+          ok(`gotchi OpenCode theme installed to ${themeDest}`);
+        } else {
+          fail(`gotchi theme install failed: ${(inst.stderr || inst.stdout || "").trim() || `exit ${inst.status}`}`);
+        }
+      }
+    } else {
+      const inst = spawnSync(process.execPath, [installScript], {
+        cwd: ROOT,
+        encoding: "utf8",
+      });
+      if (inst.status === 0) {
+        ok(`gotchi OpenCode theme installed to ${themeDest}`);
+      } else {
+        fail(`gotchi theme install failed: ${(inst.stderr || inst.stdout || "").trim() || `exit ${inst.status}`}`);
+      }
+    }
+  }
+  const tuiCfg = `${ROOT}/config/tui.json`;
+  try {
+    const tui = JSON.parse(readFileSync(tuiCfg, "utf8"));
+    if (tui.theme === "gotchi") ok("config/tui.json theme=gotchi");
+    else warn(`config/tui.json theme=${tui.theme ?? "unset"} (expected gotchi)`);
+  } catch {
+    warn("config/tui.json unreadable");
+  }
+}
+
 const topoEarly = getTopology();
 if (hasAbra()) {
   ok("abra on PATH");

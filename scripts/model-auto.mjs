@@ -42,7 +42,7 @@ const DEFAULT_CFG = {
     "openrouter/nvidia/nemotron-3.5-content-safety:free",
     "openrouter/openrouter/free",
   ],
-  lastResort: "opencode/nemotron-3.5-lightning-free",
+  lastResort: "opencode/big-pickle",
   ttlOkSec: 0,
   ttlFailSec: 1800,
 };
@@ -166,18 +166,21 @@ function aliases() {
     auto: "AUTO",
     free: "AUTO",
     go: hasOpencodeGoKey() ? "opencode-go/kimi-k3" : "AUTO",
-    hy3: "opencode/nemotron-3.5-lightning-free",
-    nim: "opencode/nemotron-3.5-lightning-free",
-    fast: "opencode/nemotron-3.5-lightning-free",
-    heavy: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-    ultra: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-    lightning: "openrouter/nvidia/nemotron-3.5-lightning:free",
+    hy3: "opencode/big-pickle",
+    nim: "opencode/big-pickle",
+    fast: "opencode/big-pickle",
+    heavy: "opencode/nemotron-3-ultra-free",
+    ultra: "opencode/nemotron-3-ultra-free",
+    lightning: "opencode/nemotron-3.5-lightning-free",
+    pickle: "opencode/big-pickle",
     flash: "deepseek/deepseek-v4-flash",
     pro: "deepseek/deepseek-v4-pro",
     local: "ollama/qwen2.5:3b",
+    claudemode: "claudemode/@claudemode",
+    "@claudemode": "claudemode/@claudemode",
+    "claude-mode": "claudemode/@claudemode",
   };
 }
-
 function pinModel(model) {
   mkdirSync(`${ROOT}/sessions`, { recursive: true });
   writeFileSync(PIN_PATH, `export GOTCHIBOT_OPENCODE_MODEL=${model}\n`);
@@ -187,43 +190,26 @@ export async function pickSubagentModel({ json = false } = {}) {
   const cfg = loadCfg();
   const cache = loadCache();
   const now = Date.now();
-  const ttlOk = Number(cfg.ttlOkSec ?? 0) * 1000;
-  const ttlFail = (cfg.ttlFailSec || 1800) * 1000;
-
-  // Check if OpenCode Go key is present (needed for opencode-go models)
   const goKeyPresent = hasOpencodeGoKey();
+  const fallback = cfg.subagentFallback || "opencode/big-pickle";
 
-  if (goKeyPresent) {
-    const prefer = (cfg.subagentPrefer || []).map(oc);
-    for (const model of prefer) {
-      if (cache.cooldown?.[model] && now < cache.cooldown[model]) {
-        continue; // skip model on cooldown
-      }
-      // Model is available: Go key present + not in cooldown
-      const result = {
-        route: "spawn",
-        model,
-        reason: "subagent-prefer",
-        cached: false,
-      };
-      if (json) return result;
-      process.stdout.write(model);
-      return;
-    }
-    // No subagent models available despite Go key — fall through to cursor/fallback
-    const fallback = cfg.subagentFallback || "opencode/nemotron-3.5-lightning-free";
-    const result2 = {
+  // Free Zen first (no Go key required). Skip opencode-go/* unless Go key is present.
+  const prefer = (cfg.subagentPrefer || []).map(oc);
+  for (const model of prefer) {
+    if (model.startsWith("opencode-go/") && !goKeyPresent) continue;
+    if (cache.cooldown?.[model] && now < cache.cooldown[model]) continue;
+    const result = {
       route: "spawn",
-      model: fallback,
-      reason: "subagent-fallback",
+      model,
+      reason: model.startsWith("opencode-go/") ? "subagent-prefer-go" : "subagent-prefer-zen-free",
       cached: false,
     };
-    if (json) return result2;
-    process.stdout.write(fallback);
+    if (json) return result;
+    process.stdout.write(model);
     return;
   }
 
-  // No OpenCode Go key — check cursor-agent binary availability
+  // Optional: cursor-agent when no free/Go model picked
   try {
     const { spawnSync } = await import("node:child_process");
     const r = spawnSync("command", ["-v", "cursor-agent"], {
@@ -243,8 +229,6 @@ export async function pickSubagentModel({ json = false } = {}) {
     }
   } catch {}
 
-  // Full fallback: nemotron
-  const fallback = cfg.subagentFallback || "opencode/nemotron-3.5-lightning-free";
   const result3 = {
     route: "spawn",
     model: fallback,

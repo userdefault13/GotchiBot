@@ -28,7 +28,7 @@
       "status": "approved",
       "type": "mcp",
       "source": "aarcadeghst",
-      "description": "Hackathon idea validation, templates, Lens preview — draft only, never auto-publish.",
+      "description": "Hackathon idea validation, templates, Lens preview \u2014 draft only, never auto-publish.",
       "config": "config/mcp.stack.json",
       "command": [
         "./scripts/mcp/aarcade-hackathon-ideas.sh"
@@ -53,7 +53,7 @@
       "status": "approved",
       "type": "mcp",
       "source": "base",
-      "description": "Base L2 (8453) chain docs and tooling — primary Aavegotchi/Aarcade network.",
+      "description": "Base L2 (8453) chain docs and tooling \u2014 primary Aavegotchi/Aarcade network.",
       "url": "https://mcp.base.org",
       "addedAt": "2026-08-26"
     },
@@ -61,7 +61,7 @@
       "status": "approved",
       "type": "mcp",
       "source": "vercel",
-      "description": "Vercel deployments, env vars, previews — AarcadeGh-t and ai-cron-site.",
+      "description": "Vercel deployments, env vars, previews \u2014 AarcadeGh-t and ai-cron-site.",
       "url": "https://mcp.vercel.com",
       "addedAt": "2026-08-26"
     },
@@ -69,7 +69,7 @@
       "status": "approved",
       "type": "mcp",
       "source": "snapshot",
-      "description": "Snapshot DAO governance — AarcadeGh-t proposal spaces.",
+      "description": "Snapshot DAO governance \u2014 AarcadeGh-t proposal spaces.",
       "url": "https://mcp.snapshot.box",
       "addedAt": "2026-08-26"
     },
@@ -85,7 +85,7 @@
       "status": "approved",
       "type": "mcp",
       "source": "coinbase",
-      "description": "Coinbase Developer Platform docs — CDP, x402, Base tooling.",
+      "description": "Coinbase Developer Platform docs \u2014 CDP, x402, Base tooling.",
       "url": "https://docs.cdp.coinbase.com/mcp",
       "addedAt": "2026-08-26"
     },
@@ -93,7 +93,7 @@
       "status": "approved",
       "type": "mcp",
       "source": "blockscout",
-      "description": "Onchain explorer data — balances, tokens, contracts across ~100 chains.",
+      "description": "Onchain explorer data \u2014 balances, tokens, contracts across ~100 chains.",
       "url": "https://mcp.blockscout.com/mcp",
       "secrets": [
         "BLOCKSCOUT_PRO_API_KEY"
@@ -120,7 +120,7 @@
       "status": "approved",
       "type": "mcp",
       "source": "mongodb",
-      "description": "MongoDB Atlas / mongo-proxy queries — cartridge sim, Aarcade backend.",
+      "description": "MongoDB Atlas / mongo-proxy queries \u2014 cartridge sim, Aarcade backend.",
       "command": [
         "npx",
         "-y",
@@ -146,7 +146,7 @@
       "status": "approved",
       "type": "skill",
       "source": "abracadabra",
-      "description": "abracadabra API keys — issue, scope, and fetch secrets via bearer token without Touch ID per request. Never print secret values.",
+      "description": "abracadabra API keys \u2014 issue, scope, and fetch secrets via bearer token without Touch ID per request. Never print secret values.",
       "path": "~/.claude/skills/abra/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -154,7 +154,7 @@
       "status": "approved",
       "type": "skill",
       "source": "aarcadeghst",
-      "description": "Aarcade Gh$t (AarcadeGh-t) — Vue 3 app: games, DAO, hackathon, Juicebox, subgraphs, 1337 aagent, cartridge sim.",
+      "description": "Aarcade Gh$t (AarcadeGh-t) \u2014 Vue 3 app: games, DAO, hackathon, Juicebox, subgraphs, 1337 aagent, cartridge sim.",
       "path": "~/Dev/AarcadeGh-t/.cursor/skills/aarcadeghst/SKILL.md",
       "repo": "https://github.com/userdefault13/AarcadeGh-t",
       "addedAt": "2026-08-26"
@@ -248,7 +248,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "End-to-end dApp guide — fetch FIRST; routes through all other ethskills.",
+      "description": "End-to-end dApp guide \u2014 fetch FIRST; routes through all other ethskills.",
       "url": "https://ethskills.com/ship/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -256,7 +256,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "Why Ethereum in 2026 — Pectra/Fusaka, gas reality, ERC-8004, x402.",
+      "description": "Why Ethereum in 2026 \u2014 Pectra/Fusaka, gas reality, ERC-8004, x402.",
       "url": "https://ethskills.com/why/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -264,7 +264,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "CROPS architecture review — Censorship Resistance, Open Source, Privacy, Security.",
+      "description": "CROPS architecture review \u2014 Censorship Resistance, Open Source, Privacy, Security.",
       "url": "https://ethskills.com/crops/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -272,7 +272,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "Ethereum protocol evolution — EIP lifecycle, forks, roadmap reality checks.",
+      "description": "Ethereum protocol evolution \u2014 EIP lifecycle, forks, roadmap reality checks.",
       "url": "https://ethskills.com/protocol/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -320,7 +320,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "DeFi building blocks — Uniswap, Aave, flash loans, composability.",
+      "description": "DeFi building blocks \u2014 Uniswap, Aave, flash loans, composability.",
       "url": "https://ethskills.com/building-blocks/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -328,7 +328,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "Three-phase Scaffold-ETH 2 build system (localhost → testnet → production).",
+      "description": "Three-phase Scaffold-ETH 2 build system (localhost \u2192 testnet \u2192 production).",
       "url": "https://ethskills.com/orchestration/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -344,7 +344,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "Onchain mental models — incentives, callers, no cron, state transitions.",
+      "description": "Onchain mental models \u2014 incentives, callers, no cron, state transitions.",
       "url": "https://ethskills.com/concepts/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -360,7 +360,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "Systematic EVM audit methodology — 500+ checklist items across 19 domains.",
+      "description": "Systematic EVM audit methodology \u2014 500+ checklist items across 19 domains.",
       "url": "https://ethskills.com/audit/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -368,7 +368,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "Noir ZK circuits — privacy apps, Poseidon, commitment-nullifier patterns.",
+      "description": "Noir ZK circuits \u2014 privacy apps, Poseidon, commitment-nullifier patterns.",
       "url": "https://ethskills.com/noir/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -376,7 +376,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "Foundry testing — unit, fuzz, fork, invariant.",
+      "description": "Foundry testing \u2014 unit, fuzz, fork, invariant.",
       "url": "https://ethskills.com/testing/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -392,7 +392,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "dApp frontend UX — loaders, approve flows, address formatting, USD values.",
+      "description": "dApp frontend UX \u2014 loaders, approve flows, address formatting, USD values.",
       "url": "https://ethskills.com/frontend-ux/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -400,7 +400,7 @@
       "status": "approved",
       "type": "remote",
       "source": "ethskills",
-      "description": "Frontend build-to-production — fork testing, IPFS deploy, clean builds.",
+      "description": "Frontend build-to-production \u2014 fork testing, IPFS deploy, clean builds.",
       "url": "https://ethskills.com/frontend-playbook/SKILL.md",
       "addedAt": "2026-08-26"
     },
@@ -424,7 +424,7 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Load whenever coding, debugging, writing patches, or investigating a repo. Bot stays on Hy3 Free (opencode/hy3-free) or Nemotron 3 for talk/route/task. Hard logic/code goes through ./scripts/cursor-cli.mjs → cursor-agent. Do not switch OpenCode's model to Cursor.",
+      "description": "Load whenever coding, debugging, writing patches, or investigating a repo. Bot stays on Hy3 Free (opencode/hy3-free) or Nemotron 3 for talk/route/task. Hard logic/code goes through ./scripts/cursor-cli.mjs \u2192 cursor-agent. Do not switch OpenCode's model to Cursor.",
       "path": ".opencode/skills/cursor-cli/SKILL.md",
       "script": "scripts/cursor-cli.mjs",
       "addedAt": "2026-08-26"
@@ -454,6 +454,15 @@
       "path": ".opencode/skills/gotchibot-mesh/SKILL.md",
       "script": "scripts/mesh-status.mjs",
       "addedAt": "2026-08-27"
+    },
+    "gotchibot-bridge": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Desk\u2192Hub Claude Code bridge: prompt VS Code Claude on iMac (pane, terminal fallback), wait for Desk reply.",
+      "path": ".opencode/skills/gotchibot-bridge/SKILL.md",
+      "script": "scripts/bridge-prompt.mjs",
+      "addedAt": "2026-09-02"
     },
     "gotchi-trader-monitor": {
       "status": "approved",
@@ -503,7 +512,7 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Recovery runbook for home iMac Docker/subgraph/tunnel — detect and restart failed Docker containers (esp. aavegotchi-monolith-base-graphql-proxy-1 on :8787), the AarcadeGh-t subgraph gateway, Cloudflare tunnel (cloudflared), and Hasura. Used by the YFI Infra Home Monitor on failure.",
+      "description": "Recovery runbook for home iMac Docker/subgraph/tunnel \u2014 detect and restart failed Docker containers (esp. aavegotchi-monolith-base-graphql-proxy-1 on :8787), the AarcadeGh-t subgraph gateway, Cloudflare tunnel (cloudflared), and Hasura. Used by the YFI Infra Home Monitor on failure.",
       "path": ".opencode/skills/infra-recover/SKILL.md",
       "addedAt": "2026-08-29"
     },
@@ -519,7 +528,7 @@
       "status": "approved",
       "type": "skill",
       "source": "aarcadeghst",
-      "description": "Track and hand off AarcadeGh-t My Paarcels / frontend UI changes to BTC bot owned-22899 (WBTC). Read changes.json for pending work; do not search for registry — this entry is the approved path.",
+      "description": "Track and hand off AarcadeGh-t My Paarcels / frontend UI changes to BTC bot owned-22899 (WBTC). Read changes.json for pending work; do not search for registry \u2014 this entry is the approved path.",
       "path": ".opencode/skills/aarcadeghst-changes/SKILL.md",
       "consumer": "owned-22899",
       "project": "AarcadeGh-t",
@@ -530,7 +539,7 @@
       "status": "approved",
       "type": "skill",
       "source": "aarcadeghst",
-      "description": "AarcadeGh-t newsfeed / Commsies agent pipeline — poll repos, draft newsfeed + tweet, never post to X.",
+      "description": "AarcadeGh-t newsfeed / Commsies agent pipeline \u2014 poll repos, draft newsfeed + tweet, never post to X.",
       "path": ".opencode/skills/aarcade-comms/SKILL.md",
       "project": "AarcadeGh-t",
       "addedAt": "2026-08-30"
@@ -539,11 +548,13 @@
       "status": "approved",
       "type": "skill",
       "source": "aarcadeghst",
-      "description": "GoBall agent teammate — poll Aarcade invites, LLM-play one Home seat, release hero when done.",
+      "description": "GoBall agent teammate \u2014 poll Aarcade invites, LLM-play one Home seat, release hero when done.",
       "path": ".opencode/skills/goball-teammate/SKILL.md",
       "script": "./scripts/goball-teammate.mjs",
       "project": "AarcadeGh-t",
-      "secrets": ["GOBALL_AGENT_SECRET"],
+      "secrets": [
+        "GOBALL_AGENT_SECRET"
+      ],
       "addedAt": "2026-08-31"
     },
     "thread-continuity": {
@@ -600,6 +611,6 @@
   "policy": {
     "autoInstall": false,
     "remoteFetch": "Agents fetch ethskills URLs on demand; never commit fetched content.",
-    "note": "Bulk-approved 2026-08-26. MCP catalog: config/mcp.stack.json. Secrets via abra only — never commit keys to mcp.json."
+    "note": "Bulk-approved 2026-08-26. MCP catalog: config/mcp.stack.json. Secrets via abra only \u2014 never commit keys to mcp.json."
   }
 }

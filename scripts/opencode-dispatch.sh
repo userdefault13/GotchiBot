@@ -37,9 +37,10 @@ dispatch_runtime() {
 model_for() {
   case "$1" in
     auto|free) node "$ROOT/scripts/model-auto.mjs" pick ;;
-    nim) echo "opencode/nemotron-3.5-lightning-free" ;;
-    ultra) echo "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free" ;;
-    # Prefer NIM when key present; else OpenCode Zen lightning-free.
+    nim) echo "opencode/big-pickle" ;;
+    pickle) echo "opencode/big-pickle" ;;
+    ultra) echo "opencode/nemotron-3-ultra-free" ;;
+    # Prefer NIM when key present; else OpenCode Zen free (big-pickle).
     lightning)
       if [ -n "${NVIDIA_API_KEY:-}" ]; then
         echo "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b"
@@ -143,7 +144,7 @@ EOF
 cd "$ROOT"
 PROMPT="\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")"
 MODEL="$(model_for "$model")"
-FREE_MODEL="\$(node "$ROOT/scripts/model-fallback.mjs" free-model 2>/dev/null || echo opencode/nemotron-3.5-lightning-free)"
+FREE_MODEL="\$(node "$ROOT/scripts/model-fallback.mjs" free-model 2>/dev/null || echo opencode/big-pickle)"
 HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 if [ -n "\$HERO" ]; then
   ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"

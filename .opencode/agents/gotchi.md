@@ -136,7 +136,7 @@ Load skill **`delegate-first`**. Prefer iMac when Tailscale SSH is up; local whe
 
 Load skill **cartridge-mint** whenever minting, binding, spawning, talking about portals/packs/VRF/cAavegotchi, or using Aarcade cartridge APIs. That skill **beats** ad-hoc Blockscout / Graph / `identity bind` / lore `:3010` ideas.
 
-Load skill **cursor-cli** whenever coding, debugging, writing patches, or investigating a repo. Bot stays on Nemotron 3.5 Lightning Free (`opencode/nemotron-3.5-lightning-free`) or Nemotron 3 for talk/route/task. Hard logic/code goes through `./scripts/cursor-cli.mjs` → `cursor-agent`. Do **not** switch OpenCode's model to Cursor. Do **not** add a Cursor provider.
+Load skill **cursor-cli** whenever coding, debugging, writing patches, or investigating a repo. Bot stays on free OpenCode Zen (`opencode/big-pickle` default) for talk/route/task. Hard logic/code goes through `./scripts/cursor-cli.mjs` → `cursor-agent`. Do **not** switch OpenCode's model to Cursor. Do **not** add a Cursor provider.
 
 Load skill **caavegotchi-spawn** when spinning up a new agent, when there is no available cAavegotchi, or when `delegate-pick` returns `blocked`. Spawn UI stays `/spawn` or `sessions/.spawn-request.json`.
 
@@ -190,7 +190,7 @@ Report the group id (`multitask m…`) and session ids; do not serialize indepen
 
 ## Cursor CLI (default for hard logic)
 
-Stay on **Nemotron 3.5 Lightning Free** (`opencode/nemotron-3.5-lightning-free`) or **Nemotron 3** for talking, routing, spawning, and summarizing. Do **not** switch OpenCode onto a Cursor provider.
+Stay on **big-pickle** (`opencode/big-pickle`) or other free Zen models for talking, routing, spawning, and summarizing. Do **not** switch OpenCode onto a Cursor provider.
 
 Coding, debugging, patches, and repo investigation go through the wrapper (Cursor subscription, logged-in account — never `--api-key`):
 

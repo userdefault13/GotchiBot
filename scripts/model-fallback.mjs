@@ -4,13 +4,13 @@
  */
 import { readFileSync } from "node:fs";
 
-export const FREE_MODEL = (process.env.GOTCHIBOT_FREE_MODEL || "opencode/nemotron-3.5-lightning-free").trim();
+export const FREE_MODEL = (process.env.GOTCHIBOT_FREE_MODEL || "opencode/big-pickle").trim();
 
 const LIMIT_RE =
   /(?:rate[\s-]?limit|too many requests|quota exceeded|usage limit|token limit|credit balance|insufficient (?:quota|credits|balance)|billing|payment required|overloaded|capacity|resource exhausted|requests per (?:minute|day|hour)|\b429\b|\b402\b|\btpm\b|\brpm\b)/i;
 
 const FREE_MODEL_RE =
-  /(?:^opencode\/nemotron-.*-free$|^openrouter\/.*:free$|^ollama\/)/i;
+  /(?:^opencode\/big-pickle$|^opencode\/.*-free$|^openrouter\/.*:free$|^ollama\/)/i;
 
 export function isModelLimitError(text) {
   const s = String(text || "").trim();

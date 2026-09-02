@@ -186,8 +186,14 @@ function main() {
         {
           at: new Date().toISOString(),
           overall,
-          docker: { ok: docker.ok, available: docker.available, count: docker.containers.length },
-          subgraph: { ok: subgraph.ok, block: subgraph.block },
+          docker: {
+            ok: docker.ok,
+            available: docker.available,
+            count: docker.containers.length,
+            containers: docker.containers,
+            error: docker.error,
+          },
+          subgraph: { ok: subgraph.ok, block: subgraph.block, error: subgraph.error || null },
           tunnel: { ok: tunnel.ok, exit: tunnel.exit },
           log: logPath,
         },

@@ -5,7 +5,7 @@
  * Reads sessions/.focus-list.json instantly; optionally refreshes over SSH in
  * the background when stale. OpenClaw gateway health is cached separately.
  *
- *   node scripts/imac-status.mjs            # "iMac: up · 2 run · OC✓"
+ *   node scripts/imac-status.mjs            # "Hub: up · 2 run · OC✓ · tun✓ · dk✓"
  *   node scripts/imac-status.mjs --json
  *   node scripts/imac-status.mjs --refresh  # blocking roster + gateway probe
  */
@@ -144,31 +144,46 @@ function loadRemoteSnapshot() {
 }
 
 function formatStatus({ remoteOk, reason, running, total, openclawReachable, staleNoSsh }) {
+  const cached = readJson(CACHE) || {};
   const oc =
     openclawReachable === true ? "OC✓" : openclawReachable === false ? "OC✗" : "OC?";
+  const tun =
+    cached.tunnelOk === true ? "tun✓" : cached.tunnelOk === false ? "tun✗" : null;
+  const dk =
+    cached.dockerAvailable === false || cached.dockerAvailable == null
+      ? null
+      : cached.dockerUnhealthy > 0
+        ? `dk ${cached.dockerUnhealthy}↓`
+        : "dk✓";
+  const extras = [oc, tun, dk].filter(Boolean).join(" · ");
+
+  // Prefer Hub barLine when hub-status recently wrote one.
+  if (cached.barLine && cached.hubFetchedAt) {
+    const age = Date.now() - Date.parse(cached.hubFetchedAt);
+    if (Number.isFinite(age) && age < 3 * 60_000) return cached.barLine;
+  }
 
   if (staleNoSsh) {
     const snap = loadRemoteSnapshot();
     if (snap?.remoteOk === true) {
       const load =
         snap.running > 0 ? `${snap.running} run` : snap.total > 0 ? `${snap.total} idle` : "idle";
-      return `iMac: up · ${load} · ${oc}`;
+      return `Hub: up · ${load} · ${extras}`;
     }
     if (snap?.remoteOk === false) {
-      const hint = snap.reason?.includes("timed out") ? "down" : "down";
-      return `iMac: ${hint} · ${oc}`;
+      return `Hub: down · ${extras}`;
     }
-    return `iMac: … · ${oc}`;
+    return `Hub: … · ${extras}`;
   }
 
   if (remoteOk === false) {
     const hint = reason?.includes("no-remote-ssh-env") ? "no-ssh" : "down";
-    return `iMac: ${hint} · ${oc}`;
+    return `Hub: ${hint} · ${extras}`;
   }
 
   const load =
     running > 0 ? `${running} run` : total > 0 ? `${total} idle` : "idle";
-  return `iMac: up · ${load} · ${oc}`;
+  return `Hub: up · ${load} · ${extras}`;
 }
 
 async function probeOpenClawGateway() {
@@ -247,5 +262,5 @@ async function main() {
 }
 
 main().catch(() => {
-  console.log("iMac: ?");
+  console.log("Hub: ?");
 });

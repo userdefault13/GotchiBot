@@ -59,6 +59,8 @@ MINI="${GOTCHIBOT_OPENCODE_MINI:-0}"
 REPLAY="${GOTCHIBOT_OPENCODE_REPLAY:-1}"
 REPLAY_LIMIT="${GOTCHIBOT_OPENCODE_REPLAY_LIMIT:-}"
 export OPENCODE_TUI_CONFIG="${GOTCHIBOT_TUI_CONFIG:-$ROOT/config/tui.json}"
+# Hex gotchi theme needs truecolor (OpenCode path — not only legacy OpenClaw).
+export COLORTERM="${COLORTERM:-truecolor}"
 if [ "${GOTCHIBOT_OPENCODE_MOUSE:-1}" = "0" ]; then
   export OPENCODE_DISABLE_MOUSE=true
 fi
@@ -292,11 +294,11 @@ if [ "$AGENT" = "gotchi" ] && command -v node >/dev/null 2>&1; then
   if [ -n "${GOTCHIBOT_GOTCHI_MODEL:-}" ]; then
     MODEL="$GOTCHIBOT_GOTCHI_MODEL"
   else
-    MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/nemotron-3.5-lightning-free}"
+    MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/big-pickle}"
   fi
   # Never boot the TUI on openclaw/* — that path times out and suicides the session.
   case "$MODEL" in
-    openclaw/*) MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode-go/kimi-k3}" ;;
+    openclaw/*) MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/big-pickle}" ;;
   esac
   if [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ] && [ -n "${TMUX:-}" ]; then
     tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (OpenClaw) " 2>/dev/null || true
@@ -313,7 +315,7 @@ else
       if [[ "$MODEL" == *"\"model\""* ]]; then
         MODEL="$(node -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.model||'')}catch{process.stdout.write('')}" "$MODEL")"
       fi
-      MODEL="${MODEL:-opencode/nemotron-3.5-lightning-free}"
+      MODEL="${MODEL:-opencode/big-pickle}"
       ;;
   esac
 fi

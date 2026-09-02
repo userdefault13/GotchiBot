@@ -97,6 +97,18 @@ When the user wants **Cursor Agent** instead of gated sub-agents:
 
 The gotchi bundles handoff + sub-agent context automatically. See skill `cursor-cli`.
 
+## Claude Code on Hub (`@claudemode` model)
+
+Switch OpenCode model (not Tab agent):
+
+```bash
+./scripts/gotchibot claudemode-proxy   # once, Desk :45680
+# then in chat: /model @claudemode
+```
+
+One-shot: `abra run gotchibot -- ./scripts/gotchibot bridge "prompt"`.
+Skill: **`gotchibot-bridge`**.
+
 ## Hard rules
 
 - Delegate-first: do not implement coding tasks yourself while idle agents exist.

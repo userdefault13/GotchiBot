@@ -89,6 +89,16 @@ async function main() {
   }
   ok("abra doctor");
 
+  const themeInst = spawnSync(process.execPath, [`${ROOT}/scripts/install-gotchi-theme.mjs`], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  if (themeInst.status === 0) {
+    ok("gotchi OpenCode theme → ~/.config/opencode/themes/");
+  } else {
+    console.warn(`    ! theme install skipped: ${(themeInst.stderr || themeInst.stdout || "").trim() || `exit ${themeInst.status}`}`);
+  }
+
   const fleetish = Boolean(
     process.env.REMOTE_HOST ||
       process.env.GOTCHIBOT_REMOTE_HOST ||

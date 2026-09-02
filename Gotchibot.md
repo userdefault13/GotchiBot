@@ -14,6 +14,7 @@ This file lists the core capabilities of the GotchiBot orchestrator and its agen
 | **GBM Auctions** | View, create, cancel, bid, and claim Aavegotchi GBM auctions on Base mainnet. | Free hero |
 | **Gotchiverse** | Channel alchemica, survey, harvest, craft installations/tiles, build on parcels, manage installation upgrades and craft/upgrade queues. | Free hero |
 | **Identity & Wallet** | Connect/EVM wallet generation via `abra`, list owned gotchis, bind-owned from wallet, manage collateral colors. | Free hero |
+| **Hub Monitor** | Desk view of the always-on iMac fleet host: SSH, OpenClaw gateway, sessions, tunnel, Docker (`gotchibot hub` / `/hub`; `hub --infra` for container table). | Orchestrator only |
 | **Infra Recovery** | Detect and restart failed Docker containers (graph proxy, tunnel, cloudflared), and Hasura on the home iMac. | Orchestrator only |
 | **Sub-Agent Routing** | Spawn sub-agents on the iMac over Tailscale SSH (direct LAN when on same network). | 1 free hero |
 | **Vercel Budget Guard** | Pin aarcadeghst.com to the home iMac via Cloudflare tunnel; serve static + all API routes locally to eliminate billable Vercel function invocations. | Orchestrator only |

@@ -77,12 +77,12 @@ they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
 
 | Tier | Model | Use |
 |---|---|---|
-| default | `opencode/nemotron-3.5-lightning-free` (`--model nim`; hy3 retired) | talk, route, spawn, summarize (no API key) |
-| task | Nemotron 3 Lightning / Ultra | also fine for tasking; `/model heavy` = Ultra |
+| default | `opencode/big-pickle` (`--model nim`; free Zen) | talk, route, spawn, summarize |
+| task | Nemotron Lightning / Ultra free (`opencode/nemotron-*`) | also fine for tasking; `/model heavy` = Ultra free |
 | hard logic | `./scripts/cursor-cli.mjs` → `cursor-agent` | coding / debug / patches (Cursor Pro+ on **MBP or iMac**) |
 | escalation | `deepseek/deepseek-v4-pro` | paid OpenCode fallback (needs DEEPSEEK_API_KEY) |
 | fallback | `ollama/qwen2.5:3b` | offline/private |
-| sub-agent delegation | `sub` (glm-5.2 → grok-4.6 → gpt-5 → cursor-cli → nemotron) | default model alias for spawned sub-agents; resolves via `config/models.auto.json` `subagentPrefer` chain; see `skills/delegate-model/SKILL.md` |
+| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | default model alias for spawned sub-agents; resolves via `config/models.auto.json` `subagentPrefer`; see `skills/delegate-model/SKILL.md` |
 
 NVIDIA_API_KEY flows through abracadabra (`abra run gotchibot -- ...`); opencode
 reads it via `{env:NVIDIA_API_KEY}` — it is never written to disk.
@@ -121,6 +121,10 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 - Focus/chat: `./scripts/agent-focus.mjs chat "…"`
 - List / switch / orch: `/list` `/switch` `/orch` (or the `agent-focus.mjs` equivalents)
 - Wallet gate: `./scripts/wallet-gate.mjs`
+- Hub monitor: `./scripts/gotchibot hub` / `/hub` (skill `gotchibot-hub`)
+- **`@claudemode` model (Hub VS Code Claude):** `/model @claudemode` after
+  `./scripts/gotchibot claudemode-proxy` (Desk `:45680`). Skill `gotchibot-bridge`.
+  One-shot: `./scripts/gotchibot bridge "…"`. Not a Tab agent mode.
 
 ## Data
 
@@ -132,7 +136,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 ## Models
 
-- Bot task / routing / talk: `opencode/nemotron-3.5-lightning-free` (`nim`, default; Hy3 Free retired on Zen). Nemotron 3 Ultra is also fine for tasking. `/model heavy` is still Ultra. Do not switch OpenCode to a Cursor provider.
+- Bot task / routing / talk: `opencode/big-pickle` (`nim`, default free Zen). Lightning/Ultra free remain available. `/model heavy` → `opencode/nemotron-3-ultra-free`. Do not switch OpenCode to a Cursor provider.
 - Hard coding / debugging / investigation: `./scripts/cursor-cli.mjs run "…"` → `cursor-agent` (Julius's logged-in Cursor Pro+ on **MBP or iMac**). Never `--api-key`.
 - Paid OpenCode fallback: `deepseek/deepseek-v4-pro` (needs `DEEPSEEK_API_KEY` via abra)
 - Private/offline: local Ollama on the iMac

@@ -741,6 +741,32 @@ async function viewAgentRoster() {
   }
 }
 
+async function viewHubStatus() {
+  clear();
+  title("Hub status");
+  console.log("  Probing always-on fleet host (Tailscale)…\n");
+  const r = runAbraNode("scripts/hub-status.mjs", ["--live"]);
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  if (r.status !== 0 && !r.stdout?.trim()) {
+    console.log(`  ✗ hub status failed (exit ${r.status ?? "?"})`);
+  }
+  await pause();
+}
+
+async function viewHubInfra() {
+  clear();
+  title("Hub infra");
+  console.log("  Docker + subgraph + tunnel on Hub (via SSH)…\n");
+  const r = runAbraNode("scripts/hub-status.mjs", ["--infra"]);
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  if (r.status !== 0 && !r.stdout?.trim()) {
+    console.log(`  ✗ hub infra failed (exit ${r.status ?? "?"})`);
+  }
+  await pause();
+}
+
 async function exportAgentRosterCsv() {
   clear();
   title("Export roster");
@@ -936,6 +962,8 @@ async function mainMenu(wallet, cartridgeId) {
     const pick = await choose("What next?", [
       { key: "launch", label: "Return to chat (orchestrator)" },
       { key: "meet", label: "Start meeting" },
+      { key: "hub", label: "Hub status (iMac OpenClaw · tunnel · Docker)" },
+      { key: "hub-infra", label: "Hub infra (Docker container table)" },
       { key: "roster", label: "View agent roster (MBP + iMac · status)" },
       { key: "export-roster", label: "Export agent roster to CSV" },
       { key: "settings", label: "Settings (voice, read speed, mouse, replay)" },
@@ -987,6 +1015,16 @@ async function mainMenu(wallet, cartridgeId) {
         });
         process.exit(0);
       }
+      continue;
+    }
+
+    if (pick.key === "hub") {
+      await viewHubStatus();
+      continue;
+    }
+
+    if (pick.key === "hub-infra") {
+      await viewHubInfra();
       continue;
     }
 
