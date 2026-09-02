@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-[ -z "${TMUX:-}" ] && export COLORTERM="${COLORTERM:-truecolor}"
+export COLORTERM="${COLORTERM:-truecolor}"
 SESSIONS="$ROOT/sessions"
 PIN="$SESSIONS/.pin"
 FOCUS="$SESSIONS/.focus.json"

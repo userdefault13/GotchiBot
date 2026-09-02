@@ -57,10 +57,10 @@ function colorEnabled() {
   return Boolean(process.stdout.isTTY);
 }
 
-/** Inside tmux default to xterm-256; opt in with GOTCHIBOT_TRUECOLOR=1. */
+/** tmux without COLORTERM=truecolor (or Tc) cannot render 38;2 truecolor. */
 function trueColorEnabled() {
-  if (process.env.GOTCHIBOT_TRUECOLOR === "1") return true;
-  if (process.env.TMUX) return false;
+  if (process.env.COLORTERM === "truecolor") return true;
+  if (process.env.TMUX && process.env.COLORTERM !== "truecolor") return false;
   return true;
 }
 
@@ -71,7 +71,7 @@ function hexTo256(hex) {
   if (r === g && g === b) {
     if (r < 8) return 16;
     if (r > 248) return 231;
-    return Math.round(((r - 8) / 247) * 23) + 232;
+    return Math.round((r - 8) / 10) + 232;
   }
   return (
     16 +
