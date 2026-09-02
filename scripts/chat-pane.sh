@@ -18,7 +18,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export GOTCHIBOT_ROOT="$ROOT"
-export COLORTERM="${COLORTERM:-truecolor}"
+[ -z "${TMUX:-}" ] && export COLORTERM="${COLORTERM:-truecolor}"
 export PATH="${HOME}/.openclaw/bin:${PATH}"
 # Persisted remote gateway (iMac) — sessions/.openclaw-gateway.json
 # shellcheck source=/dev/null
