@@ -16,7 +16,7 @@ const REMOTE_SH = "scripts/hub-ops-remote.sh";
 
 function usage() {
   console.error(`usage:
-  hub-ops.mjs status|restart-gateway|vscode-open|bridge-check|tunnel-restart|doctor
+  hub-ops.mjs status|restart-gateway|vscode-open|bridge-check|bridge-ensure|bridge-info|tunnel-restart|doctor
               [--json] [--wait] [--timeout SEC]
 
 Prefer: abra run gotchibot -- ./scripts/gotchibot hub <action>`);
@@ -44,6 +44,9 @@ const ACTIONS = new Set([
   "restart",
   "vscode-open",
   "bridge-check",
+  "bridge-ensure",
+  "ensure-bridge",
+  "bridge-info",
   "tunnel-restart",
   "doctor",
   "help",
@@ -114,8 +117,23 @@ async function main() {
   }
 
   if (action === "bridge-check") {
-    const r = runLocal("scripts/bridge-prompt.mjs", ["--check", "--host", "imac"], { timeout: 45_000 });
+    const r = runLocal("scripts/bridge-prompt.mjs", ["--check", "--host", "network"], { timeout: 45_000 });
     printResult(r, "bridge-check");
+    return;
+  }
+
+  if (action === "bridge-ensure" || action === "ensure-bridge") {
+    const argv = ["--timeout", String(timeoutSec)];
+    if (jsonOut) argv.push("--json");
+    const r = runLocal("scripts/hub-bridge-ensure.mjs", argv, { timeout: (timeoutSec + 90) * 1000 });
+    printResult(r, "bridge-ensure");
+    return;
+  }
+
+  if (action === "bridge-info") {
+    const argv = jsonOut ? ["--json"] : ["--text"];
+    const r = runLocal("scripts/hub-bridge-info.mjs", argv, { timeout: 90_000 });
+    printResult(r, "bridge-info");
     return;
   }
 

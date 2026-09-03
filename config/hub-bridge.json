@@ -1,0 +1,7 @@
+{
+  "$comment": "Non-secret Hub Claude bridge endpoint for Desk clients on Tailscale/LAN. Desks always POST here (not a local Claude).",
+  "host": "juliuss-imac-2",
+  "bridgePort": 45678,
+  "bridgePath": "/prompt",
+  "receiverPort": 45679
+}

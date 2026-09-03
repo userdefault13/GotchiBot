@@ -73,6 +73,23 @@ const TOOLS = [
     description: "Check Hub Claude bridge :45678 and Desk receiver :45679.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
+  {
+    name: "hub_bridge_ensure",
+    description:
+      "Ensure Hub VS Code Claude bridge is up (open workspace, restart bridge server, verify :45678). Call when claude_ask / bridge fails with connection refused or receiver/bridge down. Weak-model safe.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        timeout: { type: "number", description: "Seconds to wait for bridge (default 45)" },
+      },
+    },
+  },
+  {
+    name: "hub_bridge_info",
+    description:
+      "Return Hub gotchibot-bridge paths/config for weak models. Use when looking for globalStorage, extension config, listenHost, or where Claude bridge stores state. There is NO globalStorage/local.gotchibot-bridge folder.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
 ];
 
 function handle(msg) {
@@ -98,6 +115,11 @@ function handle(msg) {
         text = runOps("restart-gateway", ["--wait", "--timeout", String(t)]);
       } else if (name === "hub_vscode_open") text = runOps("vscode-open");
       else if (name === "hub_bridge_check") text = runOps("bridge-check");
+      else if (name === "hub_bridge_ensure") {
+        const t = args.timeout || 45;
+        text = runOps("bridge-ensure", ["--timeout", String(t)]);
+      }
+      else if (name === "hub_bridge_info") text = runOps("bridge-info", ["--json"]);
       else return replyError(id, -32601, `unknown tool: ${name}`);
       return reply(id, { content: [{ type: "text", text }], isError: false });
     } catch (e) {

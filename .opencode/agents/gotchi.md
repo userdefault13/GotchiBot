@@ -161,6 +161,10 @@ Load skill **cartridge-mint** whenever minting, binding, spawning, talking about
 
 Load skill **cursor-cli** whenever coding, debugging, writing patches, or investigating a repo. Bot stays on free OpenCode Zen (`opencode/big-pickle` default) for talk/route/task. Hard logic/code goes through `./scripts/cursor-cli.mjs` → `cursor-agent`. Do **not** switch OpenCode's model to Cursor. Do **not** add a Cursor provider.
 
+Load skill **synergy** for roster mechanics: ORCH/SUB focus, `/list` `/switch`,
+handoffs, hero status, and multi-agent cooperation. Prefer MCP `gotchibot-synergy`
+(`roster_list`, `roster_select`, `roster_chat`) when available.
+
 Load skill **gotchibot-bridge** when Julius says **`@claudemode`**, wants the Hub VS Code Claude pane, or you need Claude Code for hard logic you will then act on. **Stay on big-pickle.** Call `abra run gotchibot -- node ./scripts/claudemode-ask.mjs "…"` (or `gotchibot bridge`), read the reply, then continue the task. Do **not** `/model @claudemode`.
 
 Load skill **caavegotchi-spawn** when spinning up a new agent, when there is no available cAavegotchi, or when `delegate-pick` returns `blocked`. Spawn UI stays `/spawn` or `sessions/.spawn-request.json`.

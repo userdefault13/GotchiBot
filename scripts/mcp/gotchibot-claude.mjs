@@ -14,6 +14,10 @@ import { createInterface } from "node:readline";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  hubBridgeHttpUrl,
+  resolveClaudeHostMode,
+} from "../claude-bridge-role.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const ASK = join(ROOT, "scripts/claudemode-ask.mjs");
@@ -43,8 +47,11 @@ function askClaude(prompt, timeoutSec = 300) {
     env.GOTCHIBOT_RECEIVER_URL =
       env.GOTCHIBOT_RECEIVER_URL || "http://100.107.115.39:45679";
     env.GOTCHIBOT_CLAUDE_HOST = env.GOTCHIBOT_CLAUDE_HOST || "local";
-    // Prefer direct node (abra rarely exists in the gateway image)
     delete env.SSH_PRIVATE_KEY;
+  } else {
+    // Desk: network → Hub bridge. Hub: local :45678.
+    env.GOTCHIBOT_BRIDGE_URL = env.GOTCHIBOT_BRIDGE_URL || hubBridgeHttpUrl();
+    env.GOTCHIBOT_CLAUDE_HOST = env.GOTCHIBOT_CLAUDE_HOST || resolveClaudeHostMode();
   }
 
   const r = spawnSync(process.execPath, [ASK, "--timeout", String(timeoutSec), prompt], {

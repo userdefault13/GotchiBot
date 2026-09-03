@@ -473,6 +473,15 @@
       "script": "scripts/hub-ops.mjs",
       "addedAt": "2026-09-03"
     },
+    "synergy": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Roster synergy SOP — how the agent roster works, ORCH/SUB focus, spawn/handoff communications, cooperation workflows, hero status. Load for /list /switch or multi-agent requests.",
+      "path": ".opencode/skills/synergy/SKILL.md",
+      "script": "scripts/agent-focus.mjs",
+      "addedAt": "2026-09-03"
+    },
     "gotchi-trader-monitor": {
       "status": "approved",
       "type": "skill",

@@ -74,10 +74,11 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot comms-cron-deploy         install WBTC daily comms cron on iMac
   gotchibot commsies-imac-deploy      keep Commsies (:3002 + Ollama) alive on iMac
   gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
-  gotchibot hub [status|restart-gateway|doctor|…]  Hub monitor + OpenClaw restart SOP
-  gotchibot bridge|bridge-prompt [--host auto|imac|local] [--wait] "…"
+  gotchibot hub [status|restart-gateway|doctor|bridge-info|…]  Hub monitor + OpenClaw restart SOP
+  gotchibot bridge|bridge-prompt [--host auto|network|imac|local] [--wait] "…"
                                   Desk→Hub Claude VS Code; reply on Desk
   gotchibot vscode-open|vscode-ensure [--check]  open/focus Hub VS Code on GotchiBot (code -r)
+  gotchibot bridge-ensure|ensure-bridge [--json]  one-shot Hub Claude bridge recovery (receiver + bridge + restart)
   gotchibot claude-ask|claudemode-ask "…"  bridge ask (reply-only; orch stays on big-pickle)
   gotchibot claudemode-proxy [--check]  optional OpenAI proxy for /model @claudemode (:45680)
   gotchibot tunnel status|restart     subgraph.aarcadeghst.com health + iMac cloudflared restart
@@ -593,7 +594,7 @@ case "$cmd" in
       ""|status|--json|--infra|--live|-h|--help)
         abra_or_node "$ROOT/scripts/hub-status.mjs" "$@"
         ;;
-      restart-gateway|restart|doctor|vscode-open|bridge-check|tunnel-restart)
+      restart-gateway|restart|doctor|vscode-open|bridge-check|bridge-ensure|ensure-bridge|bridge-info|tunnel-restart)
         shift || true
         abra_or_node "$ROOT/scripts/hub-ops.mjs" "$sub" "$@"
         ;;
@@ -613,6 +614,10 @@ case "$cmd" in
   vscode-open|vscode-ensure|hub-vscode-open)
     # Open/focus Hub VS Code on GotchiBot so gotchibot-bridge can serve Claude.
     abra_or_node "$ROOT/scripts/hub-vscode-open.mjs" "$@"
+    ;;
+  bridge-ensure|ensure-bridge)
+    # One-shot Hub Claude bridge recovery (receiver + bridge + restart).
+    abra_or_node "$ROOT/scripts/hub-bridge-ensure.mjs" "$@"
     ;;
   claude-ask|claudemode-ask)
     # Orchestrator tool: stay on big-pickle; print Hub Claude reply only.
