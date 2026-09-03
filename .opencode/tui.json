@@ -7,8 +7,8 @@
     "enabled": true
   },
   "keybinds": {
-    "agent_cycle": "<leader>tab",
-    "agent_cycle_reverse": "<leader>shift+tab",
+    "agent_cycle": "tab",
+    "agent_cycle_reverse": "shift+tab",
     "agent_list": "<leader>a,ctrl+p",
     "sidebar_toggle": "ctrl+shift+g,<leader>b",
     "prompt.autocomplete.complete": "ctrl+space",

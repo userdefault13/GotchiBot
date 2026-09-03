@@ -17,6 +17,7 @@ import {
   listMeetMembers,
   clampPage,
 } from "./meet-room.mjs";
+import { setMeetStatus } from "./meet-status.mjs";
 import { runLayout } from "./tmux-layout.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -114,11 +115,43 @@ function pokeGallery() {
 }
 
 let sendBusy = false;
-let sendDots = 1;
-let sendTimer = null;
 let sendError = null;
+let sendStartedAt = 0;
+let sendTimer = null;
+/** Active meet send/helper child — Ctrl+C can interrupt. */
+let activeChild = null;
+/** Last Ctrl+C timestamp for double-tap leave. */
+let lastCtrlCAt = 0;
+let sendDots = 1;
 let drawing = false;
 let redrawPending = false;
+let statusAnimTimer = null;
+
+function hasActiveMeetStatus() {
+  try {
+    const j = JSON.parse(readFileSync(`${ROOT}/sessions/.meet-status.json`, "utf8"));
+    return Object.keys(j?.byId || {}).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function ensureStatusAnim() {
+  if (statusAnimTimer) return;
+  statusAnimTimer = setInterval(() => {
+    if (!hasActiveMeetStatus()) {
+      clearInterval(statusAnimTimer);
+      statusAnimTimer = null;
+      return;
+    }
+    draw();
+  }, 500);
+}
+
+function stopStatusAnim() {
+  if (statusAnimTimer) clearInterval(statusAnimTimer);
+  statusAnimTimer = null;
+}
 
 function writePending(text) {
   try {
@@ -129,6 +162,21 @@ function writePending(text) {
   } catch {
     /* ok */
   }
+  try {
+    // User line in flight — show chair thinking until sayTurn updates speakers.
+    const mid = String(readFileSync(`${ROOT}/sessions/meetings/.current`, "utf8")).trim();
+    if (mid) {
+      const meeting = JSON.parse(
+        readFileSync(`${ROOT}/sessions/meetings/${mid}/meeting.json`, "utf8"),
+      );
+      if (meeting?.chairId) {
+        setMeetStatus(meeting.chairId, "thinking", { meetingId: meeting.id, poke: true });
+      }
+    }
+  } catch {
+    /* ok */
+  }
+  ensureStatusAnim();
 }
 
 function clearPending() {
@@ -174,7 +222,9 @@ function sayToRoom(msg) {
     stdio: "ignore",
     env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1" },
   });
+  activeChild = child;
   child.on("error", () => {
+    if (activeChild === child) activeChild = null;
     sendBusy = false;
     clearPending();
     stopSendTimer();
@@ -183,6 +233,7 @@ function sayToRoom(msg) {
     draw();
   });
   child.on("close", (code) => {
+    if (activeChild === child) activeChild = null;
     sendBusy = false;
     clearPending();
     stopSendTimer();
@@ -204,7 +255,9 @@ function runMeetHelper(argv) {
     stdio: "ignore",
     env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1" },
   });
+  activeChild = child;
   child.on("error", () => {
+    if (activeChild === child) activeChild = null;
     sendBusy = false;
     stopSendTimer();
     sendError = "helper failed";
@@ -212,12 +265,45 @@ function runMeetHelper(argv) {
     draw();
   });
   child.on("close", (code) => {
+    if (activeChild === child) activeChild = null;
     sendBusy = false;
     stopSendTimer();
     pokeChannel();
     if (code !== 0) sendError = "helper failed";
     draw();
   });
+}
+
+/** Ctrl+C in raw mode: cancel busy send → clear line → leave to chat (double-tap or empty). */
+function handleCtrlC() {
+  const now = Date.now();
+  const doubleTap = now - lastCtrlCAt < 900;
+  lastCtrlCAt = now;
+
+  if (sendBusy || activeChild) {
+    try {
+      activeChild?.kill("SIGTERM");
+    } catch {
+      /* ok */
+    }
+    activeChild = null;
+    sendBusy = false;
+    clearPending();
+    stopSendTimer();
+    sendError = "interrupted";
+    pokeChannel();
+    draw();
+    return "redraw";
+  }
+
+  if (editor.buffer.length > 0 && !doubleTap) {
+    editor.clear();
+    return "redraw";
+  }
+
+  // Empty line or second Ctrl+C → leave meet UI (meeting stays open; /end to close).
+  requestLeave("chat");
+  return "chat";
 }
 
 function requestLeave(kind) {
@@ -347,7 +433,7 @@ function drawInputPanel(top, cols) {
   } else {
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
-      `${T.panel}${T.muted} · meeting room${T.reset}`;
+      `${T.panel}${T.muted} · ^C leave · /end${T.reset}`;
   }
   writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols, visLen(footerCore)), cols));
 
@@ -588,8 +674,7 @@ function handleKey(chunk) {
       if (editor.completeMention()) return "redraw";
       return "noop";
     case "\x03":
-      editor.clear();
-      return "redraw";
+      return handleCtrlC();
     case "\x0c":
       return "redraw";
     default:
@@ -646,6 +731,7 @@ function markTmuxPane() {
   const tgt = process.env.TMUX_PANE || "";
   if (!tgt) return;
   spawnSync("tmux", ["set-option", "-p", "-t", tgt, "@gotchibot-meet-room", "1"], { stdio: "ignore" });
+  spawnSync("tmux", ["set-option", "-p", "-t", tgt, "-u", "@gotchibot-chat"], { stdio: "ignore" });
   spawnSync("tmux", ["set-option", "-p", "-t", tgt, "pane-border-format", " Meet · room "], {
     stdio: "ignore",
   });
@@ -658,22 +744,25 @@ function main() {
   draw();
 
   process.on("SIGUSR1", () => {
-    if (sendBusy) drawFooterOnly();
-    else draw();
+    ensureStatusAnim();
+    draw();
   });
   process.on("SIGWINCH", () => draw());
   process.on("SIGTERM", () => {
     stopSendTimer();
+    stopStatusAnim();
     teardown();
     process.exit(0);
   });
   process.on("exit", () => {
     stopSendTimer();
+    stopStatusAnim();
     teardown();
   });
+  // Keep status dots alive if a turn is already in flight when we open.
+  if (hasActiveMeetStatus()) ensureStatusAnim();
   process.on("SIGINT", () => {
-    editor.clear();
-    draw();
+    handleCtrlC();
   });
 
   stdin.on("data", (chunk) => {

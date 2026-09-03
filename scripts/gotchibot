@@ -25,7 +25,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot new [--model t] "P"   spawn a sub-agent
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
-  gotchibot mode [gotchi|sub|verse|plan|build|ask|cycle] [--restart]  OpenCode agent
+  gotchibot mode [gotchi|sandbox|verse|plan|build|ask|project|cycle] [--restart]  OpenCode agent
+  gotchibot project [show|new|set|ready]  unsupervised project intake (/project)
   gotchibot gotchi-mode [status|env|model|ensure] [--json]  OpenCode TUI → iMac orchestrator session
   gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
   gotchibot list                  session table
@@ -34,6 +35,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot focus <n|id>          pin avatar + SUB chat focus
   gotchibot cockpit               mint / avatar / Settings (/cockpit)
   gotchibot meet start|open|invite|status|say|morning|colabo|end   meeting room (/meet)
+  gotchibot model-policy [show|pick|candidates|enforce]  working-models-only policy
+  gotchibot tui-policy [show|enforce|apply]  Tab cycles in OpenCode TUI (no tmux steal)
   gotchibot layout-check [check|desk|meet]  verify tmux panes (non-destructive)
   gotchibot orch                  restore orchestrator focus (/orch)
   gotchibot openclaw sync|list|status|chat|install|point  OpenClaw fleet + CLI
@@ -168,7 +171,13 @@ cmd_tmux() {
     echo "  Run from Terminal/iTerm:  GotchiBot   or   ./scripts/gotchibot tmux" >&2
     exit 1
   fi
+  # shellcheck source=scripts/progress-bar.sh
+  source "$ROOT/scripts/progress-bar.sh"
+  # Gotchi pink while the shell is blank before tmux attach.
+  PROGRESS_FG=$'\033[38;5;213m'
+  progress_pulse "GotchiBot · starting…" 0
   maybe_update_check
+  progress_pulse "GotchiBot · syncing fleet…" 4
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
   # API keys are injected inside chat/sub-agent panes when needed.
   sync_openclaw_fleet
@@ -184,21 +193,29 @@ cmd_tmux() {
   # Exact has-session (=name) so gotchibot-hubmon is not mistaken for gotchibot.
   # Bare name for attach/layout targets — set-option rejects -t =name on tmux 3.7c.
   if tmux has-session -t "=$sess_name" 2>/dev/null; then
+    progress_pulse "GotchiBot · refreshing desk…" 8
     "$layout" leave-meet-gallery 2>/dev/null || true
     if ! "$layout" refresh; then
+      progress_fail "GotchiBot · layout refresh failed"
       echo "orchestrator layout refresh failed — try: tmux kill-session -t '=$sess_name' && ./scripts/gotchibot tmux" >&2
       exit 1
     fi
+    progress_pulse "GotchiBot · attaching…" 12
+    progress_end
     exec tmux attach -t "=$sess_name" \; select-pane -t "$sess:work.1" \; run-shell "'$layout' fit-quiet"
   fi
+  progress_pulse "GotchiBot · building desk…" 8
   tmux new-session -d -s "$sess_name" -n work
   if ! "$layout" ensure; then
+    progress_fail "GotchiBot · layout ensure failed"
     echo "orchestrator layout ensure failed — try: tmux kill-session -t '=$sess_name' && ./scripts/gotchibot tmux" >&2
     exit 1
   fi
   # Orch calls poke-avatar — must run after 3-pane layout (USR1 on work.2 before
   # that hits the lone boot shell and kills the tmux server).
   node "$ROOT/scripts/agent-focus.mjs" orch >/dev/null 2>&1 || true
+  progress_pulse "GotchiBot · attaching…" 14
+  progress_end
   exec tmux attach -t "=$sess_name" \; select-pane -t "$sess:work.1" \; run-shell "'$layout' fit-quiet"
 }
 
@@ -301,8 +318,8 @@ cmd_mode() {
   local sub="${1:-get}"
   shift || true
   case "$sub" in
-    gotchi|sub|sub-agent|verse|plan|build|ask)
-      case "$sub" in sub-agent) sub=sub ;; esac
+    gotchi|sandbox|sub|sub-agent|verse|plan|build|ask|project)
+      case "$sub" in sub|sub-agent) sub=sandbox ;; esac
       exec node "$ROOT/scripts/agent-mode.mjs" set "$sub" "$@"
       ;;
     cycle)
@@ -312,7 +329,7 @@ cmd_mode() {
       exec node "$ROOT/scripts/agent-mode.mjs" get "$@"
       ;;
     *)
-      echo "unknown mode: $sub (use gotchi|sub|verse|plan|build|ask)" >&2
+      echo "unknown mode: $sub (use gotchi|sandbox|verse|plan|build|ask|project)" >&2
       exit 2
       ;;
   esac
@@ -529,6 +546,15 @@ case "$cmd" in
   focus) cmd_focus "$@" ;;
   cockpit|onboarding) cmd_cockpit "$@" ;;
   meet) cmd_meet "$@" ;;
+  model-policy|models-policy)
+    exec node "$ROOT/scripts/model-policy.mjs" "$@"
+    ;;
+  tui-policy|tab-policy)
+    exec node "$ROOT/scripts/tui-policy.mjs" "$@"
+    ;;
+  project)
+    exec node "$ROOT/scripts/project-intake.mjs" "$@"
+    ;;
   layout-check|layout-smoke) exec "$ROOT/scripts/layout-smoke.sh" "$@" ;;
   orch) cmd_orch "$@" ;;
   openclaw) cmd_openclaw "$@" ;;

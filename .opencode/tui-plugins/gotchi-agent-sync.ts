@@ -1,16 +1,14 @@
 import { spawn } from "node:child_process"
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
 
 const ID = "gotchi.agent-sync"
-const MODES = new Set(["gotchi", "sub", "verse", "plan", "build", "ask"])
+const MODES = new Set(["gotchi", "sandbox", "verse", "plan", "build", "ask", "project"])
 
 /**
- * OpenCode can flip the primary agent in-process (Ctrl+P) while chat-pane still
- * has gotchi/OpenClaw env + an old transcript. When a new turn lands on a different
- * agent than this process was booted for — especially crossing gotchi ↔ local —
- * persist mode and respawn via agent-mode --restart.
+ * Persist OpenCode in-TUI agent cycle (Tab) to sessions/.agent-mode.json.
+ * Do not respawn the pane — Julius wants Tab to cycle in the UI.
  */
 
 function rootDirOf(api: any): string {
@@ -56,12 +54,8 @@ function latestTurnAgent(api: any): { agent: string; at: number } | null {
   return null
 }
 
-function shouldRestart(boot: string, live: string): boolean {
-  return boot !== live
-}
-
-function restartMode(root: string, agent: string) {
-  spawn(process.execPath, [join(root, "scripts", "agent-mode.mjs"), "set", agent, "--restart"], {
+function persistMode(root: string, agent: string) {
+  spawn(process.execPath, [join(root, "scripts", "agent-mode.mjs"), "set", agent], {
     cwd: root,
     detached: true,
     stdio: "ignore",
@@ -69,48 +63,28 @@ function restartMode(root: string, agent: string) {
   }).unref()
 }
 
-function toast(api: any, message: string) {
-  try {
-    api?.showToast?.({ message, variant: "info" })
-  } catch {
-    /* optional */
+function liveUiAgent(api: any): string | null {
+  const cands = [
+    api?.state?.agent,
+    api?.state?.session?.agent,
+    api?.agent,
+  ]
+  for (const a of cands) {
+    const s = String(a || "").trim()
+    if (MODES.has(s)) return s
   }
+  return null
 }
 
 export const plugin: TuiPlugin = async (api) => {
   const root = rootDirOf(api)
-  const startedAs = bootAgent(root)
-  let restarting = false
-  let lastSeen = ""
-  const startedAt = Date.now()
+  let lastSeen = bootAgent(root)
 
   const tick = () => {
-    if (restarting) return
-    const turn = latestTurnAgent(api)
-    if (!turn) return
-    // Ignore stale history from --continue (only react to turns after boot).
-    if (turn.at && turn.at < startedAt - 2000) return
-    if (turn.agent === lastSeen) return
-    lastSeen = turn.agent
-    if (turn.agent === startedAs) return
-    if (!shouldRestart(startedAs, turn.agent)) return
-    restarting = true
-    try {
-      mkdirSync(join(root, "sessions"), { recursive: true })
-      writeFileSync(
-        join(root, "sessions", ".agent-sync.json"),
-        `${JSON.stringify({
-          id: ID,
-          from: startedAs,
-          to: turn.agent,
-          at: new Date().toISOString(),
-        }, null, 2)}\n`,
-      )
-    } catch {
-      /* ignore */
-    }
-    toast(api, `${turn.agent} needs a fresh pane — restarting…`)
-    restartMode(root, turn.agent)
+    const live = liveUiAgent(api) || latestTurnAgent(api)?.agent
+    if (!live || live === lastSeen) return
+    lastSeen = live
+    persistMode(root, live)
   }
 
   const iv = setInterval(tick, 1000)
@@ -127,5 +101,5 @@ export default plugin
 export const meta: TuiPluginModule["meta"] = {
   id: ID,
   name: "Gotchi agent sync",
-  description: "Respawn chat-pane when OpenCode flips gotchi ↔ build/ask/plan in-process",
+  description: "Persist Tab agent cycle to .agent-mode.json without restarting the pane",
 }

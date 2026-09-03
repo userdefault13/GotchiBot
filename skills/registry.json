@@ -518,6 +518,36 @@
       "script": "scripts/colabo.mjs",
       "addedAt": "2026-09-03"
     },
+    "model-policy": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Working-models-only policy — model-policy.mjs + config/model-policy.json. Meet/colabo/spawn must use working chain; cool down 402/429.",
+      "path": ".opencode/skills/model-policy/SKILL.md",
+      "script": "scripts/model-policy.mjs",
+      "config": "config/model-policy.json",
+      "addedAt": "2026-09-03"
+    },
+    "tui-policy": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Tab-in-TUI policy — Tab cycles OpenCode agents in-UI; tmux never steals Tab; no pane restart. tui-policy.mjs + config/tui-policy.json.",
+      "path": ".opencode/skills/tui-policy/SKILL.md",
+      "script": "scripts/tui-policy.mjs",
+      "config": "config/tui-policy.json",
+      "addedAt": "2026-09-03"
+    },
+    "project-intake": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Unsupervised project intake — /project prompts all requirements before spawn. project-intake.mjs + config/project-policy.json.",
+      "path": ".opencode/skills/project-intake/SKILL.md",
+      "script": "scripts/project-intake.mjs",
+      "config": "config/project-policy.json",
+      "addedAt": "2026-09-03"
+    },
     "gotchi-trader-monitor": {
       "status": "approved",
       "type": "skill",
@@ -665,6 +695,8 @@
   "policy": {
     "autoInstall": false,
     "remoteFetch": "Agents fetch ethskills URLs on demand; never commit fetched content.",
+    "models": "working-models-only — config/model-policy.json + scripts/model-policy.mjs (meet/colabo/spawn). Cool down 402/429. Claude is a tool, not orch model.",
+    "tui": "tab-in-tui — config/tui-policy.json + scripts/tui-policy.mjs. Tab cycles OpenCode agents in-UI; tmux never steals Tab; no pane restart.",
     "note": "Bulk-approved 2026-08-26. MCP catalog: config/mcp.stack.json. Secrets via abra only \u2014 never commit keys to mcp.json."
   }
 }

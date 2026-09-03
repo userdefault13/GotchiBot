@@ -14,6 +14,9 @@ metadata:
 
 # Sub-Agent Model Priority
 
+**Policy:** skill **model-policy** / `config/model-policy.json` (`working-models-only`).
+This skill is the spawn-chain detail; policy is the hard rule for all scopes.
+
 When you delegate a task to a sub-agent (via `gotchi-orchestrate.mjs spawn`,
 `opencode-dispatch.sh new`, `agent-focus.mjs chat`, `gotchi-multitask.mjs run`,
 or `remote-spawn.mjs`), the sub-agent's model is resolved according to

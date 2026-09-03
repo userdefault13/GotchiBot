@@ -157,12 +157,31 @@ async function cmdSpawn(argv) {
   let route;
 
   if (!explicitModel) {
-    // Resolve via subagent chain: glm-5.2 → grok-4.6 → gpt-5 → cursor-cli → nemotron
+    // Policy: working-models-only (spawn scope → subagentPrefer chain)
     const { spawnSync } = await import("node:child_process");
-    const r = spawnSync("node", ["scripts/model-auto.mjs", "subagent", "--json"], {
-      cwd: ROOT, encoding: "utf8",
-    });
-    const result = JSON.parse(String(r.stdout || r.stderr || "").trim());
+    const r = spawnSync(
+      "node",
+      ["scripts/model-policy.mjs", "pick", "spawn", "--json"],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+    let result = {};
+    try {
+      result = JSON.parse(String(r.stdout || "").trim() || "{}");
+    } catch {
+      result = {};
+    }
+    if (!result.model && result.route !== "cursor-cli") {
+      // Fallback to raw subagent picker if policy CLI shape differs
+      const r2 = spawnSync("node", ["scripts/model-auto.mjs", "subagent", "--json"], {
+        cwd: ROOT,
+        encoding: "utf8",
+      });
+      try {
+        result = JSON.parse(String(r2.stdout || r2.stderr || "").trim() || "{}");
+      } catch {
+        result = { model: "opencode/big-pickle", route: "spawn" };
+      }
+    }
     route = result.route || "spawn";
     resolvedModel = result.model;
   } else {

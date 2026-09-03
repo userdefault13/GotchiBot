@@ -42,6 +42,16 @@ import {
   gatewayUrl,
   loadGatewayConfig,
 } from "./openclaw-fleet.mjs";
+import { isModelLimitError } from "./model-fallback.mjs";
+import {
+  completeWithPolicy,
+  openclawAllowed,
+  loadPolicy,
+} from "./model-policy.mjs";
+import {
+  setMeetStatuses,
+  clearMeetStatus,
+} from "./meet-status.mjs";
 
 const MEETINGS = `${SESSIONS}/meetings`;
 const CURRENT = `${MEETINGS}/.current`;
@@ -698,7 +708,7 @@ export async function startMeeting(topic = "Untitled meeting", opts = {}) {
   const id = newMeetingId();
   const defaultTopic =
     kind === "morning-recap"
-      ? String(topic || "Morning recap").trim() || "Morning recap"
+      ? String(topic || "morning meeting").trim() || "morning meeting"
       : String(topic || "Untitled meeting").trim() || "Untitled meeting";
   const meeting = {
     id,
@@ -869,15 +879,122 @@ function matchParticipant(meeting, token) {
   return hits.length === 1 ? hits[0] : null;
 }
 
-function fallbackSpeakers(meeting, userText) {
+/** Bare names/ids in text (no @). Longest token first so starter-link-h1-1 beats link. */
+function bareNameMentions(meeting, text) {
+  const raw = String(text || "");
+  if (!raw.trim()) return [];
+  const parts = (meeting.participants || []).filter((p) => p.role !== "user");
+  const cands = [];
+  for (const p of parts) {
+    for (const tok of [p.name, p.id].filter(Boolean)) {
+      const s = String(tok).trim();
+      if (s.length >= 2) cands.push({ id: p.id, tok: s });
+    }
+  }
+  cands.sort((a, b) => b.tok.length - a.tok.length);
+  const out = [];
+  for (const c of cands) {
+    if (out.includes(c.id)) continue;
+    const esc = c.tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(^|[^A-Za-z0-9_-])${esc}(?=$|[^A-Za-z0-9_-])`, "i");
+    if (re.test(raw)) out.push(c.id);
+    if (out.length >= 2) break;
+  }
+  return out;
+}
+
+function resolveMentionedSpeakers(meeting, userText) {
   const mentioned = [];
   for (const tok of mentionsFromText(userText)) {
     const hit = matchParticipant(meeting, tok);
-    if (hit && !mentioned.includes(hit.id)) mentioned.push(hit.id);
+    if (hit && hit.role !== "user" && !mentioned.includes(hit.id)) mentioned.push(hit.id);
   }
-  if (mentioned.length) return mentioned.slice(0, 2);
+  for (const id of bareNameMentions(meeting, userText)) {
+    if (!mentioned.includes(id)) mentioned.push(id);
+  }
+  return mentioned.slice(0, 2);
+}
+
+function isNextSpeakerIntent(text) {
+  const t = String(text || "").trim().toLowerCase();
+  if (!t) return false;
+  return (
+    /\bwho(?:'s|s| is)?\s+next\b/.test(t) ||
+    /\bnext\s+(?:agent|please|up|gotchi|speaker)\b/.test(t) ||
+    /\bwho(?:'s|s| is)?\s+up\b/.test(t) ||
+    /\bwho should (?:go|speak|talk)\s+next\b/.test(t) ||
+    /^(?:ok(?:ay)?[,.]?\s+)?next[.!?]*$/.test(t)
+  );
+}
+
+/** First agent who hasn't spoken; else round-robin after last agent turn. */
+function nextUnspokenAgent(meeting) {
+  const agents = (meeting.participants || []).filter((p) => p.role === "agent");
+  if (!agents.length) return null;
+  const turns = readTranscript(meeting.id);
+  const spoken = new Set(
+    turns.filter((t) => t.role === "agent").map((t) => t.speaker),
+  );
+  const fresh = agents.find((a) => !spoken.has(a.id));
+  if (fresh) return fresh.id;
+  let lastIdx = -1;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i].role === "agent") {
+      lastIdx = agents.findIndex((a) => a.id === turns[i].speaker);
+      break;
+    }
+  }
+  if (lastIdx < 0) return agents[0].id;
+  return agents[(lastIdx + 1) % agents.length].id;
+}
+
+/** Pull "WBTC, you're up" from chair prose when speakers were chair-only. */
+function agentCuedInChairText(meeting, chairText) {
+  const t = String(chairText || "");
+  const patterns = [
+    /\b([A-Za-z][\w-]{1,31})[,!]?\s+you(?:'re| are)\s+up\b/i,
+    /\b([A-Za-z][\w-]{1,31})[,!]?\s+you(?:'re| are)\s+next\b/i,
+    /\byou(?:'re| are)\s+up[,.]?\s+([A-Za-z][\w-]{1,31})\b/i,
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (!m?.[1]) continue;
+    const hit = matchParticipant(meeting, m[1]);
+    if (hit && hit.role === "agent") return hit.id;
+  }
+  return null;
+}
+
+function fallbackSpeakers(meeting, userText) {
+  const mentioned = resolveMentionedSpeakers(meeting, userText);
+  if (mentioned.length) return mentioned;
+  // Orchestrator chairs — never fall back to the first agent (looks like they chaired).
+  const chairId = meeting.chairId;
+  if (chairId && meeting.participants.some((p) => p.id === chairId && p.role !== "user")) {
+    return [chairId];
+  }
   const invited = meeting.participants.filter((p) => p.role === "agent");
   return invited.slice(0, 1).map((p) => p.id);
+}
+
+function isGreetingOrAck(text) {
+  const t = String(text || "").trim().toLowerCase();
+  if (!t) return false;
+  return /^(good\s*)?(morning|afternoon|evening|night|hi|hello|hey|gm|yo)\b/.test(t) ||
+    /^(thanks|thank you|ty|ok|okay|cool|got it|ack)\b[!?.]*$/.test(t);
+}
+
+function morningDefaultSpeakers(meeting, userText) {
+  const mentioned = resolveMentionedSpeakers(meeting, userText);
+  if (mentioned.length) return mentioned;
+  if (isNextSpeakerIntent(userText)) {
+    const next = nextUnspokenAgent(meeting);
+    if (next && meeting.chairId) return [meeting.chairId, next];
+    if (next) return [next];
+  }
+  // Morning standup: orch owns the room until next/@mention/collect/present.
+  if (meeting.chairId) return [meeting.chairId];
+  return fallbackSpeakers(meeting, userText);
 }
 
 function normalizeSpeakers(meeting, speakers) {
@@ -936,6 +1053,7 @@ async function chatViaHttp(agentId, message, { timeoutMs = TURN_TIMEOUT_S * 1000
     });
     const raw = await r.text();
     if (r.status === 429) return { ok: false, reason: "rate-limited", stdout: raw };
+    if (r.status === 402) return { ok: false, reason: "gateway-http-402", stdout: raw };
     if (r.status === 404 || r.status === 405) return { ok: false, reason: "http-endpoint-disabled", stdout: raw };
     if (!r.ok) return { ok: false, reason: `gateway-http-${r.status}`, stdout: raw.slice(0, 800) };
     let data;
@@ -958,7 +1076,92 @@ function tuiish(agentId) {
   return `agent:${heroToAgentId(agentId)}:main`;
 }
 
+function hasProviderKeys() {
+  return !!(
+    process.env.NVIDIA_API_KEY ||
+    process.env.OPENROUTER_API_KEY ||
+    process.env.DEEPSEEK_API_KEY ||
+    process.env.OPENCODE_API_KEY ||
+    process.env.OPENCODE_ZEN_API_KEY
+  );
+}
+
+function runOpencodeModel(model, message, { timeoutMs }) {
+  const args = ["run", "-m", model, "--dir", ROOT];
+  if (process.env.GOTCHIBOT_AUTO_APPROVE !== "0") args.push("--auto");
+  args.push(String(message));
+  const env = { ...process.env };
+  let cmd = "opencode";
+  let argv = args;
+  if (!hasProviderKeys() && spawnSync("which", ["abra"], { encoding: "utf8" }).status === 0) {
+    cmd = "abra";
+    argv = ["run", "gotchibot", "--", "opencode", ...args];
+  }
+  const r = spawnSync(cmd, argv, {
+    cwd: ROOT,
+    encoding: "utf8",
+    env,
+    timeout: timeoutMs,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  const blob = `${r.stdout || ""}\n${r.stderr || ""}`;
+  if (r.status === 0) {
+    const text = extractReplyText({ stdout: r.stdout || "" }) || String(r.stdout || "").trim();
+    if (text) return { ok: true, stdout: text, reason: null, model };
+    return { ok: false, reason: "opencode-empty", stdout: blob.slice(0, 400), model };
+  }
+  if (isModelLimitError(blob) || r.status === 402 || /payment required|402|429/i.test(blob)) {
+    return { ok: false, reason: "model-limit", stdout: blob.slice(0, 800), model };
+  }
+  return { ok: false, reason: "opencode-failed", stdout: blob.slice(0, 800), model };
+}
+
+/**
+ * Priority path: model-policy (working models only).
+ * OpenClaw only when policy scope allows fallback.
+ */
+async function chatViaWorkingModels(message, { timeoutMs = TURN_TIMEOUT_S * 1000 } = {}) {
+  const r = await completeWithPolicy(
+    "meet",
+    async (model, opts) => runOpencodeModel(model, message, { timeoutMs: opts?.timeoutMs || timeoutMs }),
+    { timeoutMs },
+  );
+  if (r.ok) {
+    return {
+      ok: true,
+      stdout: r.text,
+      reason: r.via,
+      model: r.model,
+    };
+  }
+  return {
+    ok: false,
+    reason: r.reason || "policy-models-exhausted",
+    stdout: (r.errors || []).join("; ").slice(0, 400),
+    openclawAllowed: r.openclawAllowed,
+  };
+}
+
 async function runMeetingTurn(agentId, message, { timeoutS, sessionKey }) {
+  const ocMode = openclawAllowed("meet");
+  const preferOpenclaw = ocMode === "primary";
+
+  if (!preferOpenclaw) {
+    const auto = await chatViaWorkingModels(message, {
+      timeoutMs: timeoutS * 1000,
+    });
+    if (auto.ok) return auto;
+  }
+
+  // OpenClaw only if policy allows (fallback|primary)
+  if (ocMode === "never") {
+    return {
+      ok: false,
+      reason: "policy-models-exhausted",
+      stdout: `model-policy ${loadPolicy().name}: openclaw=never for meet`,
+    };
+  }
+
   const bin = findOpenclawBin();
   const reachable = await gatewayReachable();
   if (bin && reachable) {
@@ -973,27 +1176,51 @@ async function runMeetingTurn(agentId, message, { timeoutS, sessionKey }) {
     sessionKey,
   });
   if (http.ok) return http;
+
+  if (preferOpenclaw) {
+    const auto = await chatViaWorkingModels(message, {
+      timeoutMs: timeoutS * 1000,
+    });
+    if (auto.ok) return auto;
+  }
+
   return {
     ok: false,
-    reason: http.reason || (reachable ? "openclaw-agent-failed" : "gateway-unreachable"),
+    reason:
+      http.reason ||
+      (reachable ? "openclaw-agent-failed" : "gateway-unreachable"),
     stdout: http.stdout || "",
   };
 }
 
 async function chairPickSpeakers(meeting, userText) {
+  // Morning meeting: deterministic orch chair + next/@mentions — not LLM roulette.
+  // Agents also via /colabo or morning collect/present.
+  if (meeting.kind === "morning-recap") {
+    const speakers = morningDefaultSpeakers(meeting, userText);
+    let note = "morning: orchestrator chair leads";
+    if (resolveMentionedSpeakers(meeting, userText).length) note = "morning: named agent(s)";
+    else if (isNextSpeakerIntent(userText)) note = "morning: next agent after chair cue";
+    else if (isGreetingOrAck(userText)) note = "morning: orchestrator chair greets";
+    return { speakers, note, fallback: false };
+  }
+
   const turns = readTranscript(meeting.id);
   const roster = meeting.participants
     .filter((p) => p.role !== "user")
     .map((p) => `- ${p.id} (${p.role}${p.name ? ` · ${p.name}` : ""})`)
     .join("\n");
   const prompt = [
-    "You are chairing a GotchiBot meeting. Pick who should respond to the latest user line.",
+    "You are the GotchiBot orchestrator chairing this meeting (hero id below).",
+    "Pick who should respond to the latest user line.",
     "Return ONLY JSON: {\"speakers\": [\"id\", ...], \"note\": \"optional short reason\"}",
-    "speakers: 0, 1, or 2 participant ids. Never the user. Empty array if the line is just ack/thanks.",
+    "speakers: 0, 1, or 2 participant ids. Never the user.",
+    "For greetings / thanks / ack: speakers must be the chair id only (you).",
     "Prefer @mentions in the user text (e.g. @LINK → that hero's id).",
+    "Do not pick a random agent when the user addressed the room generally — pick the chair.",
     `Meeting: ${meeting.id}`,
     `Topic: ${meeting.topic}`,
-    `Chair id: ${meeting.chairId}`,
+    `Chair id (orchestrator): ${meeting.chairId}`,
     "Participants (eligible speakers):",
     roster || "(none)",
     "",
@@ -1108,29 +1335,95 @@ export async function sayTurn(userText) {
   );
   pokeMeetChannel();
 
-  const pick = await chairPickSpeakers(meeting, text);
-  const speakerTurns = [];
-  for (const sid of pick.speakers || []) {
-    const p = meeting.participants.find((x) => x.id === sid);
-    const reply = await agentReply(meeting, sid);
-    const row = appendTranscript(meeting.id, {
-      speaker: sid,
-      role: p?.role || "agent",
-      text: reply.text,
-    });
-    speakerTurns.push(row);
-    printed.push(row);
+  // Gallery status: chair thinks while picking; speakers flip to responding.
+  try {
+    setMeetStatuses(
+      { [meeting.chairId]: "thinking", [user.id]: "idle" },
+      { meetingId: meeting.id, resetOthers: true },
+    );
+  } catch {
+    /* ok */
   }
 
-  meeting.updatedAt = new Date().toISOString();
-  meeting.lastSayAt = meeting.updatedAt;
-  saveMeeting(meeting);
-  pokeAvatar();
-  printMeetingBlock(meeting, printed, { pick });
-  if (!(pick.speakers || []).length) {
-    console.log("(chair: no speakers this turn)");
+  let pick;
+  try {
+    pick = await chairPickSpeakers(meeting, text);
+    const speakerTurns = [];
+    const spokenThisTurn = new Set();
+    for (const sid of pick.speakers || []) {
+      try {
+        setMeetStatuses(
+          {
+            [meeting.chairId]: sid === meeting.chairId ? "responding" : "idle",
+            [sid]: "responding",
+          },
+          { meetingId: meeting.id, resetOthers: true },
+        );
+      } catch {
+        /* ok */
+      }
+      const p = meeting.participants.find((x) => x.id === sid);
+      const reply = await agentReply(meeting, sid);
+      const row = appendTranscript(meeting.id, {
+        speaker: sid,
+        role: p?.role || "agent",
+        text: reply.text,
+      });
+      speakerTurns.push(row);
+      printed.push(row);
+      spokenThisTurn.add(sid);
+
+      // Safety: chair-only cue like "WBTC, you're up" → activate that agent too.
+      if (
+        sid === meeting.chairId &&
+        (pick.speakers || []).length === 1 &&
+        sid === (pick.speakers || [])[0]
+      ) {
+        const cued = agentCuedInChairText(meeting, reply.text);
+        if (cued && !spokenThisTurn.has(cued)) {
+          try {
+            setMeetStatuses(
+              { [meeting.chairId]: "idle", [cued]: "responding" },
+              { meetingId: meeting.id, resetOthers: true },
+            );
+          } catch {
+            /* ok */
+          }
+          const cp = meeting.participants.find((x) => x.id === cued);
+          const creply = await agentReply(meeting, cued);
+          const crow = appendTranscript(meeting.id, {
+            speaker: cued,
+            role: cp?.role || "agent",
+            text: creply.text,
+          });
+          speakerTurns.push(crow);
+          printed.push(crow);
+          spokenThisTurn.add(cued);
+          pick = {
+            ...pick,
+            speakers: [...(pick.speakers || []), cued],
+            note: `${pick.note || "chair"} + cued ${cued}`,
+          };
+        }
+      }
+    }
+
+    meeting.updatedAt = new Date().toISOString();
+    meeting.lastSayAt = meeting.updatedAt;
+    saveMeeting(meeting);
+    pokeAvatar();
+    printMeetingBlock(meeting, printed, { pick });
+    if (!(pick.speakers || []).length) {
+      console.log("(chair: no speakers this turn)");
+    }
+    return { meeting, pick, turns: printed, speakerTurns };
+  } finally {
+    try {
+      clearMeetStatus({ poke: true });
+    } catch {
+      /* ok */
+    }
   }
-  return { meeting, pick, turns: printed, speakerTurns };
 }
 
 function firstLine(text) {
@@ -1237,6 +1530,11 @@ export async function endMeeting({ keepLayout = false } = {}) {
   } catch {
     /* ok */
   }
+  try {
+    clearMeetStatus({ poke: false });
+  } catch {
+    /* ok */
+  }
   pokeAvatar();
   if (!keepLayout) leaveMeetGallery();
   return { meeting, minutesPath: path, handoffPath };
@@ -1309,7 +1607,7 @@ async function main() {
     const topicParts = rest.filter((a) => a !== "--morning" && a !== "morning");
     const topic =
       topicParts.join(" ").trim() ||
-      (morning ? "Morning recap" : "Untitled meeting");
+      (morning ? "morning meeting" : "Untitled meeting");
     const m = await startMeeting(topic, {
       kind: morning ? "morning-recap" : "meeting",
     });
@@ -1319,13 +1617,19 @@ async function main() {
     console.log(`topic   ${m.topic}`);
     console.log(`chair   ${m.chairId}`);
     console.log(`you     ${m.participants.find((p) => p.role === "user")?.id}`);
-    console.log("");
-    console.log("invite  ./scripts/gotchi-meet.mjs invite <n|id|name>");
-    console.log("        ./scripts/gotchi-meet.mjs invite all");
     if (morning) {
+      const r = await inviteAllParticipants();
+      console.log(
+        `invited  ${r.invited.length}  skipped ${r.skipped.length}  errors ${r.errors.length}`,
+      );
+      console.log("");
       console.log("morning ./scripts/gotchi-meet.mjs morning collect --host imac");
       console.log("        ./scripts/gotchi-meet.mjs morning present");
       console.log("        ./scripts/gotchi-meet.mjs morning next");
+    } else {
+      console.log("");
+      console.log("invite  ./scripts/gotchi-meet.mjs invite <n|id|name>");
+      console.log("        ./scripts/gotchi-meet.mjs invite all");
     }
     console.log('colabo  ./scripts/gotchi-meet.mjs colabo "…"');
     console.log('say     ./scripts/gotchi-meet.mjs say "…"');

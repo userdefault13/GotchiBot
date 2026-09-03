@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "name": "unsupervised-project",
+  "description": "Intake for an unsupervised agent project. Collect every requirement before spawn. Never auto-start.",
+  "rules": {
+    "promptAllRequirements": true,
+    "neverAutoSpawn": true,
+    "paperDefault": true,
+    "secretsNamesOnly": true,
+    "walletGateRequired": true,
+    "cAavegotchiRequired": true
+  },
+  "fields": [
+    {
+      "id": "title",
+      "prompt": "Project name?",
+      "required": true
+    },
+    {
+      "id": "goal",
+      "prompt": "What should the unsupervised agent accomplish?",
+      "required": true
+    },
+    {
+      "id": "success",
+      "prompt": "Done when… (measurable success)?",
+      "required": true
+    },
+    {
+      "id": "stop",
+      "prompt": "Stop / kill conditions (max runtime, error budget, Julius abort)?",
+      "required": true
+    },
+    {
+      "id": "schedule",
+      "prompt": "Run shape: one-shot | standing | cron (include expr if cron)?",
+      "required": true,
+      "hint": "standing/cron assigns the hero (dispatch standing_status)"
+    },
+    {
+      "id": "host",
+      "prompt": "Host: imac | local | auto?",
+      "required": true,
+      "default": "auto"
+    },
+    {
+      "id": "hero",
+      "prompt": "Which cAavegotchi / collateral? (never owned-954 orch; never steal assigned desks)",
+      "required": true
+    },
+    {
+      "id": "autonomy",
+      "prompt": "What may it do unsupervised? What is forbidden?",
+      "required": true
+    },
+    {
+      "id": "live",
+      "prompt": "paper-only or live? (default paper-only)",
+      "required": true,
+      "default": "paper-only"
+    },
+    {
+      "id": "skills",
+      "prompt": "Skills from skills/registry.json? (no auto-install; list names)",
+      "required": false,
+      "default": ""
+    },
+    {
+      "id": "secrets",
+      "prompt": "Abra secret *names* needed (never values)?",
+      "required": false,
+      "default": ""
+    },
+    {
+      "id": "output",
+      "prompt": "Where do results land?",
+      "required": true,
+      "default": "sessions/projects/<id>/output.md"
+    },
+    {
+      "id": "watch",
+      "prompt": "How you watch/stop it (hub, gotchibot list/wait, /orch)?",
+      "required": true,
+      "default": "./scripts/gotchibot list · ./scripts/gotchibot hub"
+    }
+  ]
+}

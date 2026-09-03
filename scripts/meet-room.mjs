@@ -10,6 +10,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadCurrentMeeting, participantInfo } from "./meet-channel.mjs";
+import { loadMeetStatus, statusFor, statusLabel } from "./meet-status.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PAGE_FILE = `${ROOT}/sessions/.meet-room-page`;
@@ -29,6 +30,9 @@ const C = {
   chair: "\x1b[38;5;213m",
   agent: "\x1b[38;5;51m",
   active: "\x1b[38;5;220m",
+  thinking: "\x1b[38;5;183m",
+  responding: "\x1b[38;5;120m",
+  idle: "\x1b[38;5;240m",
 };
 
 function stripAnsi(s) {
@@ -132,14 +136,24 @@ export function clampPage(page, members = listMeetMembers()) {
   return Math.max(0, Math.min(max, page));
 }
 
-function cellBlock(member, cellW) {
+function statusColor(status) {
+  if (status === "thinking") return C.thinking;
+  if (status === "responding") return C.responding;
+  return C.idle;
+}
+
+function cellBlock(member, cellW, statusState) {
   const thumb = getThumb(member.id);
   const roleColor = nameColor(member.role);
+  const st = statusFor(member.id, statusState);
+  const label = statusLabel(st.status, st.since);
+  const stColor = statusColor(st.status);
   const lines = [];
   for (let i = 0; i < thumb.length; i++) {
     lines.push(centerPadVis(thumb[i] || "", cellW));
   }
   lines.push(centerPad(`${roleColor}${member.label}${C.reset}`, cellW));
+  lines.push(centerPad(`${stColor}${label}${C.reset}`, cellW));
   lines.push(centerPad(`${C.dim}${member.role}${C.reset}`, cellW));
   return lines;
 }
@@ -166,7 +180,7 @@ function joinBlocks(blocks, gap = 2) {
   return out;
 }
 
-function renderGrid(members, cols, gridCols = GRID_COLS, gridRows = GRID_ROWS) {
+function renderGrid(members, cols, gridCols = GRID_COLS, gridRows = GRID_ROWS, statusState) {
   const gap = 2;
   const colsN = gridCols;
   const cellW = Math.max(12, Math.floor((cols - gap * (colsN - 1)) / colsN));
@@ -176,7 +190,7 @@ function renderGrid(members, cols, gridCols = GRID_COLS, gridRows = GRID_ROWS) {
   for (let r = 0; r < gridRows; r++) {
     const rowMembers = slice.slice(r * colsN, r * colsN + colsN);
     if (!rowMembers.length) break;
-    const blocks = rowMembers.map((m) => cellBlock(m, cellW));
+    const blocks = rowMembers.map((m) => cellBlock(m, cellW, statusState));
     const blockH = blocks[0]?.length || 1;
     while (blocks.length < colsN) blocks.push(blankBlock(cellW, blockH));
     rows.push(...joinBlocks(blocks, gap));
@@ -212,6 +226,7 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
   const pages = pageCount(members);
   const cur = clampPage(page, members);
   const slice = members.slice(cur * PER_PAGE, cur * PER_PAGE + PER_PAGE);
+  const statusState = loadMeetStatus();
 
   const lines = [];
   lines.push(`${C.topic}# ${meeting.topic || "Untitled meeting"}${C.reset}`);
@@ -221,7 +236,7 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
   lines.push(`${C.bar}${"─".repeat(Math.min(cols - 2, 58))}${C.reset}`);
   lines.push("");
 
-  const grid = renderGrid(slice, cols);
+  const grid = renderGrid(slice, cols, GRID_COLS, GRID_ROWS, statusState);
   lines.push(...grid);
 
   lines.push("");

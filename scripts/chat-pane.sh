@@ -2,12 +2,11 @@
 # Interactive OpenCode TUI — the GotchiBot chat pane (native OpenCode UX).
 # Gotchi mode (default): agent=gotchi orchestrates via OpenClaw spawn/relay env;
 # OpenCode TUI stays on a local model (openclaw/* as -m hangs when relay stalls).
-# Ask/plan/build/sub/verse stay local OpenCode agents (no OpenClaw relay).
+# Ask/plan/build/sandbox/verse stay local OpenCode agents (no OpenClaw relay).
 # Legacy OpenClaw native TUI: GOTCHIBOT_OPENCLAW_TUI=1
 # Scroll past responses: replay on by default (GOTCHIBOT_OPENCODE_REPLAY=1).
 # Mouse wheel scrolls message history (OpenClaw: GOTCHIBOT_TUI_MOUSE=1; OpenCode: config/tui.json).
-# Tab/F2 cycle agents in tmux (gotchi-chat key table). OpenCode native Tab also works in full TUI.
-# Disable tmux Tab hook: GOTCHIBOT_TAB_TMUX=0. Mini mode: GOTCHIBOT_OPENCODE_MINI=1
+# Tab/F2: OpenCode TUI cycles agents (tab). tmux does not steal Tab. Mini: GOTCHIBOT_OPENCODE_MINI=1
 # Fallback: `./scripts/gotchibot mode cycle --restart` | Ctrl+X A agent menu
 # Copy: /copy or Ctrl+Y (last assistant reply → clipboard). Shift+drag selects text in terminal.
 # Disable OpenCode mouse: GOTCHIBOT_OPENCODE_MOUSE=0
@@ -66,6 +65,9 @@ if [ "${GOTCHIBOT_OPENCODE_MOUSE:-1}" = "0" ]; then
 fi
 
 cd "$ROOT"
+# shellcheck source=scripts/progress-bar.sh
+source "$ROOT/scripts/progress-bar.sh"
+PROGRESS_FG=$'\033[38;5;213m'
 # Sync persisted TTS preference into the chat pane environment.
 if [ -f "$ROOT/sessions/.tts.json" ] && command -v node >/dev/null; then
   eval "$(node -e "
@@ -75,6 +77,16 @@ if [ -f "$ROOT/sessions/.tts.json" ] && command -v node >/dev/null; then
   " 2>/dev/null || true)"
 fi
 printf '\033[2J\033[H\033[3J' 2>/dev/null || clear 2>/dev/null || true
+progress_pulse "GotchiCode · loading…" 0
+
+# Tab cycle is tmux -n Tab gated on this flag. Meet room must unset it.
+if [ -n "${TMUX:-}" ]; then
+  tgt="${TMUX_PANE:-}"
+  if [ -n "$tgt" ]; then
+    tmux set-option -p -t "$tgt" @gotchibot-chat 1 2>/dev/null || true
+    tmux set-option -p -t "$tgt" -u @gotchibot-meet-room 2>/dev/null || true
+  fi
+fi
 
 refresh_avatar_pane() {
   if [ -n "${TMUX:-}" ]; then
@@ -174,6 +186,7 @@ ensure_desk_after_cockpit() {
 
 # /cockpit — mint cAavegotchi · change orchestrator avatar (in chat pane).
 if [ "${GOTCHIBOT_COCKPIT:-}" = "1" ]; then
+  progress_end
   show_cockpit
   export GOTCHIBOT_SKIP_COCKPIT=1
 fi
@@ -196,6 +209,7 @@ show_meet() {
 
 # /meet — shared meeting room (setup in chat pane, then meet room UI).
 if [ "${GOTCHIBOT_MEET:-}" = "1" ]; then
+  progress_end
   show_meet
 fi
 
@@ -207,6 +221,7 @@ if [ "${GOTCHIBOT_SKIP_ONBOARDING:-}" != "1" ]; then
       echo "Attach tmux and select the center (Gotchi) pane: ./scripts/gotchibot tmux" >&2
       exit 1
     fi
+    progress_end
     run_onboarding_gate
     export GOTCHIBOT_SKIP_COCKPIT=1
     refresh_avatar_pane
@@ -215,6 +230,7 @@ fi
 
 # Default: open cockpit menu before chat when onboarding is already complete.
 if [ "${GOTCHIBOT_SKIP_COCKPIT:-}" != "1" ] && [ -t 0 ] && onboarding_complete; then
+  progress_end
   show_cockpit
 fi
 
@@ -289,6 +305,7 @@ fi
 # Build / ask / plan / sub / verse always use a local OpenCode agent + model.
 # Gotchi keeps a local OpenCode TUI model (stable); OpenClaw env is for spawn/relay,
 # not as OpenCode's -m (openclaw/orchestrator hangs the desk when the relay stalls).
+progress_pulse "GotchiCode · resolving model…" 3
 if [ "$AGENT" = "gotchi" ] && command -v node >/dev/null 2>&1; then
   eval "$(node "$ROOT/scripts/opencode-gotchi-mode.mjs" env 2>/dev/null)" || true
   if [ -n "${GOTCHIBOT_GOTCHI_MODEL:-}" ]; then
@@ -362,11 +379,16 @@ fi
 if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ] \
   && [ "${GOTCHIBOT_SKIP_ABRA:-}" != "1" ] \
   && command -v abra >/dev/null 2>&1; then
+  progress_pulse "GotchiCode · unlocking keys…" 8
+  progress_end
+  printf '  GotchiCode · unlocking keys…\n' >&2
   if abra run gotchibot -- opencode "${args[@]}" "$ROOT"; then
     quit_to_terminal
   fi
   echo "gotchibot: abra inject failed — launching opencode without vault keys" >&2
 fi
 
+progress_pulse "GotchiCode · starting…" 12
+progress_end
 opencode "${args[@]}" "$ROOT" || true
 quit_to_terminal

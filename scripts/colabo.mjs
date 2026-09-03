@@ -6,8 +6,8 @@
  *   node scripts/colabo.mjs --prompt "…" [--timeout SEC] [--json]
  *
  * Prefer: ./scripts/gotchibot meet colabo "…"
+ * Models: config/model-policy.json scope=colabo (working models only).
  */
-import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,56 +24,73 @@ function agentIds(meeting) {
 }
 
 async function runAgent(agentId, message, timeoutS) {
+  const { completeWithPolicy, openclawAllowed } = await import("./model-policy.mjs");
+  const { isModelLimitError } = await import("./model-fallback.mjs");
+  const { spawnSync } = await import("node:child_process");
+
+  const prompt = [
+    `You are ${agentId} in a GotchiBot Colabo round.`,
+    "Answer concisely (≤120 words). Plain text only.",
+    "",
+    "User prompt:",
+    message,
+  ].join("\n");
+
+  const hasKeys = !!(
+    process.env.NVIDIA_API_KEY ||
+    process.env.OPENROUTER_API_KEY ||
+    process.env.DEEPSEEK_API_KEY ||
+    process.env.OPENCODE_API_KEY ||
+    process.env.OPENCODE_ZEN_API_KEY
+  );
+
+  const policyHit = await completeWithPolicy(
+    "colabo",
+    async (model, opts) => {
+      const args = ["run", "-m", model, "--dir", ROOT, "--auto", prompt];
+      const r = hasKeys
+        ? spawnSync("opencode", args, {
+            cwd: ROOT,
+            encoding: "utf8",
+            timeout: opts?.timeoutMs || timeoutS * 1000,
+            maxBuffer: 4 << 20,
+          })
+        : spawnSync("abra", ["run", "gotchibot", "--", "opencode", ...args], {
+            cwd: ROOT,
+            encoding: "utf8",
+            timeout: opts?.timeoutMs || timeoutS * 1000,
+            maxBuffer: 4 << 20,
+          });
+      const blob = `${r.stdout || ""}\n${r.stderr || ""}`;
+      if (r.status === 0 && String(r.stdout || "").trim()) {
+        return { ok: true, text: String(r.stdout || "").trim() };
+      }
+      if (isModelLimitError(blob) || /402|429|payment required/i.test(blob)) {
+        return { ok: false, reason: "model-limit", stdout: blob.slice(0, 400) };
+      }
+      return { ok: false, reason: "opencode-failed", stdout: blob.slice(0, 400) };
+    },
+    { timeoutMs: timeoutS * 1000 },
+  );
+
+  if (policyHit.ok) {
+    return { ok: true, text: policyHit.text, via: policyHit.via };
+  }
+
+  if (openclawAllowed("colabo") === "never") {
+    return {
+      ok: false,
+      text: `(colabo failed: ${policyHit.reason || "policy-exhausted"})`,
+      via: "none",
+    };
+  }
+
   const { chatViaOpenClaw } = await import("./openclaw-fleet.mjs");
   const r = await chatViaOpenClaw(agentId, message, {
     sessionKey: `meet-colabo:${agentId}`,
   });
   if (r.ok) return { ok: true, text: String(r.stdout || "").trim(), via: r.via };
-  // Fallback: local spawn brief
-  const prompt = `You are ${agentId} in a Colabo round. Answer concisely (≤120 words).\n\nUser prompt:\n${message}\n\nWrite only your answer to output.md.`;
-  const env = { ...process.env, GOTCHIBOT_HERO_ID: agentId };
-  const r2 = spawnSync(
-    process.execPath,
-    [
-      join(ROOT, "scripts/gotchi-orchestrate.mjs"),
-      "spawn",
-      "--host",
-      "local",
-      "--model",
-      "nim",
-      prompt,
-    ],
-    { cwd: ROOT, encoding: "utf8", env, timeout: (timeoutS + 30) * 1000, maxBuffer: 4 << 20 },
-  );
-  const out = `${r2.stdout || ""}\n${r2.stderr || ""}`;
-  const m = out.match(/\b(s\d{8}-\d{6}-\d+)\b/);
-  if (!m) {
-    return { ok: false, text: `(colabo failed: ${r.reason || "spawn"})`, via: "none" };
-  }
-  spawnSync(
-    process.execPath,
-    [
-      join(ROOT, "scripts/gotchi-orchestrate.mjs"),
-      "wait",
-      "--host",
-      "local",
-      m[1],
-      "--timeout",
-      String(timeoutS),
-    ],
-    { cwd: ROOT, encoding: "utf8", timeout: (timeoutS + 60) * 1000, maxBuffer: 8 << 20 },
-  );
-  const o = spawnSync(
-    process.execPath,
-    [join(ROOT, "scripts/gotchi-orchestrate.mjs"), "output", "--host", "local", m[1]],
-    { cwd: ROOT, encoding: "utf8", timeout: 60_000, maxBuffer: 8 << 20 },
-  );
-  return {
-    ok: true,
-    text: String(o.stdout || "").trim() || "(empty)",
-    via: "spawn-local",
-    sessionId: m[1],
-  };
+  return { ok: false, text: `(colabo failed: ${r.reason || "models-exhausted"})`, via: "none" };
 }
 
 export async function colabo(prompt, { timeoutS = 90 } = {}) {

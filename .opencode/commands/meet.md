@@ -30,7 +30,8 @@ Empty `$ARGUMENTS` (`/meet`) prints status of the current meeting.
 | `/meet end` | `end` (minutes + handoff.md) |
 | `/chat` | leave meet room UI |
 
-**Cockpit menu:** Start meeting → **Meeting** (unchanged) or **Morning recap**.
+**Cockpit menu:** Start meeting → **Meeting** (unchanged) or **Morning recap**
+(auto topic `morning meeting` + invite all).
 
 Meet room prompter extras: `/colabo …` · `/recap-next` · `/recap-present`  
 (Gallery page next remains `/next` or `.`)

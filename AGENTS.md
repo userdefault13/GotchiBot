@@ -82,7 +82,8 @@ they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
 | hard logic | `./scripts/cursor-cli.mjs` → `cursor-agent` | coding / debug / patches (Cursor Pro+ on **MBP or iMac**) |
 | escalation | `deepseek/deepseek-v4-pro` | paid OpenCode fallback (needs DEEPSEEK_API_KEY) |
 | fallback | `ollama/qwen2.5:3b` | offline/private |
-| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | default model alias for spawned sub-agents; resolves via `config/models.auto.json` `subagentPrefer`; see `skills/delegate-model/SKILL.md` |
+| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | default model alias for spawned sub-agents; resolves via `config/models.auto.json` `subagentPrefer` + **model-policy** (`config/model-policy.json`); see `skills/delegate-model` + `skills/model-policy` |
+
 
 NVIDIA_API_KEY flows through abracadabra (`abra run gotchibot -- ...`); opencode
 reads it via `{env:NVIDIA_API_KEY}` — it is never written to disk.
@@ -121,6 +122,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 - Focus/chat: `./scripts/agent-focus.mjs chat "…"`
 - List / switch / orch: `/list` `/switch` `/orch` (or the `agent-focus.mjs` equivalents)
 - Wallet gate: `./scripts/wallet-gate.mjs`
+- **Project intake (`/project`):** unsupervised agent requirements before spawn — `./scripts/gotchibot project show` (`config/project-policy.json`)
 - Hub monitor: `./scripts/gotchibot hub` / `/hub` (skill `gotchibot-hub`)
 - **`@claudemode` (Hub Claude Code tool):** stay on `opencode/big-pickle`.
   `abra run gotchibot -- node ./scripts/claudemode-ask.mjs "…"` → Hub VS Code
@@ -141,3 +143,4 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 - Hard coding / debugging / investigation: `./scripts/cursor-cli.mjs run "…"` → `cursor-agent` (Julius's logged-in Cursor Pro+ on **MBP or iMac**). Never `--api-key`.
 - Paid OpenCode fallback: `deepseek/deepseek-v4-pro` (needs `DEEPSEEK_API_KEY` via abra)
 - Private/offline: local Ollama on the iMac
+- **Tab:** cycles agents **in the OpenCode TUI** (`config/tui-policy.json`) including **Project**. tmux must not steal Tab. No pane restart. `./scripts/gotchibot tui-policy show|enforce|apply`

@@ -4,11 +4,8 @@ description: List all agents and switch avatar + chat to the selected one
 
 Switch GotchiBot focus between cAavegotchis / sessions. Pins the avatar and sets
 **SUB focus** so later messages go to that OpenClaw agent. Does **not** restart
-the chat pane.
-
-Best in **Sub** mode (`./scripts/gotchibot mode sub` / cyan Tab) — desk for the
-roster **excluding** orch. From Gotchi mode, `/switch` still works; orch hero
-selection restores ORCH.
+the chat pane. Use **Gotchi** mode + `/switch` — there is no Sub Tab agent.
+**Sandbox** (pink) is a playground, not the roster desk.
 
 ## No argument — list everyone
 

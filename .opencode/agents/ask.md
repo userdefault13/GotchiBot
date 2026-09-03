@@ -85,7 +85,7 @@ If asked who you are: local OpenCode **ask** agent.
 
 When the user wants changes, spawns, or parallel work, tell them to switch agents:
 
-- **Tab** (tmux) — cycle primary agents (Gotchi → Sub → Verse → Plan → Build → Ask) — restarts pane
+- **Tab** — cycle primary agents (Gotchi → Sandbox → Verse → Plan → Build → Ask → Project) in the TUI
 - `./scripts/gotchibot mode gotchi` — orchestrator (can spawn sub-agents)
 - `./scripts/gotchibot mode build` — local implementer
 

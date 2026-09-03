@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "name": "tab-in-tui",
+  "description": "Tab cycles OpenCode primary agents in the TUI. tmux never steals Tab. No pane restart on Tab.",
+  "rules": {
+    "tabCyclesInTui": true,
+    "tmuxStealTab": false,
+    "paneRestartOnTab": false,
+    "persistModeOnCycle": true,
+    "autocomplete": "ctrl+space",
+    "hardRestartKey": "F2",
+    "meetTab": "mention-complete"
+  },
+  "cycle": ["gotchi", "sandbox", "verse", "plan", "build", "ask", "project"],
+  "colors": {
+    "gotchi": "#B650FF",
+    "sandbox": "#FF6EC7",
+    "build": "#22D3EE"
+  },
+  "keybinds": {
+    "agent_cycle": "tab",
+    "agent_cycle_reverse": "shift+tab",
+    "prompt.autocomplete.complete": "ctrl+space"
+  },
+  "tuiFiles": [
+    "config/tui.json",
+    ".opencode/tui.json",
+    "tui.json"
+  ],
+  "forbidden": {
+    "tmuxBindNTab": "bind-key -n Tab (agent-mode cycle --restart)",
+    "agentSyncRestart": "gotchi-agent-sync.ts spawning agent-mode --restart",
+    "leaderTab": "agent_cycle: <leader>tab"
+  },
+  "envOverrides": {
+    "GOTCHIBOT_TAB_TMUX": "ignored — policy forbids tmux stealing Tab (was 1 = cycle --restart)",
+    "GOTCHIBOT_TUI_POLICY": "path to alternate policy JSON"
+  }
+}

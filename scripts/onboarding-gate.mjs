@@ -882,15 +882,11 @@ async function startMeetingMenu(heroes) {
   }
 
   const isMorning = kindPick.key === "morning";
-  const topicDefault = isMorning ? "Morning recap" : "Untitled meeting";
-  const topic =
-    (
-      await rl.question(
-        isMorning
-          ? `  Topic (Enter for "${topicDefault}"): `
-          : "  Topic (Enter for untitled): ",
-      )
-    ).trim() || topicDefault;
+  const topicDefault = isMorning ? "morning meeting" : "Untitled meeting";
+  let topic = topicDefault;
+  if (!isMorning) {
+    topic = (await rl.question("  Topic (Enter for untitled): ")).trim() || topicDefault;
+  }
 
   let meeting;
   try {
@@ -906,11 +902,39 @@ async function startMeetingMenu(heroes) {
   console.log(`\n  ✓ meeting ${meeting.id}`);
   console.log(`  kind   ${meeting.kind || "meeting"}`);
   console.log(`  topic  ${meeting.topic}`);
+
   if (isMorning) {
-    console.log("  Morning recap: invite agents, then collect → present → /next.\n");
-  } else {
-    console.log("  Invite cAavegotchis into the room (optional).\n");
+    console.log("  Morning meeting: inviting all cartridge gotchis…\n");
+    try {
+      const r = await meet.inviteAllParticipants();
+      for (const p of r.invited) {
+        console.log(`  ✓ invited ${p.id} (${p.name || p.role})`);
+      }
+      for (const id of r.skipped) {
+        console.log(`  · skipped ${id}`);
+      }
+      for (const e of r.errors) {
+        console.log(`  ✗ error ${e.id}  ${e.error}`);
+      }
+      console.log(
+        `  summary invited ${r.invited.length}  skipped ${r.skipped.length}  errors ${r.errors.length}`,
+      );
+    } catch (e) {
+      console.log(`  ✗ invite all: ${e.message || e}`);
+    }
+
+    const final = meet.loadCurrentMeeting() || meeting;
+    console.log(`\n  Morning meeting ${final.id} is open.`);
+    console.log("  Next (orch / Desk):");
+    console.log("    ./scripts/gotchibot meet morning collect --host imac");
+    console.log("    ./scripts/gotchibot meet morning present");
+    console.log("    # after Q&A for current agent:");
+    console.log("    ./scripts/gotchibot meet morning next");
+    console.log("  In meet room: @HERO questions · /colabo … · /recap-next · /end");
+    return true;
   }
+
+  console.log("  Invite cAavegotchis into the room (optional).\n");
 
   for (;;) {
     meeting = meet.loadCurrentMeeting() || meeting;
@@ -965,29 +989,6 @@ async function startMeetingMenu(heroes) {
     await pause();
     leaveMeetGalleryLayout();
     return false;
-  }
-
-  if (isMorning) {
-    const agents = (final.participants || []).filter((p) => p.role === "agent");
-    if (!agents.length) {
-      console.log("  Inviting all cartridge heroes for morning recap…");
-      try {
-        const r = await meet.inviteAllParticipants();
-        console.log(
-          `  invited ${r.invited.length}  skipped ${r.skipped.length}  errors ${r.errors.length}`,
-        );
-      } catch (e) {
-        console.log(`  ✗ invite all: ${e.message || e}`);
-      }
-    }
-    console.log(`\n  Morning recap meeting ${final.id} is open.`);
-    console.log("  Next (orch / Desk):");
-    console.log("    ./scripts/gotchibot meet morning collect --host imac");
-    console.log("    ./scripts/gotchibot meet morning present");
-    console.log("    # after Q&A for current agent:");
-    console.log("    ./scripts/gotchibot meet morning next");
-    console.log("  In meet room: @HERO questions · /colabo … · /next · /end");
-    return true;
   }
 
   console.log(`\n  Meeting ${final.id} is open.`);

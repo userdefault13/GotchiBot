@@ -46,6 +46,8 @@ permission:
     "./scripts/hero-agent-state.mjs*": allow
     "./scripts/gotchi-meet.mjs*": allow
     "./scripts/delegate-pick.mjs*": allow
+    "./scripts/project-intake.mjs*": allow
+    "node ./scripts/project-intake.mjs*": allow
     "./scripts/remote-spawn.mjs*": allow
     "./scripts/wallet-roster.mjs*": allow
     "./scripts/identity.mjs*": allow
@@ -238,16 +240,17 @@ OpenCode spawn is still for cAavegotchi swarm identities (Lightning Free / auto)
 
 | Agent | Purpose |
 | --- | --- |
-| **gotchi** | Orchestrator — spawn sub-agents, merge results |
-| **sub** (cyan) | Sub-agent desk — `/switch` + chat roster **excluding** orch |
+| **gotchi** (violet) | Orchestrator — spawn sub-agents, merge results |
+| **sandbox** (pink) | Isolated experiments — no swarm |
 | **verse** | Gotchiverse realm |
 | **ask** | Read-only Q&A — no edits, no spawns |
 | **plan** | Plan before building — edits limited to `.opencode/plans/` |
-| **build** | Stock OpenCode build agent |
+| **build** (cyan) | Local implementer |
+| **project** (orange) | Unsupervised-agent intake — all requirements before spawn |
 
-When Julius wants to talk to LINK/YFI/… without orch fan-out, use **Sub** (`./scripts/gotchibot mode sub` or **Tab**).
+When Julius wants to talk to LINK/YFI/…, stay in **Gotchi** and `/switch` — there is no Sub Tab mode.
 
-**Tab** (in the chat pane) cycles **Gotchi → Sub → Verse → Plan → Build → Ask** and restarts OpenCode with the new agent. The pane border updates to match. **Shift+Tab** reverses. **F2** does the same. Autocomplete uses **Ctrl+Space**. Fallback: `./scripts/gotchibot mode sub|gotchi|… --restart` or **Ctrl+X A** (agent list).
+**Tab** (in the chat pane) cycles **Gotchi → Sandbox → Verse → Plan → Build → Ask → Project** inside the OpenCode TUI (no pane restart). **Shift+Tab** reverses. Autocomplete uses **Ctrl+Space**. Hard restart (rare): **F2** or `./scripts/gotchibot mode sandbox|gotchi|… --restart`. `/project` jumps to Project intake.
 
 ## Home iMac orchestrator (Tailscale)
 

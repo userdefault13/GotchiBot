@@ -186,6 +186,41 @@ function pinModel(model) {
   writeFileSync(PIN_PATH, `export GOTCHIBOT_OPENCODE_MODEL=${model}\n`);
 }
 
+export function markModelCooldown(model, { reason = "failed", ttlSec } = {}) {
+  const cfg = loadCfg();
+  const cache = loadCache();
+  const now = Date.now();
+  const ttl = (ttlSec ?? cfg.ttlFailSec ?? 1800) * 1000;
+  const id = oc(model);
+  if (!id) return cache;
+  cache.cooldown = cache.cooldown || {};
+  cache.cooldown[id] = now + ttl;
+  cache.lastFail = { model: id, reason, at: now };
+  saveCache(cache);
+  return cache;
+}
+
+/** Prefer list for “working models only” walkers (meet, spawn). Skips cooldown + skip list. */
+export function workingModelCandidates({ includeGo = true } = {}) {
+  const cfg = loadCfg();
+  const cache = loadCache();
+  const now = Date.now();
+  const skip = new Set((cfg.skip || []).map(oc));
+  const out = [];
+  const push = (id) => {
+    const m = oc(id);
+    if (!m || skip.has(m) || out.includes(m)) return;
+    if (m.startsWith("opencode-go/") && !includeGo && !hasOpencodeGoKey()) return;
+    if (cache.cooldown?.[m] && now < cache.cooldown[m]) return;
+    out.push(m);
+  };
+  for (const id of cfg.subagentPrefer || []) push(id);
+  for (const id of buildPrefer(cfg)) push(id);
+  push(cfg.subagentFallback || cfg.lastResort || "opencode/big-pickle");
+  push(cfg.lastResort || "opencode/big-pickle");
+  return out;
+}
+
 export async function pickSubagentModel({ json = false } = {}) {
   const cfg = loadCfg();
   const cache = loadCache();

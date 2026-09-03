@@ -5,16 +5,29 @@
  *   node scripts/meet-channel.mjs --render [--cols N] [--rows N] [--scroll N]
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  watch,
+  statSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stdin as input, stdout as output } from "node:process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MEETINGS = `${ROOT}/sessions/meetings`;
 const PENDING = `${ROOT}/sessions/.meet-pending.json`;
+const SCROLL_FILE = `${ROOT}/sessions/.meet-channel-scroll`;
+const STAMP = `${ROOT}/sessions/.meet-channel.stamp`;
 const THUMB_FALLBACK = `${ROOT}/assets/gotchi-thumb.ascii`;
+const THUMB_CACHE_DIR = `${ROOT}/sessions/.meet-thumbs`;
 const THUMB_W = 14;
 const SCROLLBAR_COLS = 2;
+const SCROLL_STEP = Math.max(1, Number(process.env.GOTCHIBOT_MEET_CHANNEL_SCROLL_STEP || 3) || 3);
+
 
 const C = {
   reset: "\x1b[0m",
@@ -126,6 +139,16 @@ function wrapLines(text, width) {
 const thumbCache = new Map();
 
 function thumbForHero(heroId) {
+  mkdirSync(THUMB_CACHE_DIR, { recursive: true });
+  const disk = `${THUMB_CACHE_DIR}/${String(heroId).replace(/[^\w.-]+/g, "_")}.ansi`;
+  try {
+    if (existsSync(disk)) {
+      const art = readFileSync(disk, "utf8").trimEnd();
+      if (art) return art.split("\n");
+    }
+  } catch {
+    /* regenerate */
+  }
   const r = spawnSync(process.execPath, [`${ROOT}/scripts/gotchi-art.mjs`, "--thumb", "--hero", heroId, "--color"], {
     cwd: ROOT,
     encoding: "utf8",
@@ -138,6 +161,11 @@ function thumbForHero(heroId) {
     } catch {
       art = "  ▄▄▄▄▄▄";
     }
+  }
+  try {
+    writeFileSync(disk, `${art}\n`);
+  } catch {
+    /* ok */
   }
   return art.split("\n");
 }
@@ -159,7 +187,7 @@ function renderHeader(meeting, cols) {
   const agents = (meeting.participants || []).filter((p) => p.role !== "user").length;
   return [
     `${C.topic}# ${topic}${C.reset}`,
-    `${C.dim}${agents} gotchi${agents === 1 ? "" : "s"} · ↑↓ wheel · scrollbar${C.reset}`,
+    `${C.dim}${agents} gotchi${agents === 1 ? "" : "s"} · ↑↓ wheel · j/k · PgUp/Dn · scrollbar${C.reset}`,
     `${C.bar}${"─".repeat(Math.max(8, Math.min(cols - 2, 56)))}${C.reset}`,
   ];
 }
@@ -334,14 +362,284 @@ export function printSlackTurns(meeting, turns, { pick } = {}) {
   }
 }
 
+function mtime(path) {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+function loadScroll() {
+  try {
+    const n = Number(String(readFileSync(SCROLL_FILE, "utf8")).trim());
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveScroll(n) {
+  mkdirSync(`${ROOT}/sessions`, { recursive: true });
+  writeFileSync(SCROLL_FILE, `${Math.max(0, Math.floor(n))}\n`);
+}
+
+function paneSize() {
+  return {
+    cols: output.columns || Number(process.env.COLUMNS) || 52,
+    rows: output.rows || Number(process.env.LINES) || 30,
+  };
+}
+
+function paintFrame(frame) {
+  // In-place redraw (home + clear-EOL per line) — avoids full \x1b[J flash on wheel.
+  const lines = String(frame).replace(/\n$/, "").split("\n");
+  let out = "\x1b[H";
+  for (const line of lines) {
+    out += `${line}\x1b[K\n`;
+  }
+  out += "\x1b[J";
+  output.write(out);
+}
+
+/**
+ * Long-lived # meet pane: rebuild transcript only when content changes;
+ * scroll only re-slices cached lines (smooth wheel).
+ */
+export async function runMeetChannelLive() {
+  mkdirSync(`${ROOT}/sessions`, { recursive: true });
+  output.write("\x1b[?1049h\x1b[?7l\x1b[?25l");
+  // Button events only — no 1002 motion flood.
+  output.write("\x1b[?1000h\x1b[?1006h");
+
+  let cachedLines = null;
+  let cacheKey = "";
+  let paintTimer = null;
+  let pendingAnim = false;
+  let scroll = loadScroll();
+  let destroyed = false;
+  let forceNext = false;
+
+  const teardown = () => {
+    if (destroyed) return;
+    destroyed = true;
+    if (paintTimer) clearTimeout(paintTimer);
+    try {
+      output.write("\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?7h\x1b[?1049l");
+    } catch {
+      /* ok */
+    }
+    process.exit(0);
+  };
+  process.on("SIGINT", teardown);
+  process.on("SIGTERM", teardown);
+  process.on("SIGUSR1", () => schedulePaint(true));
+
+  function contentKey(cols) {
+    const meeting = loadCurrentMeeting();
+    const id = meeting?.id || "";
+    const tr = id ? `${MEETINGS}/${id}/transcript.jsonl` : "";
+    return [
+      cols,
+      id,
+      mtime(tr),
+      mtime(PENDING),
+      mtime(`${MEETINGS}/.current`),
+    ].join("|");
+  }
+
+  function ensureLines(cols, rows, force) {
+    const key = contentKey(cols);
+    const hasPending = existsSync(PENDING);
+    // Pending dots need light refresh without nuking thumb cache.
+    if (!force && cachedLines && key === cacheKey && !hasPending) return cachedLines;
+    if (!force && cachedLines && key === cacheKey && hasPending) {
+      // Only rebuild pending tail: reuse base without pending by detecting…
+      // Simpler: full rebuild is cheap once thumbs are cached in-process.
+    }
+    const meeting = loadCurrentMeeting();
+    if (!meeting) {
+      cachedLines = [
+        `${C.dim}No open meeting${C.reset}`,
+        "",
+        "Open meet menu or:",
+        '  /meet start "topic"',
+        "",
+      ];
+      cacheKey = key;
+      pendingAnim = false;
+      return cachedLines;
+    }
+    const contentCols = Math.max(24, cols - SCROLLBAR_COLS);
+    cachedLines = buildMeetChannelLines(meeting, cols, contentCols);
+    cacheKey = key;
+    pendingAnim = hasPending;
+    return cachedLines;
+  }
+
+  function frameFor(scrollFromBottom) {
+    const { cols, rows } = paneSize();
+    const allLines = ensureLines(cols, rows, false);
+    const total = allLines.length;
+    const viewport = Math.max(8, rows);
+    const maxScroll = Math.max(0, total - viewport);
+    const fromBottom = Math.max(0, Math.min(maxScroll, scrollFromBottom));
+    const bar = buildScrollbar(total, viewport, fromBottom, rows);
+    if (total <= viewport) return attachScrollbar(allLines, bar, cols);
+    const end = total - fromBottom;
+    const start = Math.max(0, end - viewport);
+    const visible = allLines.slice(start, end);
+    if (start > 0) visible.unshift(`${C.dim}↑ older${C.reset}`);
+    if (fromBottom > 0) visible.push(`${C.dim}↓ newer · End latest${C.reset}`);
+    while (visible.length < rows) visible.push("");
+    if (visible.length > rows) visible.length = rows;
+    return attachScrollbar(visible, bar, cols);
+  }
+
+  function paint(forceContent) {
+    if (destroyed) return;
+    const { cols, rows } = paneSize();
+    if (forceContent) cacheKey = "";
+    scroll = loadScroll();
+    const max = Math.max(0, ensureLines(cols, rows, forceContent).length - Math.max(8, rows));
+    if (scroll > max) {
+      scroll = max;
+      saveScroll(scroll);
+    }
+    paintFrame(frameFor(scroll));
+  }
+
+  function schedulePaint(forceContent = false, delayMs = 32) {
+    if (forceContent) forceNext = true;
+    if (paintTimer) clearTimeout(paintTimer);
+    paintTimer = setTimeout(() => {
+      paintTimer = null;
+      const force = forceNext;
+      forceNext = false;
+      paint(force);
+    }, delayMs);
+  }
+
+  function adjustScroll(delta) {
+    const { cols, rows } = paneSize();
+    const max = Math.max(0, ensureLines(cols, rows, false).length - Math.max(8, rows));
+    scroll = Math.max(0, Math.min(max, loadScroll() + delta));
+    saveScroll(scroll);
+    // Scroll-only: no content rebuild — just re-slice (debounce tiny).
+    schedulePaint(false, 16);
+  }
+
+  function setScrollAbs(n) {
+    const { cols, rows } = paneSize();
+    const max = Math.max(0, ensureLines(cols, rows, false).length - Math.max(8, rows));
+    scroll = Math.max(0, Math.min(max, n));
+    saveScroll(scroll);
+    schedulePaint(false, 16);
+  }
+
+  // Watch scroll + stamp + pending — quiet scroll.sh only touches scroll file.
+  const watchTargets = [
+    `${ROOT}/sessions`,
+    MEETINGS,
+  ];
+  for (const dir of watchTargets) {
+    try {
+      watch(dir, { persistent: true }, (evt, fname) => {
+        const f = String(fname || "");
+        if (f.includes("meet-channel-scroll")) {
+          schedulePaint(false, 24);
+          return;
+        }
+        if (
+          f.includes("meet-channel.stamp") ||
+          f.includes("meet-pending") ||
+          f.includes(".current") ||
+          f.includes("transcript") ||
+          f.includes("meeting.json")
+        ) {
+          schedulePaint(true, 40);
+        }
+      });
+    } catch {
+      /* poll fallback below */
+    }
+  }
+
+  // Fallback poll (fs.watch can miss some platforms) — slow, content only.
+  setInterval(() => {
+    const { cols } = paneSize();
+    const key = contentKey(cols);
+    if (key !== cacheKey) schedulePaint(true, 20);
+    else if (pendingAnim) schedulePaint(false, 20);
+  }, 800);
+
+  output.on("resize", () => {
+    cacheKey = "";
+    schedulePaint(true, 20);
+  });
+
+  // Keyboard / SGR wheel when focused
+  if (input.isTTY) {
+    input.setRawMode(true);
+    input.resume();
+    input.setEncoding("utf8");
+    let esc = "";
+    input.on("data", (chunk) => {
+      const s = String(chunk);
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (esc || ch === "\x1b") {
+          esc += ch;
+          if (esc.length > 1 && /[A-Za-z~Mm]$/.test(esc)) {
+            const seq = esc;
+            esc = "";
+            // SGR wheel
+            const m = seq.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
+            if (m) {
+              const btn = Number(m[1]);
+              if (btn === 64 || btn === 4) adjustScroll(SCROLL_STEP);
+              else if (btn === 65 || btn === 5) adjustScroll(-SCROLL_STEP);
+              continue;
+            }
+            if (/\x1b\[A$|\x1bOA$/.test(seq) || seq.endsWith("5~")) adjustScroll(SCROLL_STEP * (seq.endsWith("5~") ? 3 : 1));
+            else if (/\x1b\[B$|\x1bOB$/.test(seq) || seq.endsWith("6~")) adjustScroll(-(SCROLL_STEP * (seq.endsWith("6~") ? 3 : 1)));
+            else if (/\x1b\[H$|\x1bOH$|1~$|7~$/.test(seq)) setScrollAbs(maxScrollFromBottom(paneSize()));
+            else if (/\x1b\[F$|\x1bOF$|4~$|8~$/.test(seq)) setScrollAbs(0);
+          } else if (esc.length > 32) esc = "";
+          continue;
+        }
+        if (ch === "\x03" || ch === "q") {
+          teardown();
+          return;
+        }
+        if (ch === "k" || ch === "K" || ch === "h" || ch === "[") adjustScroll(SCROLL_STEP);
+        else if (ch === "j" || ch === "J" || ch === "l" || ch === "]") adjustScroll(-SCROLL_STEP);
+        else if (ch === "g") setScrollAbs(maxScrollFromBottom(paneSize()));
+        else if (ch === "G" || ch === "\x04") setScrollAbs(0);
+        else if (ch === " ") adjustScroll(-(SCROLL_STEP * 3));
+        else if (ch === "b" || ch === "B") adjustScroll(SCROLL_STEP * 3);
+      }
+    });
+  }
+
+  paint(true);
+}
+
 const isMain =
   process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isMain) {
   const args = process.argv.slice(2);
-  const cols = Number(args[args.indexOf("--cols") + 1]) || 80;
-  const rows = Number(args[args.indexOf("--rows") + 1]) || 40;
-  let scroll = 0;
-  if (args.includes("--scroll")) scroll = Number(args[args.indexOf("--scroll") + 1]) || 0;
-  process.stdout.write(renderMeetChannel({ cols, rows, scrollFromBottom: scroll }));
+  if (args.includes("--live") || args.includes("live")) {
+    runMeetChannelLive().catch((e) => {
+      console.error(e?.message || e);
+      process.exit(1);
+    });
+  } else {
+    const cols = Number(args[args.indexOf("--cols") + 1]) || 80;
+    const rows = Number(args[args.indexOf("--rows") + 1]) || 40;
+    let scroll = 0;
+    if (args.includes("--scroll")) scroll = Number(args[args.indexOf("--scroll") + 1]) || 0;
+    process.stdout.write(renderMeetChannel({ cols, rows, scrollFromBottom: scroll }));
+  }
 }

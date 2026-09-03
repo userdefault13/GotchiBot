@@ -18,13 +18,12 @@ metadata:
 Cockpit **Start meeting** now asks:
 
 1. **Meeting** — topic + invite (current flow)
-2. **Morning recap** — wake agents, present, goals
+2. **Morning recap** — topic auto-set to `morning meeting`, invite all gotchis
 
 CLI:
 
 ```bash
-./scripts/gotchibot meet start --morning
-./scripts/gotchibot meet invite all
+./scripts/gotchibot meet start --morning   # topic + invite all
 ./scripts/gotchibot meet morning collect --host imac
 ./scripts/gotchibot meet morning present
 # Q&A in meet room (@HERO …), then:
@@ -33,7 +32,12 @@ CLI:
 ./scripts/gotchibot meet end             # minutes + handoff.md
 ```
 
-## Task list (user-editable)
+## Models
+
+**Policy:** working models only — `config/model-policy.json` / skill **model-policy**.
+Meet turns use `scripts/model-policy.mjs` (big-pickle → Zen free chain) before
+OpenClaw. 402/429 models are cooled down and skipped.
+
 
 [`config/morning-recap.json`](config/morning-recap.json) — `defaultTasks`, `byHero`, `byRole`.
 

@@ -159,8 +159,8 @@ mark_avatar_pane() {
 install_meet_gallery_mouse() {
   local ch_if='#{==:#{@gotchibot-meet-channel},1}'
   local av_if='#{==:#{@gotchibot-avatar},1}'
-  local scroll_up="$ROOT/scripts/meet-channel-scroll.sh up"
-  local scroll_down="$ROOT/scripts/meet-channel-scroll.sh down"
+  local scroll_up="cd '$ROOT' && GOTCHIBOT_TMUX_SESSION='$sess_name' '$ROOT/scripts/meet-channel-scroll.sh' up"
+  local scroll_down="cd '$ROOT' && GOTCHIBOT_TMUX_SESSION='$sess_name' '$ROOT/scripts/meet-channel-scroll.sh' down"
   local def_wheel='if-shell -F "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"'
   local def_drag='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
 
@@ -172,6 +172,7 @@ install_meet_gallery_mouse() {
   tmux unbind-key -n MouseDown1Pane 2>/dev/null || true
   tmux unbind-key -n MouseDrag1Pane 2>/dev/null || true
 
+  # Wheel over # meet → transcript scroll (cwd + session fixed — was clamping to 0).
   tmux bind-key -n WheelUpPane \
     if-shell -F "$ch_if" "run-shell '$scroll_up'" \
     "if-shell -F \"#{!=:#{@gotchibot-avatar},1}\" \"$def_wheel\"" 2>/dev/null || true
@@ -183,6 +184,9 @@ install_meet_gallery_mouse() {
     'select-pane -t = ; send-keys -M' 2>/dev/null || true
   tmux bind-key -n MouseDrag1Pane \
     if-shell -F "#{&&:#{!=:#{@gotchibot-meet-channel},1},#{!=:#{@gotchibot-avatar},1}}" "$def_drag" 2>/dev/null || true
+
+  # Ensure channel pane is tagged for the wheel if-shell.
+  tmux set-option -p -t "$sess:work.2" @gotchibot-meet-channel 1 2>/dev/null || true
 }
 
 # Chat/files/cockpit keep default (OpenCode mouse / send-keys -M).
@@ -229,6 +233,8 @@ start_pane_commands() {
   # Skip welcome/cockpit on desk boot — OpenCode is the load target (/cockpit still opens menu).
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || \
     tmux send-keys -t "$sess:work.1" C-c Enter "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" Enter
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || \
     tmux send-keys -t "$sess:work.2" C-c Enter "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" Enter
   mark_avatar_pane
@@ -365,6 +371,7 @@ build_meet_gallery_tiles() {
     fi
   fi
   tmux set-option -p -t "$sess:work.1" @gotchibot-meet-room 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   tmux set-option -t "$sess:work.1" pane-border-format ' Meet · room ' 2>/dev/null || true
   # Drop overflow tiles beyond room + channel.
   while [ "$(pane_count)" -gt 3 ]; do
@@ -441,6 +448,8 @@ leave_meet_gallery() {
   apply_pane_sizes
   tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
   tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
   tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
@@ -462,6 +471,7 @@ enter_files_max() {
   apply_files_max_sizes
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/mc-pane.sh"
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   apply_files_max_sizes
   tmux set-option -t "$sess:work.0" pane-border-format ' Files · full ' 2>/dev/null || true
   tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
@@ -484,6 +494,7 @@ enter_avatar_max() {
   collapse_sidebar
   apply_avatar_max_sizes
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   apply_avatar_max_sizes
   tmux set-option -t "$sess:work.2" pane-border-format ' Avatar · full ' 2>/dev/null || true
@@ -708,7 +719,6 @@ install_layout_keys() {
 }
 
 install_agent_keys() {
-  [ "${GOTCHIBOT_TAB_TMUX:-1}" = "1" ] || return 0
   local hook="$ROOT/scripts/tmux-chat-focus-hook.sh"
   local layout="$ROOT/scripts/orchestrator-layout.sh"
   local layout_run="cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess_name' '$layout'"
@@ -716,10 +726,15 @@ install_agent_keys() {
   # Free Ctrl+b for chat-max in mc/files/avatar panes; tmux prefix → Ctrl+Space in this session.
   tmux set-option -t "$sess" prefix C-Space 2>/dev/null || true
   tmux bind-key -T prefix C-Space send-prefix 2>/dev/null || true
-  # Tab in the chat pane cycles gotchi → plan → build → ask (respawns OpenCode with persisted agent).
-  tmux bind-key -T gotchi-chat Tab run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --restart" 2>/dev/null || true
-  tmux bind-key -T gotchi-chat S-Tab run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --reverse --restart" 2>/dev/null || true
-  tmux bind-key -T gotchi-chat F2 run-shell "cd \"$ROOT\" && node \"$ROOT/scripts/agent-mode.mjs\" cycle --restart" 2>/dev/null || true
+  # tui-policy (config/tui-policy.json): Tab stays in OpenCode. Never bind -n Tab.
+  node "$ROOT/scripts/tui-policy.mjs" apply >/dev/null 2>&1 || true
+  tmux unbind-key -n Tab 2>/dev/null || true
+  tmux unbind-key -n S-Tab 2>/dev/null || true
+  tmux unbind-key -n BTab 2>/dev/null || true
+  tmux unbind-key -T gotchi-chat Tab 2>/dev/null || true
+  tmux unbind-key -T gotchi-chat S-Tab 2>/dev/null || true
+  local cycle="$ROOT/scripts/agent-mode.mjs cycle --restart"
+  tmux bind-key -T gotchi-chat F2 run-shell "cd $ROOT && node $cycle >/dev/null" 2>/dev/null || true
   # Layout — Ctrl+F files · Ctrl+A avatar-max · Ctrl+G show avatar · Ctrl+B chat
   # Fallback: Alt+F/A/G/B · F6 show avatar · F7 avatar-max · prefix: Ctrl+Space then f/a/b
   install_layout_keys root
@@ -894,7 +909,14 @@ case "$cmd" in
     install_ui_theme
     ;;
   install-mouse)
-    install_avatar_mouse
+    install_agent_keys
+    if [ "$(layout_mode)" = "meet-gallery" ]; then
+      tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
+      tmux set-option -p -t "$sess:work.1" @gotchibot-meet-room 1 2>/dev/null || true
+    else
+      tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+      tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
+    fi
     ;;
   *)
     echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|require-three|fit|install-mouse]" >&2

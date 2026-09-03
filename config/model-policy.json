@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "working-models-only",
+  "description": "Always select working models. Cool down 402/429/quota failures. Never stick on a dead OpenClaw/default provider for meet/colabo.",
+  "rules": {
+    "workingOnly": true,
+    "probeOnPick": true,
+    "cooldownOnLimit": true,
+    "cooldownTtlSec": 1800,
+    "maxAttempts": 6,
+    "preferZenFree": true,
+    "paidGoDefault": false,
+    "claudeIsToolNotModel": true
+  },
+  "scopes": {
+    "meet": {
+      "chain": "subagentPrefer",
+      "primary": "model-auto",
+      "openclaw": "fallback",
+      "maxAttempts": 6
+    },
+    "colabo": {
+      "chain": "subagentPrefer",
+      "primary": "model-auto",
+      "openclaw": "fallback",
+      "maxAttempts": 5
+    },
+    "spawn": {
+      "chain": "subagentPrefer",
+      "alias": "sub",
+      "primary": "model-auto",
+      "openclaw": "never"
+    },
+    "orch": {
+      "chain": "prefer",
+      "primary": "model-auto",
+      "pin": true,
+      "openclaw": "never"
+    },
+    "chat": {
+      "chain": "prefer",
+      "primary": "model-auto",
+      "pin": true,
+      "openclaw": "never"
+    }
+  },
+  "envOverrides": {
+    "GOTCHIBOT_MEET_OPENCLAW_FIRST": "meet.openclaw=primary (legacy; not recommended)",
+    "GOTCHIBOT_MEET_SKIP_MODEL_AUTO": "meet: skip model-auto (forbidden under workingOnly)",
+    "GOTCHIBOT_MODEL_POLICY": "path to alternate policy JSON"
+  }
+}

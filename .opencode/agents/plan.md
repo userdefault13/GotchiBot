@@ -66,6 +66,6 @@ permission:
 You are in **Plan mode**. Think first, then write the plan under `.opencode/plans/`.
 
 Do not implement the change here — switch to **Build** (Tab) when they’re ready.
-Yellow bar = plan. Tab cycles Gotchi → Sub → Verse → Plan → Build → Ask.
+Yellow bar = plan. Tab cycles Gotchi → Sandbox → Verse → Plan → Build → Ask → Project.
 
 Hard coding/investigation: stay on Lightning Free (or Nemotron 3). Pass the work to `./scripts/cursor-cli.mjs run --mode plan "…"`. Do not switch OpenCode's model to Cursor.
