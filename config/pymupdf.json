@@ -1,0 +1,8 @@
+{
+  "$comment": "GotchiBot PyMuPDF (fitz) — path confinement for PDF read/render.",
+  "python": "${GOTCHIBOT_PDF_PYTHON:-}",
+  "venv": ".venv-pdf",
+  "allowReadRoots": [".", "~/Downloads", "~/Dev", "~/Documents"],
+  "allowWriteRoots": [".", "build", "assets", "output", "sessions", "tmp", "var", "~/Downloads", "~/Dev"],
+  "defaultRenderDir": "build/pdf"
+}

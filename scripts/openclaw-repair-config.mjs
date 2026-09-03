@@ -84,9 +84,18 @@ cfg.mcp.servers = {
     requestTimeoutMs: 360000,
     connectionTimeoutMs: 15000,
   },
+  "gotchibot-pdf": {
+    command: "node",
+    args: [`${gotchiRoot}/scripts/mcp/gotchibot-pdf.mjs`],
+    cwd: gotchiRoot,
+    enabled: true,
+    requestTimeoutMs: 120000,
+    connectionTimeoutMs: 15000,
+  },
 };
 
 writeFileSync(path, `${JSON.stringify(cfg, null, 2)}\n`);
 console.log(`repaired ${path}`);
 console.log(`primary=${cfg.agents.defaults.model.primary}`);
 console.log(`mcp.gotchibot-claude → ${gotchiRoot}/scripts/mcp/gotchibot-claude.mjs`);
+console.log(`mcp.gotchibot-pdf → ${gotchiRoot}/scripts/mcp/gotchibot-pdf.mjs`);

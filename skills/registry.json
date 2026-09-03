@@ -473,6 +473,15 @@
       "script": "scripts/claude-pane-init.mjs",
       "addedAt": "2026-09-03"
     },
+    "pymupdf": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "PDF info/text/render/search via PyMuPDF (fitz). CLI gotchibot pdf; MCP gotchibot-pdf.",
+      "path": ".opencode/skills/pymupdf/SKILL.md",
+      "script": "scripts/pdf-tool.mjs",
+      "addedAt": "2026-09-03"
+    },
     "hub-sop": {
       "status": "approved",
       "type": "skill",

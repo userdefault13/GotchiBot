@@ -620,6 +620,14 @@
       ],
       "enabled": true,
       "timeout": 120000
+    },
+    "gotchibot-pdf": {
+      "type": "local",
+      "command": [
+        "./scripts/mcp/gotchibot-pdf.sh"
+      ],
+      "enabled": true,
+      "timeout": 120000
     }
   },
   "permission": {

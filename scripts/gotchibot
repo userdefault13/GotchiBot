@@ -90,6 +90,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot mesh [ping] [--live] [--json]  agent count + status across MBP and iMac (Tailscale SSH)
   gotchibot trader [monitor|improve|news] [--json] [--host imac]  Gotchi-Trader desk
   gotchibot model [pick|list|resolve] [--json] [--probe]  pick a free, listed model
+  gotchibot aseprite …                Aseprite batch export/init (see skill aseprite-tool)
+  gotchibot pdf check|info|text|render|search  PDF via PyMuPDF (.venv-pdf)
   gotchibot tts on|off|status|test|speed|warm|stop-daemon  voice (MeloTTS EN-AU / edge-tts / say)
 EOF
   exit 2
@@ -565,6 +567,7 @@ case "$cmd" in
     ;;
   infra-usage|usage-report) exec node "$ROOT/scripts/infra-usage-report.mjs" "$@" ;;
   aseprite) exec node "$ROOT/scripts/aseprite-tool.mjs" "$@" ;;
+  pdf|pymupdf) exec node "$ROOT/scripts/pdf-tool.mjs" "$@" ;;
   connect) exec node "$ROOT/scripts/wallet-connect.mjs" ;;
   wallet) cmd_wallet ;;
   roster) cmd_roster "$@" ;;

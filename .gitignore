@@ -7,3 +7,4 @@ KNOWLEDGE.md
 tmp/
 var/
 .mc.menu
+.venv-pdf/
