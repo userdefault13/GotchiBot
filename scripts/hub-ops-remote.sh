@@ -40,11 +40,18 @@ fix_plugins() {
   [ -n "$c" ] || return 0
   # Quarantine orphan npm plugin trees that force capability consent and block ready.
   mkdir -p "$HOME/.openclaw/npm/projects-disabled" 2>/dev/null || true
-  for d in openclaw-opencode-provider-641bb4636d openclaw-perplexity-plugin-9e59921123; do
-    if [ -d "$HOME/.openclaw/npm/projects/$d" ]; then
-      mv "$HOME/.openclaw/npm/projects/$d" "$HOME/.openclaw/npm/projects-disabled/" 2>/dev/null || true
-    fi
-  done
+  if [ -d "$HOME/.openclaw/npm/projects" ]; then
+    for d in "$HOME/.openclaw/npm/projects"/*; do
+      [ -d "$d" ] || continue
+      base="$(basename "$d")"
+      case "$base" in
+        *opencode*|*perplexity*|openclaw-opencode-provider-*|openclaw-perplexity-plugin-*)
+          mv "$d" "$HOME/.openclaw/npm/projects-disabled/" 2>/dev/null || true
+          echo "quarantined npm plugin $base" >&2
+          ;;
+      esac
+    done
+  fi
   # Repair clobbered / double-written JSON (gateway.mode missing).
   if [ -f "$HOME/.openclaw/openclaw.json" ]; then
     if ! node -e 'JSON.parse(require("fs").readFileSync(process.env.HOME+"/.openclaw/openclaw.json","utf8"))' 2>/dev/null; then
@@ -72,10 +79,10 @@ c.plugins={
   entries:{
     slack:{enabled:true},
     "opencode-go":{enabled:true},
+    opencode:{enabled:false},
+    perplexity:{enabled:false},
   },
 };
-delete c.plugins.entries.opencode;
-delete c.plugins.entries.perplexity;
 fs.writeFileSync(p, JSON.stringify(c,null,2)+String.fromCharCode(10));
 console.log("gateway.mode=local plugins patched (no perplexity)");
 ' 2>/dev/null || true
