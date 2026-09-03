@@ -56,13 +56,38 @@ const finalArgs = useAbra
   ? ["run", "gotchibot", "--", "node", BRIDGE, ...bridgeArgs]
   : [BRIDGE, ...bridgeArgs];
 
-const r = spawnSync(cmd, finalArgs, {
-  cwd: ROOT,
-  encoding: "utf8",
-  env,
-  timeout: (Number(timeout) + 60) * 1000,
-  maxBuffer: 10 * 1024 * 1024,
-});
+const OPEN = join(ROOT, "scripts/hub-vscode-open.mjs");
+
+function runBridge() {
+  return spawnSync(cmd, finalArgs, {
+    cwd: ROOT,
+    encoding: "utf8",
+    env,
+    timeout: (Number(timeout) + 60) * 1000,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+}
+
+function ensureHubVscode() {
+  if (inDocker || hostMode === "local") return;
+  const openCmd = useAbra ? "abra" : process.execPath;
+  const openArgs = useAbra
+    ? ["run", "gotchibot", "--", "node", OPEN, "--timeout", "45"]
+    : [OPEN, "--timeout", "45"];
+  spawnSync(openCmd, openArgs, {
+    cwd: ROOT,
+    encoding: "utf8",
+    env,
+    timeout: 90_000,
+    maxBuffer: 2 * 1024 * 1024,
+  });
+}
+
+let r = runBridge();
+if (r.status !== 0 && !inDocker && hostMode !== "local") {
+  ensureHubVscode();
+  r = runBridge();
+}
 
 const strip = (s) =>
   String(s || "")

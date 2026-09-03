@@ -604,6 +604,14 @@
       ],
       "enabled": true,
       "timeout": 360000
+    },
+    "gotchibot-hub": {
+      "type": "local",
+      "command": [
+        "./scripts/mcp/gotchibot-hub.sh"
+      ],
+      "enabled": true,
+      "timeout": 300000
     }
   },
   "permission": {

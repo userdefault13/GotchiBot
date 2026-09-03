@@ -46,6 +46,7 @@ cfg.plugins = {
     "opencode-go": { enabled: true },
   },
 };
+// Drop retired/external plugins entirely (entries for missing installs warn on boot).
 for (const id of ["opencode", "perplexity", "whatsapp"]) {
   delete cfg.plugins.entries[id];
 }

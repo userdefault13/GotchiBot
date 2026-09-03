@@ -464,6 +464,15 @@
       "script": "scripts/claudemode-ask.mjs",
       "addedAt": "2026-09-02"
     },
+    "hub-sop": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Hub iMac SOP — OpenClaw gateway down (OC✗), restart-gateway remotely, vscode-open, bridge-check, tunnel. Load when gateway-unreachable or Julius asks to restart Hub.",
+      "path": ".opencode/skills/hub-sop/SKILL.md",
+      "script": "scripts/hub-ops.mjs",
+      "addedAt": "2026-09-03"
+    },
     "gotchi-trader-monitor": {
       "status": "approved",
       "type": "skill",

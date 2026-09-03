@@ -39,6 +39,18 @@ Desk `:45679`, and prints Claude's text.
 - Hub: VS Code + `local.gotchibot-bridge` (≥0.0.8), Claude logged in
 - Desk: Tailscale/abra; receiver on `:45679` (auto-started by bridge if missing)
 
+## If bridge is down / workspace not open
+
+GotchiBot can open (or focus) Hub VS Code on the GotchiBot folder via the `code` CLI:
+
+```bash
+abra run gotchibot -- ./scripts/gotchibot vscode-open
+# or: abra run gotchibot -- ./scripts/gotchibot vscode-open --check
+```
+
+Then retry `claude-ask` / `bridge`. First launch of VS Code may need the bridge
+extension enabled once; after that `vscode-open` is enough.
+
 ## Do not
 
 - `/model @claudemode` or leave big-pickle for this path
@@ -46,3 +58,4 @@ Desk `:45679`, and prints Claude's text.
 - Invent Claude replies
 - Paste secrets into bridge prompts
 - Modify theme files
+- Tell Julius only “open the folder manually” without trying `vscode-open` first

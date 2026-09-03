@@ -74,9 +74,10 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot comms-cron-deploy         install WBTC daily comms cron on iMac
   gotchibot commsies-imac-deploy      keep Commsies (:3002 + Ollama) alive on iMac
   gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
-  gotchibot hub [status|--infra|--live|--json]  Hub monitor (iMac OpenClaw fleet + Docker)
+  gotchibot hub [status|restart-gateway|doctor|…]  Hub monitor + OpenClaw restart SOP
   gotchibot bridge|bridge-prompt [--host auto|imac|local] [--wait] "…"
                                   Desk→Hub Claude VS Code; reply on Desk
+  gotchibot vscode-open|vscode-ensure [--check]  open/focus Hub VS Code on GotchiBot (code -r)
   gotchibot claude-ask|claudemode-ask "…"  bridge ask (reply-only; orch stays on big-pickle)
   gotchibot claudemode-proxy [--check]  optional OpenAI proxy for /model @claudemode (:45680)
   gotchibot tunnel status|restart     subgraph.aarcadeghst.com health + iMac cloudflared restart
@@ -586,12 +587,32 @@ case "$cmd" in
   remote-setup) cmd_remote_setup ;;
   remote-status) abra_or_node "$ROOT/scripts/remote-status.mjs" ;;
   hub)
-    # Needs REMOTE_* / SSH from abra for Hub SSH + docker summary.
-    abra_or_node "$ROOT/scripts/hub-status.mjs" "$@"
+    # Hub SOP: status (default) or restart-gateway / doctor / vscode / bridge / tunnel
+    sub="${1:-status}"
+    case "$sub" in
+      ""|status|--json|--infra|--live|-h|--help)
+        abra_or_node "$ROOT/scripts/hub-status.mjs" "$@"
+        ;;
+      restart-gateway|restart|doctor|vscode-open|bridge-check|tunnel-restart)
+        shift || true
+        abra_or_node "$ROOT/scripts/hub-ops.mjs" "$sub" "$@"
+        ;;
+      *)
+        # pass-through flags to hub-status (e.g. hub --json)
+        abra_or_node "$ROOT/scripts/hub-status.mjs" "$@"
+        ;;
+    esac
+    ;;
+  hub-ops)
+    abra_or_node "$ROOT/scripts/hub-ops.mjs" "$@"
     ;;
   bridge-prompt|bridge)
     # Desk → Hub VS Code Claude → Desk receiver :45679 (needs abra for SSH).
     abra_or_node "$ROOT/scripts/bridge-prompt.mjs" "$@"
+    ;;
+  vscode-open|vscode-ensure|hub-vscode-open)
+    # Open/focus Hub VS Code on GotchiBot so gotchibot-bridge can serve Claude.
+    abra_or_node "$ROOT/scripts/hub-vscode-open.mjs" "$@"
     ;;
   claude-ask|claudemode-ask)
     # Orchestrator tool: stay on big-pickle; print Hub Claude reply only.
