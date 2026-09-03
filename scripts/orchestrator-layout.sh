@@ -2,7 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+# Bare session name for set-option / pane targets (tmux 3.7c rejects -t =name for set-option).
+# Use =name only in session_exists — plain "gotchibot" prefix-matches "gotchibot-hubmon".
+sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+sess_name="${sess_name#=}"
+sess="$sess_name"
 min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-47}"
 min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-41}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
@@ -15,6 +19,10 @@ resize_hook="$ROOT/scripts/orchestrator-resize.sh"
 status_bar="$ROOT/scripts/session-status-bar.sh"
 LAYOUT_FILE="$ROOT/sessions/.tmux-layout"
 LAYOUT_MODE="$ROOT/sessions/.layout-mode"
+
+session_exists() {
+  tmux has-session -t "=$sess_name" 2>/dev/null
+}
 
 layout_mode() {
   if [ -f "$LAYOUT_MODE" ]; then
@@ -55,7 +63,7 @@ layout_safe_reexec() {
     # Soft / idempotent — safe to run in-pane (no kill-pane -a).
     fit|install-mouse) return 0 ;;
   esac
-  tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" $c"
+  tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$ROOT/scripts/orchestrator-layout.sh\" $c"
   exit 0
 }
 
@@ -63,7 +71,7 @@ require_three_panes() {
   tmux resize-pane -Z -t "$sess:work" 2>/dev/null || true
   layout_ready && return 0
   if layout_caller_is_side_pane && [ "${GOTCHIBOT_LAYOUT_SAFE:-}" != "1" ]; then
-    tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" require-three"
+    tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$ROOT/scripts/orchestrator-layout.sh\" require-three"
     layout_ready || return 1
     return 0
   fi
@@ -124,8 +132,8 @@ apply_window_policy() {
 }
 
 ensure_panes() {
-  if ! tmux has-session -t "$sess" 2>/dev/null; then
-    echo "orchestrator layout: tmux session '$sess' not found" >&2
+  if ! session_exists; then
+    echo "orchestrator layout: tmux session '$sess_name' not found" >&2
     return 1
   fi
   apply_window_policy
@@ -384,7 +392,7 @@ apply_meet_gallery_sizes() {
 }
 
 enter_meet_gallery() {
-  tmux has-session -t "$sess" 2>/dev/null || return 1
+  session_exists || return 1
   apply_window_policy
   # Leave other max modes back to a base 3-pane shell first.
   if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ] || [ "$(layout_mode)" = "chat-max" ]; then
@@ -617,15 +625,17 @@ toggle_sidebar() {
 
 enforce_sizes() {
   local win_w need pw
-  win_w="$(tmux display -p -t "$sess" '#{window_width}' 2>/dev/null || echo 0)"
-  pw="$(tmux display -p -t "$sess:work.0" '#{pane_width}' 2>/dev/null || echo "$sidebar_collapsed")"
+  win_w="$(tmux display -p -t "$sess:work" '#{window_width}' 2>/dev/null || true)"
+  win_w="${win_w:-0}"
+  pw="$(tmux display -p -t "$sess:work.0" '#{pane_width}' 2>/dev/null || true)"
+  pw="${pw:-$sidebar_collapsed}"
   if [ "$pw" -lt 12 ]; then
     need=$((sidebar_collapsed + min_center + min_right + 2))
   else
     need=$((min_left + min_center + min_right + 2))
   fi
   if [ "$win_w" -gt 0 ] && [ "$win_w" -lt "$need" ]; then
-    tmux resize-window -t "$sess" -x "$need" 2>/dev/null || true
+    tmux resize-window -t "$sess:work" -x "$need" 2>/dev/null || true
   fi
 }
 
@@ -701,7 +711,7 @@ install_agent_keys() {
   [ "${GOTCHIBOT_TAB_TMUX:-1}" = "1" ] || return 0
   local hook="$ROOT/scripts/tmux-chat-focus-hook.sh"
   local layout="$ROOT/scripts/orchestrator-layout.sh"
-  local layout_run="cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess' '$layout'"
+  local layout_run="cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess_name' '$layout'"
   chmod +x "$hook" "$layout" "$ROOT/scripts/chat-bar-pane.sh" 2>/dev/null || true
   # Free Ctrl+b for chat-max in mc/files/avatar panes; tmux prefix → Ctrl+Space in this session.
   tmux set-option -t "$sess" prefix C-Space 2>/dev/null || true

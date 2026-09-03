@@ -114,7 +114,9 @@ cmd_chat() {
   local want="${1:-opencode}"
   local file="$SESSIONS/.chat-runtime"
   local current="opencode"
-  local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+  local sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+  sess_name="${sess_name#=}"
+  local sess="$sess_name"
   local layout="$ROOT/scripts/orchestrator-layout.sh"
   [ -f "$file" ] && current="$(tr -d "[:space:]" < "$file")"
   case "$want" in
@@ -128,11 +130,11 @@ cmd_chat() {
       mkdir -p "$SESSIONS"
       printf 'opencode\n' > "$file"
       echo "chat runtime → opencode"
-      if [ -n "${TMUX:-}" ] && tmux has-session -t "$sess" 2>/dev/null; then
+      if [ -n "${TMUX:-}" ] && tmux has-session -t "=$sess_name" 2>/dev/null; then
         # Leave meet room UI if present, else just respawn OpenCode + avatar.
         if [ -f "$SESSIONS/.layout-mode" ] && [ "$(tr -d '[:space:]' < "$SESSIONS/.layout-mode")" = "meet-gallery" ]; then
           tmux run-shell -b -t "$sess:work.0" \
-            "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$layout\" leave-meet-gallery" \
+            "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$layout\" leave-meet-gallery" \
             2>/dev/null || true
         else
           tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
@@ -170,29 +172,34 @@ cmd_tmux() {
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
   # API keys are injected inside chat/sub-agent panes when needed.
   sync_openclaw_fleet
-  local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+  local sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+  sess_name="${sess_name#=}"
+  local sess="$sess_name"
   local layout="$ROOT/scripts/orchestrator-layout.sh"
   # Launcher must run layout in-process — if TMUX_PANE is set (nested/relaunch from
   # chat/avatar), orchestrator-layout.sh would tmux run-shell + exit 0 and drop us here.
   export GOTCHIBOT_LAYOUT_SAFE=1
+  export GOTCHIBOT_TMUX_SESSION="$sess_name"
 
-  if tmux has-session -t "$sess" 2>/dev/null; then
+  # Exact has-session (=name) so gotchibot-hubmon is not mistaken for gotchibot.
+  # Bare name for attach/layout targets — set-option rejects -t =name on tmux 3.7c.
+  if tmux has-session -t "=$sess_name" 2>/dev/null; then
     "$layout" leave-meet-gallery 2>/dev/null || true
     if ! "$layout" refresh; then
-      echo "orchestrator layout refresh failed — try: tmux kill-session -t $sess && ./scripts/gotchibot tmux" >&2
+      echo "orchestrator layout refresh failed — try: tmux kill-session -t '=$sess_name' && ./scripts/gotchibot tmux" >&2
       exit 1
     fi
-    exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
+    exec tmux attach -t "=$sess_name" \; select-pane -t "$sess:work.1" \; run-shell "'$layout' fit-quiet"
   fi
-  tmux new-session -d -s "$sess" -n work
+  tmux new-session -d -s "$sess_name" -n work
   if ! "$layout" ensure; then
-    echo "orchestrator layout ensure failed — try: tmux kill-session -t $sess && ./scripts/gotchibot tmux" >&2
+    echo "orchestrator layout ensure failed — try: tmux kill-session -t '=$sess_name' && ./scripts/gotchibot tmux" >&2
     exit 1
   fi
   # Orch calls poke-avatar — must run after 3-pane layout (USR1 on work.2 before
   # that hits the lone boot shell and kills the tmux server).
   node "$ROOT/scripts/agent-focus.mjs" orch >/dev/null 2>&1 || true
-  exec tmux attach -t "$sess" \; select-pane -t work.1 \; run-shell "'$layout' fit-quiet"
+  exec tmux attach -t "=$sess_name" \; select-pane -t "$sess:work.1" \; run-shell "'$layout' fit-quiet"
 }
 
 cmd_avatar() {
