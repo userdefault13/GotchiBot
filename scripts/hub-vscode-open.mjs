@@ -49,6 +49,16 @@ async function main() {
   const mat = materializeKey(cfg.key);
   try {
     const pref = folderOverride || cfg.dir || "";
+    // Ensure Hub Claude proxy identity files before opening the pane
+    const init = runSsh(
+      cfg,
+      mat.path,
+      `cd ${q(cfg.dir || "$HOME/Dev/GotchiBot")} && node scripts/claude-pane-init.mjs --json`,
+      { stdio: "pipe", timeout: 20000 },
+    );
+    if (init.status !== 0 && !jsonOut) {
+      console.error("claude-pane-init (remote):", String(init.stderr || init.stdout || "").trim().slice(0, 200));
+    }
     const probe = runSsh(cfg, mat.path, `bash ${REMOTE_SH} check ${timeoutSec} ${q(pref)}`, {
       stdio: "pipe",
       timeout: 25000,

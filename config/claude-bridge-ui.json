@@ -1,0 +1,13 @@
+{
+  "$comment": "Pinned Hub VS Code UI policy for gotchibot-bridge. Agents must not reason about this — copy the HARD RULE from gotchibot-bridge skill.",
+  "showInClaudeUi": true,
+  "claudeUiMode": "auto",
+  "runHeadlessCli": true,
+  "continueSession": true,
+  "policy": "pane_first_then_terminal_plus_headless_for_desk",
+  "forbidden": [
+    "headless only",
+    "no chat by design",
+    "anthropic extension conflicts with bridge"
+  ]
+}

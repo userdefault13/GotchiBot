@@ -612,6 +612,14 @@
       ],
       "enabled": true,
       "timeout": 300000
+    },
+    "gotchibot-synergy": {
+      "type": "local",
+      "command": [
+        "./scripts/mcp/gotchibot-synergy.sh"
+      ],
+      "enabled": true,
+      "timeout": 120000
     }
   },
   "permission": {

@@ -29,7 +29,9 @@ Bar line: `OC✗` = OpenClaw gateway unreachable. `tun✓`/`tun✗` = subgraph t
 | --- | --- | --- |
 | `OC✗` / `gateway-unreachable` / gotchi fell back to local | `abra run gotchibot -- ./scripts/gotchibot hub restart-gateway` | `abra run gotchibot -- ./scripts/gotchibot hub status` |
 | Need Hub dashboard | `abra run gotchibot -- ./scripts/gotchibot hub` | — |
-| Claude bridge down / connection refused / pane missing | `abra run gotchibot -- ./scripts/gotchibot hub bridge-ensure` (or MCP `hub_bridge_ensure`) | Then retry `claude_ask` |
+| Claude bridge down / connection refused / pane missing | `abra run gotchibot -- ./scripts/gotchibot hub bridge-ensure` (or MCP `hub_bridge_ensure`) | Then retry `claude_submit` / `claude_ask` |
+| Julius says “no chat in VS Code” / headless-only confusion | Load **gotchibot-bridge** HARD RULE: pane → terminal → + headless for Desk. Never invent architecture | `GotchiBot Bridge: Show Log` if UI empty but Desk got reply |
+| New Claude pane / create-agent / Claude has no GotchiBot role | `abra run gotchibot -- ./scripts/gotchibot claude-pane-init` (or MCP `hub_claude_pane_init`) | Load skill **claude-pane-proxy** |
 | Where is bridge config / globalStorage? | `abra run gotchibot -- ./scripts/gotchibot hub bridge-info` (or MCP `hub_bridge_info`) | There is NO `globalStorage/local.gotchibot-bridge/` folder — config is `settings.json` + `state.vscdb` |
 | Ask Hub Claude | MCP `claude_ask` or `abra run gotchibot -- ./scripts/gotchibot claude-ask "…"` | Stay on big-pickle |
 | Subgraph / tunnel down | `abra run gotchibot -- ./scripts/gotchibot tunnel status` | `… tunnel restart` |
@@ -239,6 +241,7 @@ If MCP `gotchibot-hub` is loaded:
 | `hub_bridge_check` | `bridge --check` |
 | `hub_bridge_ensure` | `hub-ops bridge-ensure` (receiver + bridge + restart) |
 | `hub_bridge_info` | `hub-ops bridge-info` (paths/config; no globalStorage folder) |
+| `hub_claude_pane_init` | `claude-pane-init` (CLAUDE.md + @gotchibot-proxy) |
 
 Prefer named MCP tools when available; otherwise Bash the commands above.
 

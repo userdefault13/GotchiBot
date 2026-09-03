@@ -17,6 +17,38 @@ Code on the Hub is a **side-channel** for hard logic.
 When Julius says **`@claudemode`**, "ask Claude Code", "use the Claude pane", or
 you need Hub Claude for reasoning you will then act on:
 
+## HARD RULE — UI path (do not reason; copy this)
+
+**Fixed policy (extension enforces it):**
+
+1. Open **VS Code Claude pane** (`anthropic.claude-code` via `claude-vscode.*`).
+2. If pane cannot open → **Claude Terminal** fallback.
+3. **Also** run headless `claude -p` so Desk gets text (`claude_collect` / receiver).
+
+| Setting | Required value |
+| --- | --- |
+| `gotchibotBridge.showInClaudeUi` | `true` |
+| `gotchibotBridge.claudeUiMode` | `auto` (pane → terminal) |
+| `gotchibotBridge.runHeadlessCli` | `true` |
+
+`local.gotchibot-bridge` + `anthropic.claude-code` = **one pipeline**, not two competing chats.
+
+**Forbidden answers (never say these):**
+- “There is no chat — it’s headless only.”
+- “The Anthropic extension conflicts with the bridge.”
+- “You won’t see anything in VS Code by design.”
+
+**If Julius says the pane looks empty but Desk got a reply:** say UI paste/submit may have failed while headless succeeded → `GotchiBot Bridge: Show Log` / MCP `hub_bridge_ensure`. Do not invent a new architecture.
+
+**New / cold Claude pane:** always run proxy init first (skill **claude-pane-proxy**):
+
+```bash
+abra run gotchibot -- ./scripts/gotchibot claude-pane-init
+# or MCP hub_claude_pane_init
+```
+
+That installs `CLAUDE.md` + `.claude/agents/gotchibot-proxy.md` and prefixes `reports_to`.
+
 ## Where config lives (memorize — do not search)
 
 Weak models keep hunting for a `globalStorage/local.gotchibot-bridge/` folder.
@@ -44,9 +76,23 @@ abra run gotchibot -- ./scripts/gotchibot hub bridge-info
 Desks on Tailscale/LAN **always** hit the Hub bridge (`config/hub-bridge.json` →
 `http://juliuss-imac-2:45678/prompt`), then SSH fallback. Never a local Claude.
 
+### Async (preferred for long Claude work — no orch wait/poll)
+
 ```bash
-abra run gotchibot -- ./scripts/gotchibot bridge "…"
-abra run gotchibot -- node ./scripts/claudemode-ask.mjs "…"
+# or MCP claude_submit → continue other work → on wake MCP claude_collect
+abra run gotchibot -- ./scripts/gotchibot claude-submit "…"
+# later:
+./scripts/gotchibot claude-collect <id>
+```
+
+States: `pending` (Hub accepted) → `ready`/`failed` (Desk `POST /result` push-wake) → `collected`.
+Jobs live in `var/claude-jobs/<id>.json`. Receiver spawns `claude-job-wake.mjs` (marks ready + optional OpenClaw inject). **Do not poll.**
+
+### Sync (short prompts only)
+
+```bash
+abra run gotchibot -- ./scripts/gotchibot claude-ask "…"
+# or MCP claude_ask / bridge --wait
 ```
 
 ## Call (sub-agents / headless / Hub iMac)
@@ -54,23 +100,26 @@ abra run gotchibot -- node ./scripts/claudemode-ask.mjs "…"
 **Never wrap in `abra`.** Touch ID / SecKeychain cannot run headless.
 
 ```bash
+node ./scripts/claudemode-submit.mjs "…"   # prefer
+node ./scripts/claude-jobs.mjs collect <id>
+# sync short only:
 node ./scripts/claudemode-ask.mjs "…"
-# or MCP claude_ask
 ```
 
 On Hub: local `:45678`. On Desk: network Hub bridge (no Touch ID). Desk receiver
-`:45679` required for `--wait` replies.
+`:45679` required for replies (push-wake + collect).
 
 ## Then react
 
-1. Read the bridge reply (do not invent it).
-2. Continue the task as gotchi on **big-pickle**: spawn, edit, summarize, ask Julius.
-3. Call bridge again for follow-up logic in the **same** Claude chat as needed.
+1. Prefer **submit** → keep working → **collect** on wake (do not invent the reply).
+2. Continue as gotchi on **big-pickle**: spawn, edit, summarize, ask Julius.
+3. Follow-ups can reuse the same Hub Claude session (`continueSession`).
 
 ## Prerequisites
 
-- Hub: VS Code + `local.gotchibot-bridge` **≥0.0.10** (binds `0.0.0.0:45678`), Claude logged in
-- Desk: Tailscale; `config/hub-bridge.json`; receiver on `:45679` (auto-started by ensure/bridge)
+- Hub: VS Code + `local.gotchibot-bridge` **≥0.0.11** (binds `0.0.0.0:45678`; resolves `~/.local/bin/claude`), Claude logged in
+- Desk: Tailscale; `config/hub-bridge.json`; receiver on `:45679` with wake hook (restart receiver after pull)
+- If Desk still gets UI-only / empty CLI replies: set `gotchibotBridge.claudeCommand` to `~/.local/bin/claude`, Restart Server
 
 ## If bridge is down / workspace not open
 

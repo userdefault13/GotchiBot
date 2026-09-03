@@ -79,7 +79,11 @@ gotchibot — GotchiBot orchestrator CLI
                                   Desk→Hub Claude VS Code; reply on Desk
   gotchibot vscode-open|vscode-ensure [--check]  open/focus Hub VS Code on GotchiBot (code -r)
   gotchibot bridge-ensure|ensure-bridge [--json]  one-shot Hub Claude bridge recovery (receiver + bridge + restart)
-  gotchibot claude-ask|claudemode-ask "…"  bridge ask (reply-only; orch stays on big-pickle)
+  gotchibot claude-ask|claudemode-ask "…"  bridge ask sync (short; orch stays on big-pickle)
+  gotchibot claude-submit "…"             async submit → {id,pending}; prefer for long Claude
+  gotchibot claude-collect <id>           collect ready job after push-wake
+  gotchibot claude-jobs [--status …]      list async Claude jobs
+  gotchibot claude-pane-init [--check]    ensure Hub Claude proxy CLAUDE.md + @gotchibot-proxy agent
   gotchibot claudemode-proxy [--check]  optional OpenAI proxy for /model @claudemode (:45680)
   gotchibot tunnel status|restart     subgraph.aarcadeghst.com health + iMac cloudflared restart
   gotchibot menubar install|uninstall|preview|path|open  macOS menu bar ghost + agent count (SwiftBar)
@@ -594,7 +598,7 @@ case "$cmd" in
       ""|status|--json|--infra|--live|-h|--help)
         abra_or_node "$ROOT/scripts/hub-status.mjs" "$@"
         ;;
-      restart-gateway|restart|doctor|vscode-open|bridge-check|bridge-ensure|ensure-bridge|bridge-info|tunnel-restart)
+      restart-gateway|restart|doctor|vscode-open|bridge-check|bridge-ensure|ensure-bridge|bridge-info|claude-pane-init|tunnel-restart)
         shift || true
         abra_or_node "$ROOT/scripts/hub-ops.mjs" "$sub" "$@"
         ;;
@@ -620,8 +624,22 @@ case "$cmd" in
     abra_or_node "$ROOT/scripts/hub-bridge-ensure.mjs" "$@"
     ;;
   claude-ask|claudemode-ask)
-    # Orchestrator tool: stay on big-pickle; print Hub Claude reply only.
+    # Orchestrator tool: stay on big-pickle; print Hub Claude reply only (sync).
     abra_or_node "$ROOT/scripts/claudemode-ask.mjs" "$@"
+    ;;
+  claude-submit|claudemode-submit)
+    # Async: return pending id immediately (no wait/poll).
+    abra_or_node "$ROOT/scripts/claudemode-submit.mjs" "$@"
+    ;;
+  claude-collect|claudemode-collect)
+    exec node "$ROOT/scripts/claude-jobs.mjs" collect "$@"
+    ;;
+  claude-jobs|claudemode-jobs)
+    exec node "$ROOT/scripts/claude-jobs.mjs" list "$@"
+    ;;
+  claude-pane-init|claude-proxy-init)
+    # Ensure CLAUDE.md + .claude/agents/gotchibot-proxy.md (Hub Claude proxy identity).
+    abra_or_node "$ROOT/scripts/claude-pane-init.mjs" "$@"
     ;;
   claudemode-proxy|claude-proxy)
     # Optional OpenAI proxy if someone still uses /model @claudemode — prefer claude-ask.

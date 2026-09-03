@@ -16,7 +16,7 @@ const REMOTE_SH = "scripts/hub-ops-remote.sh";
 
 function usage() {
   console.error(`usage:
-  hub-ops.mjs status|restart-gateway|vscode-open|bridge-check|bridge-ensure|bridge-info|tunnel-restart|doctor
+  hub-ops.mjs status|restart-gateway|vscode-open|bridge-check|bridge-ensure|bridge-info|claude-pane-init|tunnel-restart|doctor
               [--json] [--wait] [--timeout SEC]
 
 Prefer: abra run gotchibot -- ./scripts/gotchibot hub <action>`);
@@ -47,6 +47,7 @@ const ACTIONS = new Set([
   "bridge-ensure",
   "ensure-bridge",
   "bridge-info",
+  "claude-pane-init",
   "tunnel-restart",
   "doctor",
   "help",
@@ -134,6 +135,13 @@ async function main() {
     const argv = jsonOut ? ["--json"] : ["--text"];
     const r = runLocal("scripts/hub-bridge-info.mjs", argv, { timeout: 90_000 });
     printResult(r, "bridge-info");
+    return;
+  }
+
+  if (action === "claude-pane-init") {
+    const argv = ["--json", ...rest];
+    const r = runLocal("scripts/claude-pane-init.mjs", argv, { timeout: 30_000 });
+    printResult(r, "claude-pane-init");
     return;
   }
 

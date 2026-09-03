@@ -90,6 +90,20 @@ const TOOLS = [
       "Return Hub gotchibot-bridge paths/config for weak models. Use when looking for globalStorage, extension config, listenHost, or where Claude bridge stores state. There is NO globalStorage/local.gotchibot-bridge folder.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
+  {
+    name: "hub_claude_pane_init",
+    description:
+      "Ensure Hub GotchiBot Claude pane proxy identity (CLAUDE.md + .claude/agents/gotchibot-proxy.md). Call on cold/new VS Code Claude pane, create-agent, or when Claude has no GotchiBot role. Weak-model safe — do not invent identity.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        check: {
+          type: "boolean",
+          description: "If true, only verify files exist (no write)",
+        },
+      },
+    },
+  },
 ];
 
 function handle(msg) {
@@ -120,7 +134,10 @@ function handle(msg) {
         text = runOps("bridge-ensure", ["--timeout", String(t)]);
       }
       else if (name === "hub_bridge_info") text = runOps("bridge-info", ["--json"]);
-      else return replyError(id, -32601, `unknown tool: ${name}`);
+      else if (name === "hub_claude_pane_init") {
+        const extra = args.check ? ["--check"] : [];
+        text = runOps("claude-pane-init", extra);
+      } else return replyError(id, -32601, `unknown tool: ${name}`);
       return reply(id, { content: [{ type: "text", text }], isError: false });
     } catch (e) {
       return reply(id, {

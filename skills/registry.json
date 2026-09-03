@@ -464,6 +464,15 @@
       "script": "scripts/claudemode-ask.mjs",
       "addedAt": "2026-09-02"
     },
+    "claude-pane-proxy": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "New Hub VS Code Claude pane: always init GotchiBot Hub proxy (CLAUDE.md + @gotchibot-proxy). Load for create-agent / cold pane / Claude has no role.",
+      "path": ".opencode/skills/claude-pane-proxy/SKILL.md",
+      "script": "scripts/claude-pane-init.mjs",
+      "addedAt": "2026-09-03"
+    },
     "hub-sop": {
       "status": "approved",
       "type": "skill",

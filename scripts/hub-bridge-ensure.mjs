@@ -129,6 +129,14 @@ async function main() {
   steps.push({ step: "probe", ok: bridgeUp, url: bridgeUrl });
   if (bridgeUp) {
     log(`  ✓ Hub bridge up (${bridgeUrl})`);
+    // Still ensure proxy identity files on local Hub tree when we can
+    try {
+      const { runPaneInit } = await import("./claude-pane-init.mjs");
+      const init = runPaneInit({});
+      steps.push({ step: "claude-pane-init", ok: init.ok, reportsTo: init.reportsTo });
+    } catch (e) {
+      steps.push({ step: "claude-pane-init", ok: false, error: e?.message || String(e) });
+    }
     const result = { ok: true, already: true, receiver: receiverOk, bridgeUrl, steps };
     if (jsonOut) console.log(JSON.stringify(result));
     else log("Bridge already healthy — nothing to do.");

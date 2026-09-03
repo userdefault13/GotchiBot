@@ -15,6 +15,7 @@ import {
   inDocker,
   resolveClaudeHostMode,
 } from "./claude-bridge-role.mjs";
+import { prefixProxyPrompt, runPaneInit } from "./claude-pane-init.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BRIDGE = join(ROOT, "scripts/bridge-prompt.mjs");
@@ -34,8 +35,8 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === "--timeout") timeout = args[++i] || timeout;
   else promptParts.push(args[i]);
 }
-const prompt = promptParts.join(" ").trim();
-if (!prompt) {
+const rawPrompt = promptParts.join(" ").trim();
+if (!rawPrompt) {
   console.error("missing prompt");
   process.exit(2);
 }
@@ -48,6 +49,16 @@ env.GOTCHIBOT_BRIDGE_URL = env.GOTCHIBOT_BRIDGE_URL || hubBridgeHttpUrl();
 if (docker && !env.GOTCHIBOT_RECEIVER_URL) {
   env.GOTCHIBOT_RECEIVER_URL = "http://100.107.115.39:45679";
 }
+
+try {
+  runPaneInit({});
+} catch {
+  /* non-fatal */
+}
+
+const prompt = prefixProxyPrompt(rawPrompt, {
+  includeInit: process.env.GOTCHIBOT_CLAUDE_PANE_INIT !== "0",
+});
 
 const hostMode = resolveClaudeHostMode(env.GOTCHIBOT_CLAUDE_HOST);
 
