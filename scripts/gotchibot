@@ -91,7 +91,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot trader [monitor|improve|news] [--json] [--host imac]  Gotchi-Trader desk
   gotchibot model [pick|list|resolve] [--json] [--probe]  pick a free, listed model
   gotchibot aseprite …                Aseprite batch export/init (see skill aseprite-tool)
-  gotchibot pdf check|info|text|render|search  PDF via PyMuPDF (.venv-pdf)
+  gotchibot pdf check|info|search|read-pages|tables|chunks|render  PDF via PyMuPDF
   gotchibot tts on|off|status|test|speed|warm|stop-daemon  voice (MeloTTS EN-AU / edge-tts / say)
 EOF
   exit 2

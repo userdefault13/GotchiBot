@@ -2,7 +2,7 @@
 /**
  * GotchiBot PyMuPDF wrapper — runs scripts/pdf_tool.py via project .venv-pdf.
  *
- *   node scripts/pdf-tool.mjs check|info|text|render|search …
+ *   node scripts/pdf-tool.mjs check|info|search|read-pages|tables|chunks|render …
  *   ./scripts/gotchibot pdf check
  */
 import { spawnSync } from "node:child_process";
@@ -40,12 +40,14 @@ function resolvePython() {
 }
 
 function usage() {
-  console.error(`usage:
+  console.error(`usage (pages are 1-indexed):
   pdf-tool.mjs check
   pdf-tool.mjs info <file.pdf>
-  pdf-tool.mjs text <file.pdf> [--pages 0,2-4] [--max-chars N]
-  pdf-tool.mjs render <file.pdf> --out <out.png> [--page N] [--dpi 144]
   pdf-tool.mjs search <file.pdf> <query> [--max-hits N]
+  pdf-tool.mjs read-pages <file.pdf> --pages 3-7 [--format markdown|text] [--max-tokens N]
+  pdf-tool.mjs tables <file.pdf> --page 4
+  pdf-tool.mjs chunks <file.pdf> [--pages 1-10]
+  pdf-tool.mjs render <file.pdf> --out <out.png> [--page 1] [--dpi 144]
 
 Prefer: ./scripts/gotchibot pdf <cmd> …
 Setup:  python3 -m venv .venv-pdf && .venv-pdf/bin/pip install -r requirements/pymupdf.txt`);

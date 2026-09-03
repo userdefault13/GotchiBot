@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * MCP: PyMuPDF tools for GotchiBot (pdf_check, pdf_info, pdf_text, pdf_render, pdf_search).
+ * MCP: agent-sized PDF tools (gotchibot-pdf).
+ * pdf_check | pdf_info | pdf_search | pdf_read_pages | pdf_tables | pdf_chunks | pdf_render
+ * Pages are 1-indexed.
  */
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -34,15 +36,22 @@ function runPdf(argv) {
   return out;
 }
 
+function pagesArg(pages) {
+  if (Array.isArray(pages)) return pages.join(",");
+  if (pages == null) return null;
+  return String(pages);
+}
+
 const TOOLS = [
   {
     name: "pdf_check",
-    description: "Verify PyMuPDF (fitz) is available in GotchiBot .venv-pdf.",
+    description: "Verify PyMuPDF is available in GotchiBot .venv-pdf.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "pdf_info",
-    description: "PDF metadata + page count via PyMuPDF. Path must be under allowlisted roots.",
+    description:
+      "PDF classify/metadata: pages, title, TOC, scanned flag. Prefer before read.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "Path to .pdf" } },
@@ -50,35 +59,8 @@ const TOOLS = [
     },
   },
   {
-    name: "pdf_text",
-    description: "Extract text from a PDF (optional page list). Returns JSON with per-page text.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        pages: { type: "string", description: "0-based pages e.g. 0,2-4 (default all)" },
-        max_chars: { type: "number", description: "Cap total characters (default 200000)" },
-      },
-      required: ["path"],
-    },
-  },
-  {
-    name: "pdf_render",
-    description: "Render one PDF page to PNG via PyMuPDF.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        out: { type: "string", description: "Output .png path under allowWriteRoots" },
-        page: { type: "number", description: "0-based page (default 0)" },
-        dpi: { type: "number", description: "DPI (default 144)" },
-      },
-      required: ["path", "out"],
-    },
-  },
-  {
     name: "pdf_search",
-    description: "Search PDF text for a query; returns page + bbox hits.",
+    description: "Search PDF text; returns 1-based page hits + short snippets + bbox.",
     inputSchema: {
       type: "object",
       properties: {
@@ -87,6 +69,68 @@ const TOOLS = [
         max_hits: { type: "number" },
       },
       required: ["path", "query"],
+    },
+  },
+  {
+    name: "pdf_read_pages",
+    description:
+      "Extract structured text/markdown for specific 1-indexed pages. Caps output (~12k tokens); truncated:true means request fewer pages.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        pages: {
+          type: "array",
+          items: { type: "integer" },
+          description: "1-indexed page numbers, e.g. [3,4,5]",
+        },
+        format: { type: "string", enum: ["markdown", "text"], description: "default markdown" },
+        max_tokens: { type: "number", description: "Output cap (default 12000)" },
+      },
+      required: ["path", "pages"],
+    },
+  },
+  {
+    name: "pdf_tables",
+    description: "Extract tables from one 1-indexed page as markdown + JSON rows.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        page: { type: "integer", description: "1-indexed page" },
+      },
+      required: ["path", "page"],
+    },
+  },
+  {
+    name: "pdf_chunks",
+    description:
+      "Heading-aware RAG chunks (~400–800 tokens, overlap) with page/section/type/token_estimate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        pages: {
+          type: "string",
+          description: "Optional 1-based filter e.g. 1-10 or 3,4,5",
+        },
+        max_tokens: { type: "number" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "pdf_render",
+    description: "Render one 1-indexed PDF page to PNG (visual verify / grounding).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        out: { type: "string", description: "Output .png under allowWriteRoots" },
+        page: { type: "number", description: "1-indexed page (default 1)" },
+        dpi: { type: "number", description: "DPI (default 144)" },
+      },
+      required: ["path", "out"],
     },
   },
 ];
@@ -98,7 +142,7 @@ function handle(msg) {
     return reply(id, {
       protocolVersion: params?.protocolVersion || "2024-11-05",
       capabilities: { tools: {} },
-      serverInfo: { name: "gotchibot-pdf", version: "1.0.0" },
+      serverInfo: { name: "gotchibot-pdf", version: "2.0.0" },
     });
   }
   if (method === "notifications/initialized" || method === "initialized") return;
@@ -110,10 +154,28 @@ function handle(msg) {
       let text;
       if (name === "pdf_check") text = runPdf(["check"]);
       else if (name === "pdf_info") text = runPdf(["info", String(args.path || "")]);
-      else if (name === "pdf_text") {
-        const argv = ["text", String(args.path || "")];
+      else if (name === "pdf_search") {
+        const argv = ["search", String(args.path || ""), String(args.query || "")];
+        if (args.max_hits != null) argv.push("--max-hits", String(args.max_hits));
+        text = runPdf(argv);
+      } else if (name === "pdf_read_pages" || name === "pdf_text") {
+        const argv = ["read-pages", String(args.path || "")];
+        const p = pagesArg(args.pages);
+        if (p) argv.push("--pages", p);
+        if (args.format) argv.push("--format", String(args.format));
+        if (args.max_tokens != null) argv.push("--max-tokens", String(args.max_tokens));
+        text = runPdf(argv);
+      } else if (name === "pdf_tables") {
+        text = runPdf([
+          "tables",
+          String(args.path || ""),
+          "--page",
+          String(args.page ?? 1),
+        ]);
+      } else if (name === "pdf_chunks") {
+        const argv = ["chunks", String(args.path || "")];
         if (args.pages) argv.push("--pages", String(args.pages));
-        if (args.max_chars != null) argv.push("--max-chars", String(args.max_chars));
+        if (args.max_tokens != null) argv.push("--max-tokens", String(args.max_tokens));
         text = runPdf(argv);
       } else if (name === "pdf_render") {
         const argv = [
@@ -124,10 +186,6 @@ function handle(msg) {
         ];
         if (args.page != null) argv.push("--page", String(args.page));
         if (args.dpi != null) argv.push("--dpi", String(args.dpi));
-        text = runPdf(argv);
-      } else if (name === "pdf_search") {
-        const argv = ["search", String(args.path || ""), String(args.query || "")];
-        if (args.max_hits != null) argv.push("--max-hits", String(args.max_hits));
         text = runPdf(argv);
       } else return replyError(id, -32601, `unknown tool: ${name}`);
       return reply(id, { content: [{ type: "text", text }], isError: false });

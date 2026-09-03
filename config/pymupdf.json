@@ -1,8 +1,12 @@
 {
-  "$comment": "GotchiBot PyMuPDF (fitz) — path confinement for PDF read/render.",
+  "$comment": "GotchiBot PyMuPDF (fitz) — path confinement + chunk/cache for agent PDF tools.",
   "python": "${GOTCHIBOT_PDF_PYTHON:-}",
   "venv": ".venv-pdf",
   "allowReadRoots": [".", "~/Downloads", "~/Dev", "~/Documents"],
   "allowWriteRoots": [".", "build", "assets", "output", "sessions", "tmp", "var", "~/Downloads", "~/Dev"],
-  "defaultRenderDir": "build/pdf"
+  "defaultRenderDir": "build/pdf",
+  "cacheDir": "var/pdf-cache",
+  "chunkTokens": { "min": 400, "max": 800, "overlap": 80 },
+  "maxOutputTokens": 12000,
+  "scannedTextThreshold": 40
 }
