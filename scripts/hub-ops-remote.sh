@@ -76,7 +76,7 @@ c.plugins={
 };
 delete c.plugins.entries.opencode;
 delete c.plugins.entries.perplexity;
-fs.writeFileSync(p, JSON.stringify(c,null,2)+"\\n");
+fs.writeFileSync(p, JSON.stringify(c,null,2)+String.fromCharCode(10));
 console.log("gateway.mode=local plugins patched (no perplexity)");
 ' 2>/dev/null || true
   fi
