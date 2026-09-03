@@ -249,6 +249,29 @@ function printInfraTable(docker) {
   }
 }
 
+function probeBridgeDesk() {
+  const cfg = readJson(`${ROOT}/config/hub-bridge.json`) || {};
+  const url =
+    process.env.GOTCHIBOT_HUB_BRIDGE_URL ||
+    cfg.url ||
+    "http://juliuss-imac-2:45678/prompt";
+  const health = String(url).replace(/\/prompt\/?$/, "/health");
+  const r = spawnSync("curl", ["-sf", "--max-time", "2", health], {
+    encoding: "utf8",
+  });
+  const recv = spawnSync(
+    "curl",
+    ["-sf", "--max-time", "2", "http://127.0.0.1:45679/health"],
+    { encoding: "utf8" },
+  );
+  return {
+    ok: r.status === 0,
+    health,
+    url: String(url),
+    receiverOk: recv.status === 0,
+  };
+}
+
 function printHuman(payload) {
   const host = payload.ssh?.host || process.env.REMOTE_HOST || "hub";
   console.log(`Hub · ${host}`);
@@ -259,6 +282,12 @@ function printHuman(payload) {
   console.log(
     `  OpenClaw   ${ocLabel}${oc?.gateway ? `  ${oc.gateway}` : ""}${oc?.error ? ` — ${oc.error}` : ""}`,
   );
+  const br = payload.bridge;
+  if (br) {
+    console.log(
+      `  VS Bridge  ${br.ok ? "up" : "down"}  ${br.health || ""}${br.receiverOk === false ? " · recv✗" : br.receiverOk ? " · recv✓" : ""}`,
+    );
+  }
   const focus = oc?.focus
     ? `focus ${oc.focus.mode || "?"}${oc.focus.heroId ? ` · ${oc.focus.heroId}` : ""}`
     : "focus —";
@@ -290,6 +319,7 @@ async function buildStatus({ live }) {
   const ssh = probeSsh();
   const openclaw = await probeOpenClaw();
   const tunnel = await probeTunnel();
+  const bridge = probeBridgeDesk();
 
   let docker = {
     ok: null,
@@ -317,6 +347,7 @@ async function buildStatus({ live }) {
         ? `${sessions.imac.total} idle`
         : "idle",
     openclaw.reachable === true ? "OC✓" : openclaw.reachable === false ? "OC✗" : "OC?",
+    bridge.ok ? "br✓" : "br✗",
     tunnel.ok === true ? "tun✓" : tunnel.ok === false ? "tun✗" : "tun?",
     dockerChip(docker),
   ].join(" · ");
@@ -327,6 +358,8 @@ async function buildStatus({ live }) {
     total: sessions.imac.total,
     reason: ssh.reason || null,
     openclawReachable: openclaw.reachable,
+    bridgeOk: bridge.ok,
+    receiverOk: bridge.receiverOk,
     tunnelOk: tunnel.ok,
     dockerUp: docker.up,
     dockerUnhealthy: docker.unhealthy,
@@ -340,6 +373,7 @@ async function buildStatus({ live }) {
     at: new Date().toISOString(),
     ssh,
     openclaw,
+    bridge,
     sessions,
     tunnel,
     docker: {

@@ -86,7 +86,7 @@ abra run gotchibot -- ./scripts/gotchibot claude-submit "…"
 ```
 
 States: `pending` (Hub accepted) → `ready`/`failed` (Desk `POST /result` push-wake) → `collected`.
-Jobs live in `var/claude-jobs/<id>.json`. Receiver spawns `claude-job-wake.mjs` (marks ready + optional OpenClaw inject). **Do not poll.**
+Jobs live in `var/claude-jobs/<id>.json`. Receiver spawns `claude-job-wake.mjs` which **injects the Claude reply into the OpenCode Desk chat** (and `sessions/claude-inbox.jsonl`). macOS Script Editor notifications are **off** by default (`GOTCHIBOT_RECEIVER_NOTIFY=1` to opt in). OpenClaw chat inject is opt-in (`GOTCHIBOT_CLAUDE_WAKE_OPENCLAW=1`) because it burns model quota. **Do not poll.**
 
 ### Sync (short prompts only)
 
@@ -118,7 +118,7 @@ On Hub: local `:45678`. On Desk: network Hub bridge (no Touch ID). Desk receiver
 ## Prerequisites
 
 - Hub: VS Code + `local.gotchibot-bridge` **≥0.0.11** (binds `0.0.0.0:45678`; resolves `~/.local/bin/claude`), Claude logged in
-- Desk: Tailscale; `config/hub-bridge.json`; receiver on `:45679` with wake hook (restart receiver after pull)
+- Desk: Tailscale; `config/hub-bridge.json`; receiver on `:45679` with wake hook (**restart receiver after pull** so notify-off + chat inject load)
 - If Desk still gets UI-only / empty CLI replies: set `gotchibotBridge.claudeCommand` to `~/.local/bin/claude`, Restart Server
 
 ## If bridge is down / workspace not open

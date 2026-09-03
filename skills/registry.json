@@ -500,6 +500,24 @@
       "script": "scripts/agent-focus.mjs",
       "addedAt": "2026-09-03"
     },
+    "morning-recap": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Morning meeting recap — wake agents on checklist, present with Q&A, take today's goals. Edit config/morning-recap.json. MCP gotchibot-meet.",
+      "path": ".opencode/skills/morning-recap/SKILL.md",
+      "script": "scripts/morning-recap.mjs",
+      "addedAt": "2026-09-03"
+    },
+    "colabo": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Colabo — one prompt, all meeting agents reply. /colabo or meet colabo. MCP gotchibot-meet.",
+      "path": ".opencode/skills/colabo/SKILL.md",
+      "script": "scripts/colabo.mjs",
+      "addedAt": "2026-09-03"
+    },
     "gotchi-trader-monitor": {
       "status": "approved",
       "type": "skill",

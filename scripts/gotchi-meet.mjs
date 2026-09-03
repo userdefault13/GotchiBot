@@ -22,7 +22,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { printSlackTurns } from "./meet-channel.mjs";
 import { loadMeta } from "./identity.mjs";
@@ -684,7 +684,8 @@ function chairHero() {
   };
 }
 
-export async function startMeeting(topic = "Untitled meeting") {
+export async function startMeeting(topic = "Untitled meeting", opts = {}) {
+  const kind = opts.kind === "morning-recap" ? "morning-recap" : "meeting";
   const open = loadCurrentMeeting();
   if (open) {
     throw new Error(
@@ -695,9 +696,14 @@ export async function startMeeting(topic = "Untitled meeting") {
   const chair = chairHero();
   const user = userParticipant();
   const id = newMeetingId();
+  const defaultTopic =
+    kind === "morning-recap"
+      ? String(topic || "Morning recap").trim() || "Morning recap"
+      : String(topic || "Untitled meeting").trim() || "Untitled meeting";
   const meeting = {
     id,
-    topic: String(topic || "Untitled meeting").trim() || "Untitled meeting",
+    kind,
+    topic: defaultTopic,
     createdAt: new Date().toISOString(),
     status: "open",
     chairId: chair.id,
@@ -1162,6 +1168,7 @@ function writeMinutes(meeting) {
     `# Meeting minutes`,
     "",
     `- **id:** ${meeting.id}`,
+    `- **kind:** ${meeting.kind || "meeting"}`,
     `- **topic:** ${meeting.topic}`,
     `- **created:** ${meeting.createdAt}`,
     `- **ended:** ${endedAt}`,
@@ -1179,6 +1186,40 @@ function writeMinutes(meeting) {
   return { path: `${meetingDir(meeting.id)}/minutes.md`, endedAt, md };
 }
 
+function writeHandoff(meeting, minutesPath) {
+  const agents = (meeting.participants || []).filter((p) => p.role === "agent");
+  const md = [
+    `# Post-meeting handoff`,
+    "",
+    `- **meeting:** ${meeting.id}`,
+    `- **kind:** ${meeting.kind || "meeting"}`,
+    `- **topic:** ${meeting.topic}`,
+    `- **minutes:** ${minutesPath}`,
+    `- **ended:** ${meeting.endedAt || new Date().toISOString()}`,
+    "",
+    "## Orchestrator checklist",
+    "",
+    "1. Stay on **big-pickle** (Desk orch model). Do **not** `/model` to Claude.",
+    "2. Hard logic → Hub Claude tool (`claude_submit` / `gotchibot claude-submit`) with pane proxy (skill **claude-pane-proxy**).",
+    "3. Confirm each agent below is working (or spawn) on today's goals Julius set.",
+    "4. Prefer delegate-first; use Colabo only inside an open meeting.",
+    "",
+    "## Agents",
+    "",
+    ...(agents.length
+      ? agents.map((a) => `- \`${a.id}\` (${a.name || "—"}) — expect big-pickle + Claude-as-tool`)
+      : ["- (no agent participants)"]),
+    "",
+    "## Today's goals",
+    "",
+    "_(chair fills from Julius after morning recap / meeting)_",
+    "",
+  ].join("\n");
+  const path = `${meetingDir(meeting.id)}/handoff.md`;
+  writeFileSync(path, md);
+  return path;
+}
+
 export async function endMeeting({ keepLayout = false } = {}) {
   const meeting = requireOpenMeeting();
   const { path, endedAt } = writeMinutes(meeting);
@@ -1186,6 +1227,8 @@ export async function endMeeting({ keepLayout = false } = {}) {
   meeting.current = false;
   meeting.endedAt = endedAt;
   meeting.minutesPath = path;
+  const handoffPath = writeHandoff({ ...meeting, endedAt }, path);
+  meeting.handoffPath = handoffPath;
   saveMeeting(meeting);
   clearMeetMentionAgents();
   clearCurrent();
@@ -1196,7 +1239,7 @@ export async function endMeeting({ keepLayout = false } = {}) {
   }
   pokeAvatar();
   if (!keepLayout) leaveMeetGallery();
-  return { meeting, minutesPath: path };
+  return { meeting, minutesPath: path, handoffPath };
 }
 
 function printStatus(meeting, { json } = {}) {
@@ -1242,11 +1285,14 @@ function printStatus(meeting, { json } = {}) {
 function usage() {
   console.error(`usage:
   gotchi-meet.mjs start ["topic"]
+  gotchi-meet.mjs start --morning ["topic"]
   gotchi-meet.mjs open|room          enter meet-gallery UI (tmux)
   gotchi-meet.mjs invite <n|id|name>
   gotchi-meet.mjs invite all
   gotchi-meet.mjs status [--json]
   gotchi-meet.mjs say "user message"
+  gotchi-meet.mjs morning collect|present|next|finish|status|tasks …
+  gotchi-meet.mjs colabo "prompt for all agents"
   gotchi-meet.mjs end
   gotchi-meet.mjs sync-mentions`);
 }
@@ -1259,16 +1305,29 @@ async function main() {
   const rest = args.slice(1);
 
   if (cmd === "start") {
-    const topic = rest.join(" ").trim() || "Untitled meeting";
-    const m = await startMeeting(topic);
+    const morning = rest.includes("--morning") || rest[0] === "morning";
+    const topicParts = rest.filter((a) => a !== "--morning" && a !== "morning");
+    const topic =
+      topicParts.join(" ").trim() ||
+      (morning ? "Morning recap" : "Untitled meeting");
+    const m = await startMeeting(topic, {
+      kind: morning ? "morning-recap" : "meeting",
+    });
     ensureMeetGallery();
     console.log(`meeting started  ${m.id}`);
+    console.log(`kind    ${m.kind || "meeting"}`);
     console.log(`topic   ${m.topic}`);
     console.log(`chair   ${m.chairId}`);
     console.log(`you     ${m.participants.find((p) => p.role === "user")?.id}`);
     console.log("");
     console.log("invite  ./scripts/gotchi-meet.mjs invite <n|id|name>");
     console.log("        ./scripts/gotchi-meet.mjs invite all");
+    if (morning) {
+      console.log("morning ./scripts/gotchi-meet.mjs morning collect --host imac");
+      console.log("        ./scripts/gotchi-meet.mjs morning present");
+      console.log("        ./scripts/gotchi-meet.mjs morning next");
+    }
+    console.log('colabo  ./scripts/gotchi-meet.mjs colabo "…"');
     console.log('say     ./scripts/gotchi-meet.mjs say "…"');
     if (tmuxSessionName()) {
       console.log("layout  meet gallery (Meet · room | # meet)");
@@ -1276,6 +1335,30 @@ async function main() {
       console.log("layout  attach tmux first: ./scripts/gotchibot tmux");
     }
     return;
+  }
+
+  if (cmd === "morning" || cmd === "recap") {
+    const sub = rest[0] || "status";
+    const r = spawnSync(
+      process.execPath,
+      [join(ROOT, "scripts/morning-recap.mjs"), sub, ...rest.slice(1), ...(json ? ["--json"] : [])],
+      { cwd: ROOT, encoding: "utf8", stdio: "inherit", env: process.env },
+    );
+    process.exit(r.status ?? 1);
+  }
+
+  if (cmd === "colabo" || cmd === "collabo") {
+    const prompt = rest.join(" ").trim();
+    const r = spawnSync(
+      process.execPath,
+      [
+        join(ROOT, "scripts/colabo.mjs"),
+        ...(prompt ? [prompt] : []),
+        ...(json ? ["--json"] : []),
+      ],
+      { cwd: ROOT, encoding: "utf8", stdio: "inherit", env: process.env },
+    );
+    process.exit(r.status ?? 1);
   }
 
   if (cmd === "open" || cmd === "room" || cmd === "ui") {
@@ -1337,9 +1420,10 @@ async function main() {
 
   if (cmd === "end") {
     const keepLayout = argv.includes("--keep-layout") || argv.includes("--no-layout");
-    const { meeting, minutesPath } = await endMeeting({ keepLayout });
+    const { meeting, minutesPath, handoffPath } = await endMeeting({ keepLayout });
     console.log(`meeting ended  ${meeting.id}`);
     console.log(`minutes  ${minutesPath}`);
+    if (handoffPath) console.log(`handoff  ${handoffPath}`);
     return;
   }
 

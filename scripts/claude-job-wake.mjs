@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Push-wake when Hub forwards a Claude result to Desk receiver.
- * Marks job ready/failed and optionally injects a short note into OpenClaw orch.
+ * Marks job ready/failed and lands the reply in Desk OpenCode chat
+ * (not Script Editor notifications).
  *
  *   node scripts/claude-job-wake.mjs --payload /tmp/result.json
  *   echo '{...}' | node scripts/claude-job-wake.mjs --stdin
@@ -10,10 +11,12 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { markReady } from "./claude-jobs.mjs";
+import { getJob, markReady } from "./claude-jobs.mjs";
+import { injectOpenCodeChat } from "./opencode-chat-inject.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FLEET = join(ROOT, "scripts/openclaw-fleet.mjs");
+const CHAT_BODY_MAX = Number(process.env.GOTCHIBOT_CLAUDE_CHAT_MAX || 6000);
 
 const args = process.argv.slice(2);
 let payloadPath = "";
@@ -44,6 +47,35 @@ function loadPayload() {
   throw new Error("usage: claude-job-wake.mjs --payload <file> | --stdin");
 }
 
+function extractReportsTo(prompt, meta = {}) {
+  if (meta.reportsTo) return String(meta.reportsTo);
+  if (meta.heroId) return String(meta.heroId);
+  if (meta.agentId) return String(meta.agentId);
+  const m = String(prompt || "").match(/reports_to[=:\s]+([a-z0-9._-]+)/i);
+  return m ? m[1] : null;
+}
+
+function formatBody(job, payload) {
+  const id = job.id;
+  const body = String(payload.response ?? job.response ?? "").trim();
+  const hero = extractReportsTo(job.prompt || payload.prompt, {
+    ...(job.meta || {}),
+    ...(payload.meta || {}),
+  });
+  const truncated = body.length > CHAT_BODY_MAX;
+  const shown = truncated
+    ? `${body.slice(0, CHAT_BODY_MAX)}\n\n…[truncated — full via claude_collect ${id}]`
+    : body;
+  const failed = job.status === "failed" || payload.ok === false;
+  const head = failed
+    ? `**Claude Hub · FAILED** · \`${id}\`${hero ? ` · reports_to=\`${hero}\`` : ""}`
+    : `**Claude Hub · reply** · \`${id}\`${hero ? ` · reports_to=\`${hero}\`` : ""}`;
+  return {
+    title: failed ? `Claude Hub failed · ${id}` : `Claude Hub · ${id}`,
+    text: [head, "", shown || "(empty)", ""].join("\n"),
+  };
+}
+
 async function main() {
   const payload = await loadPayload();
   const id = String(payload.id || "").trim();
@@ -53,45 +85,54 @@ async function main() {
   }
 
   const job = markReady(id, payload);
-  const status = job.status;
-  console.log(JSON.stringify({ ok: true, id, status, wake: "marked" }));
+  console.log(JSON.stringify({ ok: true, id, status: job.status, wake: "marked" }));
 
   if (process.env.GOTCHIBOT_CLAUDE_WAKE === "0") {
-    console.error("wake: OpenClaw inject disabled (GOTCHIBOT_CLAUDE_WAKE=0)");
+    console.error("wake: chat inject disabled (GOTCHIBOT_CLAUDE_WAKE=0)");
     return;
   }
 
-  const orch =
-    process.env.GOTCHIBOT_ORCH_ID ||
-    process.env.GOTCHIBOT_OPENCLAW_ORCH_ID ||
-    "owned-954";
-  const msg =
-    status === "failed"
-      ? `Claude job ${id} failed. Call MCP claude_collect with {"id":"${id}"} to read the error, then retry with claude_submit or hub_bridge_ensure if needed. Do not block waiting.`
-      : `Claude job ${id} is ready. Call MCP claude_collect with {"id":"${id}"} and continue the task using that reply. Do not re-submit the same prompt.`;
+  const fresh = getJob(id) || job;
+  const { title, text } = formatBody(fresh, payload);
 
-  if (!existsSync(FLEET)) {
-    console.error("wake: openclaw-fleet.mjs missing — job marked only");
-    return;
-  }
-
-  const r = spawnSync(
-    process.execPath,
-    [FLEET, "chat", "--agent", orch, msg],
-    {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: process.env,
-      timeout: 90_000,
-      maxBuffer: 2 * 1024 * 1024,
-    },
-  );
-  if (r.status === 0) {
-    console.error(`wake: injected into OpenClaw agent ${orch}`);
-  } else {
+  // 1) Primary: Desk OpenCode chat (no model quota)
+  const oc = injectOpenCodeChat({ text, title, jobId: id });
+  if (oc.ok) {
     console.error(
-      `wake: OpenClaw inject skipped/failed (job still ${status}): ${(r.stderr || r.stdout || "").trim().slice(0, 200)}`,
+      `wake: injected Claude reply into OpenCode chat session=${oc.sessionId} msg=${oc.messageId}`,
     );
+  } else {
+    console.error(`wake: OpenCode inject failed: ${oc.reason}`);
+  }
+
+  // 2) Optional OpenClaw wake (may fail on quota / config — non-fatal)
+  if (process.env.GOTCHIBOT_CLAUDE_WAKE_OPENCLAW === "1" && existsSync(FLEET)) {
+    const orch =
+      process.env.GOTCHIBOT_ORCH_ID ||
+      process.env.GOTCHIBOT_OPENCLAW_ORCH_ID ||
+      "owned-954";
+    const r = spawnSync(
+      process.execPath,
+      [FLEET, "chat", "--agent", orch, text],
+      {
+        cwd: ROOT,
+        encoding: "utf8",
+        env: process.env,
+        timeout: 60_000,
+        maxBuffer: 2 * 1024 * 1024,
+      },
+    );
+    if (r.status === 0) {
+      console.error(`wake: also injected into OpenClaw agent=${orch}`);
+    } else {
+      console.error(
+        `wake: OpenClaw inject skipped: ${(r.stderr || r.stdout || "").trim().slice(0, 160)}`,
+      );
+    }
+  }
+
+  if (!oc.ok) {
+    console.error("wake: reply stored — use claude_collect if chat did not update");
   }
 }
 

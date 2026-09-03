@@ -104,6 +104,24 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "hub_monitor",
+    description:
+      "Hub dashboard / agent truth board (OpenClaw gateway + VS Code bridge + Claude jobs + sessions). Use when Desk shows agents running but Hub Claude panes are idle.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        open: {
+          type: "boolean",
+          description: "If true, create/attach gotchibot-hubmon tmux session",
+        },
+        dashboard: {
+          type: "boolean",
+          description: "If true, return OpenClaw+bridge dashboard only",
+        },
+      },
+    },
+  },
 ];
 
 function handle(msg) {
@@ -137,6 +155,22 @@ function handle(msg) {
       else if (name === "hub_claude_pane_init") {
         const extra = args.check ? ["--check"] : [];
         text = runOps("claude-pane-init", extra);
+      } else if (name === "hub_monitor") {
+        const mon = join(ROOT, "scripts/hub-agent-monitor.mjs");
+        const argv = args.open
+          ? ["open", "--force"]
+          : args.dashboard
+            ? ["dashboard", "--json"]
+            : ["snapshot", "--json"];
+        const r = spawnSync(process.execPath, [mon, ...argv], {
+          cwd: ROOT,
+          encoding: "utf8",
+          env: process.env,
+          timeout: 30_000,
+          maxBuffer: 4 * 1024 * 1024,
+        });
+        text = String(r.stdout || "").trim() || String(r.stderr || "").trim();
+        if (r.status !== 0) throw new Error(text || `hub_monitor exit ${r.status}`);
       } else return replyError(id, -32601, `unknown tool: ${name}`);
       return reply(id, { content: [{ type: "text", text }], isError: false });
     } catch (e) {

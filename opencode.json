@@ -628,6 +628,14 @@
       ],
       "enabled": true,
       "timeout": 120000
+    },
+    "gotchibot-meet": {
+      "type": "local",
+      "command": [
+        "./scripts/mcp/gotchibot-meet.sh"
+      ],
+      "enabled": true,
+      "timeout": 600000
     }
   },
   "permission": {

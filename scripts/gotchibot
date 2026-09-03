@@ -33,7 +33,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot switch [n|id]         list agents, or switch avatar+direct chat (/switch)
   gotchibot focus <n|id>          pin avatar + SUB chat focus
   gotchibot cockpit               mint / avatar / Settings (/cockpit)
-  gotchibot meet start|open|invite|status|say|end   shared meeting room (/meet)
+  gotchibot meet start|open|invite|status|say|morning|colabo|end   meeting room (/meet)
   gotchibot layout-check [check|desk|meet]  verify tmux panes (non-destructive)
   gotchibot orch                  restore orchestrator focus (/orch)
   gotchibot openclaw sync|list|status|chat|install|point  OpenClaw fleet + CLI
@@ -74,7 +74,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot comms-cron-deploy         install WBTC daily comms cron on iMac
   gotchibot commsies-imac-deploy      keep Commsies (:3002 + Ollama) alive on iMac
   gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
-  gotchibot hub [status|restart-gateway|doctor|bridge-info|…]  Hub monitor + OpenClaw restart SOP
+  gotchibot hub [status|dashboard|monitor|restart-gateway|doctor|bridge-…]  Hub SOP + OC/bridge dashboard
   gotchibot bridge|bridge-prompt [--host auto|network|imac|local] [--wait] "…"
                                   Desk→Hub Claude VS Code; reply on Desk
   gotchibot vscode-open|vscode-ensure [--check]  open/focus Hub VS Code on GotchiBot (code -r)
@@ -605,11 +605,37 @@ case "$cmd" in
         shift || true
         abra_or_node "$ROOT/scripts/hub-ops.mjs" "$sub" "$@"
         ;;
+      monitor|hubmon|agent-monitor)
+        shift || true
+        if [ $# -eq 0 ]; then
+          exec node "$ROOT/scripts/hub-agent-monitor.mjs" open
+        elif [[ "${1:-}" == --* ]]; then
+          exec node "$ROOT/scripts/hub-agent-monitor.mjs" open "$@"
+        else
+          exec node "$ROOT/scripts/hub-agent-monitor.mjs" "$@"
+        fi
+        ;;
+      dashboard)
+        shift || true
+        exec node "$ROOT/scripts/hub-agent-monitor.mjs" dashboard "$@"
+        ;;
       *)
         # pass-through flags to hub-status (e.g. hub --json)
         abra_or_node "$ROOT/scripts/hub-status.mjs" "$@"
         ;;
     esac
+    ;;
+  hubmon|agent-monitor)
+    if [ $# -eq 0 ]; then
+      exec node "$ROOT/scripts/hub-agent-monitor.mjs" open
+    elif [[ "${1:-}" == --* ]]; then
+      exec node "$ROOT/scripts/hub-agent-monitor.mjs" open "$@"
+    else
+      exec node "$ROOT/scripts/hub-agent-monitor.mjs" "$@"
+    fi
+    ;;
+  hub-dashboard)
+    exec node "$ROOT/scripts/hub-agent-monitor.mjs" dashboard "$@"
     ;;
   hub-ops)
     abra_or_node "$ROOT/scripts/hub-ops.mjs" "$@"

@@ -192,6 +192,34 @@ function sayToRoom(msg) {
   });
 }
 
+/** morning-recap / colabo helpers (async, redraw on finish). */
+function runMeetHelper(argv) {
+  if (sendBusy) return;
+  sendBusy = true;
+  sendError = null;
+  startSendTimer();
+  draw();
+  const child = spawn(process.execPath, [`${ROOT}/scripts/gotchi-meet.mjs`, ...argv], {
+    cwd: ROOT,
+    stdio: "ignore",
+    env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1" },
+  });
+  child.on("error", () => {
+    sendBusy = false;
+    stopSendTimer();
+    sendError = "helper failed";
+    pokeChannel();
+    draw();
+  });
+  child.on("close", (code) => {
+    sendBusy = false;
+    stopSendTimer();
+    pokeChannel();
+    if (code !== 0) sendError = "helper failed";
+    draw();
+  });
+}
+
 function requestLeave(kind) {
   const mode = kind === "chat" ? "chat" : "end";
   try {
@@ -422,6 +450,19 @@ class Prompter {
     }
     if (line === "/next" || line === ".") {
       pageNext();
+      return "redraw";
+    }
+    if (line === "/recap-next" || line === "/agent-next") {
+      runMeetHelper(["morning", "next"]);
+      return "redraw";
+    }
+    if (line === "/recap-present") {
+      runMeetHelper(["morning", "present"]);
+      return "redraw";
+    }
+    if (line.startsWith("/colabo ") || line.startsWith("/collabo ")) {
+      const prompt = line.replace(/^\/col+abo\s+/i, "").trim();
+      if (prompt) runMeetHelper(["colabo", prompt]);
       return "redraw";
     }
     this.history.push(line);

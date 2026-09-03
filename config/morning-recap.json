@@ -1,0 +1,36 @@
+{
+  "$comment": "Morning meeting recap — each agent runs these checks then submits a concise report to the chair. Edit freely; skill morning-recap documents the shape.",
+  "title": "Morning recap",
+  "defaultTasks": [
+    "What did you finish yesterday (or last session)? Cite paths/PRs if any.",
+    "What is blocked or waiting on Julius / another agent?",
+    "What will you do today if no new goals are set?",
+    "Any infra/alerts (cron, bridge, trader, tunnel) you own?"
+  ],
+  "byHero": {
+    "starter-link-h1-1": [
+      "Gotchi-Trader desk health: run ./scripts/gotchi-trader-desk.mjs monitor --json if reachable; one-line status.",
+      "Paper PnL / alerts since last recap.",
+      "What you finished yesterday on trader.",
+      "Today's default trader goals if Julius sets none."
+    ],
+    "owned-22899": [
+      "Comms / cron status you own.",
+      "Yesterday's comms outcomes.",
+      "Blockers.",
+      "Today's default comms goals."
+    ],
+    "starter-yfi-h1-1": [
+      "Infra / monitor items you own.",
+      "Yesterday's infra work.",
+      "Blockers.",
+      "Today's default infra goals."
+    ]
+  },
+  "byRole": {
+    "trader-desk": ["Trader health", "PnL", "Yesterday", "Today default"],
+    "infra": ["Infra health", "Yesterday", "Blockers", "Today default"]
+  },
+  "reportMaxWords": 180,
+  "presentPauseHint": "Ask Julius questions for this agent in the meet room (@HERO …). When done: /recap-next"
+}

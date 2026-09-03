@@ -37,8 +37,34 @@ Bar line: `OC✗` = OpenClaw gateway unreachable. `tun✓`/`tun✗` = subgraph t
 | Subgraph / tunnel down | `abra run gotchibot -- ./scripts/gotchibot tunnel status` | `… tunnel restart` |
 | Unhealthy Docker (monolith/proxy) | Load skill **infra-recover** | Do not recreate volumes |
 | Sync code to Hub | `abra run gotchibot -- ./scripts/gotchibot remote-push` | — |
+| Desk says agents running but Hub Claude pane idle | `./scripts/gotchibot hub dashboard` then `bridge-ensure` | Tiled board: `./scripts/gotchibot hub monitor --force` → `tmux attach -t gotchibot-hubmon` |
 | Full OpenClaw redeploy | `abra run gotchibot -- ./scripts/gotchibot remote-openclaw` | Heavy; prefer `restart-gateway` first |
 | Hub totally unreachable (SSH itself down, not just the gateway) | `abra run gotchibot -- ./scripts/gotchibot hub status --json` (look for `"ssh":{"ok":false}`) | Nothing else in this SOP can run without SSH — every command here goes over `abra run gotchibot -- …`. Tell Julius: check the iMac is powered on and Tailscale is connected. Do not attempt `restart-gateway` / `bridge-ensure` / `doctor` until SSH is back |
+
+## Hub dashboard (OpenClaw + VS Code bridge)
+
+```bash
+./scripts/gotchibot hub dashboard          # OC gateway + bridge + receiver tiles
+./scripts/gotchibot hub status             # full Hub · SSH/OC/bridge/docker bar
+./scripts/gotchibot hub monitor --force    # recreate tiled tmux gotchibot-hubmon
+tmux attach -t gotchibot-hubmon
+```
+
+Tiles always include **OPENCLAW GATEWAY** and **VS CODE BRIDGE** so Desk
+"running" status cannot hide a dead Hub.
+
+## Agent truth board (tiled tmux — not chat layout)
+
+Desk OpenCode can show agents “running” while Hub Claude panes never receive
+prompts. When Julius reports empty Hub Claude UI:
+
+```bash
+./scripts/gotchibot hub dashboard
+abra run gotchibot -- ./scripts/gotchibot hub bridge-ensure   # if bridge ✗
+abra run gotchibot -- ./scripts/gotchibot hub restart-gateway # if OC✗
+```
+
+This is a **separate** tmux session from the gotchibot chat/avatar layout.
 
 ## Restart OpenClaw gateway (exact)
 
@@ -242,6 +268,7 @@ If MCP `gotchibot-hub` is loaded:
 | `hub_bridge_ensure` | `hub-ops bridge-ensure` (receiver + bridge + restart) |
 | `hub_bridge_info` | `hub-ops bridge-info` (paths/config; no globalStorage folder) |
 | `hub_claude_pane_init` | `claude-pane-init` (CLAUDE.md + @gotchibot-proxy) |
+| `hub_monitor` | agent truth board snapshot / open `gotchibot-hubmon` |
 
 Prefer named MCP tools when available; otherwise Bash the commands above.
 
