@@ -393,7 +393,10 @@ function cmdInfo(args) {
   if (!srcAbs || !existsSync(srcAbs)) fail("info", `Source not found or not allowed: ${src}`);
   requireAsepriteExt(srcAbs);
 
-  const r = runAseprite(["-b", srcAbs, "--list-layers", "--list-tags"]);
+  // --list-layers/--list-tags apply to sprites loaded *after* them, so the
+  // flags have to precede the file. With the file first Aseprite exits 0 and
+  // prints nothing, which this reported as a successful info with empty log.
+  const r = runAseprite(["-b", "--list-layers", "--list-tags", srcAbs]);
   if (r.status !== 0) fail("info", (r.stderr || r.stdout || "info failed").trim());
   ok("info", {
     source: relative(ROOT, srcAbs),
