@@ -184,7 +184,7 @@ async function main() {
 
     // Fleet sync on iMac (cartridge heroes → ~/.openclaw/gotchibot-fleet.list.json5).
     console.log("→ openclaw-fleet sync on iMac…");
-    const syncCmd = `export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.openclaw/bin:$PATH"; export GOTCHIBOT_OPENCLAW_WORKSPACE="/Users/juliuswong/Dev/GotchiBot"; cd ${shellQuote(gotchiDir)} && node scripts/openclaw-fleet.mjs sync`;
+    const syncCmd = `export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.openclaw/bin:$PATH"; export GOTCHIBOT_OPENCLAW_WORKSPACE=${shellQuote(gotchiDir)}; cd ${shellQuote(gotchiDir)} && node scripts/openclaw-fleet.mjs sync`;
     let r = runSsh(cfg, keyMat.path, syncCmd, { stdio: "pipe" });
     if (r.stdout) process.stdout.write(r.stdout);
     if (r.stderr) process.stderr.write(r.stderr);

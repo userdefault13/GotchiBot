@@ -2,8 +2,8 @@
   "$comment": "GotchiBot Aseprite CLI — path confinement for batch exports and new .aseprite files.",
   "bin": "${ASEPRITE_BIN:-aseprite}",
   "extensions": {
-    "svgImporter": "${GOTCHIBOT_SVG_IMPORTER:-/Users/juliuswong/Dev/aesprite-svgimporter}",
-    "svgExporter": "${GOTCHIBOT_SVG_EXPORTER:-/Users/juliuswong/Dev/Aseprite-SVGexporter}"
+    "svgImporter": "${GOTCHIBOT_SVG_IMPORTER:-${HOME}/Dev/aesprite-svgimporter}",
+    "svgExporter": "${GOTCHIBOT_SVG_EXPORTER:-${HOME}/Dev/Aseprite-SVGexporter}"
   },
   "allowReadRoots": [".", "~/Downloads", "~/Dev"],
   "allowWriteRoots": [".", "build", "assets", "output", "sessions", "~/Downloads", "~/Dev"],

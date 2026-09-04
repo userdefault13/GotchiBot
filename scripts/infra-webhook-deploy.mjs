@@ -32,7 +32,7 @@ function main() {
 # infra-webhook startup script
 set -e
 cd "${cfg.dir}"
-export PATH="/usr/local/bin:/opt/homebrew/bin:/Users/juliuswong/.nvm/versions/node/current/bin:\$PATH"
+export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.nvm/versions/node/current/bin:\$PATH"
 export INFRA_WEBHOOK_TOKEN="${token}"
 export INFRA_WEBHOOK_PORT=8788
 mkdir -p "${cfg.dir}/sessions/infra-logs"
@@ -129,7 +129,7 @@ pgrep -fl "cloudflared tunnel" || echo "cloudflared restart failed"
   }
 
   // --- 4. Run the webhook startup script via ssh -f (forks to background on remote) ---
-  const runStartup = `ssh -f -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i ${key.path} ${cfg.user}@${cfg.host} "cd ${cfg.dir} && export PATH=\"/usr/local/bin:/opt/homebrew/bin:/Users/juliuswong/.nvm/versions/node/current/bin:\$PATH\" && export INFRA_WEBHOOK_TOKEN=\"${token}\" && export INFRA_WEBHOOK_PORT=8788 && mkdir -p sessions/infra-logs && pkill -f \"infra-webhook.mjs\" 2>/dev/null || true && nohup /usr/local/bin/node scripts/infra-webhook.mjs >> sessions/infra-logs/webhook.out.log 2>&1 & disown && sleep 2"`;
+  const runStartup = `ssh -f -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i ${key.path} ${cfg.user}@${cfg.host} "cd ${cfg.dir} && export PATH=\"/usr/local/bin:/opt/homebrew/bin:$HOME/.nvm/versions/node/current/bin:\$PATH\" && export INFRA_WEBHOOK_TOKEN=\"${token}\" && export INFRA_WEBHOOK_PORT=8788 && mkdir -p sessions/infra-logs && pkill -f \"infra-webhook.mjs\" 2>/dev/null || true && nohup /usr/local/bin/node scripts/infra-webhook.mjs >> sessions/infra-logs/webhook.out.log 2>&1 & disown && sleep 2"`;
 
   console.error("[deploy] starting webhook via ssh -f...");
   const r4 = spawnSync("bash", ["-lc", runStartup], { stdio: "inherit", encoding: "utf8" });

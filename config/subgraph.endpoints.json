@@ -1,5 +1,5 @@
 {
-  "$comment": "Gotchi data layer — reuses AarcadeGh-t's home Cloudflare tunnel (UserDefaultTunnel on the iMac). No local indexers needed.",
+  "$comment": "Gotchi data layer \u2014 reuses AarcadeGh-t's home Cloudflare tunnel (UserDefaultTunnel on the iMac). No local indexers needed.",
   "gateway": "https://subgraph.aarcadeghst.com",
   "subgraphs": {
     "aavegotchi-core-base": {
@@ -23,7 +23,7 @@
     "header": "X-Subgraph-Proxy-Key",
     "installTokenHeader": "X-GotchiBot-Install-Token",
     "soloApiBase": "https://www.aarcadeghst.com",
-    "note": "Solo: GOTCHIBOT_INFRA_TOKEN → www /api/subgraph/* and /api/cartridge-sim (see config/infra.auth.json). Legacy operator: GOTCHIBOT_SUBGRAPH_PROXY_KEY / AARCADE_GOTCHIBOT_SERVICE_SECRET in abra. Tunnel subgraph.aarcadeghst.com rejects anonymous GraphQL when SUBGRAPH_PROXY_ENFORCE=hard."
+    "note": "Solo: GOTCHIBOT_INFRA_TOKEN \u2192 www /api/subgraph/* and /api/cartridge-sim (see config/infra.auth.json). Legacy operator: GOTCHIBOT_SUBGRAPH_PROXY_KEY / AARCADE_GOTCHIBOT_SERVICE_SECRET in abra. Tunnel subgraph.aarcadeghst.com rejects anonymous GraphQL when SUBGRAPH_PROXY_ENFORCE=hard."
   },
   "health": {
     "status": "verified 2026-08-25",
@@ -31,11 +31,11 @@
     "svgQuery": "__typename query_root ok"
   },
   "identityLayer": {
-    "$comment": "cartridgeSim is the Vercel origin GotchiBot uses (service key). Vercel /api/cartridge-sim thin-relays to cartridgeSimProxy → iMac 127.0.0.1:8791 (aarcade-cartridge-sim). Do not point GotchiBot writes at iMac :3010 (lore API, sim disabled). Direct cartridgeSimProxy needs X-Cartridge-Sim-Proxy-Key, which abra gotchibot does not inject. Override via GOTCHIBOT_CARTRIDGE_URL / AARCADE_SIM_URL / CARTRIDGE_SIM.",
+    "$comment": "cartridgeSim is the Vercel origin GotchiBot uses (service key). Vercel /api/cartridge-sim thin-relays to cartridgeSimProxy \u2192 iMac 127.0.0.1:8791 (aarcade-cartridge-sim). Do not point GotchiBot writes at iMac :3010 (lore API, sim disabled). Direct cartridgeSimProxy needs X-Cartridge-Sim-Proxy-Key, which abra gotchibot does not inject. Override via GOTCHIBOT_CARTRIDGE_URL / AARCADE_SIM_URL / CARTRIDGE_SIM.",
     "cartridgeSim": "https://www.aarcadeghst.com",
     "cartridgeSimProxy": "https://cartridge.aarcadeghst.com",
     "mongoProxy": "https://mongo-api.aarcadeghst.com",
     "homeCdn": "https://cdn.aarcadeghst.com"
   },
-  "lanNote": "iMac LAN ports are not directly reachable from the MBP (firewall/AP isolation) — always go through the tunnel hostnames, never http://192.168.1.162:*"
+  "lanNote": "Hub LAN ports may not be reachable across subnets (firewall / AP isolation) \u2014 prefer the tunnel hostnames."
 }

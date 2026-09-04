@@ -14,6 +14,7 @@ import {
   isHubMachine,
   inDocker,
   resolveClaudeHostMode,
+  hubReceiverUrl,
 } from "./claude-bridge-role.mjs";
 import { createPending, markFailed } from "./claude-jobs.mjs";
 import { prefixProxyPrompt, runPaneInit } from "./claude-pane-init.mjs";
@@ -46,7 +47,7 @@ const env = { ...process.env };
 env.GOTCHIBOT_BRIDGE_URL = env.GOTCHIBOT_BRIDGE_URL || hubBridgeHttpUrl();
 env.GOTCHIBOT_CLAUDE_JOB_ID = id;
 if (inDocker() && !env.GOTCHIBOT_RECEIVER_URL) {
-  env.GOTCHIBOT_RECEIVER_URL = "http://100.107.115.39:45679";
+  env.GOTCHIBOT_RECEIVER_URL = hubReceiverUrl();
 }
 const hostMode = resolveClaudeHostMode(env.GOTCHIBOT_CLAUDE_HOST);
 

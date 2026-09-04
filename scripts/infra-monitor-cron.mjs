@@ -31,6 +31,7 @@ import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOG_DIR = process.env.INFRA_LOG_DIR || `${ROOT}/sessions/infra-logs`;
@@ -41,7 +42,7 @@ const asJson = process.argv.includes("--json");
 
 // Augmented PATH so docker and curl resolve under cron / abra run, where the
 // default PATH is minimal. Uses system docker (no OrbStack dependency).
-const HOME = process.env.HOME || "/Users/juliuswong";
+const HOME = process.env.HOME || homedir();
 const EXTRA_PATH = [
   "/usr/local/bin",
   "/opt/homebrew/bin",

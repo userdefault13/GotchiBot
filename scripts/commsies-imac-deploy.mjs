@@ -20,6 +20,8 @@
  */
 
 import { assertRemoteReady, materializeKey, runSsh } from "./remote-lib.mjs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const PORT = process.env.COMMSIES_PORT || "3003";
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
@@ -34,7 +36,7 @@ function main() {
   const key = materializeKey(cfg.key);
   const commsiesDir =
     process.env.COMMSIES_DIR ||
-    (cfg.user ? `/Users/${cfg.user}/Dev/commsies` : "/Users/juliuswong/Dev/commsies");
+    (cfg.user ? `/Users/${cfg.user}/Dev/commsies` : join(homedir(), "Dev", "commsies"));
   const logDir = `${commsiesDir}/sessions`;
   const watchdogPath = `${commsiesDir}/scripts/imac-watchdog.sh`;
 

@@ -3,6 +3,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { writeFileSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -34,7 +35,7 @@ function openBrowser(url) {
 }
 
 function castBin() {
-  return process.env.CAST_BIN ?? "/Users/juliuswong/.foundry/bin/cast";
+  return process.env.CAST_BIN ?? resolve(homedir(), ".foundry/bin/cast");
 }
 
 function freePort() {

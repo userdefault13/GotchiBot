@@ -162,14 +162,24 @@ function subSystemPrompt(hero, displayName) {
   return lines.join("\n");
 }
 
+/**
+ * Normalise a lowercase `~/dev/` checkout to `~/Dev/`, so the workspace path
+ * matches the Docker bind mount regardless of which spelling the repo sits
+ * under. Home-relative rather than hardcoded to one machine's user.
+ */
+function normalizeDevCase(p) {
+  const home = homedir();
+  return p.startsWith(`${home}/dev/`) ? `${home}/Dev/${p.slice(home.length + 5)}` : p;
+}
+
 /** Canonical workspace path — must match Docker bind mount on iMac (capital Dev). */
 export function fleetWorkspace() {
   const override = process.env.GOTCHIBOT_OPENCLAW_WORKSPACE?.trim();
   if (override) return override;
   try {
-    return realpathSync(ROOT).replace("/Users/juliuswong/dev/", "/Users/juliuswong/Dev/");
+    return normalizeDevCase(realpathSync(ROOT));
   } catch {
-    return String(ROOT).replace("/Users/juliuswong/dev/", "/Users/juliuswong/Dev/");
+    return normalizeDevCase(String(ROOT));
   }
 }
 

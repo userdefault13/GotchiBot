@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import {
   hubBridgeHttpUrl,
   resolveClaudeHostMode,
+  hubReceiverUrl,
 } from "../claude-bridge-role.mjs";
 import { collectJob, listJobs } from "../claude-jobs.mjs";
 
@@ -41,7 +42,7 @@ function bridgeEnv() {
     env.GOTCHIBOT_BRIDGE_URL =
       env.GOTCHIBOT_BRIDGE_URL || "http://host.docker.internal:45678/prompt";
     env.GOTCHIBOT_RECEIVER_URL =
-      env.GOTCHIBOT_RECEIVER_URL || "http://100.107.115.39:45679";
+      env.GOTCHIBOT_RECEIVER_URL || hubReceiverUrl();
     env.GOTCHIBOT_CLAUDE_HOST = env.GOTCHIBOT_CLAUDE_HOST || "local";
     delete env.SSH_PRIVATE_KEY;
   } else {
