@@ -169,6 +169,14 @@ async function build() {
   };
 
   mkdirSync(SESSIONS, { recursive: true });
+  // Only rewrite when something meaningful changed. A fresh `at` on every build
+  // made the avatar pane see "roster moved" each tick and repaint the whole pane.
+  const prev = readJson(ROSTER_CACHE, null);
+  const stable = (o) => (o ? JSON.stringify({ ...o, at: null }) : null);
+  if (prev && stable(prev) === stable(payload)) {
+    payload.at = prev.at || payload.at;
+    return payload;
+  }
   writeFileSync(ROSTER_CACHE, `${JSON.stringify(payload, null, 2)}\n`);
   return payload;
 }

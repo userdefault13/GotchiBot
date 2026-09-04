@@ -161,6 +161,14 @@ function writeLocalCache(heroId, status, extra = {}) {
     sourceTokenId: extra.sourceTokenId || prev.sourceTokenId || null,
     at: new Date().toISOString(),
   };
+  // A no-op sync must not touch the file: a fresh `at` alone used to churn the
+  // cache every few seconds, which the avatar pane read as "state moved" and
+  // repainted on. Keep the previous `at` when nothing else changed.
+  const stable = (o) => JSON.stringify({ ...o, at: null });
+  if (stable(prev) === stable(cache[heroId])) {
+    if (prev.at) cache[heroId].at = prev.at;
+    if (existsSync(CACHE)) return;
+  }
   writeFileSync(CACHE, `${JSON.stringify(cache, null, 2)}\n`);
 }
 

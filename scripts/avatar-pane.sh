@@ -16,6 +16,66 @@ mkdir -p "$SESSIONS"
 ART_CACHE=""
 ART_CACHE_STATUS=""
 
+# ---------------------------------------------------------------------------
+# Memoization + state fingerprint.
+#
+# The pane used to re-derive everything on a timer: ~10-14 node spawns per
+# repaint (roster parse, collateral-resolve and gotchi-art per tile). Renders
+# are now driven by state — a cheap stat/pgrep fingerprint of every input that
+# can change the pane — and derived values are cached for the life of one
+# fingerprint. USR1 (poke-avatar.sh) still forces an immediate repaint.
+# ---------------------------------------------------------------------------
+MEMO_KEYS=""
+MEMO_VAR=""
+LAST_FP=""
+
+memo_reset() {
+  local v
+  for v in $MEMO_KEYS; do unset "$v"; done
+  MEMO_KEYS=""
+  unset MEMO_ORCH_ID MEMO_FOCUS_HERO
+}
+
+memo_var() { MEMO_VAR="MEMO_${1//[^A-Za-z0-9]/_}"; }
+
+# memo_call <outvar> <key> <cmd> [args...] — run cmd once per fingerprint epoch.
+memo_call() {
+  local out="$1" key="$2"
+  shift 2
+  memo_var "$key"
+  local var="$MEMO_VAR" val
+  if eval "[ -n \"\${$var+x}\" ]"; then
+    eval "$out=\"\$$var\""
+    return 0
+  fi
+  val="$("$@")"
+  eval "$var=\$val"
+  MEMO_KEYS="$MEMO_KEYS $var"
+  eval "$out=\$val"
+}
+
+# Everything that can change what the pane shows, without spawning node.
+#
+# Hashes file *contents*, not mtimes: several writers rewrite these caches on a
+# heartbeat with byte-identical state, and an mtime check would read every one
+# of those as a change and repaint. The `at` timestamps are stripped for the
+# same reason. .avatar-roster.stamp is deliberately excluded — it is a pure
+# heartbeat, and poke-avatar.sh already sends USR1 alongside it.
+state_fingerprint() {
+  local sig live
+  sig="$(cat "$PIN" "$FOCUS" "$ROSTER_CACHE" "$PAGE_FILE" \
+    "$SESSIONS/.hero-agent-state.json" "$SESSIONS/.focus-list.json" \
+    "$SESSIONS/.onboarding.json" "$SESSIONS"/s*/state.env 2>/dev/null \
+    | sed 's/"at": *"[^"]*"//g' | cksum | tr -d ' ')"
+  # active_status also consults a live opencode TUI, which touches no file.
+  if pgrep -f 'opencode.*--agent gotchi|opencode --agent gotchi' >/dev/null 2>&1; then
+    live=1
+  else
+    live=0
+  fi
+  printf '%s|%s|%s|%s|%s\n' "$sig" "$live" "$(pane_width)" "$(pane_height)" "${GOTCHIBOT_AVATAR_HERO:-}"
+}
+
 PAGE=0
 NPAGES=1
 CTRL_ROW=-1
@@ -372,10 +432,15 @@ pane_width() {
   tput cols 2>/dev/null || echo 40
 }
 
+RENDER_MAX_ROW=-1
+LAST_MAX_ROW=-1
+
 put_line() {
   local row="$1" text="$2"
   printf '\033[%d;1H\033[K' "$((row + 1))"
   printf '%s' "$text"
+  [ "$row" -gt "$RENDER_MAX_ROW" ] && RENDER_MAX_ROW="$row"
+  return 0
 }
 
 role_label() {
@@ -391,13 +456,18 @@ role_label() {
 }
 
 orch_id() {
-  node -e '
+  if [ -n "${MEMO_ORCH_ID+x}" ]; then
+    printf '%s\n' "$MEMO_ORCH_ID"
+    return 0
+  fi
+  MEMO_ORCH_ID="$(node -e '
     const fs=require("fs");
     try {
       const o=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
       if (o.orchestratorHeroId) console.log(o.orchestratorHeroId);
     } catch {}
-  ' "$SESSIONS/.onboarding.json" 2>/dev/null || true
+  ' "$SESSIONS/.onboarding.json" 2>/dev/null || true)"
+  printf '%s\n' "$MEMO_ORCH_ID"
 }
 
 focus_hero() {
@@ -407,14 +477,19 @@ focus_hero() {
     printf '%s\n' "$g"
     return
   fi
+  if [ -n "${MEMO_FOCUS_HERO+x}" ]; then
+    printf '%s\n' "$MEMO_FOCUS_HERO"
+    return 0
+  fi
   [ -f "$FOCUS" ] || return 0
-  node -e '
+  MEMO_FOCUS_HERO="$(node -e '
     const fs=require("fs");
     try {
       const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
       if (j.mode==="sub" && j.heroId) console.log(j.heroId);
     } catch {}
-  ' "$FOCUS" 2>/dev/null || true
+  ' "$FOCUS" 2>/dev/null || true)"
+  printf '%s\n' "$MEMO_FOCUS_HERO"
 }
 
 refresh_roster() {
@@ -440,6 +515,20 @@ refresh_roster_async() {
     # Stamp so the watch loop redraws without USR1 storms.
     date -u +%Y-%m-%dT%H:%M:%SZ > "$SESSIONS/.avatar-roster.stamp" 2>/dev/null || true
   ) &
+}
+
+# Roster JSON -> "id\tstatus\tsvg\tcollateral\thaunt" rows.
+roster_ids() {
+  printf '%s' "${1:-}" | node -e '
+    let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
+      try {
+        const j=JSON.parse(d);
+        for (const o of (j.others||[])) {
+          console.log([o.id, o.status, o.svg||"", o.collateral||"", o.hauntId||""].join("\t"));
+        }
+      } catch {}
+    });
+  ' 2>/dev/null || true
 }
 
 load_roster_json() {
@@ -721,16 +810,33 @@ render_main_art() {
   fi
 }
 
+# Paint wrapper. No \033[J and no blank-every-row pass: put_line erases each
+# row it writes, and only rows left over from the previous frame get cleared,
+# so an unchanged pane never flashes. Wrapped in synchronized output (DECSET
+# 2026) so terminals that support it swap the frame in one go.
 render() {
+  local status="${1:-idle}" r ph
+  RENDER_MAX_ROW=-1
+  printf '\033[?2026h'
+  render_body "$status" || true
+  ph="$(pane_height)"
+  for ((r = RENDER_MAX_ROW + 1; r <= LAST_MAX_ROW && r < ph; r++)); do
+    printf '\033[%d;1H\033[K' "$((r + 1))"
+  done
+  LAST_MAX_ROW="$RENDER_MAX_ROW"
+  printf '\033[1;1H\033[?2026l'
+}
+
+render_body() {
   local status="$1"
   local cols pane_h row=0 line
   cols="$(pane_width)"
   pane_h="$(pane_height)"
 
-  printf '\033[H\033[J'
-  for ((line = 0; line < pane_h; line++)); do
-    put_line "$line" ""
-  done
+  # Pre-warm the node-backed lookups in this (parent) shell so the command
+  # substitutions below inherit them instead of re-spawning node each time.
+  orch_id >/dev/null || true
+  focus_hero >/dev/null || true
 
   if [ "$cols" -lt 20 ]; then
     put_line 0 "narrow"
@@ -757,7 +863,8 @@ render() {
   # Pinned header from row 0 — orch face never moves. Pagination swaps the 3-col row.
   # (main art + ── orchestrator ── caption + "other cAavegotchis" label)
   local main
-  main="$(render_main_art "$status" "$cols" "$main_budget")"
+  memo_call main "art|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget" \
+    render_main_art "$status" "$cols" "$main_budget"
 
   # Framed orch (art + caption) as one block: max vis width → same left_pad
   # on every line so the box stays aligned. Do not clip the face.
@@ -817,16 +924,7 @@ render() {
   roster_raw="$(load_roster_json)"
 
   local ids
-  ids="$(printf '%s' "$roster_raw" | node -e '
-    let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
-      try {
-        const j=JSON.parse(d);
-        for (const o of (j.others||[])) {
-          console.log([o.id, o.status, o.svg||"", o.collateral||"", o.hauntId||""].join("\t"));
-        }
-      } catch {}
-    });
-  ')"
+  memo_call ids "ids" roster_ids "$roster_raw"
 
   if [ -z "$(printf '%s' "$ids" | tr -d '[:space:]')" ]; then
     put_line "$row" $'\033[38;5;240m(none else on cartridge)\033[0m'
@@ -867,13 +965,16 @@ render() {
   mid=""
   right=""
   if [ "$i" -lt "$n_ids" ]; then
-    left="$(cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}")"
+    memo_call left "cell|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|$cell_w|$cell_h" \
+      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}"
   fi
   if [ $((i + 1)) -lt "$n_ids" ]; then
-    mid="$(cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}")"
+    memo_call mid "cell|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|$cell_w|$cell_h" \
+      cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}"
   fi
   if [ $((i + 2)) -lt "$n_ids" ]; then
-    right="$(cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}")"
+    memo_call right "cell|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|$cell_w|$cell_h" \
+      cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}"
   fi
   nlines=$(printf '%s\n' "${left:-${mid:-$right}}" | wc -l | tr -d ' ')
   [ -z "$nlines" ] && nlines=1
@@ -948,7 +1049,10 @@ safe_render() {
   # Nested USR1/WINCH during a node thumb draw blanks the pane; skip.
   [ "${RENDERING:-0}" = 1 ] && return 0
   RENDERING=1
+  memo_reset
   render "$(active_status)" || true
+  # Settle the fingerprint so the next tick does not repaint what we just drew.
+  LAST_FP="$(state_fingerprint)"
   RENDERING=0
 }
 
@@ -963,6 +1067,7 @@ case "${1:-watch}" in
     pin "$2"
     ;;
   once)
+    memo_reset
     refresh_roster
     refresh_roster_async
     render "$(active_status)"
@@ -976,38 +1081,33 @@ case "${1:-watch}" in
     trap 'watch_leave' EXIT
     trap on_usr1 USR1
     trap safe_render WINCH
-    last=""
-    last_cols=""
-    last_role=""
-    last_stamp=""
     read_t="${INTERVAL%%.*}"
     [ -n "$read_t" ] || read_t=8
     watch_enter
     refresh_roster
     render "$(active_status)" || true
+    LAST_FP="$(state_fingerprint)"
     refresh_roster_async
     while true; do
       key=""
       if read -rsn1 -t "$read_t" key; then
         if handle_key "$key"; then
+          memo_reset
           render "$(active_status)" || true
+          LAST_FP="$(state_fingerprint)"
           continue
         fi
         continue
       fi
-      # Timeout (or signal): keep existing roster refresh logic.
+      # Timeout. The tick is a cheap stat/pgrep fingerprint of the pane's
+      # inputs — no node, no repaint — so an idle pane stays perfectly still.
+      # Real changes arrive here, or immediately via USR1 (poke-avatar.sh).
+      fp="$(state_fingerprint)"
+      [ "$fp" = "$LAST_FP" ] && continue
+      memo_reset
       refresh_roster
-      sig="$(active_status)"
-      cols="$(pane_width)"
-      role="$(role_label)"
-      stamp="$(cat "$SESSIONS/.avatar-roster.stamp" 2>/dev/null || true)"
-      if [ "$sig" != "$last" ] || [ "$cols" != "$last_cols" ] || [ "$role" != "$last_role" ] || [ "$stamp" != "$last_stamp" ]; then
-        render "$sig" || true
-        last="$sig"
-        last_cols="$cols"
-        last_role="$role"
-        last_stamp="$stamp"
-      fi
+      render "$(active_status)" || true
+      LAST_FP="$(state_fingerprint)"
     done
     ;;
   *)
