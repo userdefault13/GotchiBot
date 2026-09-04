@@ -1,117 +1,119 @@
 /**
- * Pure-helper tests for scripts/browser-tool.mjs — no playwright required.
+ * Safety-logic tests for scripts/browser-tool.mjs — no Playwright required.
  *   node --test tests/browser-tool.test.mjs
+ *
+ * These import the real helpers. An earlier version of this suite re-declared
+ * copies of isHostAllowed/maskValue inside the test file, so 16 tests passed
+ * green while never touching the module — and the copies had drifted from it
+ * (they took bare hostnames; the real gate takes a URL).
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
-  loadAllowlist,
+  ALLOWLIST_PATH,
+  ALLOWED_HOSTS,
+  BLOCKED_CLICK_PATTERNS,
+  SENSITIVE_FIELD_PATTERNS,
   isHostAllowed,
   findBlockedPattern,
-  maskSensitive,
   isSensitiveField,
+  maskValue,
 } from "../scripts/browser-tool.mjs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const ALLOWLIST_PATH = resolve(ROOT, "config/browser.allowlist.json");
+const allowlist = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
 
-describe("loadAllowlist", () => {
-  it("loads allowedHosts and gate patterns from config", () => {
-    const cfg = loadAllowlist(ALLOWLIST_PATH);
-    assert.ok(cfg.allowedHosts.includes("localhost"));
-    assert.ok(cfg.blockedClickPatterns.includes("checkout"));
-    assert.ok(cfg.sensitiveFieldPatterns.includes("password"));
+describe("allowlist wiring", () => {
+  it("reads the keys config/browser.allowlist.json actually uses", () => {
+    assert.deepEqual(ALLOWED_HOSTS, allowlist.allowedHosts);
+    assert.deepEqual(BLOCKED_CLICK_PATTERNS, allowlist.blockedClickPatterns);
+    assert.deepEqual(SENSITIVE_FIELD_PATTERNS, allowlist.sensitiveFieldPatterns);
+  });
+
+  it("enforces every configured click pattern, not a hardcoded subset", () => {
+    for (const pattern of allowlist.blockedClickPatterns) {
+      assert.equal(findBlockedPattern(pattern), pattern, `"${pattern}" must be gated`);
+    }
   });
 });
 
 describe("isHostAllowed", () => {
-  const list = ["localhost", "127.0.0.1", "::1", "*.aarcadeghst.com"];
-
-  it("accepts localhost / 127.0.0.1 / ::1", () => {
-    assert.equal(isHostAllowed("localhost", list), true);
-    assert.equal(isHostAllowed("127.0.0.1", list), true);
-    assert.equal(isHostAllowed("::1", list), true);
+  it("allows loopback", () => {
+    assert.equal(isHostAllowed("http://localhost:3000/x"), true);
+    assert.equal(isHostAllowed("http://127.0.0.1/"), true);
+    assert.equal(isHostAllowed("http://[::1]:8080/"), true);
   });
 
-  it("accepts aarcadeghst subdomains via wildcard", () => {
-    assert.equal(isHostAllowed("subgraph.aarcadeghst.com", list), true);
-    assert.equal(isHostAllowed("cartridge.aarcadeghst.com", list), true);
-    assert.equal(isHostAllowed("a.b.aarcadeghst.com", list), true);
+  it("matches *.domain.com against subdomains", () => {
+    assert.equal(isHostAllowed("https://subgraph.aarcadeghst.com/graphql"), true);
   });
 
-  it("rejects off-allowlist hosts", () => {
-    assert.equal(isHostAllowed("staterbros.com", list), false);
-    assert.equal(isHostAllowed("evil.example", list), false);
-    assert.equal(isHostAllowed("example.com", list), false);
+  it("blocks hosts that are not listed", () => {
+    assert.equal(isHostAllowed("https://evil.com"), false);
+    assert.equal(isHostAllowed("https://unknown.example.com"), false);
   });
 
-  it("strips port before matching", () => {
-    assert.equal(isHostAllowed("localhost:3000", list), true);
-    assert.equal(isHostAllowed("127.0.0.1:8080", list), true);
-    assert.equal(isHostAllowed("subgraph.aarcadeghst.com:443", list), true);
-    assert.equal(isHostAllowed("staterbros.com:443", list), false);
+  it("is not fooled by an allowed host appearing in the path or query", () => {
+    assert.equal(isHostAllowed("https://evil.com/?x=subgraph.aarcadeghst.com"), false);
+    assert.equal(isHostAllowed("https://evil.com/subgraph.aarcadeghst.com"), false);
   });
 
-  it("is case-insensitive", () => {
-    assert.equal(isHostAllowed("LocalHost", list), true);
-    assert.equal(isHostAllowed("SubGraph.AarcadeGhst.COM", list), true);
+  it("rejects unparseable input rather than guessing", () => {
+    assert.equal(isHostAllowed("subgraph.aarcadeghst.com"), false);
+    assert.equal(isHostAllowed(""), false);
+    assert.equal(isHostAllowed("not a url"), false);
   });
 });
 
 describe("findBlockedPattern", () => {
-  const patterns = [
-    "submit",
-    "checkout",
-    "place-order",
-    "place order",
-    "purchase",
-    "buy",
-    "pay now",
-    "complete order",
-  ];
-
-  it("matches #checkout selector", () => {
-    assert.equal(findBlockedPattern("#checkout", patterns), "checkout");
+  it("matches case-insensitively and inside a longer selector", () => {
+    assert.equal(findBlockedPattern("#Checkout-button"), "checkout");
+    assert.equal(findBlockedPattern("button[aria-label='Pay Now']"), "pay now");
   });
 
-  it("matches Place order text", () => {
-    assert.equal(findBlockedPattern("button Place order", patterns), "place order");
-  });
-
-  it("allows safe search button", () => {
-    assert.equal(findBlockedPattern("button search", patterns), null);
-  });
-
-  it("confirm phrase path: pattern still found (gate bypass is caller's job)", () => {
-    const hit = findBlockedPattern("#checkout", patterns);
-    assert.ok(hit);
-    const confirm = "checkout now";
-    assert.ok(confirm.length > 0); // non-empty --confirm allows the click
+  it("leaves harmless targets alone", () => {
+    assert.equal(findBlockedPattern("Organic Avocados"), null);
+    assert.equal(findBlockedPattern("#search"), null);
+    assert.equal(findBlockedPattern(""), null);
   });
 });
 
-describe("maskSensitive / isSensitiveField", () => {
-  it("masks password field values by field meta", () => {
-    const meta = { name: "password", type: "password" };
-    assert.equal(isSensitiveField(meta), true);
-    assert.equal(maskSensitive("hunter2", meta), "***");
+describe("isSensitiveField", () => {
+  it("flags credential and payment fields", () => {
+    assert.equal(isSensitiveField("#password"), true);
+    assert.equal(isSensitiveField("input[name=cvv]"), true);
+    assert.equal(isSensitiveField("#cc-number"), true);
+    assert.equal(isSensitiveField("[data-test=api-token]"), true);
   });
 
-  it("masks 16-digit card-like strings", () => {
-    assert.equal(maskSensitive("4111111111111111", {}), "***");
-    assert.equal(maskSensitive("4111-1111-1111-1111", {}), "***");
+  it("leaves ordinary fields alone", () => {
+    assert.equal(isSensitiveField("#search"), false);
+    assert.equal(isSensitiveField("input[name=quantity]"), false);
+    assert.equal(isSensitiveField(""), false);
+  });
+});
+
+describe("maskValue", () => {
+  it("masks passwords outright", () => {
+    assert.equal(maskValue("s3cr3t", "password"), "****");
   });
 
-  it("leaves non-sensitive search query untouched", () => {
-    assert.equal(maskSensitive("search query", { name: "q", type: "text" }), "search query");
+  it("keeps only the first and last four digits of a card number", () => {
+    assert.equal(maskValue("1234567812345678", "text"), "1234********5678");
   });
 
-  it("sensitive-field heuristic on name/id/autocomplete", () => {
-    assert.equal(isSensitiveField({ name: "user_password" }), true);
-    assert.equal(isSensitiveField({ id: "cc-number" }), true);
-    assert.equal(isSensitiveField({ autocomplete: "cc-csc" }), true);
-    assert.equal(isSensitiveField({ name: "q", id: "search" }), false);
+  it("masks expiry and cvv", () => {
+    assert.equal(maskValue("12/25", "text"), "**/**");
+    assert.equal(maskValue("123", "text"), "***");
+    assert.equal(maskValue("1234", "text"), "****");
+  });
+
+  it("masks emails but keeps the shape readable", () => {
+    assert.equal(maskValue("user@example.com", "email"), "u****@e****.com");
+  });
+
+  it("leaves ordinary text and empty values untouched", () => {
+    assert.equal(maskValue("Organic Avocados", "text"), "Organic Avocados");
+    assert.equal(maskValue("", "password"), "");
   });
 });

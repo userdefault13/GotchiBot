@@ -22,15 +22,30 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin, stdout } from "node:process";
+import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
 const ALLOWLIST_PATH = `${ROOT}/config/browser.allowlist.json`;
 const ALLOWLIST = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
 
+// config/browser.allowlist.json uses allowedHosts / blockedClickPatterns /
+// sensitiveFieldPatterns. This module used to read `hosts` and
+// `destructivePatterns`, which do not exist in that file: the host allowlist
+// silently evaluated to [] (every host blocked but localhost) and the click
+// gate silently fell back to a shorter hardcoded list, so configured gates
+// like "pay now" and "complete order" were never enforced. The older key
+// names are still accepted so an out-of-tree allowlist keeps working.
+const ALLOWED_HOSTS = ALLOWLIST.allowedHosts || ALLOWLIST.hosts || [];
+const BLOCKED_CLICK_PATTERNS = ALLOWLIST.blockedClickPatterns ||
+  ALLOWLIST.destructivePatterns ||
+  ["submit", "checkout", "place-order", "purchase", "buy"];
+const SENSITIVE_FIELD_PATTERNS = ALLOWLIST.sensitiveFieldPatterns ||
+  ["password", "passwd", "card", "cc-number", "cvv", "cvc", "payment", "secret", "token"];
+
 let sessionName = "default";
 let profileDir = "";
-let destructivePatterns = ALLOWLIST.destructivePatterns || ["submit", "checkout", "place-order", "purchase", "buy"];
+let destructivePatterns = BLOCKED_CLICK_PATTERNS;
 
 // --- CLI argument parsing ---
 
@@ -60,16 +75,22 @@ function parseArgs(argv = process.argv) {
 
 // --- Host allowlist check ---
 
+// Takes a full URL string, deliberately not a bare hostname: a scheme-less
+// string is ambiguous ("evil.com?x=allowed.com"), and guessing at one inside a
+// security gate is how allowlists get bypassed. Callers pass the URL they are
+// about to navigate to.
 function isHostAllowed(urlStr) {
   try {
     const url = new URL(urlStr);
-    const host = url.hostname;
-    // Allow localhost and 127.0.0.1 always
-    if (host === "localhost" || host === "127.0.0.1") return true;
-    // Check suffix patterns (leading dot = domain match)
-    for (const pattern of ALLOWLIST.hosts || []) {
-      if (pattern.startsWith(".")) {
-        if (host === pattern || host.endsWith(pattern)) return true;
+    // URL keeps IPv6 literals bracketed ("[::1]"); allowlists write them bare.
+    const host = url.hostname.replace(/^\[|\]$/g, "");
+    // Allow loopback always
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
+    for (const pattern of ALLOWED_HOSTS) {
+      // "*.example.com" and ".example.com" both mean "any subdomain of".
+      if (pattern.startsWith("*.") || pattern.startsWith(".")) {
+        const suffix = pattern.startsWith("*.") ? pattern.slice(1) : pattern;
+        if (host.endsWith(suffix)) return true;
       } else if (host === pattern) {
         return true;
       }
@@ -78,6 +99,21 @@ function isHostAllowed(urlStr) {
   } catch {
     return false;
   }
+}
+
+// The click gate: returns the configured pattern a target matches, else null.
+function findBlockedPattern(refOrSelector) {
+  if (!refOrSelector) return null;
+  for (const pattern of destructivePatterns) {
+    if (new RegExp(pattern, "i").test(refOrSelector)) return pattern;
+  }
+  return null;
+}
+
+// Does this field reference name a sensitive input (password, cvv, token…)?
+function isSensitiveField(refOrSelector) {
+  if (!refOrSelector) return false;
+  return SENSITIVE_FIELD_PATTERNS.some((p) => new RegExp(p, "i").test(refOrSelector));
 }
 
 // --- Masking helpers ---
@@ -169,15 +205,7 @@ async function handleSnapshot() {
 
 async function handleClick(refOrSelector) {
   try {
-    // Check destructive pattern matching
-    let matchedPattern = null;
-    for (const pattern of destructivePatterns) {
-      const regex = new RegExp(pattern, "i");
-      if (regex.test(refOrSelector)) {
-        matchedPattern = pattern;
-        break;
-      }
-    }
+    const matchedPattern = findBlockedPattern(refOrSelector);
 
     if (matchedPattern && !process.argv.includes("--confirm")) {
       return err("click", `Dry-run blocked: element matches '${matchedPattern}' pattern. Pass --confirm '${matchedPattern} on ...' to override.`);
@@ -200,7 +228,10 @@ async function handleClick(refOrSelector) {
 
 async function handleFill(refOrSelector, value) {
   try {
-    const type = "text"; // simplified
+    // The target's name is what tells us this is a password/cvv/token field;
+    // this used to be hardcoded to "text", so filling #password echoed the
+    // value back and relied purely on the digit heuristics in maskValue.
+    const type = isSensitiveField(refOrSelector) ? "password" : "text";
     const masked = maskValue(value, type);
     return ok("fill", { ref: refOrSelector, value: masked });
   } catch (e) {
@@ -375,7 +406,23 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  err("fatal", e instanceof Error ? e.message : String(e));
-  process.exit(1);
-});
+// Only run the CLI when executed directly. Importing this module (the tests do)
+// must not start a browser session or exit the process.
+
+if (isMainModule(import.meta.url)) {
+  main().catch((e) => {
+    err("fatal", e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  });
+}
+
+export {
+  ALLOWLIST_PATH,
+  ALLOWED_HOSTS,
+  BLOCKED_CLICK_PATTERNS,
+  SENSITIVE_FIELD_PATTERNS,
+  isHostAllowed,
+  findBlockedPattern,
+  isSensitiveField,
+  maskValue,
+};
