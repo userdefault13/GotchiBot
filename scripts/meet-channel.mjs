@@ -28,6 +28,11 @@ const THUMB_CACHE_DIR = `${ROOT}/sessions/.meet-thumbs`;
 const THUMB_W = 14;
 const SCROLLBAR_COLS = 2;
 const SCROLL_STEP = Math.max(1, Number(process.env.GOTCHIBOT_MEET_CHANNEL_SCROLL_STEP || 3) || 3);
+const COPY_LABEL = "[copy]";
+const COPIED_LABEL = "[copied]";
+const COPY_FAILED_LABEL = "[copy failed]";
+/** How long the copied/failed flash stays on the button. */
+const COPY_FLASH_MS = 1400;
 
 
 const C = {
@@ -183,12 +188,13 @@ function getThumb(heroId) {
   return thumbCache.get(heroId);
 }
 
-function renderHeader(meeting, cols) {
+function renderHeader(meeting, cols, interactive = false) {
   const topic = meeting.topic || "Untitled meeting";
   const agents = (meeting.participants || []).filter((p) => p.role !== "user").length;
+  const clickHint = interactive ? " · click [copy]" : "";
   return [
     `${C.topic}# ${topic}${C.reset}`,
-    `${C.dim}${agents} gotchi${agents === 1 ? "" : "s"} · ↑↓ wheel · j/k · PgUp/Dn · scrollbar${C.reset}`,
+    `${C.dim}${agents} gotchi${agents === 1 ? "" : "s"} · ↑↓ wheel · j/k · PgUp/Dn · scrollbar${clickHint}${C.reset}`,
     `${C.bar}${"─".repeat(Math.max(8, Math.min(cols - 2, 56)))}${C.reset}`,
   ];
 }
@@ -231,12 +237,34 @@ function renderPendingTail(meeting, cols, turns) {
   return lines;
 }
 
-function renderTurn(turn, meeting, cols) {
+/**
+ * Append a clickable copy affordance to a turn header and record its hitbox.
+ * `hit` is { hits, line, key, copied } handed down by buildMeetChannelLines;
+ * columns are 0-based and visible (ANSI stripped), matching the painted frame.
+ */
+function withCopyButton(meta, turn, cols, hit) {
+  const label =
+    hit.copied === "ok" ? COPIED_LABEL : hit.copied === "fail" ? COPY_FAILED_LABEL : COPY_LABEL;
+  const colStart = THUMB_W + 1 + visLen(meta) + 1;
+  if (colStart + label.length > cols) return meta;
+  hit.hits.push({
+    line: hit.line,
+    colStart,
+    colEnd: colStart + label.length - 1,
+    key: hit.key,
+    text: turn.text,
+  });
+  const color = hit.copied === "ok" ? C.chair : hit.copied === "fail" ? C.topic : C.dim;
+  return `${meta} ${color}${label}${C.reset}`;
+}
+
+function renderTurn(turn, meeting, cols, hit = null) {
   const { name, role, id } = participantInfo(meeting, turn.speaker);
   const thumb = getThumb(id);
   const bodyW = Math.max(16, cols - THUMB_W - 2);
   const bodyLines = wrapLines(turn.text, bodyW);
-  const header = `${nameColor(role)}${name}${C.reset} ${C.dim}${formatTime(turn.ts)}${C.reset}`;
+  const meta = `${nameColor(role)}${name}${C.reset} ${C.dim}${formatTime(turn.ts)}${C.reset}`;
+  const header = hit ? withCopyButton(meta, turn, cols, hit) : meta;
   const blockH = Math.max(thumb.length, 1 + bodyLines.length);
   const rows = [];
 
@@ -257,14 +285,32 @@ function renderTurn(turn, meeting, cols) {
   return rows;
 }
 
-/** Full channel lines (header + messages). */
-export function buildMeetChannelLines(meeting, cols, contentCols = cols) {
-  const lines = [...renderHeader(meeting, contentCols)];
+/**
+ * Full channel lines (header + messages).
+ * Pass `opts.hits` (an array) to draw clickable [copy] buttons on responses and
+ * collect their hitboxes; `opts.copiedKey`/`opts.copiedState` flash one button.
+ */
+export function buildMeetChannelLines(meeting, cols, contentCols = cols, opts = {}) {
+  const hits = opts.hits || null;
+  const lines = [...renderHeader(meeting, contentCols, Boolean(hits))];
   const turns = readTranscript(meeting.id);
   if (!turns.length) {
     lines.push(`${C.dim}(channel empty — type in Meet · room prompt)${C.reset}`, "");
   } else {
-    for (const t of turns) lines.push(...renderTurn(t, meeting, contentCols));
+    turns.forEach((t, i) => {
+      const role = t.role || participantInfo(meeting, t.speaker).role;
+      const key = `${i}:${t.ts || ""}`;
+      const hit =
+        hits && role !== "user"
+          ? {
+              hits,
+              line: lines.length,
+              key,
+              copied: opts.copiedKey === key ? opts.copiedState || "ok" : null,
+            }
+          : null;
+      lines.push(...renderTurn(t, meeting, contentCols, hit));
+    });
   }
   lines.push(...renderPendingTail(meeting, cols, turns));
   return lines;
@@ -394,13 +440,44 @@ function paneSize() {
 
 function paintFrame(frame) {
   // In-place redraw (home + clear-EOL per line) — avoids full \x1b[J flash on wheel.
+  // No newline after the last row: a full-height frame would scroll the pane by
+  // one line, eating the top row and shifting every click one row off.
   const lines = String(frame).replace(/\n$/, "").split("\n");
   let out = "\x1b[H";
-  for (const line of lines) {
-    out += `${line}\x1b[K\n`;
-  }
+  lines.forEach((line, i) => {
+    out += `${line}\x1b[K`;
+    if (i < lines.length - 1) out += "\n";
+  });
   out += "\x1b[J";
   output.write(out);
+}
+
+/** OSC 52 copy through the terminal (tmux needs passthrough wrapping). */
+function writeOsc52(text) {
+  const b64 = Buffer.from(text, "utf8").toString("base64");
+  if (b64.length > 100_000) return false;
+  const seq = `\x1b]52;c;${b64}\x07`;
+  try {
+    output.write(process.env.TMUX ? `\x1bPtmux;${seq.replace(/\x1b/g, "\x1b\x1b")}\x1b\\` : seq);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Copy a turn to the clipboard. clipboard-copy.mjs runs with its stdout piped
+ * so its own OSC 52 never lands in our alt screen; OSC 52 is the fallback.
+ */
+function copyTurnText(text) {
+  const r = spawnSync(process.execPath, [`${ROOT}/scripts/clipboard-copy.mjs`], {
+    input: text,
+    encoding: "utf8",
+    timeout: 5000,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  if (r.status === 0) return true;
+  return writeOsc52(text);
 }
 
 /**
@@ -420,6 +497,11 @@ export async function runMeetChannelLive() {
   let scroll = loadScroll();
   let destroyed = false;
   let forceNext = false;
+  /** Copy-button hitboxes for the cached lines, and the current frame's slice. */
+  let hits = [];
+  let view = { start: 0, hasOlder: false };
+  let copied = { key: null, state: null };
+  let copyFlashTimer = null;
 
   const teardown = () => {
     if (destroyed) return;
@@ -469,10 +551,17 @@ export async function runMeetChannelLive() {
       ];
       cacheKey = key;
       pendingAnim = false;
+      hits = [];
       return cachedLines;
     }
     const contentCols = Math.max(24, cols - SCROLLBAR_COLS);
-    cachedLines = buildMeetChannelLines(meeting, cols, contentCols);
+    const nextHits = [];
+    cachedLines = buildMeetChannelLines(meeting, cols, contentCols, {
+      hits: nextHits,
+      copiedKey: copied.key,
+      copiedState: copied.state,
+    });
+    hits = nextHits;
     cacheKey = key;
     pendingAnim = hasPending;
     return cachedLines;
@@ -486,10 +575,14 @@ export async function runMeetChannelLive() {
     const maxScroll = Math.max(0, total - viewport);
     const fromBottom = Math.max(0, Math.min(maxScroll, scrollFromBottom));
     const bar = buildScrollbar(total, viewport, fromBottom, rows);
-    if (total <= viewport) return attachScrollbar(allLines, bar, cols);
+    if (total <= viewport) {
+      view = { start: 0, hasOlder: false };
+      return attachScrollbar(allLines, bar, cols);
+    }
     const end = total - fromBottom;
     const start = Math.max(0, end - viewport);
     const visible = allLines.slice(start, end);
+    view = { start, hasOlder: start > 0 };
     if (start > 0) visible.unshift(`${C.dim}↑ older${C.reset}`);
     if (fromBottom > 0) visible.push(`${C.dim}↓ newer · End latest${C.reset}`);
     while (visible.length < rows) visible.push("");
@@ -536,6 +629,22 @@ export async function runMeetChannelLive() {
     scroll = Math.max(0, Math.min(max, n));
     saveScroll(scroll);
     schedulePaint(false, 16);
+  }
+
+  /** Left click: copy the response whose [copy] button was hit. */
+  function handleClick(col, row) {
+    const line = view.start + (row - 1) - (view.hasOlder ? 1 : 0);
+    const x = col - 1;
+    const hit = hits.find((h) => h.line === line && x >= h.colStart && x <= h.colEnd);
+    if (!hit) return;
+    copied = { key: hit.key, state: copyTurnText(hit.text) ? "ok" : "fail" };
+    if (copyFlashTimer) clearTimeout(copyFlashTimer);
+    copyFlashTimer = setTimeout(() => {
+      copyFlashTimer = null;
+      copied = { key: null, state: null };
+      schedulePaint(true, 0);
+    }, COPY_FLASH_MS);
+    schedulePaint(true, 0);
   }
 
   // Watch scroll + stamp + pending — quiet scroll.sh only touches scroll file.
@@ -600,6 +709,7 @@ export async function runMeetChannelLive() {
               const btn = Number(m[1]);
               if (btn === 64 || btn === 4) adjustScroll(SCROLL_STEP);
               else if (btn === 65 || btn === 5) adjustScroll(-SCROLL_STEP);
+              else if (btn === 0 && m[4] === "M") handleClick(Number(m[2]), Number(m[3]));
               continue;
             }
             if (/\x1b\[A$|\x1bOA$/.test(seq) || seq.endsWith("5~")) adjustScroll(SCROLL_STEP * (seq.endsWith("5~") ? 3 : 1));
