@@ -641,6 +641,15 @@
       ],
       "addedAt": "2026-08-31"
     },
+    "passoff": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Agent \u2192 agent work handoff. One gotchi packages live state (branch, dirty tree, warm session, anchor, meeting) and messages another, which accepts and continues. /passoff \u00b7 gotchibot passoff.",
+      "path": ".opencode/skills/passoff/SKILL.md",
+      "script": "scripts/passoff.mjs",
+      "addedAt": "2026-09-04"
+    },
     "thread-continuity": {
       "status": "approved",
       "type": "skill",

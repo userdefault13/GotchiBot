@@ -65,7 +65,12 @@ Your session dir contains:
    (`.opencode/skills/thread-continuity/SKILL.md`): reuse last files/selectors
    before any full-tree search. Cross-session: `sessions/HANDOFF.md`,
    `aarcadeghst-changes` / `changes.json`, or `cursor-cli.mjs resume`.
-6. **Sandbox spawn** (`--sandbox`): hero must be `available`. Never auto-mint.
+6. **Passoff inbox** — before you plan a fresh job, run
+   `./scripts/gotchibot passoff resume`. If another gotchi handed you work, that
+   packet is your task: continue it, do not restart it, do not redo what its
+   "Done so far" lists. Handing your own work on? `passoff send <hero> --note
+   "what's done" --next "what's left"` (skill `passoff`).
+7. **Sandbox spawn** (`--sandbox`): hero must be `available`. Never auto-mint.
    Never steal LINK/YFI/WBTC standing desks. Promote with
    `./scripts/gotchibot sandbox promote <id> <dest>`.
 
