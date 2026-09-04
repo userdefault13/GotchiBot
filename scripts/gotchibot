@@ -46,6 +46,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot status <id>...        one session's state
   gotchibot wait [<id>...]        block until sessions finish
   gotchibot output <id>           print a session deliverable
+  gotchibot export [<id>] [--out PATH] [--log]   save a session transcript as Markdown
+                                  # asks where to save; ~/Downloads by default, remembers your last folder
   gotchibot requests              pending skill requests
   gotchibot init                first-run setup: connect wallet, sim-mint cartridge
   gotchibot onboard             Solo one-shot: wallet → register → init → doctor
@@ -565,6 +567,7 @@ case "$cmd" in
   status) exec "$DISPATCH" status "$@" ;;
   wait) exec "$DISPATCH" wait "$@" ;;
   output) exec "$DISPATCH" output "$@" ;;
+  export) exec "$DISPATCH" export "$@" ;;
   requests) exec "$DISPATCH" requests ;;
   avatar)
     if [ $# -eq 0 ]; then

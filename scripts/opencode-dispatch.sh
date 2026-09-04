@@ -19,12 +19,17 @@ mkdir -p "$SESSIONS"
 usage() {
   cat >&2 <<'EOF'
 usage:
-  opencode-dispatch.sh new [--model auto|flash|pro|local|<provider/model>] "PROMPT"
+  opencode-dispatch.sh new [--model auto|flash|pro|local|<provider/model>] [--sandbox] "PROMPT"
   opencode-dispatch.sh list
   opencode-dispatch.sh status <id>...
   opencode-dispatch.sh wait [<id>...]
   opencode-dispatch.sh output <id>
+  opencode-dispatch.sh export [<id>] [--out PATH] [--log] [--yes]
+                              save a session transcript as Markdown
+                              (prompts for a folder; ~/Downloads by default)
   opencode-dispatch.sh requests   show pending skill requests
+
+Sandbox (GOTCHIBOT_SANDBOX=1 or --sandbox): Docker box; cwd /work; abra only in-box via ABRA_KEY.
 EOF
   exit 2
 }
@@ -265,6 +270,168 @@ cmd_output() {
   cat "$SESSIONS/$1/output.md"
 }
 
+# --- transcript export -----------------------------------------------------
+# Where the last export went. sessions/ is gitignored, so this is per-install
+# user state, next to .onboarding.json — not a repo-tracked config.
+EXPORT_PREFS="$SESSIONS/.export.json"
+EXPORT_DEFAULT_DIR="$HOME/Downloads"
+
+export_saved_dir() {
+  [ -f "$EXPORT_PREFS" ] || return 0
+  node -e '
+    const fs=require("fs");
+    try {
+      const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+      if (j.dir) console.log(j.dir);
+    } catch {}
+  ' "$EXPORT_PREFS" 2>/dev/null || true
+}
+
+export_save_dir() {
+  mkdir -p "$SESSIONS"
+  node -e '
+    const fs=require("fs");
+    fs.writeFileSync(process.argv[1], JSON.stringify({ dir: process.argv[2] }, null, 2) + "\n");
+  ' "$EXPORT_PREFS" "$1" 2>/dev/null || true
+}
+
+# ~/x and $HOME/x -> absolute. Leaves everything else alone.
+expand_tilde() {
+  case "$1" in
+    "~") printf '%s\n' "$HOME" ;;
+    "~/"*) printf '%s\n' "$HOME/${1#\~/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+# Shortest unambiguous display form: $HOME/Downloads -> ~/Downloads
+tildify() {
+  case "$1" in
+    "$HOME"/*) printf '~/%s\n' "${1#"$HOME"/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+latest_session() {
+  local d last=""
+  for d in "$SESSIONS"/s*/; do
+    [ -f "$d/state.env" ] || continue
+    last="$d"
+  done
+  [ -n "$last" ] || return 1
+  basename "$last"
+}
+
+# Never clobber: gotchibot-<id>.md, then -2, -3, …
+unique_path() {
+  local base="$1" ext="$2" n=2 try="$1$2"
+  while [ -e "$try" ]; do
+    try="${base}-${n}${ext}"
+    n=$((n + 1))
+  done
+  printf '%s\n' "$try"
+}
+
+render_transcript() {
+  local id="$1" d="$SESSIONS/$1" with_log="$2"
+  printf '# GotchiBot session %s\n\n' "$id"
+  local k v
+  for k in hero status model runtime started ended; do
+    v="$(field "$k" "$d" 2>/dev/null || true)"
+    # bash 3.2 printf parses a format starting with "-" as an option: lead with %s.
+    [ -n "$v" ] && printf '%s\n' "- **$k:** $v"
+  done
+  printf '%s\n' "- **exported:** $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if [ -f "$d/prompt.txt" ]; then
+    printf '\n---\n\n## Prompt\n\n'
+    cat "$d/prompt.txt"
+  fi
+  if [ -f "$d/output.md" ]; then
+    printf '\n---\n\n## Output\n\n'
+    cat "$d/output.md"
+  fi
+  if [ "$with_log" = 1 ] && [ -f "$d/output.log" ]; then
+    printf '\n---\n\n## Runner log\n\n```\n'
+    cat "$d/output.log"
+    printf '```\n'
+  fi
+}
+
+cmd_export() {
+  local id="" out="" with_log=0 assume_yes=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --out) [ $# -ge 2 ] || usage; out="$2"; shift 2 ;;
+      --log) with_log=1; shift ;;
+      --yes|-y) assume_yes=1; shift ;;
+      -*) usage ;;
+      *) [ -z "$id" ] || usage; id="$1"; shift ;;
+    esac
+  done
+
+  if [ -z "$id" ]; then
+    id="$(latest_session)" || { echo "no sessions to export" >&2; exit 1; }
+    echo "session: $id (most recent)" >&2
+  fi
+  [ -f "$SESSIONS/$id/state.env" ] || { echo "unknown session: $id" >&2; exit 1; }
+  [ -f "$SESSIONS/$id/output.md" ] || [ -f "$SESSIONS/$id/prompt.txt" ] || {
+    echo "nothing to export yet: $id" >&2; exit 1; }
+
+  local dest_dir dest_file default_dir
+  if [ -n "$out" ]; then
+    # --out wins outright: no prompt, honour the exact path given.
+    out="$(expand_tilde "$out")"
+    # Deterministic: ends in .md -> that exact file; anything else -> a folder.
+    # (Not "does it exist yet", which would make --out behave differently on a
+    # first run than on a second.)
+    case "$out" in
+      *.md) dest_dir="$(dirname "$out")"; dest_file="$(basename "$out")" ;;
+      *) dest_dir="${out%/}"; dest_file="" ;;
+    esac
+  else
+    default_dir="$(export_saved_dir)"
+    [ -n "$default_dir" ] || default_dir="$EXPORT_DEFAULT_DIR"
+    if [ "$assume_yes" = 1 ] || [ ! -t 0 ]; then
+      dest_dir="$default_dir"
+      dest_file=""
+    else
+      local reply=""
+      printf '\n  Save transcript to [%s]: ' "$(tildify "$default_dir")" >&2
+      IFS= read -r reply || reply=""
+      reply="$(printf '%s' "$reply" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+      if [ -z "$reply" ]; then
+        dest_dir="$default_dir"
+        dest_file=""
+      else
+        reply="$(expand_tilde "$reply")"
+        case "$reply" in
+          *.md) dest_dir="$(dirname "$reply")"; dest_file="$(basename "$reply")" ;;
+          *) dest_dir="${reply%/}"; dest_file="" ;;
+        esac
+      fi
+    fi
+  fi
+
+  mkdir -p "$dest_dir" || { echo "cannot create: $dest_dir" >&2; exit 1; }
+  [ -w "$dest_dir" ] || { echo "not writable: $dest_dir" >&2; exit 1; }
+
+  local target
+  if [ -n "$dest_file" ]; then
+    target="$dest_dir/$dest_file"
+    [ -e "$target" ] && target="$(unique_path "${target%.md}" ".md")"
+  else
+    target="$(unique_path "$dest_dir/gotchibot-$id" ".md")"
+  fi
+
+  render_transcript "$id" "$with_log" > "$target"
+
+  # Remember the directory, not the filename — only when we prompted for it.
+  [ -n "$out" ] || export_save_dir "$dest_dir"
+
+  printf '  → %s\n' "$(tildify "$target")" >&2
+  printf '%s\n' "$target"
+}
+
 cmd_requests() {
   found=0
   for f in "$SESSIONS"/s*/skill-requests.jsonl; do
@@ -286,6 +453,7 @@ case "$cmd" in
   status) [ $# -ge 1 ] || usage; cmd_status "$@" ;;
   wait) cmd_wait "$@" ;;
   output) [ $# -eq 1 ] || usage; cmd_output "$1" ;;
+  export) cmd_export "$@" ;;
   requests) cmd_requests ;;
   *) usage ;;
 esac
