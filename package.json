@@ -43,6 +43,9 @@
     "!config/hub-bridge.json",
     "!scripts/remote-spawn-discord.mjs"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "prepublishOnly": "node scripts/update-check.mjs --check"
   },
