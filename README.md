@@ -115,3 +115,13 @@ pattern — see the `cartridge-mint` skill for mint/bind workflows.
 | [COMMERCIAL.md](COMMERCIAL.md) | NFT entitlements & commercial licensing |
 | [ORCHESTRATOR.md](ORCHESTRATOR.md) | Orchestrator configuration |
 | [Gotchibot.md](Gotchibot.md) | GotchiBot abilities and agent skills list |
+## Author
+
+**Julius Wong** (userDef@ult) — [userdefault.dev](https://www.userdefault.dev) · [GitHub](https://github.com/userdefault13) · [X](https://x.com/userDefault_0x)
+
+Freelance engineer working on AI agent orchestration, AI developer tooling, and Unity/WebGL
+multiplayer games. Write-up of the multi-agent orchestration work behind this project:
+[userdefault.dev/work/gotchibot](https://www.userdefault.dev/work/gotchibot).
+
+Available for freelance and contract work — [book a consult](https://www.userdefault.dev/hire),
+or read more about [AI agent orchestration](https://www.userdefault.dev/services/agent-orchestration).
