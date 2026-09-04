@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const POLICY_PATH = join(ROOT, "config/project-policy.json");
@@ -145,10 +146,8 @@ function printShow(project, policy) {
   }
 }
 
-const isMain =
-  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
-if (isMain) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const json = args.includes("--json");
   const cmd = args.find((a) => !a.startsWith("--")) || "show";

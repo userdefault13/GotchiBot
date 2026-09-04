@@ -19,6 +19,7 @@ import {
 } from "./meet-room.mjs";
 import { setMeetStatus } from "./meet-status.mjs";
 import { runLayout } from "./tmux-layout.mjs";
+import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STAMP = `${ROOT}/sessions/.meet-room.stamp`;
@@ -812,5 +813,4 @@ function main() {
 });
 }
 
-const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) main();
+if (isMainModule(import.meta.url)) main();

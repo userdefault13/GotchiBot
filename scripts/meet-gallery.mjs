@@ -9,6 +9,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MEETINGS = `${ROOT}/sessions/meetings`;
@@ -103,8 +104,5 @@ function main() {
   }
 }
 
-const isMain =
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
-if (isMain) main();
+if (isMainModule(import.meta.url)) main();

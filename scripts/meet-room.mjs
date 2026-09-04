@@ -11,6 +11,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadCurrentMeeting, participantInfo } from "./meet-channel.mjs";
 import { loadMeetStatus, statusFor, statusLabel } from "./meet-status.mjs";
+import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PAGE_FILE = `${ROOT}/sessions/.meet-room-page`;
@@ -253,10 +254,8 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
   return lines.join("\n");
 }
 
-const isMain =
-  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
-if (isMain) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.includes("--members")) {
     const json = args.includes("--json");

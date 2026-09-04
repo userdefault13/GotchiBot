@@ -5,8 +5,9 @@
  */
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { call, loadMeta, GAME_ID } from "./identity.mjs";
+import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WALLET = `${ROOT}/sessions/.wallet.json`;
@@ -115,15 +116,8 @@ async function main() {
   }
 }
 
-function isDirectRun() {
-  try {
-    return import.meta.url === pathToFileURL(process.argv[1]).href;
-  } catch {
-    return false;
-  }
-}
 
-if (isDirectRun()) {
+if (isMainModule(import.meta.url)) {
   main().catch((e) => {
     console.error(e.message);
     process.exit(1);

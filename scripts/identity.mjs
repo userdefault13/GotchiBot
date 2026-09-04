@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { isMainModule } from "./is-main.mjs";
 import crypto from "node:crypto";
-import { pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -383,15 +383,8 @@ export {
   resolveCartridgeApi,
 };
 
-function isDirectRun() {
-  try {
-    return import.meta.url === pathToFileURL(process.argv[1]).href;
-  } catch {
-    return false;
-  }
-}
 
-if (isDirectRun()) {
+if (isMainModule(import.meta.url)) {
   const cmd = process.argv[2];
   const handlers = { ensure, mint, seal, unpack, open, bind, apply, roster, rules, checkpoint };
   if (!handlers[cmd]) {

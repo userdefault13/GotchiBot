@@ -3,9 +3,10 @@
  * GotchiBot install token — register + status (store token in abra).
  */
 import http from "node:http";
+import { isMainModule } from "./is-main.mjs";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { AUTH_CFG } from "./infra-client.mjs";
@@ -437,15 +438,8 @@ function main() {
   usage();
 }
 
-function isDirectRun() {
-  try {
-    return import.meta.url === pathToFileURL(process.argv[1]).href;
-  } catch {
-    return false;
-  }
-}
 
-if (isDirectRun()) {
+if (isMainModule(import.meta.url)) {
   main().catch((e) => {
     console.error(e?.message || e);
     process.exit(1);

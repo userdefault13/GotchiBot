@@ -16,6 +16,7 @@ import {
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin as input, stdout as output } from "node:process";
+import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MEETINGS = `${ROOT}/sessions/meetings`;
@@ -625,10 +626,8 @@ export async function runMeetChannelLive() {
   paint(true);
 }
 
-const isMain =
-  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
-if (isMain) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.includes("--live") || args.includes("live")) {
     runMeetChannelLive().catch((e) => {

@@ -5,9 +5,10 @@
  *   ./scripts/gotchibot onboard
  */
 import { spawnSync } from "node:child_process";
+import { isMainModule } from "./is-main.mjs";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { getTopology, setTopology, topologyFileExists } from "./topology.mjs";
 import { hasInstallToken, hasOperatorServiceKey } from "./infra-client.mjs";
 import { readWallet, registerInstall } from "./infra-token.mjs";
@@ -158,15 +159,8 @@ async function main() {
   console.log("════════════════════════════════════\n");
 }
 
-function isDirectRun() {
-  try {
-    return import.meta.url === pathToFileURL(process.argv[1]).href;
-  } catch {
-    return false;
-  }
-}
 
-if (isDirectRun()) {
+if (isMainModule(import.meta.url)) {
   main().catch((e) => {
     console.error(e?.message || e);
     process.exit(1);
