@@ -5,6 +5,7 @@
  */
 import { mkdtempSync, writeFileSync, chmodSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -13,7 +14,7 @@ export function remoteConfig() {
   const user = process.env.REMOTE_USER || process.env.GOTCHIBOT_REMOTE_USER || "";
   let dir = (process.env.REMOTE_DIR || process.env.GOTCHIBOT_REMOTE_DIR || "").trim();
   if (!dir || dir.includes("$HOME") || dir.startsWith("~/")) {
-    dir = user ? `/Users/${user}/Dev/GotchiBot` : "/Users/juliuswong/Dev/GotchiBot";
+    dir = user ? `/Users/${user}/Dev/GotchiBot` : join(homedir(), "Dev", "GotchiBot");
   }
   const key = process.env.SSH_PRIVATE_KEY || "";
   return { host, user, dir, key };

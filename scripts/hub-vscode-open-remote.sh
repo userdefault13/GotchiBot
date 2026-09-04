@@ -9,8 +9,7 @@ PREFERRED="${3:-}"
 
 resolve_folder() {
   local c
-  for c in "$PREFERRED" "$HOME/Dev/GotchiBot" "$HOME/dev/GotchiBot" \
-    "/Users/juliuswong/Dev/GotchiBot" "/Users/juliuswong/dev/GotchiBot"; do
+  for c in "$PREFERRED" "$HOME/Dev/GotchiBot" "$HOME/dev/GotchiBot"; do
     [ -n "$c" ] && [ -d "$c" ] && { printf '%s' "$c"; return 0; }
   done
   return 1

@@ -27,7 +27,7 @@ function main() {
 
 set -e
 cd "${cfg.dir}"
-export PATH="/usr/local/bin:/opt/homebrew/bin:/Users/juliuswong/.nvm/versions/node/current/bin:\$PATH"
+export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.nvm/versions/node/current/bin:\$PATH"
 export INFRA_WEBHOOK_TOKEN="${token}"
 export INFRA_WEBHOOK_PORT=8788
 mkdir -p "${cfg.dir}/sessions/infra-logs"
@@ -53,7 +53,7 @@ echo \$\$ > "\$LOCK_FILE"
 pkill -f "infra-webhook.mjs" 2>/dev/null || true
 
 # Start webhook
-export PATH="/usr/local/bin:/opt/homebrew/bin:/Users/juliuswong/.nvm/versions/node/current/bin:\$PATH"
+export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.nvm/versions/node/current/bin:\$PATH"
 export INFRA_WEBHOOK_TOKEN="${token}"
 export INFRA_WEBHOOK_PORT=8788
 mkdir -p "${cfg.dir}/sessions/infra-logs"
