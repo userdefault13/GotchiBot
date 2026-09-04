@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(sed -n*)",
+      "Bash(wc *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(jq *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(node --check*)",
+      "Bash(bash -n*)",
+      "Bash(npm test*)",
+      "Bash(./scripts/gotchibot status*)",
+      "Bash(./scripts/gotchibot doctor*)",
+      "Bash(./scripts/gotchibot mesh*)",
+      "Bash(./scripts/gotchibot layout-check*)",
+      "Bash(./scripts/gotchibot passoff list*)",
+      "Bash(./scripts/gotchibot passoff show*)",
+      "Bash(node scripts/passoff.mjs list*)",
+      "Bash(node scripts/passoff.mjs show*)",
+      "Bash(node scripts/agent-focus.mjs list*)",
+      "Bash(node scripts/agent-focus.mjs status*)",
+      "Bash(node scripts/mesh-status.mjs*)",
+      "Bash(tmux list-sessions*)",
+      "Bash(tmux list-panes*)",
+      "Bash(tmux list-keys*)",
+      "Bash(tmux display *)",
+      "Bash(tmux capture-pane*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/guard-bash.mjs\"",
+            "timeout": 10,
+            "statusMessage": "Checking install policy"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/guard-write.mjs\"",
+            "timeout": 10,
+            "statusMessage": "Checking write path"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/check-syntax.mjs\"",
+            "timeout": 30,
+            "statusMessage": "Checking syntax"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session-brief.mjs\"",
+            "timeout": 15,
+            "statusMessage": "Reading desk state"
+          }
+        ]
+      }
+    ]
+  }
+}

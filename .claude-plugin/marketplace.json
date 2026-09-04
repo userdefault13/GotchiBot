@@ -1,0 +1,14 @@
+{
+  "name": "gotchibot",
+  "owner": {
+    "name": "userdefault13"
+  },
+  "plugins": [
+    {
+      "name": "gotchibot-claude",
+      "source": "./plugins/gotchibot-claude",
+      "description": "GotchiBot Claude Code layer — enforcement hooks, desk commands, subagents.",
+      "version": "0.2.1"
+    }
+  ]
+}

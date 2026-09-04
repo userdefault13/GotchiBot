@@ -1,0 +1,14 @@
+{
+  "name": "gotchibot-claude",
+  "version": "0.2.1",
+  "description": "GotchiBot's Claude Code layer: hooks that enforce the AGENTS.md hard rules (no autonomous installs, no writes outside the tree, syntax-gated script edits), the desk-state session brief, the meeting/passoff/mesh commands, and the gotchibot subagents.",
+  "author": {
+    "name": "userdefault13"
+  },
+  "keywords": [
+    "gotchibot",
+    "aavegotchi",
+    "orchestration",
+    "hooks"
+  ]
+}

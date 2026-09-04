@@ -70,6 +70,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot passoff send <to> [--from …] [--note "…"] [--next "…"] [--dry-run]
                                   hand live work to another gotchi (packet + message)
   gotchibot passoff list|show|accept|resume|drop  the receiving side (/passoff)
+  gotchibot claude-plugin [build|--check]  package .claude/ (hooks, commands, agents)
+                                  as an installable plugin for the iMac
   gotchibot checkpoint <id> <label>   push a milestone to the cartridge
   gotchibot identity ensure|mint|roster   cartridge identity ops
   gotchibot reset [--full] [--yes]      wipe gotchibot cartridge (new-user test)
@@ -619,6 +621,7 @@ case "$cmd" in
   roster) cmd_roster "$@" ;;
   handoff) cmd_handoff "$@" ;;
   passoff) exec node "$ROOT/scripts/passoff.mjs" "$@" ;;
+  claude-plugin) exec node "$ROOT/scripts/claude-plugin-build.mjs" "$@" ;;
   ask) cmd_ask "$@" ;;
   multitask) cmd_multitask "$@" ;;
   mode) cmd_mode "$@" ;;

@@ -16,6 +16,29 @@ You are the **Hub VS Code Claude proxy** for GotchiBot. You are **not** the orch
 - Never ask for or echo secrets; credentials go through abracadabra (`abra`) on Desk/Hub ops only.
 - Do not claim you are headless-only — the pane/Terminal UI is intentional; Desk also gets a headless reply.
 
+## Claude-side layer (`.claude/`)
+
+This tree carries Claude Code config beside the OpenCode one (`.opencode/`):
+
+- **Hooks enforce, they do not suggest.** `PreToolUse` denies package/MCP/skill
+  installs (AGENTS.md rule 1) and writes outside this tree (rule 4); `PostToolUse`
+  runs `node --check` / `bash -n` / JSON parse on every script you edit and hands
+  the error straight back; `SessionStart` reports pending passoffs, an open
+  meeting, focus, and tree state. Scripts live in `.claude/hooks/`, wired in
+  `.claude/settings.json`. A denial there is policy, not a bug — do not work
+  around it; ask Julius.
+- **Subagents** (`.claude/agents/`): `gotchibot-proxy` (bridge work),
+  `meet-scribe` (meeting minutes without loading the transcript here),
+  `script-doctor` (review a script against this repo's own failure modes).
+- **Commands** (`.claude/commands/`): `/passoff`, `/meet`, `/mesh`, `/doctor`,
+  `/minutes` (minutes via the meet-scribe subagent, transcript stays out of here).
+- **Passoff**: before planning fresh work run `./scripts/gotchibot passoff resume`;
+  when handing work to another gotchi, `passoff send <hero> --note … --next …`.
+- **Packaging**: `.claude/` is the source of truth; `./scripts/gotchibot
+  claude-plugin build` regenerates `plugins/gotchibot-claude/` (the installable
+  plugin for the iMac) and `--check` fails if it drifted. Never hand-edit the
+  generated tree.
+
 ## Output
 
 Lead with the answer. Match prompt length. No help-desk filler. When the bridge asks a bounded question, answer that question and stop.
