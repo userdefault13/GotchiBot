@@ -542,7 +542,7 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Unsupervised project intake — /project prompts all requirements before spawn. project-intake.mjs + config/project-policy.json.",
+      "description": "Sandbox-only /project intake. Does not gate desk installs or ordinary spawns. project-intake.mjs + config/project-policy.json.",
       "path": ".opencode/skills/project-intake/SKILL.md",
       "script": "scripts/project-intake.mjs",
       "config": "config/project-policy.json",
@@ -666,6 +666,14 @@
       "path": ".opencode/skills/aseprite-tool/SKILL.md",
       "script": "scripts/aseprite-tool.mjs",
       "addedAt": "2026-09-01"
+    },
+    "unity-login-cartridge-sop": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "SOP for new Aarcade Unity games: Gotchiverse2D's ServerConfig/GameBootstrap/BootstrapSetup is the template skeleton; port GotchiCraft's Reown wallet + Paarcel's cAavegotchi cartridge-bind logic into it. Load when starting a new game or touching login/cartridge scenes.",
+      "path": ".opencode/skills/unity-login-cartridge-sop/SKILL.md",
+      "addedAt": "2026-09-03"
     }
   },
   "sources": {

@@ -11,7 +11,7 @@
     "hardRestartKey": "F2",
     "meetTab": "mention-complete"
   },
-  "cycle": ["gotchi", "sandbox", "verse", "plan", "build", "ask", "project"],
+  "cycle": ["gotchi", "sandbox", "verse", "plan", "build", "ask"],
   "colors": {
     "gotchi": "#B650FF",
     "sandbox": "#FF6EC7",

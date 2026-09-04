@@ -6,12 +6,16 @@
  * Host selection (gotchi mode prefers Tailscale iMac when reachable):
  *   --host local|imac|auto   (default: auto → imac if REMOTE_* SSH works)
  *   GOTCHIBOT_SPAWN_HOST=local|imac|auto
+ * Sandbox (new projects):
+ *   --sandbox | GOTCHIBOT_SANDBOX=1
+ *   Requires GOTCHIBOT_HERO_ID with status === available. Never auto-mint.
  */
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkSpawnGate } from "./wallet-gate.mjs";
 import { getTopology } from "./topology.mjs";
+import { assertSandboxHeroAvailable } from "./hero-agent-state.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DISPATCH = `${ROOT}/scripts/opencode-dispatch.sh`;
@@ -20,15 +24,15 @@ const REMOTE_SPAWN = `${ROOT}/scripts/remote-spawn.mjs`;
 function usage() {
   console.error(`usage:
   gotchi-orchestrate.mjs gate [--json]
-  gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--model sub|nim|pro|local|<provider/model>] "PROMPT"
+  gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--sandbox] [--model sub|nim|pro|local|<provider/model>] "PROMPT"
   gotchi-orchestrate.mjs list
   gotchi-orchestrate.mjs wait [--host local|imac] [<id>...]
   gotchi-orchestrate.mjs output [--host local|imac] <id>`);
   process.exit(2);
 }
 
-function runDispatch(args, { capture = false } = {}) {
-  const r = spawnSync(DISPATCH, args, { cwd: ROOT, encoding: "utf8" });
+function runDispatch(args, { capture = false, env = process.env } = {}) {
+  const r = spawnSync(DISPATCH, args, { cwd: ROOT, encoding: "utf8", env });
   if (!capture && r.stdout) process.stdout.write(r.stdout);
   if (r.stderr) process.stderr.write(r.stderr);
   if (r.status !== 0) process.exit(r.status ?? 1);
@@ -57,10 +61,13 @@ async function probeRemote() {
 
 function parseHostAndRest(argv) {
   let host = (process.env.GOTCHIBOT_SPAWN_HOST || "auto").toLowerCase();
+  let sandbox = process.env.GOTCHIBOT_SANDBOX === "1";
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--host" && argv[i + 1]) {
       host = String(argv[++i]).toLowerCase();
+    } else if (argv[i] === "--sandbox") {
+      sandbox = true;
     } else {
       rest.push(argv[i]);
     }
@@ -70,14 +77,12 @@ function parseHostAndRest(argv) {
     process.exit(2);
   }
   if (host === "remote") host = "imac";
-  return { host, rest };
+  return { host, sandbox, rest };
 }
 
 async function resolveHost(want) {
   if (want === "local") return "local";
   const topology = getTopology();
-  // Explicit --host imac always probes (power users / tests). Solo only
-  // changes the `auto` default so we don't break intentional remote spawns.
   if (want === "imac") {
     const ok = await probeRemote();
     if (!ok) {
@@ -88,7 +93,6 @@ async function resolveHost(want) {
     }
     return "imac";
   }
-  // auto: solo → local; legacy/fleet → prefer remote when reachable
   if (topology.mode === "solo") return "local";
   return (await probeRemote()) ? "imac" : "local";
 }
@@ -112,16 +116,27 @@ async function cmdGate() {
 }
 
 async function cmdSpawn(argv) {
-  const { host: wantHost, rest: argv2 } = parseHostAndRest(argv);
+  const { host: wantHost, sandbox, rest: argv2 } = parseHostAndRest(argv);
   const host = await resolveHost(wantHost);
+
+  if (sandbox) {
+    const heroCheck = await assertSandboxHeroAvailable(process.env.GOTCHIBOT_HERO_ID || "");
+    if (!heroCheck.ok) {
+      console.error(`sandbox spawn blocked (${heroCheck.code}): ${heroCheck.message}`);
+      if (heroCheck.fix) console.error(`fix: ${heroCheck.fix}`);
+      console.error("Never auto-mint. Use /spawn overlay yourself if you need a new hero.");
+      process.exit(13);
+    }
+  }
 
   if (host === "imac") {
     const args = [...argv2];
+    if (sandbox && !args.includes("--sandbox")) args.unshift("--sandbox");
     if (process.argv.includes("--json") && !args.includes("--json")) args.push("--json");
     const r = spawnSync(process.execPath, [REMOTE_SPAWN, ...args], {
       cwd: ROOT,
       encoding: "utf8",
-      env: process.env,
+      env: { ...process.env, ...(sandbox ? { GOTCHIBOT_SANDBOX: "1" } : {}) },
     });
     if (r.stdout) process.stdout.write(r.stdout);
     if (r.stderr) process.stderr.write(r.stderr);
@@ -140,8 +155,8 @@ async function cmdSpawn(argv) {
   for (let i = 0; i < argv2.length; i++) {
     if (argv2[i] === "--model" && argv2[i + 1]) {
       model = argv2[++i];
-    } else if (argv2[i] === "--json") {
-      // handled below
+    } else if (argv2[i] === "--json" || argv2[i] === "--sandbox") {
+      // handled elsewhere
     } else {
       rest.push(argv2[i]);
     }
@@ -149,16 +164,12 @@ async function cmdSpawn(argv) {
   const prompt = rest.join(" ").trim();
   if (!prompt) usage();
 
-  // If model is explicitly set to a non-chain value (e.g. nim, pro, local, or a full model id),
-  // use it directly and skip the subagent chain.
-  const explicitModel = model !== "sub" && model !== "auto";
+  const useExplicit = model !== "sub" && model !== "auto";
 
   let resolvedModel;
   let route;
 
-  if (!explicitModel) {
-    // Policy: working-models-only (spawn scope → subagentPrefer chain)
-    const { spawnSync } = await import("node:child_process");
+  if (!useExplicit) {
     const r = spawnSync(
       "node",
       ["scripts/model-policy.mjs", "pick", "spawn", "--json"],
@@ -171,7 +182,6 @@ async function cmdSpawn(argv) {
       result = {};
     }
     if (!result.model && result.route !== "cursor-cli") {
-      // Fallback to raw subagent picker if policy CLI shape differs
       const r2 = spawnSync("node", ["scripts/model-auto.mjs", "subagent", "--json"], {
         cwd: ROOT,
         encoding: "utf8",
@@ -185,53 +195,62 @@ async function cmdSpawn(argv) {
     route = result.route || "spawn";
     resolvedModel = result.model;
   } else {
-    explicitModel = model; // keep the explicit model id
     resolvedModel = model;
-    route = "spawn"; // will dispatch with explicit model
+    route = "spawn";
   }
 
+  // Sandbox jobs never use host cursor-cli (escape hatch).
+  if (sandbox && route === "cursor-cli") {
+    route = "spawn";
+    resolvedModel = resolvedModel || "opencode/big-pickle";
+  }
+
+  const env = { ...process.env };
+  if (sandbox) env.GOTCHIBOT_SANDBOX = "1";
+
   let id;
+  let cursorOutput = "";
+  let cursorOk = false;
   if (route === "spawn") {
-    id = runDispatch(["new", "--model", resolvedModel, prompt], { capture: true });
+    const dArgs = ["new", "--model", resolvedModel];
+    if (sandbox) dArgs.push("--sandbox");
+    dArgs.push(prompt);
+    id = runDispatch(dArgs, { capture: true, env });
   } else if (route === "cursor-cli") {
-    // Run the cursor-cli skill: pass the prompt to cursor-agent and work off its output.
-    // cursor-cli.mjs run spawns cursor-agent with the prompt and creates a session dir.
-    const { spawnSync } = await import("node:child_process");
-    const cr = spawnSync("node", ["scripts/cursor-cli.mjs", prompt, "--cwd", ROOT], {
+    const cr = spawnSync("node", ["scripts/cursor-cli.mjs", "run", prompt, "--cwd", ROOT], {
       encoding: "utf8",
       cwd: ROOT,
       timeout: 600_000,
     });
-    const cursorOutput = (cr.stdout || "").trim();
-    const cursorErr = (cr.stderr || "").trim();
-    const cursorOk = cr.status === 0;
-    // Write a minimal output.md capturing the cursor agent's result, and note the chat id.
-    // cursor-cli creates its own session; we create a marker here for orchestrator tracking.
-    const cursorChatId = cursorOk ? String(cr.exitCode || "").trim() : "";
-    // Store cursor result in a session-visible way: write to a temp file or the prompt dir.
-    // Since we don't have a session dir for cursor, write to the output log and note the chat.
-    // For now, just include the output in the JSON report.
-    // Skip poke-avatar: no cAavegotchi hero bound to this session.
+    cursorOutput = (cr.stdout || "").trim();
+    cursorOk = cr.status === 0;
     id = `cursor-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   } else {
-    // fallback: should not happen, but dispatch with the explicit model
-    id = runDispatch(["new", "--model", resolvedModel, prompt], { capture: true });
+    const dArgs = ["new", "--model", resolvedModel];
+    if (sandbox) dArgs.push("--sandbox");
+    dArgs.push(prompt);
+    id = runDispatch(dArgs, { capture: true, env });
   }
 
   spawnSync("bash", [`${ROOT}/scripts/poke-avatar.sh`], { stdio: "ignore" });
   if (process.argv.includes("--json") || argv2.includes("--json")) {
-    const base = { ok: true, host: "local", sessionId: id, model: resolvedModel, gate };
+    const base = {
+      ok: true,
+      host: "local",
+      sessionId: id,
+      model: resolvedModel,
+      sandbox: !!sandbox,
+      gate,
+    };
     if (route === "cursor-cli") {
-      Object.assign(base, {
-        route: "cursor-cli",
-        cursorOutput,
-        cursorOk,
-      });
+      Object.assign(base, { route: "cursor-cli", cursorOutput, cursorOk });
     }
     console.log(JSON.stringify(base, null, 2));
   } else {
     console.log(id);
-    console.error(`spawned ${id} on local (model=${resolvedModel}, hero=${gate.activeHeroId ?? "roster"})${route === "cursor-cli" ? ` (cursor-agent)` : ""}`);
+    console.error(
+      `spawned ${id} on local (model=${resolvedModel}, hero=${gate.activeHeroId ?? process.env.GOTCHIBOT_HERO_ID ?? "roster"}${sandbox ? ", sandbox" : ""})`,
+    );
   }
 }
 

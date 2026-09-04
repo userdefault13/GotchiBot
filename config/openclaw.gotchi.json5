@@ -8,4 +8,12 @@
   workspace: "~/Dev/GotchiBot",
   model: "opencode-go/glm-5.2",
   thinkingDefault: "off",
+
+  // Desk sandbox ON — tool exec in Docker. Abra MCP is not attached on host Desk.
+  sandbox: {
+    mode: "all",
+    backend: "docker",
+    scope: "agent",
+    workspaceAccess: "rw",
+  },
 }

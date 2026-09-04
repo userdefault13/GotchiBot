@@ -24,10 +24,15 @@ Prefer **iMac over Tailscale SSH** when reachable; **local MBP** otherwise.
 Gotchi-mode spawn defaults to `--host auto` (iMac if `REMOTE_HOST` SSH works):
 
 ```bash
-abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim "…"
-abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs wait --host imac <id>
-abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs output --host imac <id>
+./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim "…"
+./scripts/gotchi-orchestrate.mjs spawn --host auto --sandbox --model nim "…"  # new project box
+./scripts/gotchi-orchestrate.mjs wait --host imac <id>
+./scripts/gotchi-orchestrate.mjs output --host imac <id>
 ```
+
+**`--sandbox`:** Docker isolation on iMac/local. Requires `GOTCHIBOT_HERO_ID` with
+`status === available`. Never auto-mint. Never steal assigned desks. Abra only
+inside the box (`ABRA_KEY`). Coding = opencode in-container (no host cursor-cli).
 
 ## Core rule: cAavegotchi required
 
@@ -62,13 +67,21 @@ Tell the user clearly: sub-agents cannot run until they have a cAavegotchi on th
 
 ```bash
 # Preferred in gotchi mode (Tailscale iMac when up)
-GOTCHIBOT_HERO_ID=<hero> abra run gotchibot -- \
+GOTCHIBOT_HERO_ID=<hero> \
   ./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim \
   "self-contained prompt; write to sessions/<id>/output.md"
+
+# New project → Docker sandbox (hero must be available; never auto-mint)
+GOTCHIBOT_HERO_ID=<available-hero> \
+  ./scripts/gotchi-orchestrate.mjs spawn --host auto --sandbox --model nim \
+  "Create X under /work; write /session/output.md"
 
 # Force local
 GOTCHIBOT_HERO_ID=<hero> ./scripts/gotchi-orchestrate.mjs spawn --host local --model nim "…"
 ```
+
+Sandbox ops: `./scripts/gotchibot sandbox status|promote <id> <dest>|rm <id>`.
+Do not steal LINK/YFI/WBTC standing desks. Do not call abra on the host.
 
 ## Multitask (parallel sub-agents)
 
@@ -112,6 +125,7 @@ Skill: **`gotchibot-bridge`**. Commands: `/claudemode`, `/bridge`.
 
 - Delegate-first: do not implement coding tasks yourself while idle agents exist.
 - In gotchi mode, prefer Tailscale iMac spawns (`--host auto` / `--host imac`).
+- New projects → `--sandbox` + available hero only. Never auto-mint. Never steal LINK/YFI/WBTC.
 - Never install tools/skills autonomously; surface skill requests to the user.
-- Secrets via abracadabra only — never raw credentials in prompts or logs.
+- Abra / secrets: **not on host Desk**. Sandbox containers only (`ABRA_KEY`).
 - Do not edit files under `sessions/` except reading outputs and state.

@@ -53,17 +53,21 @@ Your session dir contains:
    no skill installs. If you need a tool or skill not in
    `skills/registry.json`, append a request to `skill-requests.jsonl` and
    continue without it if possible.
-2. Secrets never touch disk or prompts. If you need a credential, ask for it
-   to be fetched through abracadabra (`abra` MCP) by the orchestrator.
+2. Secrets: **abra tools are Docker-sandbox only** — never `abra run` / abracadabra
+   MCP on the host Desk. Sandbox jobs use `ABRA_KEY` + `host.docker.internal:7331`.
    Never echo secret values into logs or output files.
 3. Write your deliverable to `output.md`. It is the only file merged on
    fan-out completion.
-4. Stay inside this repo's working tree unless the prompt says otherwise.
+4. Stay inside this repo's working tree unless the prompt says otherwise
+   (or `/work` when spawned with `--sandbox`).
 5. **Thread continuity** — on follow-ups that continue the last edit ("parent",
    "tighter", "same element"), load skill `thread-continuity`
    (`.opencode/skills/thread-continuity/SKILL.md`): reuse last files/selectors
    before any full-tree search. Cross-session: `sessions/HANDOFF.md`,
    `aarcadeghst-changes` / `changes.json`, or `cursor-cli.mjs resume`.
+6. **Sandbox spawn** (`--sandbox`): hero must be `available`. Never auto-mint.
+   Never steal LINK/YFI/WBTC standing desks. Promote with
+   `./scripts/gotchibot sandbox promote <id> <dest>`.
 
 ## cAavegotchi identity (sub-agents only)
 
@@ -111,21 +115,26 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 ## Secrets
 
-- Everything through abracadabra. `abra run gotchibot -- <cmd>`
+- **Agents:** abra MCP / `abra run` are **denied on host Desk**. Only Docker `--sandbox`
+  jobs may fetch secrets (`ABRA_KEY` → `host.docker.internal:7331`).
+- Julius may still use `abra run gotchibot -- <cmd>` in his own terminal.
 - Never ask Julius to paste a key. Never write secrets to disk, session logs, or `output.md`.
 - **GitHub MCP:** `GOTCHIBOT_GITHUB_PAT` in abra project `gotchibot` → `./scripts/mcp/github.sh` (Docker `ghcr.io/github/github-mcp-server`).
 
 ## Orchestration commands
 
-- Pick an agent: `abra run gotchibot -- ./scripts/delegate-pick.mjs`
-- Spawn: `abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim "…"`
+- Pick an agent: `./scripts/delegate-pick.mjs` (Julius may wrap with abra; agents must not)
+- Spawn: `./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim "…"`
+- Sandbox (new project): `GOTCHIBOT_HERO_ID=<available> ./scripts/gotchi-orchestrate.mjs spawn --host auto --sandbox --model nim "…"`
+  - Hero must be `available`. Never auto-mint. Never steal trader/comms/infra desks.
+  - Ops: `./scripts/gotchibot sandbox status|promote|rm`
 - Focus/chat: `./scripts/agent-focus.mjs chat "…"`
 - List / switch / orch: `/list` `/switch` `/orch` (or the `agent-focus.mjs` equivalents)
 - Wallet gate: `./scripts/wallet-gate.mjs`
-- **Project intake (`/project`):** unsupervised agent requirements before spawn — `./scripts/gotchibot project show` (`config/project-policy.json`)
+- **Project intake (`/project`):** Sandbox-only modal for unsupervised requirements — `./scripts/gotchibot project show` (`config/project-policy.json`). Does **not** gate installs or non-Sandbox work.
 - Hub monitor: `./scripts/gotchibot hub` / `/hub` (skill `gotchibot-hub`)
 - **`@claudemode` (Hub Claude Code tool):** stay on `opencode/big-pickle`.
-  `abra run gotchibot -- node ./scripts/claudemode-ask.mjs "…"` → Hub VS Code
+  `node ./scripts/claudemode-ask.mjs "…"` → Hub VS Code
   Claude pane → reply on stdout → you continue the task. Skill `gotchibot-bridge`.
   Commands: `/claudemode`, `/bridge`. Do **not** `/model @claudemode`.
 

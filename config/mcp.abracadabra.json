@@ -3,7 +3,8 @@
     "abracadabra": {
       "command": "abra",
       "args": ["mcp"],
-      "note": "abracadabra local API. Every secret request pops Touch ID naming the requesting agent. Secrets never reach disk or prompts."
+      "enabled": false,
+      "note": "DISABLED on host Desk/OpenCode. Abra is Docker --sandbox only (ABRA_KEY → host.docker.internal:7331). Julius may still use abra in his own terminal."
     }
   }
 }

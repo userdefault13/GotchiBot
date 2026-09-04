@@ -247,8 +247,10 @@ let cfg={};
 try { cfg=JSON.parse(fs.readFileSync(cfgPath,'utf8')); } catch { cfg={ gateway:{ mode:'local', bind:'lan' } }; }
 cfg.agents=cfg.agents||{};
 const inc='\\x24include';
-cfg.agents.defaults={ ...(cfg.agents.defaults||{}), [inc]:'./gotchibot.defaults.json5', sandbox:{ mode:'off' }, model:{ primary } };
+cfg.agents.defaults={ ...(cfg.agents.defaults||{}), [inc]:'./gotchibot.defaults.json5', sandbox:{ mode:'all', backend:'docker', scope:'agent', workspaceAccess:'rw' }, model:{ primary } };
 cfg.agents.entries={ [inc]:'./gotchibot-fleet.entries.json5' };
+cfg.tools=cfg.tools||{};
+cfg.tools.deny=[...new Set([...(cfg.tools.deny||[]),'abra','abracadabra','get_secrets'])];
 delete cfg.agents.list;
 delete cfg.messages;
 if (cfg.meta) delete cfg.meta.lastTouchedAt;
@@ -257,6 +259,10 @@ cfg.gateway.http=cfg.gateway.http||{};
 cfg.gateway.http.endpoints=cfg.gateway.http.endpoints||{};
 cfg.gateway.http.endpoints.chatCompletions={ enabled:true };
 cfg.gateway.http.endpoints.responses={ enabled:true };
+cfg.mcp=cfg.mcp||{};
+cfg.mcp.servers=cfg.mcp.servers||{};
+delete cfg.mcp.servers.abracadabra;
+delete cfg.mcp.servers.abra;
 const modelsPath=gb+'/config/openclaw.gotchibot.models.json';
 try {
   const models=JSON.parse(fs.readFileSync(modelsPath,'utf8'));
@@ -265,7 +271,7 @@ try {
   console.warn('models merge skipped:', modelsPath, e.message);
 }
 fs.writeFileSync(cfgPath, JSON.stringify(cfg,null,2)+'\\n');
-console.log('merged', cfgPath, 'primary='+primary);
+console.log('merged', cfgPath, 'primary='+primary, 'sandbox=all');
 "
 `.trim();
     r = runSsh(cfg, keyMat.path, `bash -lc ${shellQuote(mergeScript)}`, { stdio: "pipe" });

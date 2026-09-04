@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Persist OpenCode primary agent (gotchi | sandbox | verse | plan | build | ask | project).
+ * Persist OpenCode primary agent (gotchi | sandbox | verse | plan | build | ask).
  *
  * usage:
  *   node scripts/agent-mode.mjs
@@ -19,9 +19,10 @@ const ALIAS = {
   sub: "sandbox",
   "sub-agent": "sandbox",
   subagent: "sandbox",
+  project: "sandbox", // /project is a modal, not a Tab agent
 };
-const MODES = new Set(["gotchi", "sandbox", "verse", "plan", "build", "ask", "project"]);
-const CYCLE = ["gotchi", "sandbox", "verse", "plan", "build", "ask", "project"];
+const MODES = new Set(["gotchi", "sandbox", "verse", "plan", "build", "ask"]);
+const CYCLE = ["gotchi", "sandbox", "verse", "plan", "build", "ask"];
 
 function load() {
   try {
@@ -42,8 +43,6 @@ function paneLabel(agent) {
   switch (agent) {
     case "ask":
       return " Ask ";
-    case "project":
-      return " Project ";
     case "sandbox":
       return " Sandbox ";
     case "verse":
@@ -130,7 +129,7 @@ if (cmd === "set") {
   const raw = rest.find((a) => !a.startsWith("--"));
   const agent = ALIAS[raw] || raw;
   if (!agent || !MODES.has(agent)) {
-    console.error(`usage: agent-mode.mjs set gotchi|sandbox|verse|plan|build|ask|project [--restart]`);
+    console.error(`usage: agent-mode.mjs set gotchi|sandbox|verse|plan|build|ask [--restart]`);
     process.exit(2);
   }
   save(agent);
@@ -151,5 +150,5 @@ if (cmd === "set") {
   process.exit(0);
 }
 
-console.error(`usage: agent-mode.mjs [get] | set gotchi|sandbox|verse|plan|build|ask|project [--restart] | cycle [--reverse] [--restart]`);
+console.error(`usage: agent-mode.mjs [get] | set gotchi|sandbox|verse|plan|build|ask [--restart] | cycle [--reverse] [--restart]`);
 process.exit(2);

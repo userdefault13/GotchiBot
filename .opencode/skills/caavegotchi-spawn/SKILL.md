@@ -205,6 +205,7 @@ link, usdt, usdc, tusd, uni, yfi, wbtc, matic.
 - **NEVER** tell Julius to check cockpit for a token id. **NEVER** run `gotchibot identity bind` for this flow.
 - Never Blockscout / explorer scrape / `identity bind` for NFT token ids. Home subgraph via wallet-roster / identity / curl `subgraph.aarcadeghst.com` is allowed for names.
 - If he names YFI / BTC / LINK / … (yifi → yfi): **cartridge first** (available match → spawn). If none, write `"collateral":"yfi"` and wait. Combined 16-starter + wallet match list. Never auto-mint. Never packs / VRF / token-id questions.
+- **Docker `--sandbox` spawn:** only when status is exactly `available`. Never steal LINK/YFI/WBTC standing desks. Never auto-mint for sandbox.
 
 ## Reference
 

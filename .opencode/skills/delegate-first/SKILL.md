@@ -33,6 +33,15 @@ For every user job that involves coding, investigation, edits, research that nee
 Prefer **iMac via Tailscale** when SSH is up (always-on). Prefer **local MBP** when
 remote is down or the user says local/private.
 
+## New projects → `--sandbox`
+
+```bash
+GOTCHIBOT_HERO_ID=<available> ./scripts/gotchi-orchestrate.mjs spawn --host auto --sandbox --model nim "…"
+```
+
+Hero must be `available`. Never auto-mint. Never steal LINK/YFI/WBTC desks.
+Abra only inside the Docker box. Promote: `./scripts/gotchibot sandbox promote <id> <dest>`.
+
 ## Allowed exceptions (answer yourself)
 
 Only skip delegation when **all** are true:
@@ -46,20 +55,17 @@ If unsure → **delegate**.
 ## Host + hero selection
 
 ```bash
-# See everyone available (needs abra for iMac Tailscale list)
-abra run gotchibot -- ./scripts/agent-focus.mjs list
+# See everyone available
+./scripts/agent-focus.mjs list
 
 # Pin avatar + SUB focus, then chat-route (imac focus → remote-spawn)
 ./scripts/agent-focus.mjs select <n|id>
 ./scripts/agent-focus.mjs chat "user task…"
 
 # Explicit hosts
-GOTCHIBOT_HERO_ID=<hero> abra run gotchibot -- \
-  ./scripts/gotchi-orchestrate.mjs spawn --host imac --model nim "…"
+GOTCHIBOT_HERO_ID=<hero> ./scripts/gotchi-orchestrate.mjs spawn --host imac --model nim "…"
 GOTCHIBOT_HERO_ID=<hero> ./scripts/gotchi-orchestrate.mjs spawn --host local --model nim "…"
-# auto (default): Tailscale iMac if reachable, else local
-GOTCHIBOT_HERO_ID=<hero> abra run gotchibot -- \
-  ./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim "…"
+GOTCHIBOT_HERO_ID=<hero> ./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim "…"
 ```
 
 ## Parallel work
@@ -71,5 +77,6 @@ Independent units → multitask / multiple spawns (still each via an available c
 - Implement a user coding task yourself while idle agents exist
 - Bypass the wallet / cAavegotchi gate
 - Install tools autonomously
+- Call abra / abracadabra on the host (sandbox-only)
 - Put secrets in prompts
 - Spawn “remote” with a local-only command when the picker says `host=imac`

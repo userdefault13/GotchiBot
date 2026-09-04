@@ -183,7 +183,8 @@
           "name": "Hy3",
           "limit": {
             "context": 256000,
-            "output": 64000
+            "input": 192000,
+            "output": 128000
           },
           "temperature": true,
           "reasoning": true,
@@ -404,6 +405,21 @@
           "attachment": true,
           "structured_output": true
         },
+        "omen-alpha": {
+          "name": "Omen Alpha",
+          "limit": {
+            "context": 500000,
+            "output": 128000
+          },
+          "temperature": true,
+          "reasoning": true,
+          "tool_call": true,
+          "interleaved": {
+            "field": "reasoning_content"
+          },
+          "attachment": true,
+          "structured_output": true
+        },
         "qwen3.5-plus": {
           "name": "Qwen3.5 Plus",
           "limit": {
@@ -529,7 +545,7 @@
     "gotchi": {
       "order": 1
     },
-    "sub": {
+    "sandbox": {
       "order": 2
     },
     "verse": {
@@ -552,7 +568,8 @@
         "abra",
         "mcp"
       ],
-      "enabled": true
+      "enabled": false,
+      "$comment": "Abra MCP is sandbox-only (Docker sub-agent). Disabled on host OpenCode/Desk."
     },
     "aarcade-cartridge-schema": {
       "type": "local",
@@ -652,16 +669,14 @@
       "./scripts/avatar-*": "allow",
       "node ./scripts/*.mjs*": "allow",
       "node scripts/*.mjs*": "allow",
-      "abra run gotchibot -- *": "allow",
+      "abra *": "deny",
+      "abra run *": "deny",
       "./scripts/wallet-roster.mjs*": "allow",
       "node scripts/wallet-roster.mjs*": "allow",
       "node ./scripts/wallet-roster.mjs*": "allow",
-      "abra run gotchibot -- node scripts/wallet-roster.mjs*": "allow",
-      "abra run gotchibot -- ./scripts/wallet-roster.mjs*": "allow",
       "./scripts/identity.mjs*": "allow",
       "node scripts/identity.mjs*": "allow",
       "node ./scripts/identity.mjs*": "allow",
-      "abra run gotchibot -- node scripts/identity.mjs*": "allow",
       "*thegraph*": "allow",
       "curl *subgraph*": "allow",
       "curl *graph*": "allow",

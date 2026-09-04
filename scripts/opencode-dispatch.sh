@@ -73,16 +73,18 @@ set_field() {
 }
 
 spawn() {
-  local model="free" prompt id dir runner
+  local model="free" prompt id dir runner sandbox=0
   # shellcheck source=scripts/progress-bar.sh
   source "$PROGRESS"
   while [ $# -gt 0 ]; do
     case "$1" in
       --model) model="$2"; shift 2 ;;
+      --sandbox) sandbox=1; shift ;;
       *) prompt="${1:-}"; shift ;;
     esac
   done
   [ -n "${prompt:-}" ] || usage
+  if [ "${GOTCHIBOT_SANDBOX:-}" = "1" ]; then sandbox=1; fi
 
   if [ "${GOTCHIBOT_SKIP_GATE:-}" != "1" ]; then
     if ! node "$ROOT/scripts/wallet-gate.mjs" >/dev/null 2>&1; then
@@ -107,9 +109,25 @@ spawn() {
     echo "status=running"
     echo "started=$(date -u +%FT%TZ)"
     echo "pid="
+    echo "sandbox=$sandbox"
   } > "$dir/state.env"
 
-  cat > "$dir/bootstrap.txt" <<EOF
+  if [ "$sandbox" = "1" ]; then
+    cat > "$dir/bootstrap.txt" <<EOF
+
+--- session bootstrap (DOCKER SANDBOX) ---
+You are this cAavegotchi, session $id in an isolated GotchiBot sandbox container.
+Speak in first person (I, me, my). You are not the orchestrator.
+Work ONLY under /work. Session files are under /session.
+Write your deliverable to /session/output.md.
+Do NOT touch host ~/Dev, GotchiBot source, or docker.sock — they are not mounted.
+Secrets: use sandbox-abra-fetch / ABRA_KEY → host.docker.internal:7331 only. Never abra run. Never print secrets.
+Do NOT call cursor-cli / cursor-agent (host escape). Coding = opencode in this container.
+Never mint / bind / steal assigned desks. Never install tools on the host.
+If you need a skill not in /rules/skills-registry.json, append JSON to /session/skill-requests.jsonl.
+EOF
+  else
+    cat > "$dir/bootstrap.txt" <<EOF
 
 --- session bootstrap ---
 You are this cAavegotchi, session $id in the GotchiBot swarm. Speak in first person (I, me, my). You are not the orchestrator and you do not narrate yourself in the third person.
@@ -118,8 +136,9 @@ Write your deliverable to $dir/output.md.
 You exist because the cartridge has a cAavegotchi — sub-agents cannot spawn without one.
 If you need a skill not in skills/registry.json, append a JSON request to
 $dir/skill-requests.jsonl and continue without it. Never install anything.
-Never handle secrets directly; ask the orchestrator to fetch them via abracadabra.
+Never call abra / abracadabra on the host. Secrets belong in Docker sandbox jobs only.
 EOF
+  fi
 
   if [ -n "${AARCADE_GOTCHIBOT_SERVICE_SECRET:-}" ]; then
     # Optional: GOTCHIBOT_HERO_ID pins an existing cAavegotchi (e.g. starter-link-h1-1)
@@ -142,9 +161,61 @@ EOF
     fi
   fi
 
+  if [ "$sandbox" = "1" ]; then
+    if ! node "$ROOT/scripts/sandbox.mjs" up "$id"; then
+      echo "sandbox up failed" >&2
+      set_field "$dir" status failed
+      exit 1
+    fi
+    set_field "$dir" sandboxContainer "gotchibot-sandbox-$id"
+  fi
+
   runner="$dir/runner.sh"
   RUNTIME="$(dispatch_runtime)"
-  cat > "$runner" <<RUNNER
+  if [ "$sandbox" = "1" ]; then
+    cat > "$runner" <<RUNNER
+#!/usr/bin/env bash
+set -euo pipefail
+PROMPT="\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")"
+MODEL="$(model_for "$model")"
+FREE_MODEL="\$(node "$ROOT/scripts/model-fallback.mjs" free-model 2>/dev/null || echo opencode/big-pickle)"
+HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+CTN="gotchibot-sandbox-$id"
+ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
+if [ -n "\$HERO" ]; then
+  node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" "\$ST" \
+    --session "$id" --task "\$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')" \
+    --model "\$MODEL" --host local >/dev/null 2>&1 || true
+fi
+AUTO_FLAGS=()
+if [ "\${GOTCHIBOT_AUTO_APPROVE:-1}" = "1" ]; then
+  AUTO_FLAGS+=(--auto)
+fi
+run_opencode() {
+  local m="\$1"
+  # Abra is sandbox-only: secrets already injected as env into the container.
+  # Never abra run / cursor-cli on the host from this path.
+  docker exec -w /work \
+    -e GOTCHIBOT_SANDBOX=1 \
+    -e GOTCHIBOT_SKIP_ABRA=1 \
+    "\$CTN" \
+    opencode run -m "\$m" --title "gotchibot:$id" --dir /work "\${AUTO_FLAGS[@]}" "\$PROMPT" \
+    > "$dir/output.md" 2> "$dir/output.log"
+}
+run_opencode "\$MODEL"
+ec=\$?
+if [ \$ec -ne 0 ] && [ "\$MODEL" != "\$FREE_MODEL" ] && node "$ROOT/scripts/model-fallback.mjs" check-log "$dir/output.log" "$dir/output.md"; then
+  echo "[gotchibot] model limit hit — retrying with \$FREE_MODEL" >> "$dir/output.log"
+  MODEL="\$FREE_MODEL"
+  { grep -vE '^model=' "$dir/state.env"; echo "model=\$FREE_MODEL"; } > "$dir/.state.tmp"
+  mv "$dir/.state.tmp" "$dir/state.env"
+  run_opencode "\$FREE_MODEL"
+  ec=\$?
+fi
+exit \$ec
+RUNNER
+  else
+    cat > "$runner" <<RUNNER
 #!/usr/bin/env bash
 cd "$ROOT"
 PROMPT="\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")"
@@ -163,16 +234,9 @@ if [ "\${GOTCHIBOT_AUTO_APPROVE:-1}" = "1" ]; then
 fi
 run_opencode() {
   local m="\$1"
-      if [ "\${GOTCHIBOT_SKIP_ABRA:-}" = "1" ] || [ -n "\${NVIDIA_API_KEY:-}\${OPENROUTER_API_KEY:-}\${DEEPSEEK_API_KEY:-}\${OPENCODE_API_KEY:-}\${OPENCODE_ZEN_API_KEY:-}" ]; then
-    opencode run -m "\$m" --title "gotchibot:$id" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" \
-      > "$dir/output.md" 2> "$dir/output.log"
-  elif command -v abra >/dev/null 2>&1; then
-    abra run gotchibot -- opencode run -m "\$m" --title "gotchibot:$id" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" \
-      > "$dir/output.md" 2> "$dir/output.log"
-  else
-    opencode run -m "\$m" --title "gotchibot:$id" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" \
-      > "$dir/output.md" 2> "$dir/output.log"
-  fi
+  # Host agents must NOT call abra. Keys must already be in env (Julius wrapped spawn).
+  opencode run -m "\$m" --title "gotchibot:$id" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" \
+    > "$dir/output.md" 2> "$dir/output.log"
 }
 run_opencode "\$MODEL"
 ec=\$?
@@ -191,6 +255,7 @@ if [ \$ec -ne 0 ] && [ "\$MODEL" != "\$FREE_MODEL" ] && node "$ROOT/scripts/mode
 fi
 exit \$ec
 RUNNER
+  fi
   chmod +x "$runner"
 
   ( if "$runner"; then set_field "$dir" status done
@@ -200,6 +265,9 @@ RUNNER
         [ "$END_ST" = working ] && END_ST=available
         node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" "$END_ST" --host local >/dev/null 2>&1 || true
       fi
+      if [ "$(field sandbox "$dir")" = "1" ]; then
+        node "$ROOT/scripts/sandbox.mjs" rm "$id" >/dev/null 2>&1 || true
+      fi
       "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id finished."
     else set_field "$dir" status failed
@@ -208,6 +276,9 @@ RUNNER
         END_ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
         [ "$END_ST" = working ] && END_ST=available
         node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" "$END_ST" --host local >/dev/null 2>&1 || true
+      fi
+      if [ "$(field sandbox "$dir")" = "1" ]; then
+        node "$ROOT/scripts/sandbox.mjs" rm "$id" >/dev/null 2>&1 || true
       fi
       "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id failed."

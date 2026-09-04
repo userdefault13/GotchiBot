@@ -21,12 +21,15 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot files-max             Files full-bleed / chat→bar (Mac: Ctrl-b f)
   gotchibot avatar                show the avatar pane (Ctrl+G or F6)
   gotchibot avatar-max            Avatar full-bleed / chat→bar (Mac: Ctrl-b a)
-  gotchibot spawn [--host auto|imac|local] [--model t] "P"   spawn sub-agent (Tailscale iMac when auto/imac)
+  gotchibot spawn [--host auto|imac|local] [--sandbox] [--model t] "P"   spawn (Tailscale iMac when auto/imac)
+                                  # --sandbox = Docker box; hero must be available; never auto-mint
+  gotchibot sandbox up|exec|status|promote|rm|ensure-image   Docker sandbox ops
   gotchibot new [--model t] "P"   spawn a sub-agent
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
-  gotchibot mode [gotchi|sandbox|verse|plan|build|ask|project|cycle] [--restart]  OpenCode agent
-  gotchibot project [show|new|set|ready]  unsupervised project intake (/project)
+  gotchibot mode [gotchi|sandbox|verse|plan|build|ask|cycle] [--restart]  OpenCode agent
+                                  # note: mode sandbox = pink TUI playground; gotchibot sandbox = Docker
+  gotchibot project [show|new|set|ready]  unsupervised project intake (/project modal)
   gotchibot gotchi-mode [status|env|model|ensure] [--json]  OpenCode TUI → iMac orchestrator session
   gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
   gotchibot list                  session table
@@ -321,7 +324,7 @@ cmd_mode() {
   shift || true
   case "$sub" in
     gotchi|sandbox|sub|sub-agent|verse|plan|build|ask|project)
-      case "$sub" in sub|sub-agent) sub=sandbox ;; esac
+      case "$sub" in sub|sub-agent|project) sub=sandbox ;; esac
       exec node "$ROOT/scripts/agent-mode.mjs" set "$sub" "$@"
       ;;
     cycle)
@@ -331,7 +334,8 @@ cmd_mode() {
       exec node "$ROOT/scripts/agent-mode.mjs" get "$@"
       ;;
     *)
-      echo "unknown mode: $sub (use gotchi|sandbox|verse|plan|build|ask|project)" >&2
+      echo "unknown mode: $sub (use gotchi|sandbox|verse|plan|build|ask)" >&2
+      echo "  /project is a Sandbox modal, not a Tab agent" >&2
       exit 2
       ;;
   esac
@@ -541,6 +545,9 @@ case "$cmd" in
   tmux) cmd_tmux ;;
   chat) cmd_chat "$@" ;;
   spawn) cmd_spawn "$@" ;;
+  sandbox)
+    exec node "$ROOT/scripts/sandbox.mjs" "$@"
+    ;;
   new) "$DISPATCH" new "$@" ;;
   list) exec "$DISPATCH" list ;;
   agents) cmd_agents "$@" ;;

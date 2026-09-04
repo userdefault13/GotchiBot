@@ -115,7 +115,59 @@ export function readiness(project = loadCurrent(), policy = loadPolicy()) {
     gate,
     missing: missing.map((f) => f.id),
     issues,
+    execution: resolveExecution(project),
     spawnOk: issues.length === 0 && policy.rules?.neverAutoSpawn === true ? "confirm-then-spawn" : false,
+  };
+}
+
+/**
+ * How to run after intake is ready + Julius confirms.
+ * claude-tool: Hub Claude CLI owns the project; subagent stays on big-pickle / Zen fallbacks.
+ */
+export function resolveExecution(project) {
+  const raw = String(project?.fields?.model || "big-pickle").trim();
+  const key = raw.toLowerCase().replace(/^@/, "");
+  if (["claude-tool", "claude", "claudemode", "claude-cli", "hub-claude"].includes(key)) {
+    return {
+      mode: "claude-tool",
+      label: "Claude tool",
+      subagentModel: "opencode/big-pickle",
+      subagentFallback: "zen-auto (model-auto / working Zen only)",
+      subagentAlias: "sub",
+      claudeOwnsProject: true,
+      claudeSubmit: "./scripts/gotchibot claude-submit",
+      claudeSubmitNode: "node ./scripts/claudemode-submit.mjs",
+      note:
+        "Hand the full intake brief to Claude CLI (claude-submit). Spawn/monitor hero on big-pickle with Zen fallbacks — do not /model @claudemode on the desk.",
+    };
+  }
+  if (key === "zen-auto" || key === "auto" || key === "zen") {
+    return {
+      mode: "zen-auto",
+      label: "Zen auto",
+      subagentModel: "auto",
+      subagentAlias: "sub",
+      claudeOwnsProject: false,
+      note: "Pick via model-auto among working Zen free models (cooldown 402/429).",
+    };
+  }
+  if (key === "big-pickle" || key === "pickle" || key === "opencode/big-pickle") {
+    return {
+      mode: "big-pickle",
+      label: "Big Pickle",
+      subagentModel: "opencode/big-pickle",
+      subagentAlias: "nim",
+      claudeOwnsProject: false,
+      note: "Hero runs opencode/big-pickle.",
+    };
+  }
+  return {
+    mode: "custom",
+    label: raw,
+    subagentModel: raw.includes("/") ? raw : `opencode/${raw}`,
+    subagentAlias: "sub",
+    claudeOwnsProject: false,
+    note: `Hero uses model ${raw}.`,
   };
 }
 
@@ -143,6 +195,16 @@ function printShow(project, policy) {
     console.log("Do not spawn until: node scripts/project-intake.mjs ready");
   } else {
     console.log("Intake complete. Do not auto-spawn. Confirm with Julius, then delegate-first spawn.");
+  }
+  const ex = resolveExecution(project);
+  console.log("");
+  console.log(`Execution · ${ex.label} (${ex.mode})`);
+  console.log(`  subagent  ${ex.subagentModel}${ex.subagentFallback ? ` · fallback ${ex.subagentFallback}` : ""}`);
+  if (ex.claudeOwnsProject) {
+    console.log(`  claude    OWNS PROJECT → ${ex.claudeSubmit} "<full brief>"`);
+    console.log(`            ${ex.note}`);
+  } else if (ex.note) {
+    console.log(`  note      ${ex.note}`);
   }
 }
 

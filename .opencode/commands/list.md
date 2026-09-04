@@ -1,9 +1,11 @@
 ---
-description: Legacy alias of /switch — list agents; optional select to focus
+description: Legacy alias of /roster — list cAavegotchis; optional select to focus
 ---
 
-**Prefer `/switch`.** `/list` is the same roster for compatibility — do not run both
-or give parallel instructions. In **Sub** mode the list excludes the orchestrator.
+**Prefer `/roster` for cartridge heroes.** `/list` is the same roster for
+compatibility — do not run both or give parallel instructions.
+
+For OpenCode Tab agents (Gotchi / Sandbox / …), use **`/switch`** (agent modal).
 
 If `$ARGUMENTS` is empty:
 

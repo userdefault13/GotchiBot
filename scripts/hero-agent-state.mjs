@@ -36,6 +36,115 @@ export function looksStandingTask(text) {
   return /\b(cron|crontab|monitor|watch(?:ing|er)?|schedul|standing|trader|loop|daily|hourly|every\s+\d)\b/.test(t);
 }
 
+/** Local cache status for a hero (no network). */
+export function getCachedHeroStatus(heroId) {
+  const id = String(heroId || "").trim();
+  if (!id) return null;
+  try {
+    const cache = JSON.parse(readFileSync(CACHE, "utf8"));
+    const row = cache?.[id] || cache?.heroes?.[id];
+    if (!row) return null;
+    const st = String(row.status || row.agentStatus || "").toLowerCase();
+    return st || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sandbox spawn gate: hero must exist and be exactly `available`.
+ * Never auto-mint. Never steal assigned desks (LINK/YFI/WBTC/…). Never use orch.
+ */
+export async function assertSandboxHeroAvailable(heroId) {
+  const id = String(heroId || process.env.GOTCHIBOT_HERO_ID || "").trim();
+  if (!id) {
+    return {
+      ok: false,
+      code: "hero",
+      message: "sandbox spawn requires GOTCHIBOT_HERO_ID (an available cAavegotchi)",
+      fix: "Pick an available hero via ./scripts/agent-focus.mjs list — do not mint",
+    };
+  }
+  if (id === "owned-954" || id === "gotchi") {
+    return {
+      ok: false,
+      code: "hero",
+      message: `${id} is the orchestrator — not a sandbox worker`,
+      fix: "Use a different available hero",
+    };
+  }
+
+  // Standing approved projects — never steal into sandbox.
+  const STANDING = new Set([
+    "starter-link-h1-1", // trader desk
+    "starter-yfi-h1-1", // infra monitor
+    "owned-22899", // comms
+  ]);
+  if (STANDING.has(id)) {
+    return {
+      ok: false,
+      code: "hero",
+      message: `hero ${id} owns an approved standing desk — not available for sandbox`,
+      fix: "Pick a different available hero (DAI starters etc.). Trader/comms/infra stay as they are.",
+    };
+  }
+
+  let status = getCachedHeroStatus(id);
+  try {
+    const meta = loadMeta();
+    if (meta?.cartridgeId && process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET) {
+      const snap = await call(`/cartridges/${meta.cartridgeId}`);
+      if (snap.ok) {
+        const heroes = (snap.data.cartridge ?? snap.data)?.cAavegotchis ?? [];
+        const h = heroes.find((x) => x.id === id);
+        if (!h) {
+          return {
+            ok: false,
+            code: "hero",
+            message: `hero ${id} not on cartridge — never auto-mint`,
+            fix: "Use /spawn overlay yourself to mint/bind, then retry when status is available",
+          };
+        }
+        status = String(h.agentStatus || "available").toLowerCase();
+      }
+    }
+  } catch {
+    // fall through to cache
+  }
+
+  if (status && status !== "available") {
+    return {
+      ok: false,
+      code: "hero",
+      message: `hero ${id} status is "${status}" — sandbox requires available (no steal)`,
+      fix: "Unassign that desk or pick another available hero. Trader/comms/infra stay assigned.",
+    };
+  }
+
+  // No status recorded: allow only if hero is known in local cache and not standing.
+  if (!status) {
+    try {
+      const cache = JSON.parse(readFileSync(CACHE, "utf8"));
+      if (!cache?.[id]) {
+        return {
+          ok: false,
+          code: "hero",
+          message: `cannot confirm ${id} is available (unknown hero)`,
+          fix: "abra run gotchibot -- node scripts/hero-agent-state.mjs sync  then retry with an available hero",
+        };
+      }
+    } catch {
+      return {
+        ok: false,
+        code: "hero",
+        message: `cannot confirm ${id} is available (no cache/sim status)`,
+        fix: "Sync hero state, then retry",
+      };
+    }
+  }
+  return { ok: true, heroId: id, agentStatus: status || "available" };
+}
+
 function orchestratorHeroId(heroes = []) {
   try {
     const ob = JSON.parse(readFileSync(ONBOARDING, "utf8"));

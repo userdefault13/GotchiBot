@@ -4,7 +4,9 @@ sessions/*
 config/openclaw/agents/*/models.json
 config/openclaw/agents/*/openclaw-agent.sqlite*
 KNOWLEDGE.md
-tmp/
+sandboxes/
+node_modules/
+
 var/
 .mc.menu
 .venv-pdf/

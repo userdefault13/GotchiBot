@@ -28,7 +28,13 @@ cfg.agents = cfg.agents || {};
 cfg.agents.defaults = {
   ...(cfg.agents.defaults || {}),
   $include: "./gotchibot.defaults.json5",
-  sandbox: { mode: "off" },
+  // Desk + tools run sandboxed (docker). Abra MCP is sandbox-only — not on host Desk.
+  sandbox: {
+    mode: "all",
+    backend: "docker",
+    scope: "agent",
+    workspaceAccess: "rw",
+  },
   model: {
     primary:
       cfg.agents.defaults?.model?.primary ||
@@ -36,6 +42,11 @@ cfg.agents.defaults = {
       "opencode-go/kimi-k3",
   },
 };
+
+cfg.tools = cfg.tools || {};
+const deny = new Set([...(cfg.tools.deny || []), "abra", "abracadabra", "get_secrets"]);
+cfg.tools.deny = [...deny];
+
 cfg.agents.entries = { $include: "./gotchibot-fleet.entries.json5" };
 delete cfg.agents.list;
 
@@ -74,8 +85,11 @@ const gotchiRoot =
   process.env.GOTCHIBOT_OPENCLAW_WORKSPACE?.trim() ||
   join(homedir(), "Dev/GotchiBot");
 cfg.mcp = cfg.mcp || {};
+const servers = { ...(cfg.mcp.servers || {}) };
+delete servers.abracadabra;
+delete servers.abra;
 cfg.mcp.servers = {
-  ...(cfg.mcp.servers || {}),
+  ...servers,
   "gotchibot-claude": {
     command: "node",
     args: [`${gotchiRoot}/scripts/mcp/gotchibot-claude.mjs`],
@@ -105,6 +119,8 @@ cfg.mcp.servers = {
 writeFileSync(path, `${JSON.stringify(cfg, null, 2)}\n`);
 console.log(`repaired ${path}`);
 console.log(`primary=${cfg.agents.defaults.model.primary}`);
+console.log(`sandbox.mode=${cfg.agents.defaults.sandbox?.mode}`);
 console.log(`mcp.gotchibot-claude → ${gotchiRoot}/scripts/mcp/gotchibot-claude.mjs`);
 console.log(`mcp.gotchibot-pdf → ${gotchiRoot}/scripts/mcp/gotchibot-pdf.mjs`);
 console.log(`mcp.gotchibot-meet → ${gotchiRoot}/scripts/mcp/gotchibot-meet.mjs`);
+console.log("abra MCP stripped from host Desk (sandbox-only)");

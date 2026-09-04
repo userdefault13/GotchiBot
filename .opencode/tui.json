@@ -26,6 +26,7 @@
     "./tui-plugins/gotchi-sidebar-hide.ts",
     "./tui-plugins/gotchi-spawn.ts",
     "./tui-plugins/gotchi-queue-multitask.ts",
-    "./tui-plugins/gotchi-agent-sync.ts"
+    "./tui-plugins/gotchi-agent-sync.ts",
+    "./tui-plugins/gotchi-project.ts"
   ]
 }

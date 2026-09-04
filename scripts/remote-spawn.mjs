@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { assertRemoteReady, materializeKey, runSsh, runScp, localSessionFiles } from "./remote-lib.mjs";
 import { checkSpawnGate } from "./wallet-gate.mjs";
-import { looksStandingTask } from "./hero-agent-state.mjs";
+import { looksStandingTask, assertSandboxHeroAvailable } from "./hero-agent-state.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -37,7 +37,7 @@ function shellQuote(s) {
 
 function usage() {
   console.error(`usage:
-  remote-spawn.mjs [--model nim|pro|local|<id>] [--hero <heroId>] [--json] "PROMPT"
+  remote-spawn.mjs [--model nim|pro|local|<id>] [--hero <heroId>] [--sandbox] [--json] "PROMPT"
   remote-spawn.mjs output <sessionId>
   remote-spawn.mjs wait <sessionId>…
   remote-spawn.mjs status <sessionId>`);
@@ -48,6 +48,7 @@ function parseArgs(argv) {
   let model = "auto";
   let hero = process.env.GOTCHIBOT_HERO_ID || "";
   let json = false;
+  let sandbox = process.env.GOTCHIBOT_SANDBOX === "1";
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -57,17 +58,25 @@ function parseArgs(argv) {
       hero = argv[++i];
     } else if (a === "--json") {
       json = true;
+    } else if (a === "--sandbox") {
+      sandbox = true;
     } else {
       rest.push(a);
     }
   }
-  return { model, hero, json, rest };
+  return { model, hero, json, sandbox, rest };
 }
 
-function writeForwardEnv() {
+function writeForwardEnv({ sandbox = false } = {}) {
   const lines = ["export GOTCHIBOT_SKIP_ABRA=1", "export GOTCHIBOT_AUTO_APPROVE=1"];
+  if (sandbox) lines.push("export GOTCHIBOT_SANDBOX=1");
   for (const k of FORWARD) {
     if (process.env[k]) lines.push(`export ${k}=${shellQuote(process.env[k])}`);
+  }
+  // Sandbox-only: forward ABRA_KEY so the container can hit host.docker.internal:7331
+  if (sandbox && process.env.ABRA_KEY) {
+    lines.push(`export ABRA_KEY=${shellQuote(process.env.ABRA_KEY)}`);
+    lines.push(`export ABRA_PROJECT=${shellQuote(process.env.ABRA_PROJECT || "gotchibot")}`);
   }
   const path = join(tmpdir(), `gotchibot-spawn-env-${process.pid}`);
   writeFileSync(path, `${lines.join("\n")}\n`, { mode: 0o600 });
@@ -81,8 +90,8 @@ function syncIdentity(cfg, keyPath) {
   return { synced: files.length, status: r.status };
 }
 
-function sshSpawn(cfg, keyPath, { model, hero, prompt }) {
-  const localEnv = writeForwardEnv();
+function sshSpawn(cfg, keyPath, { model, hero, prompt, sandbox }) {
+  const localEnv = writeForwardEnv({ sandbox });
   const remoteEnv = `/tmp/gotchibot-spawn-${process.pid}.env`;
   try {
     const scp = spawnSync(
@@ -106,12 +115,13 @@ function sshSpawn(cfg, keyPath, { model, hero, prompt }) {
     }
 
     const heroExport = hero ? `export GOTCHIBOT_HERO_ID=${shellQuote(hero)}; ` : "";
+    const sandboxFlag = sandbox ? " --sandbox" : "";
     const remoteCmd = [
       `set -euo pipefail`,
       `source ${shellQuote(remoteEnv)}`,
       `rm -f ${shellQuote(remoteEnv)}`,
       heroExport +
-        `node ./scripts/gotchi-orchestrate.mjs spawn --host local --model ${shellQuote(model)} ${shellQuote(prompt)}`,
+        `node ./scripts/gotchi-orchestrate.mjs spawn --host local${sandboxFlag} --model ${shellQuote(model)} ${shellQuote(prompt)}`,
     ].join("; ");
 
     const r = runSsh(cfg, keyPath, remoteCmd, { stdio: "pipe" });
@@ -145,9 +155,19 @@ function sshField(cfg, keyPath, id, key) {
 }
 
 async function cmdSpawn(argv) {
-  const { model, hero, json, rest } = parseArgs(argv);
+  const { model, hero, json, sandbox, rest } = parseArgs(argv);
   const prompt = rest.join(" ").trim();
   if (!prompt) usage();
+
+  if (sandbox) {
+    const heroCheck = await assertSandboxHeroAvailable(hero || process.env.GOTCHIBOT_HERO_ID || "");
+    if (!heroCheck.ok) {
+      console.error(`sandbox spawn blocked (${heroCheck.code}): ${heroCheck.message}`);
+      if (heroCheck.fix) console.error(`fix: ${heroCheck.fix}`);
+      console.error("Never auto-mint. Use /spawn overlay yourself if you need a new hero.");
+      process.exit(13);
+    }
+  }
 
   // Gate on MBP first (same cartridge/wallet truth); then sync to iMac.
   const gate = await checkSpawnGate();
@@ -165,6 +185,7 @@ async function cmdSpawn(argv) {
       model,
       hero: hero || gate.activeHeroId || "",
       prompt,
+      sandbox,
     });
     const out = (r.stdout || "").trim();
     const err = (r.stderr || "").trim();
@@ -185,6 +206,7 @@ async function cmdSpawn(argv) {
             host: "imac",
             sessionId,
             model,
+            sandbox: !!sandbox,
             hero: hero || gate.activeHeroId || null,
             remoteHost: cfg.host,
             synced: sync.synced,
@@ -197,7 +219,7 @@ async function cmdSpawn(argv) {
     } else {
       console.log(sessionId);
       console.error(
-        `spawned ${sessionId} on imac (${cfg.host}) model=${model} hero=${hero || gate.activeHeroId || "roster"}`,
+        `spawned ${sessionId} on imac (${cfg.host}) model=${model} hero=${hero || gate.activeHeroId || "roster"}${sandbox ? " sandbox" : ""}`,
       );
     }
     const hid = hero || gate.activeHeroId || "";

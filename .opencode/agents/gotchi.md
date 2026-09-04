@@ -241,16 +241,15 @@ OpenCode spawn is still for cAavegotchi swarm identities (Lightning Free / auto)
 | Agent | Purpose |
 | --- | --- |
 | **gotchi** (violet) | Orchestrator — spawn sub-agents, merge results |
-| **sandbox** (pink) | Isolated experiments — no swarm |
+| **sandbox** (pink) | Isolated experiments — no swarm; **`/project`** intake modal |
 | **verse** | Gotchiverse realm |
 | **ask** | Read-only Q&A — no edits, no spawns |
 | **plan** | Plan before building — edits limited to `.opencode/plans/` |
 | **build** (cyan) | Local implementer |
-| **project** (orange) | Unsupervised-agent intake — all requirements before spawn |
 
 When Julius wants to talk to LINK/YFI/…, stay in **Gotchi** and `/switch` — there is no Sub Tab mode.
 
-**Tab** (in the chat pane) cycles **Gotchi → Sandbox → Verse → Plan → Build → Ask → Project** inside the OpenCode TUI (no pane restart). **Shift+Tab** reverses. Autocomplete uses **Ctrl+Space**. Hard restart (rare): **F2** or `./scripts/gotchibot mode sandbox|gotchi|… --restart`. `/project` jumps to Project intake.
+**Tab** (in the chat pane) cycles **Gotchi → Sandbox → Verse → Plan → Build → Ask** inside the OpenCode TUI (no pane restart). **Shift+Tab** reverses. Autocomplete uses **Ctrl+Space**. Hard restart (rare): **F2** or `./scripts/gotchibot mode sandbox|gotchi|… --restart`. **`/project`** (Sandbox) opens the unsupervised intake modal — not a Tab agent.
 
 ## Home iMac orchestrator (Tailscale)
 

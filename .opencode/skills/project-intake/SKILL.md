@@ -1,46 +1,70 @@
 ---
 name: project-intake
 description: >-
-  Unsupervised agent project intake. Load for /project, Project mode, standing
-  agents, or “start an unsupervised project”. Collect every requirement before
-  spawn. config/project-policy.json + scripts/project-intake.mjs.
+  Sandbox-only unsupervised project intake (/project modal). Load ONLY in
+  Sandbox when Julius runs /project or asks to start an unsupervised project.
+  Does NOT gate desk installs, Claude CLI setup, Gotchi mode, or ordinary
+  spawns. config/project-policy.json + scripts/project-intake.mjs.
 license: MIT
 compatibility: opencode
 metadata:
-  audience: orchestrator
+  audience: sandbox
   workflow: project
 ---
 
-# Project intake — unsupervised agents
+# Project intake — Sandbox only
 
-**Hard rule:** prompt Julius with **all** requirements. Never spawn until
-`project-intake ready` succeeds **and** he confirms.
+**Scope:** This skill and `config/project-policy.json` apply **only** when Julius
+is in **Sandbox** and using **`/project`** (unsupervised project intake).
 
-## Commands
+They do **not** apply to:
+
+- Installing tools (Claude CLI, kickbacks, brew, etc.)
+- Gotchi / Verse / Plan / Build / Ask modes
+- Ordinary swarm spawn / `/spawn` / `/switch`
+- Hub Claude bridge / `claude-submit` outside a `/project` draft
+
+**Hard rule (Sandbox `/project` only):** collect **all** requirements. Never
+spawn that unsupervised project until `project-intake ready` succeeds **and**
+Julius confirms.
+
+## TUI
+
+In **Sandbox**: **`/project`** opens the intake modal. There is **no** Project
+Tab agent.
+
+CLI:
 
 ```bash
 ./scripts/gotchibot project show
 ./scripts/gotchibot project new
 ./scripts/gotchibot project set goal "…"
+./scripts/gotchibot project set model claude-tool
 ./scripts/gotchibot project ready
 ```
 
-TUI: `/project` (agent **project**, orange).
-
 ## Required fields
 
-title, goal, success, stop, schedule, host, hero, autonomy, live, output, watch
+title, goal, success, stop, schedule, host, hero, **model**, autonomy, live, output, watch
 
 Optional: skills (registry names), secrets (abra names only).
 
-## Gates
+### Model options
 
-Wallet + cartridge + ≥1 cAavegotchi (`wallet-gate`). Paper-only default.
-Live needs explicit confirm. Never steal assigned desks / orch `owned-954`.
+| Value | Meaning |
+| --- | --- |
+| `claude-tool` | Hub Claude CLI owns the project (`claude-submit`). Subagent: big-pickle → working Zen. |
+| `big-pickle` | Hero runs `opencode/big-pickle` |
+| `zen-auto` | `model-auto` among working Zen free models |
+
+## Gates (Sandbox `/project` only)
+
+Wallet + cartridge + ≥1 cAavegotchi. Paper-only default. Never steal orch
+`owned-954` / assigned desks.
 
 ## Do not
 
+- Cite this policy to block installs or non-project work
 - Auto-spawn on a complete form
 - Auto-install skills
 - Ask for secret values
-- Skip the full list on first `/project`

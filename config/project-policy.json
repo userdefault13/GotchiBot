@@ -1,8 +1,9 @@
 {
   "version": 1,
   "name": "unsupervised-project",
-  "description": "Intake for an unsupervised agent project. Collect every requirement before spawn. Never auto-start.",
+  "description": "Sandbox /project only — unsupervised agent intake. Does not gate desk installs or non-Sandbox work. Never auto-start.",
   "rules": {
+    "sandboxOnly": true,
     "promptAllRequirements": true,
     "neverAutoSpawn": true,
     "paperDefault": true,
@@ -47,6 +48,30 @@
       "id": "hero",
       "prompt": "Which cAavegotchi / collateral? (never owned-954 orch; never steal assigned desks)",
       "required": true
+    },
+    {
+      "id": "model",
+      "prompt": "Model path?",
+      "required": true,
+      "default": "big-pickle",
+      "hint": "claude-tool = Hub Claude CLI owns the whole project; desk subagent stays on big-pickle / working Zen fallbacks",
+      "options": [
+        {
+          "value": "claude-tool",
+          "title": "Claude tool",
+          "description": "Pass full project to Claude CLI (claude-submit). Subagent: big-pickle → working Zen fallbacks"
+        },
+        {
+          "value": "big-pickle",
+          "title": "Big Pickle",
+          "description": "opencode/big-pickle — free Zen talk+execute on the hero"
+        },
+        {
+          "value": "zen-auto",
+          "title": "Zen auto",
+          "description": "model-auto among working Zen free models (cooldown dead ones)"
+        }
+      ]
     },
     {
       "id": "autonomy",
