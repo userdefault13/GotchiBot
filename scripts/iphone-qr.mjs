@@ -10,13 +10,14 @@
  *   ./scripts/gotchibot qr
  *   ./scripts/gotchibot qr --openlens
  */
+import { hubNetworkHost } from "./claude-bridge-role.mjs";
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(fileURLToPath(import.meta.url), "..", "..");
-const host = (process.env.REMOTE_HOST || "100.68.95.90").replace(/^https?:\/\//, "");
+const host = (process.env.REMOTE_HOST || hubNetworkHost()).replace(/^https?:\/\//, "");
 const port = process.env.OPENCODE_SERVER_PORT || "4096";
 const user = process.env.OPENCODE_SERVER_USERNAME || "opencode";
 const pass = process.env.OPENCODE_SERVER_PASSWORD || "";

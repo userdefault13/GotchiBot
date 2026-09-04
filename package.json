@@ -1,7 +1,7 @@
 {
   "name": "@userdefault/gotchibot",
   "version": "0.2.1",
-  "description": "GotchiBot — Aavegotchi agent orchestrator (OpenClaw / OpenCode; macOS, Linux, Windows/WSL)",
+  "description": "GotchiBot \u2014 Aavegotchi agent orchestrator (OpenClaw / OpenCode; macOS, Linux, Windows/WSL)",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
@@ -21,7 +21,6 @@
     "scripts/",
     "config/",
     "skills/",
-    ".opencode/",
     "assets/",
     "docs/",
     "mcp-servers/",
@@ -32,11 +31,17 @@
     "ORCHESTRATOR.md",
     "IDENTITY_SYSTEM.md",
     "IDENTITY.md",
-    "DEPLOYMENT.md",
     "opencode.json",
     "LICENSE",
     "COMMERCIAL.md",
-    "README.md"
+    "README.md",
+    "!.opencode/**",
+    "!.cursor/**",
+    "!config/openclaw.fleet.generated.json5",
+    "!config/openclaw.fleet.list.json5",
+    "!config/openclaw.install.json5",
+    "!config/hub-bridge.json",
+    "!scripts/remote-spawn-discord.mjs"
   ],
   "scripts": {
     "prepublishOnly": "node scripts/update-check.mjs --check"

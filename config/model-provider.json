@@ -30,7 +30,7 @@
     "note": "commsies currently runs @cf/meta/llama-3.1-8b-instruct-fast (dated); deprecated-model refresh announced 2026-05-08 - avoid llama-3.x"
   },
   "fallbacks": [
-    "ollama/deepseek-r1 on iMac 192.168.1.162:11434 (private/offline)",
+    "ollama/deepseek-r1 on the hub (private/offline)",
     "google gemini flash free tier (prompts may train)"
   ]
 }

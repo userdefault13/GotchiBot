@@ -34,7 +34,7 @@ export function isHubMachine() {
     return true;
   }
   const h = String(hostname() || "").toLowerCase();
-  if (/imac|juliuss-imac/.test(h)) return true;
+  if (/imac/.test(h)) return true;
   const cfg = loadHubBridgeConfig();
   const hubHost = String(cfg.host || "").toLowerCase();
   if (hubHost && (h === hubHost || h.startsWith(hubHost.split(".")[0]))) return true;
@@ -48,8 +48,21 @@ export function hubNetworkHost() {
     process.env.REMOTE_HOST?.trim() ||
     process.env.GOTCHIBOT_REMOTE_HOST?.trim() ||
     loadHubBridgeConfig().host ||
-    "juliuss-imac-2"
+    "localhost"
   );
+}
+
+/**
+ * Receiver endpoint for desks that cannot reach the bridge directly (e.g. from
+ * inside Docker). Resolved from env, then config, then the local host — never a
+ * hardcoded address, which would only ever be correct on one person's network.
+ */
+export function hubReceiverUrl() {
+  const explicit = process.env.GOTCHIBOT_RECEIVER_URL?.trim();
+  if (explicit) return explicit;
+  const cfg = loadHubBridgeConfig();
+  const port = cfg.receiverPort || 45679;
+  return `http://${hubNetworkHost()}:${port}`;
 }
 
 export function hubBridgeHttpUrl() {

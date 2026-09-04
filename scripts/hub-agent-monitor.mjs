@@ -119,7 +119,7 @@ function probeBridge() {
   const url =
     process.env.GOTCHIBOT_HUB_BRIDGE_URL ||
     cfg.url ||
-    "http://juliuss-imac-2:45678/prompt";
+    `http://${cfg.host || "localhost"}:${cfg.bridgePort || 45678}${cfg.bridgePath || "/prompt"}`;
   const health = String(url).replace(/\/prompt\/?$/, "/health");
   const r = spawnSync("curl", ["-sf", "--max-time", "2", "-w", "\n%{http_code}", health], {
     encoding: "utf8",
