@@ -8,6 +8,10 @@ import { resolve } from "node:path"
 const ID = "gotchi.logo"
 const COMPACT = "GotchiCode"
 const MIN_WIDTH = 48
+/** paddingTop + paddingBottom around the logo box below. */
+const LOGO_PADDING_ROWS = 2
+/** Prompt box as the host draws it: border, input rows, model line. */
+const PROMPT_ROWS = 6
 
 const DEFAULT_ART = [
   " ▄▄▄  ▄▄   ▄▄▄   ▄▄▄ ▄  ▄  ▄  ▄███▄   ▄▄▄  ▄▄   ▄▄█  ▄▄ ",
@@ -97,6 +101,7 @@ const SessionPromptWithLogo = (props: {
     /* events optional */
   }
 
+  const dim = useTerminalDimensions()
   const empty = createMemo(() => {
     rev()
     return sessionEmpty(props.api, props.sessionId)
@@ -105,8 +110,32 @@ const SessionPromptWithLogo = (props: {
   const Prompt = props.api.ui.Prompt
 
   // session_prompt is mode:replace — host drops the default prompt unless we paint it.
+  //
+  // The home screen is centred by the host; an empty *session* is not. The host
+  // leaves the message area blank and pins this slot to the bottom, so the
+  // wordmark and prompt sat in the last rows under a screenful of void (in a
+  // 40-row pane: logo on 30-32, prompt on 34-38).
+  //
+  // flexGrow on this box does nothing — the host sizes the slot to its content
+  // — so lift the block instead: pad below it by half the free space, which
+  // leaves the logo and prompt centred and the host's own footer at the bottom
+  // where it belongs. Once the session has messages the padding goes away and
+  // the prompt returns to the bottom.
+  const lift = createMemo(() => {
+    if (!empty()) return 0
+    let height = 0
+    try {
+      height = Number(dim?.()?.height) || 0
+    } catch {
+      height = 0
+    }
+    if (!height) return 0
+    const block = props.art.length + LOGO_PADDING_ROWS + PROMPT_ROWS
+    return Math.max(0, Math.floor((height - block) / 2))
+  })
+
   return (
-    <box flexDirection="column" width="100%">
+    <box flexDirection="column" width="100%" paddingBottom={lift()}>
       <Show when={empty()}>
         <box
           width="100%"
