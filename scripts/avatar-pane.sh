@@ -61,9 +61,13 @@ memo_call() {
 # of those as a change and repaint. The `at` timestamps are stripped for the
 # same reason. .avatar-roster.stamp is deliberately excluded — it is a pure
 # heartbeat, and poke-avatar.sh already sends USR1 alongside it.
+# NOTE: $PAGE_FILE is deliberately NOT part of this. Paging changes which
+# heroes are on screen, not what any hero is — so it must not invalidate the
+# memo cache. Prev/next used to re-derive collateral and re-draw every thumb
+# through fresh node spawns purely because the page number lives in a file.
 state_fingerprint() {
   local sig live
-  sig="$(cat "$PIN" "$FOCUS" "$ROSTER_CACHE" "$PAGE_FILE" \
+  sig="$(cat "$PIN" "$FOCUS" "$ROSTER_CACHE" \
     "$SESSIONS/.hero-agent-state.json" "$SESSIONS/.focus-list.json" \
     "$SESSIONS/.onboarding.json" "$SESSIONS"/s*/state.env 2>/dev/null \
     | sed 's/"at": *"[^"]*"//g' | cksum | tr -d ' ')"
@@ -1045,11 +1049,20 @@ sb_click_wake() {
 
 RENDERING=0
 
+# Reset derived values only when the underlying state moved. A page flip or a
+# resize repaint reuses everything already computed for the heroes on screen.
+memo_reset_if_stale() {
+  local fp
+  fp="$(state_fingerprint)"
+  [ "$fp" = "$LAST_FP" ] && return 0
+  memo_reset
+}
+
 safe_render() {
   # Nested USR1/WINCH during a node thumb draw blanks the pane; skip.
   [ "${RENDERING:-0}" = 1 ] && return 0
   RENDERING=1
-  memo_reset
+  memo_reset_if_stale
   render "$(active_status)" || true
   # Settle the fingerprint so the next tick does not repaint what we just drew.
   LAST_FP="$(state_fingerprint)"
@@ -1092,7 +1105,7 @@ case "${1:-watch}" in
       key=""
       if read -rsn1 -t "$read_t" key; then
         if handle_key "$key"; then
-          memo_reset
+          memo_reset_if_stale
           render "$(active_status)" || true
           LAST_FP="$(state_fingerprint)"
           continue
