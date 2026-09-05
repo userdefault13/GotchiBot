@@ -41,6 +41,34 @@ Bar line: `OC✗` = OpenClaw gateway unreachable. `tun✓`/`tun✗` = subgraph t
 | Full OpenClaw redeploy | `abra run gotchibot -- ./scripts/gotchibot remote-openclaw` | Heavy; prefer `restart-gateway` first |
 | Hub totally unreachable (SSH itself down, not just the gateway) | `abra run gotchibot -- ./scripts/gotchibot hub status --json` (look for `"ssh":{"ok":false}`) | Nothing else in this SOP can run without SSH — every command here goes over `abra run gotchibot -- …`. Tell Julius: check the iMac is powered on and Tailscale is connected. Do not attempt `restart-gateway` / `bridge-ensure` / `doctor` until SSH is back |
 
+## Who is where (roster)
+
+`hub status` answers "is the hub healthy". `hub roster` answers "who is working,
+and on which desk" — the question the status board never printed.
+
+```bash
+./scripts/gotchibot hub roster            # running bots per desk + tailnet count
+./scripts/gotchibot hub roster --all      # include bots with only past sessions
+./scripts/gotchibot hub roster --live     # re-scan the iMac over SSH first
+./scripts/gotchibot hub roster --json
+```
+
+Read it this way:
+
+- **Desks** are machines actually running GotchiBot. Tailscale lists every
+  machine on the tailnet; a desk is one whose OpenClaw gateway (18789) or SSH
+  answers. A phone on the tailnet is not a desk and an iMac that has been shut
+  since August is listed under "Not a desk" with its last-seen date.
+- **A bot sits where its session runs**, not where its hero was minted. Heroes
+  live on the cartridge; the same hero can appear on both desks with a different
+  session on each. Heroes with no session anywhere are listed separately — do
+  not report them as "on this desk".
+- Default view lists what is **running** (plus the orchestrator). `--all` adds
+  the rest.
+
+Cached by default (sub-second, no SSH). Use `--live` when the numbers look
+stale — the footer says so when the last remote scan failed.
+
 ## Hub dashboard (OpenClaw + VS Code bridge)
 
 ```bash

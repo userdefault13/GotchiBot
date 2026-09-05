@@ -72,6 +72,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot passoff list|show|accept|resume|drop  the receiving side (/passoff)
   gotchibot claude-plugin [build|--check]  package .claude/ (hooks, commands, agents)
                                   as an installable plugin for the iMac
+  gotchibot cursor-layer check [--json]  assert Cursor desk layer (hooks, policy, skills)
   gotchibot checkpoint <id> <label>   push a milestone to the cartridge
   gotchibot identity ensure|mint|roster   cartridge identity ops
   gotchibot reset [--full] [--yes]      wipe gotchibot cartridge (new-user test)
@@ -87,7 +88,9 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot comms-cron-deploy         install WBTC daily comms cron on iMac
   gotchibot commsies-imac-deploy      keep Commsies (:3002 + Ollama) alive on iMac
   gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
-  gotchibot hub [status|dashboard|monitor|restart-gateway|doctor|bridge-…]  Hub SOP + OC/bridge dashboard
+  gotchibot hub [status|roster|dashboard|monitor|restart-gateway|doctor|bridge-…]  Hub SOP + OC/bridge dashboard
+  gotchibot hub roster [--all] [--live] [--json]  who is on which desk, and how
+                                  many desks are on the tailnet
   gotchibot bridge|bridge-prompt [--host auto|network|imac|local] [--wait] "…"
                                   Desk→Hub Claude VS Code; reply on Desk
   gotchibot vscode-open|vscode-ensure [--check]  open/focus Hub VS Code on GotchiBot (code -r)
@@ -622,6 +625,12 @@ case "$cmd" in
   handoff) cmd_handoff "$@" ;;
   passoff) exec node "$ROOT/scripts/passoff.mjs" "$@" ;;
   claude-plugin) exec node "$ROOT/scripts/claude-plugin-build.mjs" "$@" ;;
+  cursor-layer)
+    case "${1:-check}" in
+      check|"") exec node "$ROOT/scripts/cursor-layer-check.mjs" "${@:2}" ;;
+      *) echo "usage: gotchibot cursor-layer check [--json]" >&2; exit 2 ;;
+    esac
+    ;;
   ask) cmd_ask "$@" ;;
   multitask) cmd_multitask "$@" ;;
   mode) cmd_mode "$@" ;;
@@ -654,6 +663,10 @@ case "$cmd" in
       restart-gateway|restart|doctor|vscode-open|bridge-check|bridge-ensure|ensure-bridge|bridge-info|claude-pane-init|tunnel-restart)
         shift || true
         abra_or_node "$ROOT/scripts/hub-ops.mjs" "$sub" "$@"
+        ;;
+      roster|bots|who)
+        shift || true
+        exec node "$ROOT/scripts/hub-roster.mjs" "$@"
         ;;
       monitor|hubmon|agent-monitor)
         shift || true

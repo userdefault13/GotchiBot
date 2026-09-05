@@ -305,8 +305,32 @@ function printHuman(payload) {
   } else {
     console.log(`  Docker     ${d?.reason || "unavailable"}`);
   }
+  const dk = payload.desks;
+  if (dk) {
+    console.log(
+      `  Desks      ${dk.desks} of ${dk.machines} on the tailnet${dk.online != null ? ` (${dk.online} online)` : ""}` +
+        ` · ${dk.bots} bots · ${dk.running} running   → hub roster`,
+    );
+  }
   console.log(`  Topology   ${payload.topology?.mode || "?"} (${payload.topology?.source || "?"})`);
   if (payload.barLine) console.log(`  Bar        ${payload.barLine}`);
+}
+
+/** Compact desk/bot counts for the status line — the roster owns the detail. */
+async function deskSummary() {
+  try {
+    const { buildRoster } = await import("./hub-roster.mjs");
+    const r = await buildRoster({ live: false });
+    return {
+      machines: r.tailnet.machines,
+      online: r.tailnet.online,
+      desks: r.tailnet.desks,
+      bots: r.bots.length,
+      running: r.desks.reduce((n, d) => n + d.running, 0),
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function buildStatus({ live }) {
@@ -385,6 +409,7 @@ async function buildStatus({ live }) {
       reason: docker.reason || null,
     },
     topology: { mode: topo.mode, source: topo.source },
+    desks: await deskSummary(),
     barLine,
     focusListAt: focusList?.at || null,
   };
