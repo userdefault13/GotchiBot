@@ -1,0 +1,33 @@
+---
+description: GotchiBot Cursor layer map — hooks enforce, commands/agents via Claude compat
+alwaysApply: true
+---
+
+# Cursor layer
+
+Read [`CURSOR.md`](CURSOR.md) for the desk map. You are the **gotchi** orchestrator
+in Cursor (`owned-954`), not the Hub Claude proxy.
+
+## Hooks enforce, they do not suggest
+
+A rule in markdown is a suggestion. The same rule in `.cursor/hooks/` is a wall:
+
+- no autonomous installs → `beforeShellExecution` / `guard-bash.mjs`
+- no writes outside the tree → `preToolUse` Write|Delete / `guard-write.mjs`
+- broken `.mjs`/`.sh`/`.json` → `afterFileEdit` + `postToolUse` / `check-syntax.mjs`
+- passoff inbox + meeting + focus → `sessionStart` / `session-brief.mjs`
+
+A denial is policy, not a bug. Do not work around it; ask Julius.
+
+## Before planning fresh work
+
+Run `./scripts/gotchibot passoff resume`. If a packet is waiting, that is the job.
+
+## Minutes stay isolated
+
+`/minutes` → Task subagent `meet-scribe`. Do not read `sessions/meetings/*/transcript.jsonl` into this context.
+
+## Commands and agents
+
+Slash commands and GotchiBot subagents live under `.claude/` and load here via
+Cursor's Claude compatibility. Do not invent a second copy under `.cursor/`.
