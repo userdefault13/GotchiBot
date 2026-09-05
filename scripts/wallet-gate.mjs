@@ -32,6 +32,25 @@ function fail(code, message, fix) {
   process.exit(code === "wallet" ? 10 : code === "cartridge" ? 11 : 12);
 }
 
+/** Heroes this desk has seen before — used only when the API is unreachable. */
+function cachedHeroIds() {
+  const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+  for (const rel of ["sessions/.hero-agent-state.json", "sessions/.openclaw-agent-map.json"]) {
+    try {
+      const raw = JSON.parse(readFileSync(`${ROOT_DIR}/${rel}`, "utf8"));
+      const ids = rel.includes("agent-map") ? Object.keys(raw?.agents || {}) : Object.keys(raw || {});
+      const real = ids.filter((id) => id && id !== "gotchi");
+      if (real.length) return real;
+    } catch {
+      /* try the next cache */
+    }
+  }
+  return [];
+}
+
+/** Opt-in escape hatch for "the sim is down but the heroes are real". */
+const ALLOW_CACHED = process.env.GOTCHIBOT_GATE_ALLOW_CACHED === "1";
+
 export async function checkSpawnGate({ quiet = false } = {}) {
   const owner = readWallet();
   if (!owner) {
@@ -48,12 +67,22 @@ export async function checkSpawnGate({ quiet = false } = {}) {
   let heroes = [];
   let activeHeroId = meta?.activeHeroId ?? null;
 
+  // Track reachability separately: "the API said you have no heroes" and "the
+  // API never answered" are different problems with different fixes, and the
+  // second one used to be reported as the first — which sends you to
+  // `identity bind`, i.e. towards minting, over a container that is merely down.
+  let apiReachable = false;
+  let apiError = null;
+
   if (cartridgeId) {
     const snap = await call(`/cartridges/${cartridgeId}`);
     if (snap.ok) {
+      apiReachable = true;
       const c = snap.data.cartridge ?? snap.data;
       heroes = c.cAavegotchis ?? [];
       activeHeroId = activeHeroId ?? c.activeCAavegotchi?.id ?? heroes[0]?.id ?? null;
+    } else {
+      apiError = snap.data?.error || `HTTP ${snap.status}`;
     }
   }
 
@@ -77,6 +106,30 @@ export async function checkSpawnGate({ quiet = false } = {}) {
       message: "No gotchibot cartridge yet.",
       fix: "abra run gotchibot -- ./scripts/gotchibot init",
     };
+  }
+
+  if (heroes.length === 0 && !apiReachable) {
+    const cached = cachedHeroIds();
+    if (ALLOW_CACHED && cached.length) {
+      console.error(
+        `[gate] cartridge API unreachable (${apiError || "no answer"}) — proceeding on ${cached.length} cached hero(es) ` +
+          `because GOTCHIBOT_GATE_ALLOW_CACHED=1. Hero state may be stale.`,
+      );
+      heroes = cached.map((id) => ({ id, role: null }));
+      activeHeroId = activeHeroId ?? cached[0];
+    } else {
+      return {
+        ok: false,
+        code: "cartridge-unreachable",
+        message: `Cartridge API did not answer (${apiError || "no answer"}) — this is an infra problem, not a missing hero.`,
+        fix:
+          "Check the sim: ./scripts/gotchibot remote -- docker ps --filter name=cartridge (load skill infra-recover). " +
+          "If you know your heroes exist and need to work now: GOTCHIBOT_GATE_ALLOW_CACHED=1",
+        owner,
+        cartridgeId,
+        cachedHeroes: cached.length,
+      };
+    }
   }
 
   if (heroes.length === 0) {

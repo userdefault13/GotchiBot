@@ -70,6 +70,13 @@ function parseArgs(argv) {
 function writeForwardEnv({ sandbox = false } = {}) {
   const lines = ["export GOTCHIBOT_SKIP_ABRA=1", "export GOTCHIBOT_AUTO_APPROVE=1"];
   if (sandbox) lines.push("export GOTCHIBOT_SANDBOX=1");
+  // The remote desk runs the spawn gate again on its own. A gate decision the
+  // operator already made here (e.g. "the cartridge API is down, use cached
+  // heroes") has to travel with the spawn, or the remote fails with a message
+  // that contradicts the local one.
+  if (process.env.GOTCHIBOT_GATE_ALLOW_CACHED === "1") {
+    lines.push("export GOTCHIBOT_GATE_ALLOW_CACHED=1");
+  }
   for (const k of FORWARD) {
     if (process.env[k]) lines.push(`export ${k}=${shellQuote(process.env[k])}`);
   }
