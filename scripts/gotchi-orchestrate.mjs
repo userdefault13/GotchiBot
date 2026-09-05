@@ -249,7 +249,10 @@ async function cmdSpawn(argv) {
   } else {
     console.log(id);
     console.error(
-      `spawned ${id} on local (model=${resolvedModel}, hero=${gate.activeHeroId ?? process.env.GOTCHIBOT_HERO_ID ?? "roster"}${sandbox ? ", sandbox" : ""})`,
+      // An explicit GOTCHIBOT_HERO_ID is a request; the cartridge's active hero
+      // is only a default. Reporting the default over the request made a
+      // passoff spawn look like it went to the orchestrator.
+      `spawned ${id} on local (model=${resolvedModel}, hero=${process.env.GOTCHIBOT_HERO_ID || gate.activeHeroId || "roster"}${sandbox ? ", sandbox" : ""})`,
     );
   }
 }

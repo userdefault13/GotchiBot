@@ -478,18 +478,46 @@ async function deliverOpenClaw(p, brief) {
   return r.ok ? { ok: true, via: r.via || "openclaw", agentId, stdout: r.stdout || "" } : { ok: false, reason: r.reason, agentId };
 }
 
-function deliverSpawn(p, brief, { model = "nim" } = {}) {
-  const r = spawnSync(
-    process.execPath,
-    [`${ROOT}/scripts/gotchi-orchestrate.mjs`, "spawn", "--model", model, brief],
-    {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: { ...process.env, GOTCHIBOT_HERO_ID: p.to.id },
+/**
+ * Spawn delivery has to answer two questions the gateway path never asks: which
+ * hero picks this up, and *where* the work lives. A packet whose repo is on the
+ * iMac is useless to an agent spawned on this laptop, and a spawn that falls
+ * back to the orchestrator hero is not a handoff at all — both happened the
+ * first time this ran.
+ */
+function deliverSpawn(p, brief, { model = "nim", host = null } = {}) {
+  const args = [`${ROOT}/scripts/gotchi-orchestrate.mjs`, "spawn"];
+  if (host) args.push("--host", host);
+  args.push("--model", model, brief);
+  const r = spawnSync(process.execPath, args, {
+    cwd: ROOT,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GOTCHIBOT_HERO_ID: p.to.id,
     },
-  );
+  });
   const out = `${r.stdout || ""}${r.stderr || ""}`.trim();
-  return r.status === 0 ? { ok: true, via: "spawn", stdout: out } : { ok: false, reason: out || `exit ${r.status}` };
+  if (r.status !== 0) return { ok: false, reason: out || `exit ${r.status}` };
+  const landed = out.match(/spawned\s+(\S+)\s+on\s+(\S+).*?hero=(\S+?)[,)\s]/);
+  if (landed) {
+    const [, sid, whereRan, heroRan] = landed;
+    // Landing on the wrong machine means the agent cannot see the work at all —
+    // that is a failed delivery, not a warning.
+    if (host && !whereRan.includes(host)) {
+      return {
+        ok: false,
+        reason:
+          `spawn landed as ${sid} on ${whereRan}, but this packet's work is on ${host} — ` +
+          `kill ${sid} and retry; an agent on the wrong desk cannot see the repo`,
+        stdout: out,
+      };
+    }
+    if (heroRan !== p.to.id) {
+      console.error(`[passoff] note: spawn reports hero ${heroRan}, packet is addressed to ${p.to.id}`);
+    }
+  }
+  return { ok: true, via: host ? `spawn:${host}` : "spawn", stdout: out };
 }
 
 function deliverMeet(p, brief) {
@@ -517,6 +545,7 @@ function parseArgs(argv) {
     else if (a === "--task") args.task = argv[++i];
     else if (a === "--via") args.via = argv[++i];
     else if (a === "--model") args.model = argv[++i];
+    else if (a === "--host") args.host = argv[++i];
     else if (a === "--json") args.json = true;
     else if (a === "--all") args.all = true;
     else if (a === "--dry-run" || a === "--dry") args.dryRun = true;
@@ -580,7 +609,7 @@ async function cmdSend(args) {
       console.error(`or let ${heroLabel(to)} collect it: ./scripts/passoff.mjs resume --as ${to.id}`);
     }
   } else if (via === "spawn") {
-    result = deliverSpawn(p, brief, { model: args.model || "nim" });
+    result = deliverSpawn(p, brief, { model: args.model || "nim", host: args.host || null });
     if (!result.ok) console.error(`spawn delivery failed: ${result.reason}`);
   } else if (via === "meet") {
     result = deliverMeet(p, brief);
@@ -683,7 +712,8 @@ function usage() {
   console.error(`usage:
   passoff capture [--from <n|id|name>] [--to <n|id|name>] [--note "…"] [--next "…"] [--json]
   passoff send <to> [--from …] [--note "…"] [--next "…"] [--task "…"]
-                    [--via openclaw|spawn|meet|none] [--model nim] [--dry-run] [--json]
+                    [--via openclaw|spawn|meet|none] [--model nim] [--host imac|local]
+                    [--dry-run] [--json]
   passoff list [--to <n|id|name>] [--all] [--json]
   passoff show [<id>] [--json]
   passoff accept [<id>] [--as <n|id|name>] [--claim] [--json]
