@@ -19,6 +19,7 @@ import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readJsonMap, writeJsonAtomic } from "./json-store.mjs";
 import { call } from "./identity.mjs";
 import { isMainModule } from "./is-main.mjs";
 
@@ -250,10 +251,10 @@ function pidAlive(pid) {
 
 function writeLocalCache(heroId, status, extra = {}) {
   mkdirSync(SESSIONS, { recursive: true });
-  let cache = {};
-  try {
-    cache = JSON.parse(readFileSync(CACHE, "utf8"));
-  } catch {}
+  // An unreadable read here used to become an empty map on the next write,
+  // taking every other hero's status with it (see scripts/json-store.mjs).
+  const { data: cache, ok: readable } = readJsonMap(CACHE);
+  if (!readable) return null;
   const prev = cache[heroId] || {};
   cache[heroId] = {
     ...prev,
@@ -279,7 +280,7 @@ function writeLocalCache(heroId, status, extra = {}) {
     if (prev.at) cache[heroId].at = prev.at;
     if (existsSync(CACHE)) return;
   }
-  writeFileSync(CACHE, `${JSON.stringify(cache, null, 2)}\n`);
+  writeJsonAtomic(CACHE, cache);
 }
 
 export async function setHeroAgentStatus(heroId, status, extra = {}) {

@@ -16,6 +16,7 @@
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { readJsonMap, writeJsonAtomic } from "./json-store.mjs";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
 
@@ -205,7 +206,10 @@ export function loadHeroState(heroId) {
 export function persistHeroCollateral(heroId, info = {}) {
   if (!heroId) return null;
   mkdirSync(SESSIONS, { recursive: true });
-  const all = readJson(HERO_STATE, {}) || {};
+  // Never rebuild this map from an unreadable read — that is how every hero's
+  // agentStatus disappeared at once (see scripts/json-store.mjs).
+  const { data: all, ok: readable } = readJsonMap(HERO_STATE);
+  if (!readable) return null;
   const prev = all[heroId] || {};
   const colors = info.primary
     ? info
@@ -226,7 +230,7 @@ export function persistHeroCollateral(heroId, info = {}) {
     at: new Date().toISOString(),
   };
   all[heroId] = next;
-  writeFileSync(HERO_STATE, `${JSON.stringify(all, null, 2)}\n`);
+  writeJsonAtomic(HERO_STATE, all);
   return next;
 }
 
