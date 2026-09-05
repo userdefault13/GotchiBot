@@ -24,3 +24,10 @@ var/
 !.opencode/agents/plan.md
 !.opencode/agents/sandbox.md
 !.opencode/agents/verse.md
+
+# Generated, not source: aseprite-tool.mjs exports to build/ (defaultExportDir),
+# tmp/ is scratch, and these are editor logs and dumped session transcripts.
+build/
+tmp/
+.cursor/*.log
+session-ses_*.md
