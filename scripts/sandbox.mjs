@@ -14,6 +14,7 @@
  */
 import { spawnSync } from "node:child_process";
 import {
+  symlinkSync,
   existsSync,
   mkdirSync,
   writeFileSync,
@@ -24,7 +25,7 @@ import {
 } from "node:fs";
 import { dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const IMAGE = process.env.GOTCHIBOT_SANDBOX_IMAGE || "gotchibot-sandbox:local";
@@ -89,9 +90,135 @@ function docker(args, opts = {}) {
 function requireDocker() {
   const r = docker(["info"], { stdio: "pipe" });
   if (r.status !== 0) {
-    console.error("docker not available — install Docker Desktop on this host (iMac)");
+    // Name the machine we are actually on. This used to say "(iMac)" wherever
+    // it ran, which sent people to fix the wrong desk.
+    const here = hostname().replace(/\.local$/, "");
+    const missing = /not found|ENOENT/i.test(`${r.error?.message || ""}${r.stderr || ""}`);
+    console.error(
+      missing
+        ? `docker CLI not found on ${here} — install Docker Desktop here, or run the sandbox on a desk that has it (./scripts/gotchibot hub roster)`
+        : `docker is installed on ${here} but not responding — start Docker Desktop (docker info failed)`,
+    );
     process.exit(3);
   }
+}
+
+const BUILD_LOCK = `${SANDBOXES}/.image-build.lock`;
+/** A cold build is ~4 minutes; anything older than this is a corpse. */
+const BUILD_LOCK_STALE_MS = 30 * 60_000;
+/** Hard ceiling for one build — a wedged builder must not hang the caller. */
+const BUILD_TIMEOUT_MS = Number(process.env.GOTCHIBOT_SANDBOX_BUILD_TIMEOUT_MS || 20 * 60_000);
+
+/** Who else is building this image right now, if anyone. */
+function readBuildLock() {
+  try {
+    const lock = JSON.parse(readFileSync(BUILD_LOCK, "utf8"));
+    if (Date.now() - new Date(lock.at).getTime() > BUILD_LOCK_STALE_MS) return null;
+    try {
+      process.kill(lock.pid, 0);
+    } catch {
+      return null; // holder is gone
+    }
+    return lock;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * On macOS, `docker build` in a non-interactive SSH session dies in the
+ * credential helper: "keychain cannot be accessed because the current session
+ * does not allow user interaction". The base image is public and needs no
+ * credentials at all, so retry with a config that has no credsStore rather than
+ * asking someone to unlock a keychain over SSH.
+ */
+function looksLikeKeychainLock(text) {
+  return /keychain cannot be accessed|error getting credentials/i.test(String(text || ""));
+}
+
+/**
+ * A credential-helper-free DOCKER_CONFIG that still finds buildx.
+ *
+ * CLI plugins live *inside* the config directory, so pointing DOCKER_CONFIG at
+ * a bare `{}` silently drops buildx and downgrades the build to the deprecated
+ * legacy builder — which then rejects flags like --progress. Copy the real
+ * config minus the credential entries, and link the plugins back in.
+ */
+function dockerConfigWithoutCreds() {
+  const src = process.env.DOCKER_CONFIG || `${homedir()}/.docker`;
+  const dir = `${SANDBOXES}/.docker-nocreds`;
+  mkdirSync(dir, { recursive: true });
+
+  let cfg = {};
+  try {
+    cfg = JSON.parse(readFileSync(`${src}/config.json`, "utf8")) || {};
+  } catch {
+    cfg = {};
+  }
+  // credsStore/credHelpers are what reach for the keychain; `auths` holds
+  // base64 credentials we have no business duplicating onto disk.
+  delete cfg.credsStore;
+  delete cfg.credHelpers;
+  delete cfg.auths;
+  writeFileSync(`${dir}/config.json`, `${JSON.stringify(cfg, null, 2)}\n`);
+
+  const plugins = `${src}/cli-plugins`;
+  const link = `${dir}/cli-plugins`;
+  try {
+    if (existsSync(plugins)) {
+      rmSync(link, { force: true, recursive: false });
+      symlinkSync(plugins, link);
+    }
+  } catch {
+    /* no plugins to link — legacy builder still works */
+  }
+  return dir;
+}
+
+function buildxAvailable(env) {
+  return docker(["buildx", "version"], { stdio: "pipe", env }).status === 0;
+}
+
+/** Builds of this image left behind by a caller that died (killed ssh, OOM). */
+function orphanBuildPids() {
+  const r = spawnSync("pgrep", ["-f", `docker build -t ${IMAGE}`], { encoding: "utf8" });
+  return String(r.stdout || "")
+    .split("\n")
+    .map((n) => Number(n.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0 && n !== process.pid);
+}
+
+/**
+ * A `docker build` outlives the ssh session that started it. Two of them on the
+ * same tag then deadlock on the shared build context at 0% CPU, with no
+ * timeout and nothing to notice — which is exactly how this wedged the first
+ * time. Clear the corpses before starting, and never wait forever.
+ */
+function clearOrphanBuilds() {
+  const pids = orphanBuildPids();
+  if (!pids.length) return 0;
+  console.error(`[sandbox] found ${pids.length} orphaned build(s) for ${IMAGE} (${pids.join(", ")}) — clearing before rebuild`);
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      /* already gone */
+    }
+  }
+  return pids.length;
+}
+
+function runImageBuild(env) {
+  return docker(["build", "-t", IMAGE, "-f", DOCKERFILE, `${ROOT}/docker/sandbox`], {
+    stdio: ["ignore", "inherit", "pipe"],
+    env,
+    timeout: BUILD_TIMEOUT_MS,
+    killSignal: "SIGKILL",
+  });
+}
+
+function timedOut(r) {
+  return r?.error?.code === "ETIMEDOUT" || r?.signal === "SIGKILL";
 }
 
 function cmdEnsureImage() {
@@ -100,12 +227,50 @@ function cmdEnsureImage() {
     console.error(`missing ${DOCKERFILE}`);
     process.exit(1);
   }
-  console.error(`[sandbox] building ${IMAGE}…`);
-  const r = docker(["build", "-t", IMAGE, "-f", DOCKERFILE, `${ROOT}/docker/sandbox`], {
-    stdio: "inherit",
-  });
-  if (r.status !== 0) process.exit(r.status ?? 1);
-  console.error(`[sandbox] image ready: ${IMAGE}`);
+
+  const held = readBuildLock();
+  if (held) {
+    console.error(
+      `[sandbox] another build is already running (pid ${held.pid}, started ${held.at}) — waiting for it instead of racing`,
+    );
+    process.exit(4);
+  }
+  mkdirSync(SANDBOXES, { recursive: true });
+  clearOrphanBuilds();
+  writeFileSync(BUILD_LOCK, `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() }, null, 2)}\n`);
+
+  try {
+    console.error(`[sandbox] building ${IMAGE}…`);
+    let r = runImageBuild(process.env);
+    if (r.status !== 0 && !timedOut(r) && looksLikeKeychainLock(r.stderr)) {
+      const cfgDir = dockerConfigWithoutCreds();
+      const env = { ...process.env, DOCKER_CONFIG: cfgDir };
+      console.error(
+        `[sandbox] docker credential helper needs an interactive keychain; retrying without it (base image is public)` +
+          `${buildxAvailable(env) ? "" : " — buildx not found under the fallback config, using the legacy builder"}`,
+      );
+      r = runImageBuild(env);
+    }
+    if (timedOut(r)) {
+      console.error(
+        `[sandbox] build exceeded ${Math.round(BUILD_TIMEOUT_MS / 60000)}m and was killed. ` +
+          `A builder that stalls at 0% CPU is usually two builds sharing one context — ` +
+          `check: pgrep -fl "docker build -t ${IMAGE}", then retry.`,
+      );
+      process.exit(5);
+    }
+    if (r.status !== 0) {
+      if (r.stderr) process.stderr.write(r.stderr);
+      process.exit(r.status ?? 1);
+    }
+    console.error(`[sandbox] image ready: ${IMAGE}`);
+  } finally {
+    try {
+      rmSync(BUILD_LOCK, { force: true });
+    } catch {
+      /* best effort */
+    }
+  }
 }
 
 function imageExists() {
