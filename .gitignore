@@ -10,3 +10,17 @@ node_modules/
 var/
 .mc.menu
 .venv-pdf/
+
+# Meeting @-mention stubs: gotchi-meet.mjs writes one .opencode/agents/<HERO>.md
+# per invited gotchi when a meeting opens (tagged "gotchibot-meet-agent") and
+# deletes them when it closes, so tracking them means every meeting shows up as
+# phantom deletions. Real agent definitions are allowlisted below — add a "!"
+# line when you add one.
+.opencode/agents/*
+!.opencode/agents/ask.md
+!.opencode/agents/build.md
+!.opencode/agents/gotchi.md
+!.opencode/agents/gotchiverse-map.md
+!.opencode/agents/plan.md
+!.opencode/agents/sandbox.md
+!.opencode/agents/verse.md

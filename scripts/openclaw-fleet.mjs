@@ -238,6 +238,23 @@ function entriesForConfig(entries) {
   return out;
 }
 
+/**
+ * Rewrite a generated file only when it actually changed. The header carries a
+ * generation timestamp, so a plain write dirties these tracked config files on
+ * every sync — i.e. on nearly every gotchibot invocation — which buries real
+ * fleet changes in timestamp churn and makes `git status` lie about the tree.
+ */
+function writeGenerated(path, contents) {
+  const withoutStamp = (s) => String(s).replace(/^\/\/ Generated: .*$/m, "");
+  try {
+    if (withoutStamp(readFileSync(path, "utf8")) === withoutStamp(contents)) return false;
+  } catch {
+    /* no previous file — write it */
+  }
+  writeFileSync(path, contents);
+  return true;
+}
+
 function writeFleetArtifacts({ entries, map, orchId }) {
   mkdirSync(`${ROOT}/config`, { recursive: true });
   ensureSessions();
@@ -255,14 +272,14 @@ function writeFleetArtifacts({ entries, map, orchId }) {
     "",
   ].join("\n");
 
-  writeFileSync(FLEET_ENTRIES, `${header}${JSON.stringify(configEntries, null, 2)}\n`);
-  writeFileSync(FLEET_LIST, `${header}${JSON.stringify(list, null, 2)}\n`);
+  writeGenerated(FLEET_ENTRIES, `${header}${JSON.stringify(configEntries, null, 2)}\n`);
+  writeGenerated(FLEET_LIST, `${header}${JSON.stringify(list, null, 2)}\n`);
 
   mkdirSync(`${homedir()}/.openclaw`, { recursive: true });
   const homeFleetEntries = `${homedir()}/.openclaw/gotchibot-fleet.entries.json5`;
   const homeFleetList = `${homedir()}/.openclaw/gotchibot-fleet.list.json5`;
-  writeFileSync(homeFleetEntries, `${header}${JSON.stringify(configEntries, null, 2)}\n`);
-  writeFileSync(homeFleetList, `${header}${JSON.stringify(list, null, 2)}\n`);
+  writeGenerated(homeFleetEntries, `${header}${JSON.stringify(configEntries, null, 2)}\n`);
+  writeGenerated(homeFleetList, `${header}${JSON.stringify(list, null, 2)}\n`);
 
   writeFileSync(
     AGENT_MAP,
