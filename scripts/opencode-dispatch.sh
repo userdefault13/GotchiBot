@@ -3,6 +3,26 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# End-of-session cleanup, shared by the success path, the failure path and the
+# signal trap. A session that is killed used to skip all of this: the hero stayed
+# marked "working" forever and the next sandbox spawn was refused with "no steal"
+# — which is exactly what happened after the first GotchiKart run was killed.
+release_hero() {
+  local dir="$1"
+  local hero end_st
+  hero="$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  [ -n "$hero" ] || return 0
+  end_st="$(standing_status "$(head -c 200 "$dir/prompt.txt" 2>/dev/null | tr '\n' ' ')")"
+  [ "$end_st" = working ] && end_st=available
+  node "$ROOT/scripts/hero-agent-state.mjs" set "$hero" "$end_st" --host local >/dev/null 2>&1 || true
+}
+
+teardown_sandbox() {
+  local dir="$1" id="$2"
+  [ "$(field sandbox "$dir")" = "1" ] || return 0
+  node "$ROOT/scripts/sandbox.mjs" rm "$id" >/dev/null 2>&1 || true
+}
+
 standing_status() {
   local t="$1"
   if echo "$t" | grep -Eiq '(cron|crontab|monitor|watch|watching|watcher|schedul|standing|trader|loop|daily|hourly)'; then
@@ -190,6 +210,21 @@ EOF
       exit 1
     fi
     set_field "$dir" sandboxContainer "gotchibot-sandbox-$id"
+    # Ask the box which models it can serve, rather than assuming. A model the
+    # container does not list fails as an opaque "Unexpected server error" that
+    # reads like a provider outage, and the agent spins against a phantom.
+    WANT_MODEL="$(sandbox_model_for "$(model_for "$model")")"
+    case "$WANT_MODEL" in SANDBOX_MODEL_UNAVAILABLE:*) ;; *)
+      if ! node "$ROOT/scripts/sandbox.mjs" models "$id" --check "$WANT_MODEL" >/dev/null 2>&1; then
+        echo "sandbox spawn blocked: $WANT_MODEL is not served inside the container." >&2
+        node "$ROOT/scripts/sandbox.mjs" models "$id" 2>/dev/null | sed 's/^/  available: /' >&2
+        echo "  fix: set GOTCHIBOT_SANDBOX_MODEL to one of the above" >&2
+        node "$ROOT/scripts/sandbox.mjs" rm "$id" >/dev/null 2>&1 || true
+        set_field "$dir" status failed
+        exit 78
+      fi
+      ;;
+    esac
   fi
 
   runner="$dir/runner.sh"
@@ -285,28 +320,15 @@ RUNNER
   fi
   chmod +x "$runner"
 
-  ( if "$runner"; then set_field "$dir" status done
-      HERO="$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-      if [ -n "$HERO" ]; then
-        END_ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
-        [ "$END_ST" = working ] && END_ST=available
-        node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" "$END_ST" --host local >/dev/null 2>&1 || true
-      fi
-      if [ "$(field sandbox "$dir")" = "1" ]; then
-        node "$ROOT/scripts/sandbox.mjs" rm "$id" >/dev/null 2>&1 || true
-      fi
+  ( trap 'set_field "$dir" status failed; release_hero "$dir"; teardown_sandbox "$dir" "$id"; set_field "$dir" ended "$(date -u +%FT%TZ)"; exit 143' TERM INT HUP
+    if "$runner"; then set_field "$dir" status done
+      release_hero "$dir"
+      teardown_sandbox "$dir" "$id"
       "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id finished."
     else set_field "$dir" status failed
-      HERO="$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-      if [ -n "$HERO" ]; then
-        END_ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
-        [ "$END_ST" = working ] && END_ST=available
-        node "$ROOT/scripts/hero-agent-state.mjs" set "$HERO" "$END_ST" --host local >/dev/null 2>&1 || true
-      fi
-      if [ "$(field sandbox "$dir")" = "1" ]; then
-        node "$ROOT/scripts/sandbox.mjs" rm "$id" >/dev/null 2>&1 || true
-      fi
+      release_hero "$dir"
+      teardown_sandbox "$dir" "$id"
       "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id failed."
     fi

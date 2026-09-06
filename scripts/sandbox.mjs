@@ -6,6 +6,7 @@
  *   node scripts/sandbox.mjs up <sessionId> [--json]
  *   node scripts/sandbox.mjs exec <sessionId> -- <cmd...>
  *   node scripts/sandbox.mjs status [sessionId]
+ *   node scripts/sandbox.mjs models <sessionId> [--check <model>]
  *   node scripts/sandbox.mjs promote <sessionId> <destDir>
  *   node scripts/sandbox.mjs rm <sessionId> [--purge]
  *
@@ -50,6 +51,7 @@ function usage() {
   sandbox.mjs up <sessionId> [--json]
   sandbox.mjs exec <sessionId> -- <cmd...>
   sandbox.mjs status [sessionId]
+  sandbox.mjs models <sessionId> [--check <model>] [--json]
   sandbox.mjs promote <sessionId> <destDir>
   sandbox.mjs rm <sessionId> [--purge]
   sandbox.mjs container-name <sessionId>`);
@@ -431,6 +433,41 @@ function cmdStatus(id) {
   );
 }
 
+/**
+ * Which models the box can actually serve.
+ *
+ * Only providers registered inside the container appear here — forwarding an
+ * API key does not register a provider. Asking for one that is missing returns
+ * an opaque "Unexpected server error" that reads exactly like an outage, so the
+ * dispatch checks against this list before it starts a job.
+ */
+function cmdModels(id, { json = false, check = null } = {}) {
+  requireDocker();
+  const sid = safeId(id);
+  const name = containerName(sid);
+  if (!containerRunning(name)) {
+    console.error(`sandbox ${sid} is not running — bring it up first`);
+    process.exit(1);
+  }
+  const r = docker(["exec", name, "opencode", "models"], { stdio: "pipe", timeout: 60_000 });
+  const models = String(r.stdout || "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("["));
+  if (check) {
+    const ok = models.includes(check);
+    if (json) console.log(JSON.stringify({ ok, model: check, models }, null, 2));
+    else if (ok) console.log(`ok ${check}`);
+    else {
+      console.error(`model not available in this sandbox: ${check}`);
+      console.error(`the box serves: ${models.join(", ") || "(none — opencode models returned nothing)"}`);
+    }
+    process.exit(ok ? 0 : 1);
+  }
+  if (json) console.log(JSON.stringify({ models }, null, 2));
+  else for (const m of models) console.log(m);
+}
+
 function cmdPromote(id, dest) {
   const sid = safeId(id);
   const work = workDir(sid);
@@ -502,6 +539,13 @@ function main() {
   }
   if (cmd === "status") {
     cmdStatus(rest[0] || null);
+    return;
+  }
+  if (cmd === "models") {
+    const id = rest[0];
+    if (!id) usage();
+    const ci = rest.indexOf("--check");
+    cmdModels(id, { json: rest.includes("--json"), check: ci >= 0 ? rest[ci + 1] : null });
     return;
   }
   if (cmd === "promote") {
