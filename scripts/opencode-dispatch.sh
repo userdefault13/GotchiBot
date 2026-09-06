@@ -210,7 +210,7 @@ if [ "\$MODEL" = "SANDBOX_NO_MODEL_CREDENTIALS" ]; then
   echo "[gotchibot] sandbox has no usable model credentials: opencode/* needs host auth that is not mounted, and no NVIDIA/OPENROUTER/DEEPSEEK key was forwarded. Aborting instead of hanging." | tee -a "$dir/output.log" >&2
   { grep -vE '^status=' "$dir/state.env"; echo "status=failed"; } > "$dir/.state.tmp" && mv "$dir/.state.tmp" "$dir/state.env"
   exit 78
-fi"
+fi
 ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
 if [ -n "\$HERO" ]; then
   node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" "\$ST" \
