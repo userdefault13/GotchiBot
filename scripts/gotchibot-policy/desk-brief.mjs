@@ -2,7 +2,7 @@
  * Desk state a fresh session would otherwise have to discover: pending
  * passoffs, open meeting, focus, branch dirtiness. Local reads only.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { repoRoot } from "./repo-root.mjs";
 
@@ -58,6 +58,22 @@ export function deskBriefLines(fromFileDir) {
   const focus = readJson(`${SESSIONS}/.focus.json`);
   if (focus?.heroId) lines.push(`Focus: ${focus.mode || "?"} · hero ${focus.heroId}`);
 
+  // A repo with a package.json and no node_modules fails in ways that read like
+  // an outage — a CLI exiting instantly, imports vanishing, abra taking SSH and
+  // every secret down with it. A disk-space cleanup removes the tree across
+  // ~/Dev because 20 GB of it looks like build output. Say so up front rather
+  // than let the session debug the wrong machine.
+  try {
+    if (existsSync(`${ROOT}/package.json`) && !existsSync(`${ROOT}/node_modules`)) {
+      lines.push(
+        `WARNING: node_modules is missing here — imports and CLIs will fail in misleading ways. ` +
+          `Restore before debugging: npm ci (lockfile restore, allowed). See AGENTS.md.`,
+      );
+    }
+  } catch {
+    /* best effort */
+  }
+
   const git = spawnSync("git", ["status", "--porcelain"], {
     cwd: ROOT,
     encoding: "utf8",
@@ -73,6 +89,21 @@ export function deskBriefLines(fromFileDir) {
     lines.push(
       `Branch ${(branch.stdout || "?").trim()} · ${dirty} uncommitted file${dirty === 1 ? "" : "s"}`,
     );
+  }
+
+  try {
+    const capsule = spawnSync(
+      process.execPath,
+      [`${ROOT}/scripts/contexter.mjs`, "latest", "--brief"],
+      { cwd: ROOT, encoding: "utf8", timeout: 8_000 },
+    );
+    const brief = (capsule.stdout || "").trim();
+    if (brief && !brief.startsWith("no context capsules")) {
+      lines.push("Latest context capsule (verify before acting; continue from Next step):");
+      lines.push(brief);
+    }
+  } catch {
+    /* contexter optional */
   }
 
   return lines;

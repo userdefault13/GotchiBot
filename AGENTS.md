@@ -74,6 +74,38 @@ Your session dir contains:
    Never steal LINK/YFI/WBTC standing desks. Promote with
    `./scripts/gotchibot sandbox promote <id> <dest>`.
 
+## When an app suddenly cannot resolve its imports
+
+`Cannot find package 'x'`, `Cannot find module`, a CLI that worked yesterday
+exiting instantly, `vite`/`next`/`tsc` "not found" — **check for a missing
+dependency tree before you debug anything else**:
+
+```bash
+ls ~/Dev/<project>/node_modules   # absent? that is your answer
+```
+
+**What happened.** A disk-space cleanup deletes `node_modules` across `~/Dev`,
+because ~20 GB of it looks exactly like reclaimable build output. It is not a
+corrupted install, a bad merge, a version bump, or a host problem. Measured on
+2026-09-06: **42 of 45** projects under `~/Dev` had a `package.json` and no
+`node_modules`.
+
+**The fix**, per project, and it is a lockfile restore rather than a new
+dependency, so it is allowed under hard rule 1:
+
+```bash
+cd ~/Dev/<project> && npm ci        # or: npm install --omit=dev
+```
+
+**Why it misleads.** A missing dependency tree reads like an outage from every
+direction. `abracadabra` losing its `node_modules` takes out `abra`, and with it
+SSH to the hub, the fleet roster and every secret at once — which looks like the
+hub is down, the tunnel is broken, or credentials expired. Tonight that cost an
+hour of chasing the wrong machine. One `ls` rules it out.
+
+Do not "fix" this by reinstalling globally, by adding dependencies, or by
+editing a lockfile. Restore the tree and move on.
+
 ## cAavegotchi identity (sub-agents only)
 
 You were spawned only because the orchestrator passed the **wallet gate**: the
