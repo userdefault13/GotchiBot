@@ -30,7 +30,7 @@
         "Docker autostart: ~/Library/Group Containers/group.com.docker/settings-store.json -> \"AutoStart\": true (a file, not a GUI-only checkbox)",
         "Container never returns after a reboot: docker update --restart unless-stopped <container>",
         "docker restart succeeds but StartedAt does not move: docker kill then docker start; the cure is recreating with --init",
-        "abra dies with Cannot find package ...abracadabra/dist/index.js: cd ~/Dev/abracadabra && npm install --omit=dev (lockfile restore, allowed)"
+        "abra dies with Cannot find package ...abracadabra/dist/index.js: cd ~/Dev/abracadabra && npm ci (lockfile restore, allowed). Usually a disk-space cleanup that deleted node_modules across all of ~/Dev (42 of 45 projects on 2026-09-06) — check ls ~/Dev/<project>/node_modules before blaming the host or tunnel"
       ],
       "needsUser": [
         "sudo shutdown -r now — no NOPASSWD rule on the iMac, so no agent can reboot the host; reassigning to another hero hits the same wall",
