@@ -48,6 +48,30 @@
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/contexter-precompact.mjs\"",
+            "timeout": 25,
+            "statusMessage": "Saving context capsule"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/contexter-postcompact.mjs\"",
+            "timeout": 20,
+            "statusMessage": "Restoring context capsule"
+          }
+        ]
+      }
     ]
   }
 }

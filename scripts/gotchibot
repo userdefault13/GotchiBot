@@ -72,6 +72,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot passoff list|show|accept|resume|drop  the receiving side (/passoff)
   gotchibot claude-plugin [build|--check]  package .claude/ (hooks, commands, agents)
                                   as an installable plugin for the iMac
+  gotchibot contexter save|latest|show|list|prune   carry key values, decisions and
+                                  dead ends across a context window (skill: contexter)
   gotchibot cursor-layer check [--json]  assert Cursor desk layer (hooks, policy, skills)
   gotchibot checkpoint <id> <label>   push a milestone to the cartridge
   gotchibot identity ensure|mint|roster   cartridge identity ops
@@ -625,6 +627,7 @@ case "$cmd" in
   handoff) cmd_handoff "$@" ;;
   passoff) exec node "$ROOT/scripts/passoff.mjs" "$@" ;;
   claude-plugin) exec node "$ROOT/scripts/claude-plugin-build.mjs" "$@" ;;
+  contexter|context) exec node "$ROOT/scripts/contexter.mjs" "$@" ;;
   cursor-layer)
     case "${1:-check}" in
       check|"") exec node "$ROOT/scripts/cursor-layer-check.mjs" "${@:2}" ;;
