@@ -39,28 +39,25 @@ dispatch_runtime() {
   echo opencode
 }
 
-# An opencode/* model is served by OpenCode Zen and authenticates from the host's
-# opencode auth.json — which the sandbox deliberately does not mount. Inside a
-# container the only credentials are the API keys forwarded at `up` time, so a
-# zen model can never authenticate there. Re-point it at a provider whose key
-# actually made it in, and say so; if none did, fail loudly rather than let an
-# agent burn an hour on a model it cannot reach (which is exactly what happened
-# to the first GotchiKart run: 35 minutes of CPU, zero output).
+# A sandbox container can only run models its own opencode lists. Forwarding
+# NVIDIA_API_KEY / OPENROUTER_API_KEY is not enough: those providers are not
+# registered in the box, so `opencode models` there shows opencode/* (Zen) only
+# and a request for nvidia-nim/... comes back as an opaque
+# "Unexpected server error" — indistinguishable from an outage.
+#
+# The free Zen models do work in-box without any auth.json (verified:
+# opencode/nemotron-3.5-lightning-free answers). So map a paid/authed Zen model
+# to a free one, keep anything already free, and refuse a provider prefix the
+# box cannot serve instead of letting an agent spin against a phantom model —
+# which is what cost the first GotchiKart run 35 minutes and zero output.
+SANDBOX_FREE_MODEL="${GOTCHIBOT_SANDBOX_MODEL:-opencode/nemotron-3.5-lightning-free}"
+
 sandbox_model_for() {
   local want="$1"
   case "$want" in
-    opencode/*)
-      if [ -n "${NVIDIA_API_KEY:-}" ]; then
-        echo "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b"
-      elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
-        echo "openrouter/z-ai/glm-4.6"
-      elif [ -n "${DEEPSEEK_API_KEY:-}" ]; then
-        echo "deepseek/deepseek-v4-flash"
-      else
-        echo "SANDBOX_NO_MODEL_CREDENTIALS"
-      fi
-      ;;
-    *) echo "$want" ;;
+    *-free) echo "$want" ;;
+    opencode/*) echo "$SANDBOX_FREE_MODEL" ;;
+    *) echo "SANDBOX_MODEL_UNAVAILABLE:$want" ;;
   esac
 }
 
@@ -206,11 +203,11 @@ MODEL="$(sandbox_model_for "$(model_for "$model")")"
 FREE_MODEL="\$MODEL"
 HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 CTN="gotchibot-sandbox-$id"
-if [ "\$MODEL" = "SANDBOX_NO_MODEL_CREDENTIALS" ]; then
-  echo "[gotchibot] sandbox has no usable model credentials: opencode/* needs host auth that is not mounted, and no NVIDIA/OPENROUTER/DEEPSEEK key was forwarded. Aborting instead of hanging." | tee -a "$dir/output.log" >&2
+case "\$MODEL" in SANDBOX_MODEL_UNAVAILABLE:*)
+  echo "[gotchibot] sandbox cannot serve \${MODEL#SANDBOX_MODEL_UNAVAILABLE:} — only providers registered inside the container work, which is opencode/* free models. Set GOTCHIBOT_SANDBOX_MODEL to one of those. Aborting instead of hanging." | tee -a "$dir/output.log" >&2
   { grep -vE '^status=' "$dir/state.env"; echo "status=failed"; } > "$dir/.state.tmp" && mv "$dir/.state.tmp" "$dir/state.env"
   exit 78
-fi
+esac
 ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
 if [ -n "\$HERO" ]; then
   node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" "\$ST" \
