@@ -339,9 +339,21 @@ function cmdUp(id, { json = false } = {}) {
   if (existsSync(registry)) args.push("-v", `${registry}:/rules/skills-registry.json:ro`);
 
   args.push("-e", "GOTCHIBOT_SANDBOX=1", "-e", "GOTCHIBOT_SKIP_ABRA=1", "-e", "ABRA_HOST=host.docker.internal");
+  // Record which credentials actually reached the box — names only, never
+  // values. Without this a job that fails for lack of a key is indistinguishable
+  // from a provider outage, which cost a whole evening once.
+  const forwarded = [];
   for (const k of FORWARD_ENV) {
-    if (process.env[k]) args.push("-e", `${k}=${process.env[k]}`);
+    if (process.env[k]) {
+      args.push("-e", `${k}=${process.env[k]}`);
+      forwarded.push(k);
+    }
   }
+  console.error(
+    forwarded.length
+      ? `[sandbox] forwarded credentials: ${forwarded.join(", ")}`
+      : "[sandbox] WARNING: no credentials forwarded — model calls from this box will fail",
+  );
   args.push(IMAGE);
 
   const r = docker(args, { stdio: "pipe" });
@@ -358,6 +370,7 @@ function cmdUp(id, { json = false } = {}) {
     image: IMAGE,
     startedAt: new Date().toISOString(),
     status: "running",
+    forwardedEnv: forwarded,
   };
   writeFileSync(metaPath(sid), `${JSON.stringify(meta, null, 2)}\n`);
   if (json) console.log(JSON.stringify({ ok: true, ...meta }, null, 2));
