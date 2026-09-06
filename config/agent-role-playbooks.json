@@ -22,7 +22,7 @@
     "deepReportCmd": "./scripts/infra-monitor-cron.mjs --json",
     "verifyCmd": "./scripts/infra-claude-verify.mjs --json",
     "watchCmd": "./scripts/infra-watch.mjs run --interval 60 --verify-every 30",
-    "autonomy": "Resident watcher in tmux gotchibot:infrawatch ticks every 60s and reports transitions, not steady state. Every 30 ticks and on every transition it asks the Claude CLI for an independent verdict; a disagreement between Claude and the probes is treated as an incident. Only the watched aarcade/envio containers gate the docker check. On degrade follow infra-recover (paper-only)."
+    "autonomy": "Resident watcher in tmux gotchibot:infrawatch ticks every 60s and reports transitions, not steady state. Every 30 ticks and on every transition it asks a persistent interactive Claude CLI session, in tmux window gotchibot:claude-verify, for an independent verdict; because that session keeps context it can say what changed since the last check. A disagreement between Claude and the probes is treated as an incident. The verify session runs in ~/Dev/gotchibot-infra-verify, outside the GotchiBot repo, so it does not inherit the repo CLAUDE.md hub-proxy role and block on a scope-check prompt. Only the watched aarcade/envio containers gate the docker check. On degrade follow infra-recover (paper-only)."
   },
   "orchestrator": {
     "title": "Orchestrator",

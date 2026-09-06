@@ -11,6 +11,7 @@ Autonomy: I watch continuously (`scripts/infra-watch.mjs run`), not just on cron
 Skills to load: infra-recover, browser-tool
 Status report (verbatim): `./scripts/infra-watch.mjs status --json`
 Deep report (verbatim): `./scripts/infra-monitor-cron.mjs --json`
+Confirmation (verbatim): `./scripts/infra-claude-verify.mjs --json`
 
 ## What I learned on 2026-09-05 — I was crying wolf
 
@@ -47,16 +48,70 @@ every 60s. It differs from the old fire-and-forget cron in three ways that matte
 - **Heartbeat.** `var/infra-watch/state.json` carries `updatedAt` and `pid`.
   If it is more than ~3 intervals stale, the watcher itself is dead — treat that
   as an incident. `scripts/infra-watch.mjs status` marks it ⚠ STALE for me.
-- **Second opinion.** Every 30 ticks (~30 min), and on every transition, I shell
-  out to the Claude CLI to look at the machine and judge independently:
-  `scripts/infra-claude-verify.mjs`. If Claude's verdict disagrees with my
-  probes, `state.json.disagreement` goes true and the pane says
-  "⚠ CLAUDE DISAGREES WITH PROBES". **That disagreement is the signal that would
-  have caught my 501 false alarms on day one.** I never dismiss it — I go look.
+- **Second opinion.** Every 30 ticks (~30 min), and on every transition, I ask a
+  real Claude session to look at the machine and judge independently. If its
+  verdict disagrees with my probes, `state.json.disagreement` goes true and the
+  pane says "⚠ CLAUDE DISAGREES WITH PROBES". **That disagreement is the signal
+  that would have caught my 501 false alarms on day one.** I never dismiss it —
+  I go look.
 
 `com.gotchibot.infra-watch` (LaunchAgent, 300s) runs `scripts/infra-watch-ensure.sh`,
 which restarts the tmux window if it is gone. It is idempotent.
 `com.gotchibot.infra-monitor` stays as the 5-minute belt-and-braces cron.
+
+## How I confirm with the Claude CLI
+
+`scripts/infra-claude-verify.mjs` drives a **persistent, interactive** Claude CLI
+session in its own terminal — tmux window `gotchibot:claude-verify`. It is not a
+fresh `claude -p` per check, and that is deliberate: because the session holds
+context, it answers "no change since the last check" or names what moved, which
+a one-shot invocation can never do.
+
+How it works: the window is briefed once on the reply contract, then each check
+is a short prompt carrying a unique id like `CV-MTP5HI2A`. I match the answer on
+that id and on the `⏺` reply bullet, which is what distinguishes Claude's answer
+from the `❯` echo of my own question, so I can never read back my own prompt as
+a verdict.
+
+Three things I had to learn the hard way here:
+
+- **The session must run OUTSIDE `~/Dev/GotchiBot`.** Started in the repo it
+  inherits the repo `CLAUDE.md`, which scopes Claude to the "GotchiBot Hub Claude
+  proxy" role — and a session in that role correctly refuses a standing
+  infra-verifier persona as out of scope, then blocks on a scope-check menu
+  forever. It runs in `~/Dev/gotchibot-infra-verify`, which carries its own
+  `CLAUDE.md` granting exactly this role and nothing else.
+- **A blocking menu is not a timeout.** If Claude stops on a permission or scope
+  prompt, the script detects `Enter to select · ↑/↓ to navigate` and tells me to
+  attach or rerun with `--restart`, rather than burning 180s in silence.
+- **The reply streams.** The VERDICT line lands before SUMMARY and DETAIL exist
+  on screen, so matching the verdict is the cue to start reading, not to read
+  immediately.
+
+Context grows without bound in a long-lived session, so it `/clear`s and
+re-briefs every 50 checks, keeping the same window.
+
+### It has to be visible on the desktop
+
+A tmux window has no desktop presence — from the iMac's screen my verifier was
+invisible, which is not good enough. tmux stays the engine because it is what
+makes the session drivable (`send-keys` in, `capture-pane` out) and lets it
+survive a closed window, but `scripts/infra-desktop-terminal.sh` now attaches a
+real Terminal.app window to it, sized 200x50 and titled "GotchiBot infra
+verifier". `startWindow()` calls it automatically, so a new session appears on
+screen without anyone asking.
+
+- Sizing the Terminal window to 200x50 is not cosmetic: attaching a client
+  resizes the tmux window to the client, and a narrow one wraps Claude's answer
+  lines and defeats my parser.
+- Closing the window only detaches — the session and its context keep running.
+  To get it back: `./scripts/infra-claude-verify.mjs --show`. If a client is
+  already attached it focuses Terminal instead of opening a duplicate.
+- Opening a desktop window is never fatal. A locked or headless machine has no
+  desktop to draw on, and verification does not depend on anyone watching.
+- The workspace at `~/Dev/gotchibot-infra-verify` is outside this repo, so a
+  clone does not bring it. I seed it from the tracked copy at
+  `config/infra-verify-workspace/CLAUDE.md` when it is missing.
 
 ## Hard-won environment facts
 
@@ -64,11 +119,12 @@ which restarts the tmux window if it is gone. It is idempotent.
   at `/Users/juliuswong/.local/bin/claude` and reads OAuth from the login
   keychain. Started over `ssh imac 'cmd'` it fails with
   `Not logged in · Please run /login`. Inside tmux on the console session it
-  works. This is why the watcher lives in tmux and not in a bare LaunchAgent.
+  works. This is why both the watcher and the verifier live in tmux.
 - **`docker` and `claude` are not on the non-interactive PATH.** `ssh imac 'docker ps'`
   gives `command not found`. Use absolute paths: `/usr/local/bin/docker`,
   `/Users/juliuswong/.local/bin/claude`. My scripts prepend
-  `/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin`.
+  `/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin`, which also stops the
+  repo's SessionStart hook failing with `node: command not found`.
 - **A 401 from an anonymous GraphQL POST to `:8787` is by design, not an outage.**
   `/health` on the same port is unauthenticated and is the honest liveness probe.
 - **`mongo-api.aarcadeghst.com/health` takes ~5.5s when mongod is down**, because
