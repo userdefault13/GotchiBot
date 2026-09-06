@@ -1,7 +1,7 @@
 {
   "trader-desk": {
     "title": "Trader desk",
-    "summary": "Own Gotchi-Trader paper desk health and PnL reporting.",
+    "summary": "Own Gotchi-Trader paper desk health, cycle decisions and PnL reporting.",
     "skills": [
       "gotchi-trader-monitor",
       "gotchi-trader-improve",
@@ -9,7 +9,9 @@
       "browser-tool"
     ],
     "reportCmd": "./scripts/gotchi-trader-desk.mjs status",
-    "autonomy": "On schedule/cron and when asked: check desk health; alert first; never live execution; never print secrets."
+    "cycleCmd": "./scripts/trader-cycle.mjs --json",
+    "verifyWindow": "gotchibot:link-verify",
+    "autonomy": "Wakes every 30 minutes and runs a full cycle: desk health, meta-model and strategy signals, news regime, decisions clipped by explicit risk rules, then verification by a persistent interactive Claude session in a terminal visible on the desktop (PASS/CONCERN/FAIL). Paper desk: real execution requires TRADER_LIVE=1 plus a PASS verdict plus no risk breach, and no order router is wired, so the live branch refuses to fake a fill. Risk rules: min score 0.6, min cross-strategy breadth 0.5, 5000 USDC per position, 15000 USDC per cycle, sizes halved in risk-off, and no ETH/BTC adds while the desk concentration warning is live. Intended waker is cron402 via scripts/trader-webhook.mjs (:8792); until the Cloudflare ingress exists the schedule runs from config/launchagents/com.gotchibot.trader-cycle.plist."
   },
   "infra-monitor": {
     "title": "Infra home monitor",
