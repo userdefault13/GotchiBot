@@ -39,6 +39,31 @@ dispatch_runtime() {
   echo opencode
 }
 
+# An opencode/* model is served by OpenCode Zen and authenticates from the host's
+# opencode auth.json — which the sandbox deliberately does not mount. Inside a
+# container the only credentials are the API keys forwarded at `up` time, so a
+# zen model can never authenticate there. Re-point it at a provider whose key
+# actually made it in, and say so; if none did, fail loudly rather than let an
+# agent burn an hour on a model it cannot reach (which is exactly what happened
+# to the first GotchiKart run: 35 minutes of CPU, zero output).
+sandbox_model_for() {
+  local want="$1"
+  case "$want" in
+    opencode/*)
+      if [ -n "${NVIDIA_API_KEY:-}" ]; then
+        echo "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b"
+      elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
+        echo "openrouter/z-ai/glm-4.6"
+      elif [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+        echo "deepseek/deepseek-v4-flash"
+      else
+        echo "SANDBOX_NO_MODEL_CREDENTIALS"
+      fi
+      ;;
+    *) echo "$want" ;;
+  esac
+}
+
 model_for() {
   case "$1" in
     auto|free) node "$ROOT/scripts/model-auto.mjs" pick ;;
@@ -177,10 +202,15 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 PROMPT="\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")"
-MODEL="$(model_for "$model")"
-FREE_MODEL="\$(node "$ROOT/scripts/model-fallback.mjs" free-model 2>/dev/null || echo opencode/big-pickle)"
+MODEL="$(sandbox_model_for "$(model_for "$model")")"
+FREE_MODEL="\$MODEL"
 HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 CTN="gotchibot-sandbox-$id"
+if [ "\$MODEL" = "SANDBOX_NO_MODEL_CREDENTIALS" ]; then
+  echo "[gotchibot] sandbox has no usable model credentials: opencode/* needs host auth that is not mounted, and no NVIDIA/OPENROUTER/DEEPSEEK key was forwarded. Aborting instead of hanging." | tee -a "$dir/output.log" >&2
+  { grep -vE '^status=' "$dir/state.env"; echo "status=failed"; } > "$dir/.state.tmp" && mv "$dir/.state.tmp" "$dir/state.env"
+  exit 78
+fi"
 ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
 if [ -n "\$HERO" ]; then
   node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" "\$ST" \
