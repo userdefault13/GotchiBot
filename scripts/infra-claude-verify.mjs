@@ -159,11 +159,43 @@ function capture(lines = 400) {
   return r.ok ? r.out : "";
 }
 
+function inputBoxFirstRow() {
+  const lines = capture(60).split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/^\s*❯/.test(lines[i])) return lines[i].replace(/^\s*❯\s?/, "").trim();
+  }
+  return null;
+}
+
+// The TUI treats a long send-keys string as a paste and is still digesting it
+// when an Enter sent right behind it arrives — the prompt then sits unsubmitted
+// and the check times out on a question Claude never saw. Wait for the box to
+// settle, press Enter, and re-press until the box empties.
 function sendLine(text) {
+  const stale = inputBoxFirstRow();
+  if (stale && !/^Try\s+"/.test(stale)) {
+    tmux(["send-keys", "-t", TARGET, "C-u"]);
+    sleep(600);
+  }
   // -l sends the string literally so brackets, quotes and braces survive.
   tmux(["send-keys", "-t", TARGET, "-l", text], { check: true });
-  sleep(400);
-  tmux(["send-keys", "-t", TARGET, "Enter"], { check: true });
+  let prev = null;
+  for (const deadline = Date.now() + 8000; Date.now() < deadline; ) {
+    const cur = capture(60);
+    if (cur === prev) break;
+    prev = cur;
+    sleep(700);
+  }
+  const head = text.trim().slice(0, 8);
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    tmux(["send-keys", "-t", TARGET, "Enter"], { check: true });
+    for (const until = Date.now() + 2500; Date.now() < until; ) {
+      sleep(500);
+      const row = inputBoxFirstRow();
+      if (row == null || !row.startsWith(head)) return;
+    }
+  }
+  throw new Error(`prompt never submitted in ${TARGET} — Enter did not register after 4 tries`);
 }
 
 // Claude stopped for a menu (permission request, scope check) and will never

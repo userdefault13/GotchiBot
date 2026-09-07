@@ -149,6 +149,15 @@ Read workspace `SOUL.md` and `USER.md` every session. They beat this file on ton
   output appears in this chat as "tool executed by the user". Treat it as context he just showed you. When
   he only wants to peek at something, point him at `!` instead of spending a turn on it.
 
+## Comms (hard rule)
+
+Aarcade comms go one way only: spawn **WBTC (owned-22899)** with "run the Aarcade comms
+cycle" (pass along `--range …` / dry-run if Julius said so). WBTC runs
+`abra run gotchibot -- ./scripts/gotchibot comms run`: the iMac opens a Claude terminal,
+Claude drafts, the API publishes, and the run prints "Claude said (verbatim — relay as-is)".
+Relay that block to Julius **word for word**, then the ids. Never Commsies / Cloudflare AI,
+never `/communications-agent/run`, never draft the post yourself or with another model.
+
 ## Delegate-first (hard rule)
 
 **Always assign work to an available agent (local MBP or remote iMac) before doing it yourself.**

@@ -3,8 +3,10 @@
  * comms-agent-cron-deploy.mjs
  *
  * Installs the daily Aarcade comms cron on the iMac for WBTC (owned-22899).
- * Runs scripts/comms-agent-cron.mjs once per day (default 09:00 America/Los_Angeles
- * via `0 16 * * *` UTC). Override with COMMS_CRON_SCHEDULE.
+ * Runs scripts/comms-claude-cycle.mjs — the Claude terminal path, never
+ * Commsies / Cloudflare AI — once per day (default 09:00 America/Los_Angeles
+ * via `0 16 * * *` UTC; the live desk uses `59 23 * * *`). Override with
+ * COMMS_CRON_SCHEDULE.
  *
  * Requires abra-injected secrets (never logged):
  *   abra run gotchibot -- node scripts/comms-agent-cron-deploy.mjs
@@ -84,13 +86,16 @@ function main() {
     const wrapperPath = `${cfg.dir}/scripts/comms-agent-cron-run.sh`;
     const wrapper = `#!/bin/bash
 # WBTC daily comms — installed by scripts/comms-agent-cron-deploy.mjs
+# Claude terminal path (comms-claude-cycle). Commsies / Cloudflare AI is retired.
 set -euo pipefail
 cd ${shellQuote(cfg.dir)}
-export PATH="/usr/local/bin:/opt/homebrew/bin:/Users/${cfg.user}/.nvm/versions/node/current/bin:$PATH"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/Users/${cfg.user}/.local/bin:$PATH"
+export GOTCHIBOT_ON_IMAC=1
+export GOTCHIBOT_TMUX_SESSION="\${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
 # shellcheck disable=SC1091
 source ${shellQuote(remoteEnv)}
 mkdir -p sessions/comms-logs
-exec node scripts/comms-agent-cron.mjs
+exec node scripts/comms-claude-cycle.mjs --host local "$@"
 `;
 
     const writeWrapper = `cat > ${shellQuote(wrapperPath)} << 'EOF'\n${wrapper}\nEOF\nchmod +x ${shellQuote(wrapperPath)}`;
@@ -113,14 +118,16 @@ exec node scripts/comms-agent-cron.mjs
     const verify = runSsh(cfg, key.path, "crontab -l | grep comms-agent-cron-run || true");
     console.error("[comms-cron] crontab:", (verify.stdout || "").trim());
 
-    console.error("[comms-cron] dry-run once…");
-    const once = runSsh(cfg, key.path, wrapperPath);
+    // Smoke the wrapper the cheap way: env sourced, node found, terminal state
+    // readable. The full Claude round is `gotchibot comms dry-run`.
+    console.error("[comms-cron] wrapper --status…");
+    const once = runSsh(cfg, key.path, `${shellQuote(wrapperPath)} --status`, { stdio: "pipe" });
     if (once.status !== 0) {
-      console.error("[comms-cron] dry-run failed:", once.stderr || once.stdout);
+      console.error("[comms-cron] wrapper failed:", once.stderr || once.stdout);
       process.exit(1);
     }
     console.error((once.stdout || "").slice(0, 800));
-    console.log("ok: owned-22899 daily comms cron installed");
+    console.log("ok: owned-22899 daily comms cron installed (Claude terminal path)");
   } finally {
     key.dispose();
     try {

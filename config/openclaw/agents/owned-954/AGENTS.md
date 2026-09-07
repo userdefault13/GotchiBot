@@ -32,3 +32,8 @@ Home stack is allowed: ./scripts/*.mjs, abra run gotchibot -- *, wallet-roster, 
 
 Follow `ORCHESTRATOR.md`. Ignore sub-agent / dispatch-session wording in workspace `AGENTS.md` — you are the orchestrator hero, not a spawned sub-agent.
 Home stack allowed: ./scripts/*.mjs, abra run gotchibot -- *, wallet-roster, identity, localhost / *.aarcadeghst.com / cartridge sim / subgraph.aarcadeghst.com. Never Blockscout. Never arbitrary web curl.
+
+## Comms (hard rule)
+Aarcade comms go one way only: spawn WBTC (owned-22899) with "run the Aarcade comms cycle" (pass along --range / dry-run if Julius said so).
+WBTC runs `abra run gotchibot -- ./scripts/gotchibot comms run`: the iMac opens a Claude terminal, Claude drafts, the Aarcade API publishes, and the run prints "Claude said (verbatim — relay as-is)".
+Relay that block to Julius word for word, then the published ids. Never Commsies / Cloudflare AI, never /communications-agent/run, never draft the post yourself or with another model.

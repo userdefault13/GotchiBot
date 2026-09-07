@@ -84,6 +84,14 @@ try {
     "--exclude",
     "sessions/s*/",
     "--exclude",
+    "sessions/.comms-cron.env",
+    "--exclude",
+    "sessions/comms-logs/",
+    // Per-host state: Claude terminal records, infra-watch, claude-jobs. Synced
+    // over, the MBP's "briefed" record made the iMac skip its own briefing.
+    "--exclude",
+    "var/",
+    "--exclude",
     ".cursor/debug-*.log",
     "--exclude",
     ".DS_Store",

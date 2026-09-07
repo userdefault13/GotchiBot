@@ -17,6 +17,11 @@
  *   - **The session is persistent and interactive**, not `claude -p` per call.
  *     Holding context is the point: it lets Claude say "no change since the
  *     last check" and name what moved, which a fresh invocation never can.
+ *   - **Enter is verified, not assumed.** The TUI treats a long send-keys
+ *     string as a paste and is still digesting it when an Enter sent right
+ *     behind it arrives, so the prompt sat unsubmitted in the input box and
+ *     the run "timed out" on a question Claude never saw. sendLine waits for
+ *     the box to settle, presses Enter, and re-presses until the box empties.
  *   - **Every exchange is id-tagged.** Answers are matched on a per-round id
  *     plus the `⏺` reply bullet (which distinguishes Claude's answer from the
  *     `❯` echo of our own prompt), so a reply can never be mistaken for a
@@ -47,6 +52,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "
 import { spawnSync } from "node:child_process";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hostname } from "node:os";
 
 const LIB_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(LIB_DIR, "..", "..");
@@ -161,12 +167,64 @@ export function createClaudeTerminal(config) {
     return r.ok ? r.out : "";
   };
 
+  // The input box is everything from the last "❯" line down. Its first row is
+  // what tells us whether our text is still sitting there unsubmitted.
+  function inputBoxFirstRow(pane = capture(60)) {
+    const lines = pane.split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (/^\s*❯/.test(lines[i])) return lines[i].replace(/^\s*❯\s?/, "").trim();
+    }
+    return null;
+  }
+
+  const isPlaceholder = (row) => !row || /^Try\s+"/.test(row) || /^\S+\s+for shortcuts/.test(row);
+
+  function waitForInputToSettle(maxMs = 8000) {
+    let prev = null;
+    const deadline = Date.now() + maxMs;
+    while (Date.now() < deadline) {
+      const cur = capture(60);
+      if (cur === prev) return;
+      prev = cur;
+      sleep(700);
+    }
+  }
+
+  // Leftover text in the box (a previous run whose Enter never landed) would be
+  // glued onto ours. Ctrl+U clears the line; one Ctrl+C clears the box without
+  // leaving the TUI (two would).
+  function clearStaleInput() {
+    let row = inputBoxFirstRow();
+    if (isPlaceholder(row)) return false;
+    tmux(["send-keys", "-t", TARGET, "C-u"]);
+    sleep(600);
+    row = inputBoxFirstRow();
+    if (isPlaceholder(row)) return true;
+    tmux(["send-keys", "-t", TARGET, "C-c"]);
+    sleep(800);
+    return true;
+  }
+
   function sendLine(text) {
+    clearStaleInput();
     // -l sends the string literally so brackets, quotes and braces survive.
     // The TUI submits on Enter, so text must be a single line.
     tmux(["send-keys", "-t", TARGET, "-l", text], { check: true });
-    sleep(400);
-    tmux(["send-keys", "-t", TARGET, "Enter"], { check: true });
+    waitForInputToSettle();
+    const head = text.trim().slice(0, 8);
+    const unsubmitted = () => {
+      const row = inputBoxFirstRow();
+      return row != null && row.startsWith(head);
+    };
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      tmux(["send-keys", "-t", TARGET, "Enter"], { check: true });
+      const until = Date.now() + 2500;
+      while (Date.now() < until) {
+        sleep(500);
+        if (!unsubmitted()) return;
+      }
+    }
+    throw new Error(`prompt never submitted in ${TARGET} — Enter did not register after 4 tries`);
   }
 
   // Claude stopped for a menu (permission request, scope check) and will never
@@ -264,16 +322,17 @@ export function createClaudeTerminal(config) {
     if (!windowExists()) {
       startWindow();
       const briefedAt = brief();
-      s = { agent, window: TARGET, startedAt: new Date().toISOString(), briefedAt, checks: 0 };
+      s = { agent, host: hostname(), window: TARGET, startedAt: new Date().toISOString(), briefedAt, checks: 0 };
       writeSession(s);
       return { session: s, created: true };
     }
 
-    // Window alive but no record of briefing it (state lost, or it predates
-    // this script) — brief now rather than asking blind.
-    if (!s || !s.briefedAt) {
+    // Window alive but no record of briefing it (state lost, it predates this
+    // script, or the record was rsynced over from another machine) — brief now
+    // rather than asking blind.
+    if (!s || !s.briefedAt || s.host !== hostname()) {
       const briefedAt = brief();
-      s = { agent, window: TARGET, startedAt: s?.startedAt || new Date().toISOString(), briefedAt, checks: s?.checks || 0 };
+      s = { agent, host: hostname(), window: TARGET, startedAt: s?.startedAt || new Date().toISOString(), briefedAt, checks: s?.checks || 0 };
       writeSession(s);
       return { session: s, created: false, rebriefed: true };
     }
@@ -346,6 +405,19 @@ export function createClaudeTerminal(config) {
       const after = pane.slice(pane.search(re));
       const summary = after.match(/SUMMARY:\s*(.+)/i)?.[1]?.trim() || null;
       const detail = after.match(/DETAIL:\s*(.+)/i)?.[1]?.trim() || null;
+      // Claude's answer, verbatim: from the ⏺ VERDICT line down to the input
+      // box or the next rule, with the bullet and wrap indentation stripped.
+      const reply = after
+        .split("\n")
+        .slice(0)
+        .reduce((acc, line) => {
+          if (acc.done) return acc;
+          if (acc.lines.length && (/^\s*❯/.test(line) || /^[─]{6,}/.test(line))) return { ...acc, done: true };
+          acc.lines.push(line.replace(/^\s*⏺\s?/, "").replace(/^\s{1,3}/, ""));
+          return acc;
+        }, { lines: [], done: false })
+        .lines.join("\n")
+        .replace(/\s+$/, "");
 
       writeSession({
         ...session,
@@ -365,6 +437,7 @@ export function createClaudeTerminal(config) {
         text: [`VERDICT[${id}]: ${verdict}`, summary && `SUMMARY: ${summary}`, detail && `DETAIL: ${detail}`]
           .filter(Boolean)
           .join("\n"),
+        reply,
         sessionCreated: Boolean(created),
         sessionRecycled: Boolean(recycled || rebriefed),
         window: TARGET,

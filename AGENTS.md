@@ -165,6 +165,10 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 - Sandbox (new project): `GOTCHIBOT_HERO_ID=<available> ./scripts/gotchi-orchestrate.mjs spawn --host auto --sandbox --model nim "…"`
   - Hero must be `available`. Never auto-mint. Never steal trader/comms/infra desks.
   - Ops: `./scripts/gotchibot sandbox status|promote|rm`
+- Comms (WBTC, owned-22899): spawn WBTC with "run the Aarcade comms cycle"; WBTC runs
+  `abra run gotchibot -- ./scripts/gotchibot comms run` (Claude terminal on the iMac drafts, API
+  publishes) and relays the "Claude said (verbatim)" block word for word. Never Commsies /
+  Cloudflare AI, never `/communications-agent/run`. Skill `aarcade-comms`.
 - Focus/chat: `./scripts/agent-focus.mjs chat "…"`
 - List / switch / orch: `/list` `/switch` `/orch` (or the `agent-focus.mjs` equivalents)
 - Wallet gate: `./scripts/wallet-gate.mjs`

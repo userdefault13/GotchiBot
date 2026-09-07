@@ -57,6 +57,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot setup               print Solo checklist (or run onboard above)
   gotchibot topology solo|fleet|status [--json]   Solo vs Fleet spawn host
   gotchibot doctor              env checklist (node/tmux/abra/topology/referral/wallet/infra/fleet probe)
+  gotchibot login [--status]    restore the OpenCode Go credential (console key → auth.json) in a Terminal window
   gotchibot wsl [--check]       WSL2 install guide (Windows) or in-WSL readiness check
   gotchibot update [--check|--apply|--force]  check/install GotchiBot updates (CDN or git)
   gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
@@ -87,8 +88,11 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot remote-push               rsync GotchiBot tree to iMac (empty-git fix)
   gotchibot remote-openclaw [--http-only]  iMac OpenClaw: full deploy, or just enable /v1/chat/completions
   gotchibot remote-serve              start/restart iMac orchestrator opencode serve
-  gotchibot comms-cron-deploy         install WBTC daily comms cron on iMac
-  gotchibot commsies-imac-deploy      keep Commsies (:3002 + Ollama) alive on iMac
+  gotchibot comms run|dry-run|status  WBTC comms: Claude terminal on the iMac drafts, API publishes,
+                                      Claude's reply printed verbatim (never Commsies / Cloudflare AI)
+                                      extra args pass through: --range AarcadeGh-t:<before>..<after>, --repo X
+  gotchibot comms-cron-deploy         install WBTC daily comms cron on iMac (runs `comms run`)
+  gotchibot commsies-imac-deploy      (legacy) keep Commsies (:3002 + Ollama) alive on iMac — not used by comms
   gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
   gotchibot hub [status|roster|dashboard|monitor|restart-gateway|doctor|bridge-…]  Hub SOP + OC/bridge dashboard
   gotchibot hub roster [--all] [--live] [--json]  who is on which desk, and how
@@ -610,6 +614,7 @@ case "$cmd" in
       exec node "$ROOT/scripts/doctor.mjs" "$@"
     fi
     ;;
+  login) exec "$ROOT/scripts/opencode-login.sh" "$@" ;;
   wsl) exec node "$ROOT/scripts/wsl-setup.mjs" "$@" ;;
   update) exec node "$ROOT/scripts/update-check.mjs" "$@" ;;
   infra)
@@ -652,6 +657,14 @@ case "$cmd" in
   remote-push) abra_or_node "$ROOT/scripts/remote-push.mjs" ;;
   remote-openclaw) abra_or_node "$ROOT/scripts/remote-openclaw-deploy.mjs" "$@" ;;
   remote-serve) abra_or_node "$ROOT/scripts/remote-serve.mjs" ;;
+  comms)
+    sub="${1:-run}"; shift || true
+    case "$sub" in
+      run) abra_or_node "$ROOT/scripts/comms-claude-cycle.mjs" --host imac "$@" ;;
+      dry-run) abra_or_node "$ROOT/scripts/comms-claude-cycle.mjs" --host imac --dry-run "$@" ;;
+      status) abra_or_node "$ROOT/scripts/comms-claude-cycle.mjs" --host imac --status "$@" ;;
+      *) echo "usage: gotchibot comms run|dry-run|status [--range repo:before..after] [--repo X]" >&2; exit 2 ;;
+    esac ;;
   comms-cron-deploy) abra_or_node "$ROOT/scripts/comms-agent-cron-deploy.mjs" ;;
   commsies-imac-deploy) abra_or_node "$ROOT/scripts/commsies-imac-deploy.mjs" ;;
   remote-setup) cmd_remote_setup ;;

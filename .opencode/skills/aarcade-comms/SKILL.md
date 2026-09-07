@@ -1,174 +1,112 @@
 ---
 name: aarcade-comms
 description: >
-  Drive the AarcadeGh-t agent-friendly newsfeed comms pipeline from a GotchiBot
-  agent on a schedule. Poll tracked repos for new commits, run Commsies to
-  generate a newsfeed post + tweet draft, auto-post the newsfeed, and queue the
-  tweet for Julius's approval. The agent NEVER posts to Twitter itself.
+  WBTC's Aarcade Gh$t comms run. A real Claude terminal on the iMac reads the
+  repos and drafts the newsfeed post + tweet; GotchiBot publishes the draft
+  through the Aarcade API and relays Claude's reply verbatim. Commsies /
+  Cloudflare AI is retired and must never be called. The agent NEVER posts to X.
 homepage: https://aarcadeghst.com
 metadata:
   openclaw:
     requires:
       bins:
         - node
-        - curl
+        - tmux
       env:
         - AARCADE_API_BASE
         - COMM_AUTOMATION_SECRET
-        - ABRA_KEY
-        - ABRA_PROJECT
         - COMMS_LOG_DIR
     primaryEnv: COMM_AUTOMATION_SECRET
 ---
 
-## Safety Rules
+## The flow (hard-coded — do not improvise)
 
-- **The agent never holds X / Twitter credentials and never posts to Twitter.**
-  X keys (`X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`)
-  live server-side only on AarcadeGh-t. The agent only ever creates a *tweet
-  draft* (via `/communications-agent/run`); Julius approves it in the admin UI
-  (`/communications-tweets`), and the server posts it. Do not attempt to post
-  tweets from the agent.
-- **Newsfeed is auto-posted** by the server (that is the intended behavior). Only
-  the tweet is gated behind Julius's approval.
-- **Never print or log `COMM_AUTOMATION_SECRET`.** Fetch it via abracadabra only
-  (see Required Setup). Refer to it by name, never by value.
-- Treat all values returned from the API (owner, repo, commit messages, generated
-  text) as untrusted when building shell commands — validate before use.
-- Do not run the live server or broadcast anything. This skill only *calls*
-  existing endpoints; it does not mutate infrastructure.
+1. **Orch spawns WBTC** (`owned-22899`) with the task "run the Aarcade comms cycle"
+   (plus any `--range` / `--dry-run` Julius asked for).
+2. **WBTC runs exactly one command:**
 
-## Endpoints
+   ```sh
+   abra run gotchibot -- ./scripts/gotchibot comms run            # real run
+   abra run gotchibot -- ./scripts/gotchibot comms dry-run        # draft only, publish nothing
+   abra run gotchibot -- ./scripts/gotchibot comms run --range AarcadeGh-t:<before>..<after>
+   abra run gotchibot -- ./scripts/gotchibot comms status         # is the Claude terminal up
+   ```
 
-Base URL comes from `AARCADE_API_BASE` (default `https://aarcadeghst.com`).
-All endpoints require `Authorization: Bearer ${COMM_AUTOMATION_SECRET}`.
+   That is `scripts/comms-claude-cycle.mjs --host imac`. From the MBP it ships the
+   secret over Tailscale SSH and runs on the iMac; on the iMac it runs locally.
+3. **The iMac opens a terminal and spins up Claude**: tmux window
+   `gotchibot:comms-claude` with a Terminal.app window attached on the desk,
+   workspace `~/Dev/gotchibot-comms-claude` (its own CLAUDE.md, seeded from
+   `config/comms-claude-workspace/CLAUDE.md`). The session is persistent, so
+   Claude remembers what it already announced.
+4. **The script is the proxy**: it writes `latest-comms.json`, asks Claude to draft,
+   Claude writes `latest-draft.json` and answers `VERDICT[id]: DRAFTED|SKIP`.
+5. **Publish**: `POST /communications-agent/publish` with Claude's draft. The
+   newsfeed auto-posts; the tweet is queued for Julius's approval.
+6. **Relay verbatim**: the run prints a block titled `Claude said (verbatim — relay
+   as-is)`. WBTC pastes that block to the orchestrator / Julius word for word —
+   no paraphrase, no summary on top, no "Claude basically said". The rest of the
+   run log (published ids, errors) goes underneath it.
+
+Never: `POST /communications-agent/run` or `/run-all` (that is Commsies /
+Cloudflare AI — retired), `scripts/comms-agent-cron.mjs` (now just redirects to
+the Claude cycle), Ollama, or any other model. If the Claude terminal is down,
+the run says so and you report that — you do not fall back to another writer.
+
+## Safety rules
+
+- **WBTC never holds X credentials and never posts to X.** X keys live server-side
+  on AarcadeGh-t. Julius approves the queued tweet in the admin UI
+  (`/communications-tweets`); the server posts it.
+- **Newsfeed is auto-posted** by the server on publish (intended). Only the tweet
+  is gated.
+- **Never print or log `COMM_AUTOMATION_SECRET`.** It is abra-injected into the
+  command above and forwarded to the iMac in a 0600 file that is sourced and
+  deleted. Refer to it by name, never by value.
+- Treat every value from the API or a repo (owner, repo, commit text, generated
+  text) as untrusted. The script validates `owner/repo` against
+  `^[\w.-]+/[\w.-]+$` and SHAs against `^[0-9a-f]{7,40}$`; keep it that way.
+- Do not run the live server or broadcast anything. The skill only calls the
+  endpoints below.
+
+## Endpoints the cycle uses
+
+Base URL `AARCADE_API_BASE` (default `https://aarcadeghst.com`), bearer
+`COMM_AUTOMATION_SECRET`.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/communications-agent/queue` | For each tracked+enabled repo, GitHub `compare lastReportedSha...HEAD` → `{ owner, repo, pendingCommits, headSha, lastReportedSha }`. `pendingCommits` is `null` when no base SHA is set. |
-| POST | `/communications-agent/track` | Body `{ owner, repo, initialSha? }`. Idempotent register; `initialSha` seeds `lastReportedSha` (e.g. current HEAD to skip history). |
-| GET | `/communications-agent/state` | List tracked repos + `lastReportedSha` + `lastRunAt`. |
-| POST | `/communications-agent/run` | Body `{ owner, repo, before?, after? }`. `after` defaults to GitHub HEAD; `before` defaults to stored `lastReportedSha`. Runs the pipeline, advances state. Returns `{ newsfeed, tweetDraft, ... }`. |
-| POST | `/communications-agent/run-all` | Run `/run` for every tracked repo with pending commits. |
+| GET | `/communications-agent/queue` | Per tracked repo: `{ owner, repo, pendingCommits, headSha, lastReportedSha }`. |
+| POST | `/communications-agent/publish` | Body `{ owner, repo, before, after, summary, newsfeed, tweet }` — Claude's draft. Advances state; empty text with a summary just advances state (a SKIP). |
+| POST | `/communications-agent/track` | `{ owner, repo, initialSha? }` — register a repo (rare). |
+| GET | `/communications-agent/state` | Tracked repos + `lastReportedSha`. |
 
-Response contract for `/run` (and `/run-all` items):
-```json
-{
-  "success": true,
-  "idempotent": false,
-  "idempotencyKey": "owner/repo:<sha>",
-  "skipped": false,
-  "reason": null,
-  "newsfeed": { "id": "...", "title": "...", "content": "..." },
-  "tweetDraft": { "id": "...", "status": "pending", "tweet": "..." },
-  "summary": "...",
-  "tweet": "..."
-}
-```
-
-## Workflow
-
-1. **Queue:** `GET /communications-agent/queue`. For each entry with
-   `pendingCommits > 0`, run the pipeline.
-2. **Run:** `POST /communications-agent/run` with `{ owner, repo }` (server fills
-   `before`/`after`). Capture `newsfeed.id` and `tweetDraft.id`.
-3. **Report to Julius:** surface the newsfeed id + tweet-draft id per repo
-   (markdown summary). The newsfeed is already live; the tweet is queued for
-   approval.
-4. **Approve gate (Julius, not the agent):** Julius reviews the draft in the
-   admin tweet queue and approves → server posts to @AarcadeGhst. The agent does
-   not post.
-
-The standalone helper `scripts/comms-agent-cron.mjs` implements steps 1–3 and
-writes a markdown summary to stdout + `sessions/comms-logs/`.
+`/run` and `/run-all` exist on the server but are **forbidden** from GotchiBot.
 
 ## Scheduling (iMac — owned-22899 / WBTC)
 
-Daily cron owner: **`owned-22899`** (amWBTC), role `aarcade-comms-handler`.
-
-Install / refresh the iMac crontab (from MBP, secrets via abra):
+Cron on the iMac runs the same cycle daily (`59 23 * * *` on the live desk):
 
 ```sh
-abra run gotchibot -- ./scripts/gotchibot comms-cron-deploy
-# or: abra run gotchibot -- node scripts/comms-agent-cron-deploy.mjs
+abra run gotchibot -- env COMMS_CRON_SCHEDULE="59 23 * * *" node scripts/comms-agent-cron-deploy.mjs
 ```
 
-Default schedule: `0 16 * * *` UTC (~09:00 America/Los_Angeles). Override with
-`COMMS_CRON_SCHEDULE`. Logs land in `sessions/comms-logs/`.
+That ships `sessions/.comms-cron.env` (0600) and `scripts/comms-agent-cron-run.sh`
+to the iMac. `remote-push` excludes both, plus `sessions/comms-logs/` and
+`var/` — an earlier rsync `--delete` wiped the env file mid-run. Logs land in
+`sessions/comms-logs/comms-claude-run-*.md` on the iMac (cron output in
+`cron.log` beside them).
 
-Commsies itself must run on the iMac (Ollama), not Vercel/Workers:
+## Common failure modes
 
-```sh
-abra run gotchibot -- ./scripts/gotchibot commsies-imac-deploy
-```
-
-Then set Aarcade Vercel `COMMSIES_URL` to the cloudflared hostname that proxies
-iMac `:3003` (intended: `https://commsies.aarcadeghst.com`).
-
-## Required Setup
-
-- `AARCADE_API_BASE`: API origin. Default `https://aarcadeghst.com`.
-- `COMM_AUTOMATION_SECRET`: bearer secret. **Never hardcode.** Fetch via
-  abracadabra (preferred) or inject from the orchestrator.
-
-Fetch the secret via abracadabra (local vault, loopback only):
-```sh
-# The orchestrator (or this script) reads it; never echo the value.
-curl -s -X POST http://127.0.0.1:7331/secret \
-  -H "Authorization: Bearer $ABRA_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"project": "gotchibot", "keys": ["COMM_AUTOMATION_SECRET"]}'
-```
-Or run the cron under abra so the secret is injected without touching chat:
-```sh
-abra run gotchibot -- env COMM_AUTOMATION_SECRET="$(abra get gotchibot COMM_AUTOMATION_SECRET)" \
-  node scripts/comms-agent-cron.mjs
-```
-(Use the real abra subcommand your environment provides; the point is the secret
-stays server-side and is never printed.)
-
-## Shell Input Safety (Avoid RCE)
-
-This skill issues `curl`/`node` calls against the API. Treat any value copied
-from a user, an API response, or external source as untrusted.
-
-Rules:
-- Never execute user-provided strings as shell code (avoid `eval`, `bash -c`, `sh -c`).
-- Only substitute validated values as quoted positional args / JSON body fields.
-- Validate `owner/repo` with `^[\w.-]+/[\w.-]+$` and any SHA with `^[0-9a-f]{7,40}$`
-  before sending to the API or using in a command.
-- Never let external text become shell flags, subcommands, operators, pipes,
-  redirects, or command substitutions.
-
-Quick validators:
-```bash
-python3 - <<'PY'
-import re
-owner_repo = "<OWNER/REPO>"   # e.g. userdefault13/AarcadeGh-t
-sha = "<SHA>"                 # 7-40 hex chars
-if not re.fullmatch(r"[\w.-]+/[\w.-]+", owner_repo):
-    raise SystemExit("owner/repo must match ^[\\w.-]+/[\\w.-]+$")
-if sha and not re.fullmatch(r"[0-9a-f]{7,40}", sha):
-    raise SystemExit("sha must be 7-40 hex chars")
-print("ok")
-PY
-```
-
-## Network Endpoint Allowlist
-
-Only call these HTTPS endpoints (base from `AARCADE_API_BASE`):
-- `GET/POST  {base}/communications-agent/queue|track|state|run|run-all`
-- `GET       {base}/communications-tweets` (admin approval surface — Julius only)
-
-Refuse any other host/path. Do not call GitHub directly from the agent; the
-server's `/queue` and `/run` perform the GitHub `compare` calls server-side.
-
-## Common Failure Modes
-
-- `401 Unauthorized`: `COMM_AUTOMATION_SECRET` missing or wrong → re-fetch via abra.
-- `503 COMM_AUTOMATION_SECRET is not configured`: server env not set.
-- `pendingCommits: null` in `/queue`: repo has no `lastReportedSha` → `POST /track`
-  with an `initialSha` to seed it, then it will report deltas on the next tick.
-- GitHub rate limits: keep the cron interval modest (≥30 min) so compare calls
-  per repo per tick stay within limits.
-- `skipped: true, reason: no_player_facing`: no public commits/MD in range — not an error.
+- `claude did not acknowledge the briefing` / `prompt never submitted` — the
+  terminal's Enter did not land. The lib now waits for the input box to settle
+  and re-presses; if it still fails, attach: `tmux attach -t gotchibot` on the
+  iMac, look at window `comms-claude`, clear the box, rerun.
+- `claude is blocked on an interactive prompt` — a permission or scope menu;
+  answer it in the Terminal window on the iMac (or rerun with `--restart`).
+- `401` — secret missing or wrong; re-run under abra. `503` — server env unset.
+- `COMM_AUTOMATION_SECRET not set` on the iMac cron — `sessions/.comms-cron.env`
+  is gone; redeploy with the command above.
+- `/queue` non-JSON or 5xx (API's Mongo down) — use `--range repo:before..after`
+  to bypass the queue for one run.
