@@ -63,10 +63,16 @@ export function scopeConfig(scope, policy = loadPolicy()) {
 export function candidatesFor(scope, policy = loadPolicy()) {
   const cfg = scopeConfig(scope, policy);
   const includeGo = policy.rules?.paidGoDefault === true;
-  let list = workingModelCandidates({ includeGo });
-  if (!list.includes(FREE_MODEL)) list = [...list, FREE_MODEL];
-  const max = Number(cfg.maxAttempts || policy.rules?.maxAttempts || 6);
-  return list.slice(0, Math.max(1, max));
+  // A Go subscription is only useful if the chains that actually spawn work use it.
+  // workingModelCandidates() still drops opencode-go/* when no key is reachable.
+  const goFirst = cfg.alias === "sub" || cfg.chain === "subagentPrefer";
+  let list = workingModelCandidates({ includeGo, goFirst });
+  const max = Math.max(1, Number(cfg.maxAttempts || policy.rules?.maxAttempts || 6));
+  // Always keep one free slot so a Go outage or quota error still lands on a working model.
+  if (!list.slice(0, max).includes(FREE_MODEL)) {
+    list = [...list.filter((m) => m !== FREE_MODEL).slice(0, max - 1), FREE_MODEL];
+  }
+  return list.slice(0, max);
 }
 
 /**
@@ -78,7 +84,7 @@ export async function pickFor(scope, { probe, json = false } = {}) {
   const doProbe = probe ?? Boolean(policy.rules?.probeOnPick);
 
   if (cfg.alias === "sub" || cfg.chain === "subagentPrefer") {
-    const r = await pickSubagentModel({ json: true });
+    const r = await pickSubagentModel();
     if (r?.route === "cursor-cli") {
       return json ? r : "cursor-cli";
     }

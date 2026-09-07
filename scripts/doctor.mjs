@@ -145,9 +145,13 @@ try {
 } catch {}
 if (referral?.goUrl) ok(`OpenCode referral: ${referral.label ?? "OpenCode Go"} → ${referral.goUrl}`);
 else warn("config/opencode.referral.json missing/unreadable");
-process.env.OPENCODE_API_KEY
-  ? ok("OPENCODE_API_KEY appears set (value never printed)")
-  : warn("OPENCODE_API_KEY unset in env — BYO models; keep it in abra, never in files");
+{
+  const { goKeySource } = await import("./go-key.mjs");
+  const src = goKeySource({ fresh: true });
+  if (src === "env") ok("OPENCODE_API_KEY set in env (value never printed) — OpenCode Go models available");
+  else if (src === "abra") ok("OPENCODE_API_KEY in abra project 'gotchibot' — sub-agents get OpenCode Go via abra run");
+  else warn("OPENCODE_API_KEY not in env or abra — sub-agents fall back to free Zen. Fix: abra set gotchibot OPENCODE_API_KEY");
+}
 
 /* ─── 4. wallet / cartridge (soft) ────────────────────────────── */
 const walletPath = `${SESSIONS}/.wallet.json`;

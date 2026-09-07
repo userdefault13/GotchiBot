@@ -10,6 +10,7 @@
     "maxAttempts": 6,
     "preferZenFree": true,
     "paidGoDefault": false,
+    "paidGoDefaultNote": "false = Go models are not forced into prefer chains. Sub-agent chains (spawn/meet/colabo) still lead with OpenCode Go whenever OPENCODE_API_KEY is in env or in abra project gotchibot — see scripts/go-key.mjs.",
     "claudeIsToolNotModel": true
   },
   "scopes": {

@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hasGoKey } from "./go-key.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_GO = "opencode-go/kimi-k3";
@@ -29,8 +30,9 @@ function loadGoPrefer() {
 
 const GO_PREFER = loadGoPrefer();
 
+/** Env or abra vault — the chat pane launches through `abra run`, so a vault key counts. */
 export function hasGoApiKey() {
-  return Boolean(process.env.OPENCODE_API_KEY?.trim());
+  return hasGoKey();
 }
 
 export function hasZenApiKey() {
