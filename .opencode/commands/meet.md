@@ -33,7 +33,7 @@ Empty `$ARGUMENTS` (`/meet`) prints status of the current meeting.
 **Cockpit menu:** Start meeting → **Meeting** (unchanged) or **Morning recap**
 (auto topic `morning meeting` + invite all).
 
-Meet room prompter extras: `/colabo …` · `/recap-next` · `/recap-present`  
+Meet room prompter extras: `!cmd` (run shell here, post output to room) · `/colabo …` · `/recap-next` · `/recap-present`  
 (Gallery page next remains `/next` or `.`)
 
 Skills: **morning-recap**, **colabo**. MCP: **gotchibot-meet**.

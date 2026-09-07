@@ -1034,7 +1034,8 @@ async function mainMenu(wallet, cartridgeId) {
       console.log(readWelcomeArt(10));
       console.log(`\n  ✓ Orchestrator ready — ${heroId}`);
       console.log("  Launching OpenCode gotchi mode…");
-      console.log("  Talk in natural language to spin up sub-agents.\n");
+      console.log("  Talk in natural language to spin up sub-agents.");
+      console.log("  Start an empty prompt with ! to run a shell command yourself — its output lands in chat.\n");
       const saying = quirkyOpenclawSaying();
       console.log(`  Hi fren! I'm GotchiBot. ${saying}`);
       console.log("  Welcome — press Enter to open the prompter.\n");

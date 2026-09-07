@@ -7,6 +7,7 @@
  *   ./scripts/gotchi-meet.mjs invite all
  *   ./scripts/gotchi-meet.mjs status [--json]
  *   ./scripts/gotchi-meet.mjs say "user message"
+ *   ./scripts/gotchi-meet.mjs shell "<command>"   # !cmd in the meet prompter
  *   ./scripts/gotchi-meet.mjs end
  *   ./scripts/gotchi-meet.mjs sync-mentions
  *
@@ -21,7 +22,7 @@ import {
   mkdirSync,
   unlinkSync,
 } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { printSlackTurns } from "./meet-channel.mjs";
@@ -527,6 +528,7 @@ function appendTranscript(id, rec) {
     speaker: rec.speaker,
     role: rec.role,
     text: String(rec.text ?? ""),
+    ...(rec.kind ? { kind: rec.kind } : {}),
   };
   appendFileSync(transcriptPath(id), `${JSON.stringify(row)}\n`);
   return row;
@@ -1323,6 +1325,89 @@ function printMeetingBlock(meeting, turns, { pick } = {}) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// `!cmd` in the meet prompter — run a shell command on this box and post the
+// command + output to the room as a user turn, so every gotchi in the meeting
+// sees what Julius saw (same idea as `!` in Claude Code / OpenCode shell mode).
+// No model turn is triggered; the output just becomes shared context.
+// ---------------------------------------------------------------------------
+const SHELL_MAX_LINES = 60;
+const SHELL_MAX_CHARS = 6000;
+const SHELL_TIMEOUT_MS = Number(process.env.GOTCHIBOT_MEET_SHELL_TIMEOUT_MS) || 120_000;
+
+function trimShellOutput(raw) {
+  let text = String(raw || "").replace(/\r\n/g, "\n").replace(/\s+$/, "");
+  const lines = text.split("\n");
+  let dropped = 0;
+  if (lines.length > SHELL_MAX_LINES) {
+    dropped = lines.length - SHELL_MAX_LINES;
+    text = lines.slice(0, SHELL_MAX_LINES).join("\n");
+  }
+  if (text.length > SHELL_MAX_CHARS) text = `${text.slice(0, SHELL_MAX_CHARS)}…`;
+  if (dropped) text += `\n… (+${dropped} more lines)`;
+  return text;
+}
+
+function runShell(command) {
+  return new Promise((done) => {
+    let out = "";
+    let timedOut = false;
+    // Non-login bash, like OpenCode's bash tool: a login profile here printed
+    // "grep: invalid option -- P" into every result. PATH is inherited from the pane.
+    const child = spawn("bash", ["-c", command], {
+      cwd: ROOT,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, GOTCHIBOT_ROOT: ROOT },
+    });
+    const push = (chunk) => {
+      if (out.length < SHELL_MAX_CHARS * 4) out += String(chunk);
+    };
+    child.stdout.on("data", push);
+    child.stderr.on("data", push);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, SHELL_TIMEOUT_MS);
+    // Ctrl+C in the prompter SIGTERMs this helper — pass it on to the command.
+    const forward = () => child.kill("SIGTERM");
+    process.once("SIGTERM", forward);
+    process.once("SIGINT", forward);
+    const finish = (result) => {
+      clearTimeout(timer);
+      process.off("SIGTERM", forward);
+      process.off("SIGINT", forward);
+      done(result);
+    };
+    child.on("error", (err) => finish({ out: `${out}${err.message}`, code: 127, timedOut }));
+    child.on("close", (code, signal) =>
+      finish({ out, code: code ?? (signal ? 128 : 1), signal, timedOut }),
+    );
+  });
+}
+
+export async function shellTurn(command) {
+  const cmd = String(command || "").trim();
+  if (!cmd) throw new Error('usage: gotchi-meet.mjs shell "<command>"');
+  const meeting = requireOpenMeeting();
+  const user = meeting.participants.find((p) => p.role === "user") || userParticipant();
+  const res = await runShell(cmd);
+  const body = trimShellOutput(res.out) || "(no output)";
+  const status = res.timedOut
+    ? `(timed out after ${Math.round(SHELL_TIMEOUT_MS / 1000)}s)`
+    : res.code
+      ? `(exit ${res.code})`
+      : "";
+  const text = [`$ ${cmd}`, body, status].filter(Boolean).join("\n");
+  const row = appendTranscript(meeting.id, {
+    speaker: user.id,
+    role: "user",
+    text,
+    kind: "shell",
+  });
+  pokeMeetChannel();
+  return { row, code: res.code, timedOut: res.timedOut };
+}
+
 export async function sayTurn(userText) {
   const text = String(userText || "").trim();
   if (!text) throw new Error('usage: gotchi-meet.mjs say "user message"');
@@ -1719,6 +1804,14 @@ async function main() {
 
   if (cmd === "say") {
     await sayTurn(rest.join(" ").trim());
+    return;
+  }
+
+  // `!cmd` from the meet prompter. Exit 0 even when the command itself failed —
+  // the failure is recorded in the room; a non-zero exit here means we could not post.
+  if (cmd === "shell") {
+    const { row } = await shellTurn(rest.join(" ").trim());
+    if (!process.env.GOTCHIBOT_MEET_QUIET) console.log(row.text);
     return;
   }
 

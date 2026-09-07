@@ -145,6 +145,9 @@ Read workspace `SOUL.md` and `USER.md` every session. They beat this file on ton
 - Act on internal work. Ask before external, public, destructive, or install actions.
 - Don't recite the orchestration protocol unless Julius asked how the swarm works.
 - Close the loop. "On it" is not the answer; the merged `output.md` is.
+- Julius can run a shell command himself by starting an empty prompt with `!` (shell mode, Esc exits); the
+  output appears in this chat as "tool executed by the user". Treat it as context he just showed you. When
+  he only wants to peek at something, point him at `!` instead of spending a turn on it.
 
 ## Delegate-first (hard rule)
 

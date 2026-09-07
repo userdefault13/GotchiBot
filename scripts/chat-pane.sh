@@ -9,6 +9,9 @@
 # Tab/F2: OpenCode TUI cycles agents (tab). tmux does not steal Tab. Mini: GOTCHIBOT_OPENCODE_MINI=1
 # Fallback: `./scripts/gotchibot mode cycle --restart` | Ctrl+X A agent menu
 # Copy: /copy or Ctrl+Y (last assistant reply → clipboard). Shift+drag selects text in terminal.
+# Shell: start an empty prompt with ! (OpenCode shell mode, like Claude Code's !). Enter runs the
+#   command via bash; the output lands in chat as context the gotchi can see. Esc leaves shell mode.
+#   The meet room prompter does the same: !cmd posts command + output to the room.
 # Disable OpenCode mouse: GOTCHIBOT_OPENCODE_MOUSE=0
 # Full OpenCode TUI (not mini): GOTCHIBOT_OPENCODE_MINI=0
 # Resume last session: GOTCHIBOT_OPENCODE_CONTINUE=1 (default). Fresh chat: =0
@@ -21,7 +24,7 @@ export PATH="${HOME}/.openclaw/bin:${PATH}"
 # Persisted remote gateway (iMac) — sessions/.openclaw-gateway.json
 # shellcheck source=/dev/null
 [ -f "$ROOT/scripts/openclaw-gateway-env.sh" ] && source "$ROOT/scripts/openclaw-gateway-env.sh"
-# Keep OpenCode Go catalog registered so /models shows the OpenCode Go group.
+# Subscription mode: this strips any API-key override for opencode-go (opt-in: GOTCHIBOT_OPENCODE_GO_APIKEY=1).
 node "$ROOT/scripts/sync-opencode-go-provider.mjs" >/dev/null 2>&1 || true
 if [ -z "${GOTCHIBOT_OPENCODE_MODEL:-}" ]; then
   MODEL="$(node "$ROOT/scripts/model-auto.mjs" pick 2>/dev/null || echo opencode-go/kimi-k3)"

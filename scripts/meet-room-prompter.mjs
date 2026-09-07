@@ -154,7 +154,7 @@ function stopStatusAnim() {
   statusAnimTimer = null;
 }
 
-function writePending(text) {
+function writePending(text, { chair = true } = {}) {
   try {
     writeFileSync(
       PENDING,
@@ -163,6 +163,7 @@ function writePending(text) {
   } catch {
     /* ok */
   }
+  if (!chair) return;
   try {
     // User line in flight — show chair thinking until sayTurn updates speakers.
     const mid = String(readFileSync(`${ROOT}/sessions/meetings/.current`, "utf8")).trim();
@@ -245,10 +246,11 @@ function sayToRoom(msg) {
 }
 
 /** morning-recap / colabo helpers (async, redraw on finish). */
-function runMeetHelper(argv) {
+function runMeetHelper(argv, { pending = null, failLabel = "helper failed" } = {}) {
   if (sendBusy) return;
   sendBusy = true;
   sendError = null;
+  if (pending) writePending(pending, { chair: false });
   startSendTimer();
   draw();
   const child = spawn(process.execPath, [`${ROOT}/scripts/gotchi-meet.mjs`, ...argv], {
@@ -260,19 +262,29 @@ function runMeetHelper(argv) {
   child.on("error", () => {
     if (activeChild === child) activeChild = null;
     sendBusy = false;
+    if (pending) clearPending();
     stopSendTimer();
-    sendError = "helper failed";
+    sendError = failLabel;
     pokeChannel();
     draw();
   });
   child.on("close", (code) => {
     if (activeChild === child) activeChild = null;
     sendBusy = false;
+    if (pending) clearPending();
     stopSendTimer();
     pokeChannel();
-    if (code !== 0) sendError = "helper failed";
+    if (code !== 0) sendError = failLabel;
     draw();
   });
+}
+
+/**
+ * `!cmd` — run a shell command right here (Claude Code / OpenCode style) and post
+ * the command + output to the room, so the gotchis see it too. No model turn.
+ */
+function runShellInRoom(cmd) {
+  runMeetHelper(["shell", cmd], { pending: `$ ${cmd}`, failLabel: "shell post failed" });
 }
 
 /** Ctrl+C in raw mode: cancel busy send → clear line → leave to chat (double-tap or empty). */
@@ -434,7 +446,7 @@ function drawInputPanel(top, cols) {
   } else {
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
-      `${T.panel}${T.muted} · ^C leave · /end${T.reset}`;
+      `${T.panel}${T.muted} · !cmd shell · ^C leave · /end${T.reset}`;
   }
   writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols, visLen(footerCore)), cols));
 
@@ -545,6 +557,14 @@ class Prompter {
     }
     if (line === "/recap-present") {
       runMeetHelper(["morning", "present"]);
+      return "redraw";
+    }
+    if (line.startsWith("!")) {
+      const cmd = line.slice(1).trim();
+      if (!cmd) return "noop";
+      this.history.push(line);
+      if (this.history.length > 100) this.history.shift();
+      runShellInRoom(cmd);
       return "redraw";
     }
     if (line.startsWith("/colabo ") || line.startsWith("/collabo ")) {
