@@ -95,7 +95,10 @@ export GOTCHIBOT_TMUX_SESSION="\${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
 # shellcheck disable=SC1091
 source ${shellQuote(remoteEnv)}
 mkdir -p sessions/comms-logs
-exec node scripts/comms-claude-cycle.mjs --host local "$@"
+# caffeinate: the daily run is unattended, so keep the box awake for the Claude
+# terminal round (the stall is App Nap / idle sleep on the attached Terminal).
+CAF=""; [ -x /usr/bin/caffeinate ] && CAF="/usr/bin/caffeinate -dimsu"
+exec $CAF node scripts/comms-claude-cycle.mjs --host local "$@"
 `;
 
     const writeWrapper = `cat > ${shellQuote(wrapperPath)} << 'EOF'\n${wrapper}\nEOF\nchmod +x ${shellQuote(wrapperPath)}`;

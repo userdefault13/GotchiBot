@@ -278,7 +278,13 @@ export function createClaudeTerminal(config) {
     // found", so hand the window a usable one.
     const path = `/usr/local/bin:/opt/homebrew/bin:${HOME}/.local/bin:/usr/bin:/bin`;
     const sys = systemPrompt ? ` --append-system-prompt "${systemPrompt.replace(/"/g, '\\"')}"` : "";
-    const cmd = `PATH="${path}" exec "${CLAUDE_BIN}" --allowedTools "${allowedTools}"${sys}`;
+    // caffeinate -dimsu keeps display/system/disk awake AND declares the user
+    // active for the lifetime of claude, which is what stops the attached
+    // Terminal from being throttled (App-Napped) while no one is looking. The
+    // one successful unattended run had a fresh, awake Terminal; a reused pane
+    // that had been left to nap is what stalls.
+    const caf = existsSync("/usr/bin/caffeinate") ? "/usr/bin/caffeinate -dimsu " : "";
+    const cmd = `PATH="${path}" exec ${caf}"${CLAUDE_BIN}" --allowedTools "${allowedTools}"${sys}`;
     tmux(["new-window", "-d", "-t", tmuxSession, "-n", window, "-c", workspace, cmd], { check: true });
     // Keep the pane wide: attaching a client resizes the window to the client,
     // and a narrow one wraps answer lines and defeats the parser.
@@ -319,6 +325,13 @@ export function createClaudeTerminal(config) {
       s = null;
     }
 
+    // Reusing a live window: re-attach a focused desktop Terminal so the run has
+    // the same awake, on-screen terminal the one successful run had. Never kill
+    // a reused window here — it may be legitimately mid-draft.
+    if (!restart && windowExists() && process.env.AGENT_CLAUDE_NO_DESKTOP !== "1") {
+      showOnDesktop();
+    }
+
     if (!windowExists()) {
       startWindow();
       const briefedAt = brief();
@@ -348,6 +361,7 @@ export function createClaudeTerminal(config) {
       return { session: s, created: false, recycled: true };
     }
 
+    if (process.env.AGENT_CLAUDE_NO_DESKTOP !== "1") showOnDesktop();
     return { session: s, created: false };
   }
 
