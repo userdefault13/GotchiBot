@@ -10,7 +10,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { hasGoKey } from "./go-key.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CFG_PATH = `${ROOT}/config/models.auto.json`;
@@ -147,15 +146,11 @@ async function ollamaUp() {
 }
 
 function hasOpencodeKey() {
-  return hasGoKey() || !!process.env.OPENCODE_ZEN_API_KEY;
+  return !!(process.env.OPENCODE_API_KEY || process.env.OPENCODE_ZEN_API_KEY);
 }
 
-/**
- * Env OR abra vault. Pickers run in the parent shell before `abra run` injects
- * the key, so an env-only check here made every sub-agent ignore a paid Go sub.
- */
 function hasOpencodeGoKey() {
-  return hasGoKey();
+  return !!process.env.OPENCODE_API_KEY;
 }
 
 function buildPrefer(cfg) {
@@ -205,26 +200,20 @@ export function markModelCooldown(model, { reason = "failed", ttlSec } = {}) {
   return cache;
 }
 
-/**
- * Prefer list for “working models only” walkers (meet, spawn). Skips cooldown + skip list.
- * `goFirst` puts the paid Go list ahead of free Zen — only honoured when a Go key exists.
- */
-export function workingModelCandidates({ includeGo = true, goFirst = false } = {}) {
+/** Prefer list for “working models only” walkers (meet, spawn). Skips cooldown + skip list. */
+export function workingModelCandidates({ includeGo = true } = {}) {
   const cfg = loadCfg();
   const cache = loadCache();
   const now = Date.now();
   const skip = new Set((cfg.skip || []).map(oc));
-  const goKey = hasOpencodeGoKey();
   const out = [];
   const push = (id) => {
     const m = oc(id);
     if (!m || skip.has(m) || out.includes(m)) return;
-    if (m.startsWith("opencode-go/") && !goKey) return; // never queue a model that will 401
-    if (m.startsWith("opencode-go/") && !includeGo && !goFirst) return;
+    if (m.startsWith("opencode-go/") && !includeGo && !hasOpencodeGoKey()) return;
     if (cache.cooldown?.[m] && now < cache.cooldown[m]) return;
     out.push(m);
   };
-  if (goFirst && goKey) for (const id of cfg.goPrefer || []) push(id);
   for (const id of cfg.subagentPrefer || []) push(id);
   for (const id of buildPrefer(cfg)) push(id);
   push(cfg.subagentFallback || cfg.lastResort || "opencode/big-pickle");
@@ -232,56 +221,57 @@ export function workingModelCandidates({ includeGo = true, goFirst = false } = {
   return out;
 }
 
-/**
- * Ordered candidates for a sub-agent. With a Go key (env or vault) the paid
- * Go list leads — that is what the subscription is for. Without one, only
- * free Zen models are eligible; opencode-go/* entries are dropped so a spawn
- * can never die on "Missing API key".
- */
-export function subagentCandidates(cfg, { goKey } = {}) {
-  const skip = new Set((cfg.skip || []).map(oc));
-  const out = [];
-  const push = (id) => {
-    const m = oc(id);
-    if (!m || skip.has(m) || out.includes(m)) return;
-    if (m.startsWith("opencode-go/") && !goKey) return;
-    out.push(m);
-  };
-  if (goKey) for (const id of cfg.goPrefer || []) push(id);
-  for (const id of cfg.subagentPrefer || []) push(id);
-  push(cfg.subagentFallback || cfg.lastResort || "opencode/big-pickle");
-  return out;
-}
-
-export async function pickSubagentModel() {
+export async function pickSubagentModel({ json = false } = {}) {
   const cfg = loadCfg();
   const cache = loadCache();
   const now = Date.now();
-  const goKey = hasOpencodeGoKey();
+  const goKeyPresent = hasOpencodeGoKey();
   const fallback = cfg.subagentFallback || "opencode/big-pickle";
 
-  for (const model of subagentCandidates(cfg, { goKey })) {
+  // Free Zen first (no Go key required). Skip opencode-go/* unless Go key is present.
+  const prefer = (cfg.subagentPrefer || []).map(oc);
+  for (const model of prefer) {
+    if (model.startsWith("opencode-go/") && !goKeyPresent) continue;
     if (cache.cooldown?.[model] && now < cache.cooldown[model]) continue;
-    return {
+    const result = {
       route: "spawn",
       model,
-      goKey,
       reason: model.startsWith("opencode-go/") ? "subagent-prefer-go" : "subagent-prefer-zen-free",
       cached: false,
     };
+    if (json) return result;
+    process.stdout.write(model);
+    return;
   }
 
-  // Everything is cooling down: cursor-agent if installed, else the fallback.
+  // Optional: cursor-agent when no free/Go model picked
   try {
     const { spawnSync } = await import("node:child_process");
-    const r = spawnSync("command", ["-v", "cursor-agent"], { encoding: "utf8", shell: true });
+    const r = spawnSync("command", ["-v", "cursor-agent"], {
+      encoding: "utf8",
+      shell: true,
+    });
     const found = (r.stdout || "").trim().split("\n")[0];
-    if (found && existsSync(found)) {
-      return { route: "cursor-cli", model: "cursor-cli", goKey, reason: "cursor-available", cached: false };
+    if (found && require("node:fs").existsSync(found)) {
+      const result = {
+        route: "cursor-cli",
+        reason: "cursor-available",
+        cached: false,
+      };
+      if (json) return result;
+      process.stdout.write("cursor-cli");
+      return;
     }
   } catch {}
 
-  return { route: "spawn", model: fallback, goKey, reason: "subagent-fallback", cached: false };
+  const result3 = {
+    route: "spawn",
+    model: fallback,
+    reason: "subagent-fallback",
+    cached: false,
+  };
+  if (json) return result3;
+  process.stdout.write(fallback);
 }
 
 export async function pickModel({ probe = false, json = false } = {}) {
@@ -376,8 +366,9 @@ export async function resolveAlias(name, opts = {}) {
   if (!key || key === "auto" || key === "free") return pickModel(opts);
   if (a[key] && a[key] !== "AUTO") return opts.json ? { model: a[key], reason: "alias" } : a[key];
   if (key === "sub") {
-    const picked = await pickSubagentModel();
-    return opts.json ? picked : picked.model;
+    const picked = pickSubagentModel({ json: opts.json });
+    if (opts.json) return picked;
+    return picked.model;
   }
   return opts.json ? { model: key, reason: "passthrough" } : key;
 }
@@ -411,11 +402,15 @@ if (isCli) {
       };
     }
     if (cmd === "resolve") return resolveAlias(rest[0] || "auto", { probe, json: true });
-    if (cmd === "subagent") {
-      const r = await pickSubagentModel();
-      return json ? r : r.model;
-    }
-    throw new Error("usage: model-auto.mjs pick|pin|list|resolve [alias]|subagent [--json] [--probe]");
+if (cmd === "subagent") {
+  const r = await pickSubagentModel({ json: argv.includes("--json") });
+  if (argv.includes("--json")) {
+    return r;
+  } else {
+    return r.model;
+  }
+}
+    throw new Error("usage: model-auto.mjs pick|pin|list|resolve [alias] [--json] [--probe]");
   };
   out()
     .then((r) => {
