@@ -42,13 +42,14 @@
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hostServiceUrl } from "./lib/host-services.mjs";
 import { spawnSync } from "node:child_process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOG_DIR = process.env.INFRA_LOG_DIR || `${ROOT}/sessions/infra-logs`;
 const SUBGRAPH_URL =
   process.env.INFRA_SUBGRAPH_URL ||
-  "http://127.0.0.1:8787/subgraphs/name/aavegotchi-core-base";
+  hostServiceUrl(8787, "/subgraphs/name/aavegotchi-core-base");
 const asJson = process.argv.includes("--json");
 
 // Augmented PATH so docker, curl and claude resolve under cron / abra run,
