@@ -1,5 +1,5 @@
 ---
-name: Gotchi-Trader improve
+name: gotchi-trader-improve
 description: >-
   Use when auto-improving or retuning a paper trader from its own realized trade
   history.

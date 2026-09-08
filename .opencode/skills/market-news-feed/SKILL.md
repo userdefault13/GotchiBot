@@ -1,5 +1,5 @@
 ---
-name: Market news feed
+name: market-news-feed
 description: >-
   Use when a trading desk needs live headlines or a risk-on/off veto before
   adding size.

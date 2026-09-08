@@ -31,3 +31,12 @@ build/
 tmp/
 .cursor/*.log
 session-ses_*.md
+
+# OpenClaw hero workspaces (config/openclaw/workspaces/<id>/): AGENTS/SOUL/IDENTITY/USER.md
+# are rendered from config/openclaw/templates/ by openclaw-fleet.mjs sync and tracked so
+# a diff shows what a hero was told. Skill copies and per-hero memory/state are not source.
+config/openclaw/workspaces/*/skills/
+config/openclaw/workspaces/*/memory/
+config/openclaw/workspaces/*/openclaw-workspace-state.json
+config/openclaw/workspaces/*/BOOTSTRAP.md
+config/openclaw/workspaces/*/.openclaw/

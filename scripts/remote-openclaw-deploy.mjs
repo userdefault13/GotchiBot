@@ -23,6 +23,24 @@ const OPENROUTER_DEFAULT_MODEL =
   process.env.GOTCHIBOT_OPENCLAW_OPENROUTER_MODEL?.trim() ||
   "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free";
 const CF_FALLBACK_MODEL = "cloudflare-wai/@cf/zai-org/glm-4.7-flash";
+// Paid OpenCode Go model used only as a FALLBACK behind the free primary
+// (config/model-policy.json: preferZenFree, paidGoDefault=false). OpenClaw walks
+// agents.defaults.model.fallbacks on auth failures, rate limits and timeouts —
+// the three ways the Hub has actually died. Override: GOTCHIBOT_OPENCLAW_FALLBACKS="a,b".
+const OPENCODE_GO_PAID_FALLBACK = "opencode-go/glm-5.2";
+
+function resolveFallbackModels({ primaryModel, opencodeKey, openrouterKey, cloudflareAccount, cloudflareToken }) {
+  const explicit = process.env.GOTCHIBOT_OPENCLAW_FALLBACKS?.trim();
+  const list = explicit
+    ? explicit.split(",").map((m) => m.trim()).filter(Boolean)
+    : [
+        opencodeKey ? OPENCODE_GO_PAID_FALLBACK : null,
+        opencodeKey ? "opencode/big-pickle" : null,
+        cloudflareAccount && cloudflareToken ? CF_FALLBACK_MODEL : null,
+        openrouterKey ? OPENROUTER_DEFAULT_MODEL : null,
+      ];
+  return [...new Set(list.filter(Boolean))].filter((m) => m !== primaryModel);
+}
 
 function readPinnedOpencodeModel() {
   try {
@@ -202,6 +220,7 @@ async function main() {
       opencodeKey,
       primaryModel,
     } = secrets;
+    const fallbackModels = resolveFallbackModels(secrets);
     if (opencodeKey) {
       console.log(`→ OpenClaw primary model: ${primaryModel} (OpenCode Go)`);
     } else if (openrouterKey) {
@@ -211,6 +230,7 @@ async function main() {
         `⚠ OPENCODE_API_KEY / OPENROUTER_API_KEY missing — gateway stays on ${CF_FALLBACK_MODEL}. Run: abra set gotchibot OPENCODE_API_KEY`,
       );
     }
+    console.log(`→ OpenClaw fallbacks: ${fallbackModels.length ? fallbackModels.join(" → ") : "(none)"}`);
 
     console.log("→ repair ~/.openclaw/openclaw.json on iMac…");
     const repairCmd = `export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"; cd ${shellQuote(gotchiDir)} && GOTCHIBOT_OPENCLAW_MODEL=${shellQuote(primaryModel)} node scripts/openclaw-repair-config.mjs`;
@@ -228,6 +248,7 @@ set -euo pipefail
 OC=${shellQuote(openclawHome)}
 GB=${shellQuote(gotchiDir)}
 GOTCHIBOT_OPENCLAW_PRIMARY=${shellQuote(primaryModel)}
+GOTCHIBOT_OPENCLAW_FALLBACKS=${shellQuote(fallbackModels.join(","))}
 mkdir -p "$OC"
 cp "$OC/openclaw.json" "$OC/openclaw.json.bak-gotchibot-$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
 cat > "$OC/gotchibot.defaults.json5" <<DEF
@@ -236,18 +257,23 @@ cat > "$OC/gotchibot.defaults.json5" <<DEF
   thinkingDefault: "off",
 }
 DEF
-export OC GB GOTCHIBOT_OPENCLAW_PRIMARY
+export OC GB GOTCHIBOT_OPENCLAW_PRIMARY GOTCHIBOT_OPENCLAW_FALLBACKS
 node -e "
 const fs=require('fs');
 const oc=process.env.OC;
 const gb=process.env.GB;
 const primary=process.env.GOTCHIBOT_OPENCLAW_PRIMARY;
+const fallbacks=(process.env.GOTCHIBOT_OPENCLAW_FALLBACKS||'').split(',').map(s=>s.trim()).filter(Boolean);
+const modelCfg=fallbacks.length?{ primary, fallbacks }:{ primary };
 const cfgPath=oc+'/openclaw.json';
 let cfg={};
 try { cfg=JSON.parse(fs.readFileSync(cfgPath,'utf8')); } catch { cfg={ gateway:{ mode:'local', bind:'lan' } }; }
 cfg.agents=cfg.agents||{};
 const inc='\\x24include';
-cfg.agents.defaults={ ...(cfg.agents.defaults||{}), [inc]:'./gotchibot.defaults.json5', sandbox:{ mode:'all', backend:'docker', scope:'agent', workspaceAccess:'rw' }, model:{ primary } };
+cfg.agents.defaults={ ...(cfg.agents.defaults||{}), [inc]:'./gotchibot.defaults.json5', sandbox:{ mode:'non-main', backend:'docker', scope:'agent', workspaceAccess:'rw' }, model:modelCfg };
+// non-main: an agent's own main session runs on the host; group/channel sessions are
+// sandboxed. Fleet heroes additionally carry sandbox.mode=off in their entries
+// (openclaw-fleet.mjs) because their jobs are host-only (tmux, docker, Claude CLI).
 cfg.agents.entries={ [inc]:'./gotchibot-fleet.entries.json5' };
 cfg.tools=cfg.tools||{};
 cfg.tools.deny=[...new Set([...(cfg.tools.deny||[]),'abra','abracadabra','get_secrets'])];
@@ -271,7 +297,7 @@ try {
   console.warn('models merge skipped:', modelsPath, e.message);
 }
 fs.writeFileSync(cfgPath, JSON.stringify(cfg,null,2)+'\\n');
-console.log('merged', cfgPath, 'primary='+primary, 'sandbox=all');
+console.log('merged', cfgPath, 'primary='+primary, 'fallbacks='+(fallbacks.join(' → ')||'none'), 'sandbox=non-main (fleet heroes: off)');
 "
 `.trim();
     r = runSsh(cfg, keyMat.path, `bash -lc ${shellQuote(mergeScript)}`, { stdio: "pipe" });

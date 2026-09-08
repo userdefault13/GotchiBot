@@ -19,14 +19,23 @@ const files = [
   "scripts/chat-pane.sh",
   "scripts/gotchi-orchestrate.mjs",
   "scripts/opencode-dispatch.sh",
-  "config/openclaw/agents/starter-link-h1-1/AGENTS.md",
+  "config/openclaw/workspaces/starter-link-h1-1/AGENTS.md",
+  "config/openclaw/workspaces/starter-link-h1-1/SOUL.md",
+  "config/openclaw/workspaces/starter-link-h1-1/IDENTITY.md",
   "sessions/.focus.json",
-  "config/openclaw/agents/owned-954/AGENTS.md",
+  "config/openclaw/workspaces/owned-954/AGENTS.md",
+  "config/openclaw/workspaces/owned-954/SOUL.md",
+  "config/openclaw/workspaces/owned-954/IDENTITY.md",
+  "config/openclaw/templates/AGENTS.orchestrator.md",
+  "config/openclaw/templates/AGENTS.trader-desk.md",
+  "config/openclaw/templates/AGENTS.common.md",
+  "config/openclaw/templates/SOUL.md",
+  "config/openclaw/templates/IDENTITY.md",
   "SOUL.md",
   "scripts/openclaw-fleet.mjs",
 ];
 try {
-  runSsh(cfg, key.path, "mkdir -p .opencode/skills/gotchi-trader-monitor .opencode/skills/gotchi-trader-improve .opencode/skills/market-news-feed scripts skills .opencode/agents config/openclaw/agents/starter-link-h1-1 config/openclaw/agents/owned-954 sessions");
+  runSsh(cfg, key.path, "mkdir -p .opencode/skills/gotchi-trader-monitor .opencode/skills/gotchi-trader-improve .opencode/skills/market-news-feed scripts skills .opencode/agents config/openclaw/workspaces/starter-link-h1-1 config/openclaw/workspaces/owned-954 config/openclaw/templates sessions");
   for (const rel of files) {
     const r = spawnSync("scp", ["-o","IdentitiesOnly=yes","-o","BatchMode=yes","-o","StrictHostKeyChecking=accept-new","-i",key.path, ROOT+"/"+rel, cfg.user+"@"+cfg.host+":"+cfg.dir+"/"+rel], { encoding:"utf8" });
     if (r.status) { process.stderr.write(r.stderr||""); process.exit(r.status); }

@@ -7,9 +7,23 @@
  *   node scripts/openclaw-fleet.mjs status [--json]
  *   node scripts/openclaw-fleet.mjs switch <heroId>
  *   node scripts/openclaw-fleet.mjs chat "<prompt>" [--agent <id>]
+ *   node scripts/openclaw-fleet.mjs doctor [--json] [--live]
+ *     --live also sends one "pong" prompt through the gateway to the orchestrator
+ *     (probe session, not main) and to the focused sub hero, and fails with the
+ *     upstream error text — e.g. "401 Invalid API key." when the Hub's model
+ *     provider key is dead, which /healthz and GET /v1/models never reveal.
  *
  * Generates config/openclaw.fleet.generated.json5 for the gateway agents.entries
  * merge and keeps sessions/.openclaw-agent-map.json in sync with cartridge heroes.
+ *
+ * Every hero gets its OWN OpenClaw workspace at config/openclaw/workspaces/<id>/
+ * (AGENTS.md, SOUL.md, IDENTITY.md, USER.md, memory/, skills/), rendered from
+ * config/openclaw/templates/ + config/agent-role-playbooks.json. OpenClaw loads
+ * persona files from the agent workspace only — never from agentDir — so a
+ * shared workspace meant every hero booted as the orchestrator, and "Skills to
+ * load: …" named skills that lived in .opencode/skills/ where OpenClaw never
+ * looks. `doctor` fails when a rendered prompt references a skill or script
+ * that does not exist.
  */
 import {
   readFileSync,
@@ -17,6 +31,12 @@ import {
   existsSync,
   mkdirSync,
   realpathSync,
+  cpSync,
+  rmSync,
+  lstatSync,
+  readlinkSync,
+  symlinkSync,
+  statSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
@@ -41,39 +61,28 @@ export const AGENT_MAP = `${SESSIONS}/.openclaw-agent-map.json`;
 export const OPENCLAW_FOCUS = `${SESSIONS}/.openclaw-focus.json`;
 export const GATEWAY_CONFIG = `${SESSIONS}/.openclaw-gateway.json`;
 
-const ORCH_PROMPT = [
-  "You are the MAIN GotchiBot. OpenClaw agent owned-954. Julius talks to you.",
-  "You are not a worker. You are the boss. You delegate and manage other bots.",
-  "Workers: LINK (starter-link-h1-1) and any other hero or dispatch session.",
-  "When asked if you are orch or a sub: you are the orchestrator, the main bot.",
-  "Job: hear Julius, assign the right bot, watch them, merge, report. Do not become LINK. Do not DIY the trader desk.",
-  "Reply first. Real beats only. Lead with the result. Close the loop. On it is not the answer.",
-  "Models: stay on big-pickle / gateway default for talk+execute. Do NOT /model @claudemode.",
-  "## Claude Code tool (YOU HAVE THIS — MCP gotchibot-claude)",
-  "When Julius asks about a Claude tool / @claudemode / Hub Claude pane: answer YES.",
-  "UI HARD RULE (no thinking): bridge ALWAYS opens VS Code Claude pane first, then Terminal fallback if pane fails, AND headless claude -p for Desk text. Never say headless-only / no chat by design. anthropic.claude-code + gotchibot-bridge = one pipeline.",
-  "Cold/new Claude pane: load claude-pane-proxy; MCP hub_claude_pane_init or `./scripts/gotchibot claude-pane-init` BEFORE first submit (sets CLAUDE.md + @gotchibot-proxy; reports_to assigned hero).",
-  "Long work: MCP claude_submit {prompt} → get {id,status:pending} immediately; continue other work. Do NOT block/poll.",
-  "When push-wake says job ready (or Julius nudges): MCP claude_collect {id} and continue with that reply.",
-  "Short sync only: claude_ask. List jobs: claude_jobs.",
-  "Fallback Bash (sub-agents: NEVER wrap in abra — Touch ID fails headless):",
-  "  node ./scripts/claudemode-submit.mjs \"…\"",
-  "  node ./scripts/claude-jobs.mjs collect <id>",
-  "  interactive Desk: abra run gotchibot -- ./scripts/gotchibot claude-submit \"…\"",
-  "That hits iMac VS Code Claude Code. Prefer submit over blocking ask.",
-  "If Julius says pane empty but tool replied: UI paste may have failed — hub_bridge_ensure / Bridge Show Log. Do not invent architecture.",
-  "If submit/ask fails (connection refused / bridge down): MCP hub_bridge_ensure or `./scripts/gotchibot hub bridge-ensure`, then retry once. Load hub-sop.",
-  "Never say you lack a Claude tool. Never list only Bash/Edit/Write and claim Claude is missing.",
-  "Never ask Julius to configure a relay first — it is already wired.",
-  "Skills to load: delegate-first, browser-tool, gotchibot-bridge, claude-pane-proxy, hub-sop, synergy.",
-  "If OpenClaw/Hub is down (OC✗, gateway-unreachable): load hub-sop and run gotchibot hub restart-gateway — do not invent SSH.",
-  "Roster / who talks to whom / /list /switch /handoffs: load synergy (do not invent cooperation protocols).",
-  "Trader: LINK owns the paper desk. Delegate monitor/improve/news. Stay paper. Open-mark is mark not PnL. News is a veto.",
-  "Spawn: ./scripts/gotchi-orchestrate.mjs spawn --model auto \"prompt\" — every worker needs a cAavegotchi.",
-  "Never install tools autonomously. Secrets via abracadabra only.",
-  "Read workspace SOUL.md and USER.md every session.",
-  "Home stack is allowed: ./scripts/*.mjs, abra run gotchibot -- *, wallet-roster, identity, localhost / *.aarcadeghst.com / cartridge sim / subgraph.aarcadeghst.com. Never Blockscout. Never arbitrary web curl. Named collateral (YFI): cartridge first for an available matching cAavegotchi; do not steal assigned desks. Never ask Julius for a token id.",
-].join("\n");
+export const TEMPLATE_DIR = `${ROOT}/config/openclaw/templates`;
+export const OPENCODE_SKILLS = `${ROOT}/.opencode/skills`;
+export const WORKSPACE_ROOT_REL = "config/openclaw/workspaces";
+
+/** Skills every orchestrator session can see (on top of its playbook). */
+const ORCH_SKILLS = [
+  "delegate-first",
+  "browser-tool",
+  "gotchibot-bridge",
+  "claude-pane-proxy",
+  "hub-sop",
+  "synergy",
+  "caavegotchi-spawn",
+  "gotchibot-hub",
+  "gotchibot",
+];
+/** Skills every hero gets, orchestrator or not. */
+const COMMON_SKILLS = ["passoff"];
+/** OpenClaw truncates a bootstrap file past this many chars (its default). */
+const BOOTSTRAP_MAX_CHARS = 20_000;
+const BOOTSTRAP_TOTAL_MAX_CHARS = 60_000;
+const BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md"];
 
 function ensureSessions() {
   mkdirSync(SESSIONS, { recursive: true });
@@ -115,51 +124,33 @@ function readJsonFile(path, fallback = null) {
   }
 }
 
+/** Parse one of our generated .json5 files (JSON plus `//` comment lines). */
+function readGeneratedJson(path, fallback = null) {
+  try {
+    const raw = readFileSync(path, "utf8")
+      .split("\n")
+      .filter((line) => !/^\s*\/\//.test(line))
+      .join("\n");
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function loadPlaybooks() {
+  return readJsonFile(`${ROOT}/config/agent-role-playbooks.json`, {}) || {};
+}
+
 /** Thin load of role id + playbook for a hero (duplicated in gotchi-meet — avoid circular imports). */
 function loadRoleForHero(heroId) {
   const id = String(heroId || "").trim();
   if (!id) return { roleId: null, playbook: null };
   const roles = readJsonFile(`${ROOT}/config/agent-roles.json`, {}) || {};
-  const playbooks = readJsonFile(`${ROOT}/config/agent-role-playbooks.json`, {}) || {};
+  const playbooks = loadPlaybooks();
   const roleId = roles[id] || null;
   if (!roleId) return { roleId: null, playbook: null };
   const playbook = playbooks[roleId] || null;
   return { roleId, playbook };
-}
-
-function roleJobBlock(heroId) {
-  const { roleId, playbook } = loadRoleForHero(heroId);
-  if (!roleId || !playbook) return "";
-  const skills = Array.isArray(playbook.skills) ? playbook.skills.join(", ") : "";
-  return [
-    "",
-    "## Your job",
-    `Role: ${playbook.title || roleId} (\`${roleId}\`)`,
-    playbook.summary || "",
-    `Autonomy: ${playbook.autonomy || ""}`,
-    skills ? `Skills to load: ${skills}` : "",
-    playbook.reportCmd
-      ? `Status report (verbatim): \`${playbook.reportCmd}\``
-      : "",
-  ]
-    .filter((line) => line !== "")
-    .join("\n");
-}
-
-function subSystemPrompt(hero, displayName) {
-  const id = hero.id || hero.heroId;
-  const name = displayName || hero.name || id;
-  const lines = [
-    `You are ${name} (${id}). You ARE this cAavegotchi — a first-class OpenClaw agent, not a narrator.`,
-    "Speak in first person: I, me, my. Never \"the sub-agent\", \"LINK will\", or \"this worker\". You are not the orchestrator.",
-    "Work in the GotchiBot workspace. Write deliverables to sessions/<id>/output.md when spawned as a dispatch session.",
-    "Escalate orchestration, multi-agent fan-out, or wallet/cartridge tasks to the orchestrator hero.",
-    "Never install tools autonomously. Secrets via abracadabra only. Read AGENTS.md.",
-  ];
-  const job = roleJobBlock(id);
-  if (job) lines.push(job);
-  else lines.push("\n## Your job\nSkills to load: browser-tool");
-  return lines.join("\n");
 }
 
 /** Canonical workspace path — must match Docker bind mount on iMac (capital Dev). */
@@ -173,51 +164,189 @@ export function fleetWorkspace() {
   }
 }
 
-function writeAgentPromptDir(id, systemPrompt, { isOrchestrator = false } = {}) {
-  const ws = fleetWorkspace();
-  const dir = `${ws}/config/openclaw/agents/${id}`;
+export function heroWorkspaceRoot() {
+  return `${fleetWorkspace()}/${WORKSPACE_ROOT_REL}`;
+}
+
+export function heroWorkspaceDir(agentId) {
+  return `${heroWorkspaceRoot()}/${agentId}`;
+}
+
+function renderTemplate(file, vars) {
+  const src = readFileSync(`${TEMPLATE_DIR}/${file}`, "utf8");
+  return src.replace(/\{\{([A-Z_]+)\}\}/g, (m, key) =>
+    Object.hasOwn(vars, key) ? String(vars[key] ?? "") : m,
+  );
+}
+
+function heroSkillNames({ playbook, isOrchestrator }) {
+  const fromRole = Array.isArray(playbook?.skills) ? playbook.skills : [];
+  const base = isOrchestrator ? ORCH_SKILLS : ["browser-tool"];
+  return [...new Set([...fromRole, ...base, ...COMMON_SKILLS])];
+}
+
+/** Relative symlink, idempotent; an existing real dir/file is left alone. */
+function ensureSymlink(linkPath, target) {
+  try {
+    const st = lstatSync(linkPath);
+    if (!st.isSymbolicLink()) return false;
+    if (readlinkSync(linkPath) === target) return true;
+    rmSync(linkPath);
+  } catch {
+    /* absent */
+  }
+  symlinkSync(target, linkPath);
+  return true;
+}
+
+/** Copy the hero's skills from .opencode/skills into <workspace>/skills (OpenClaw's scan path). */
+function copySkills(wsDir, names) {
+  const dst = `${wsDir}/skills`;
+  rmSync(dst, { recursive: true, force: true });
+  mkdirSync(dst, { recursive: true });
+  const copied = [];
+  const missing = [];
+  for (const name of names) {
+    const src = `${OPENCODE_SKILLS}/${name}`;
+    if (!existsSync(`${src}/SKILL.md`)) {
+      missing.push(name);
+      continue;
+    }
+    cpSync(src, `${dst}/${name}`, {
+      recursive: true,
+      filter: (p) => !p.includes("/node_modules"),
+    });
+    copied.push(name);
+  }
+  writeFileSync(
+    `${dst}/README.md`,
+    "Generated by scripts/openclaw-fleet.mjs sync from .opencode/skills/ — edit the source there, not these copies.\n",
+  );
+  return { copied, missing };
+}
+
+/**
+ * Render one hero's OpenClaw workspace. This is the only prompt path OpenClaw
+ * actually reads (agents.entries.<id>.workspace → AGENTS/SOUL/IDENTITY/USER.md).
+ */
+export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orchId }) {
+  const repo = fleetWorkspace();
+  const ws = heroWorkspaceDir(id);
+  mkdirSync(ws, { recursive: true });
+
+  let { roleId, playbook } = loadRoleForHero(hero.id || id);
+  if (!roleId && isOrchestrator) {
+    roleId = "orchestrator";
+    playbook = loadPlaybooks().orchestrator || null;
+  }
+  const role = roleId || "worker";
+  const skills = heroSkillNames({ playbook, isOrchestrator });
+  const agentsTemplate = existsSync(`${TEMPLATE_DIR}/AGENTS.${role}.md`)
+    ? `AGENTS.${role}.md`
+    : "AGENTS.worker.md";
+
+  const vars = {
+    NAME: name,
+    ID: id,
+    EMOJI: emoji,
+    ROLE: role,
+    ROLE_TITLE: playbook?.title || (role === "worker" ? "Worker hero" : role),
+    ORCH_ID: orchId,
+    ORCH_NOTE: isOrchestrator ? " — that is me" : " — my boss; orchestration goes to it",
+    REPO: repo,
+    WORKSPACE: ws,
+    SKILLS: skills.join(", "),
+    REPORT_CMD: playbook?.reportCmd || "",
+    CYCLE_CMD: playbook?.cycleCmd || "",
+    WATCH_CMD: playbook?.watchCmd || "",
+    VERIFY_CMD: playbook?.verifyCmd || "",
+    VERIFY_WINDOW: playbook?.verifyWindow || "",
+  };
+  vars.COMMON = renderTemplate("AGENTS.common.md", vars).trim();
+
+  const stamp = (tpl) =>
+    `<!-- generated by scripts/openclaw-fleet.mjs sync from config/openclaw/templates/${tpl}; edit the template, not this file -->\n`;
+  writeFileSync(`${ws}/AGENTS.md`, stamp(agentsTemplate) + renderTemplate(agentsTemplate, vars));
+  writeFileSync(`${ws}/SOUL.md`, stamp("SOUL.md") + renderTemplate("SOUL.md", vars));
+  writeFileSync(`${ws}/IDENTITY.md`, stamp("IDENTITY.md") + renderTemplate("IDENTITY.md", vars));
+  // USER.md is Julius, the same for every hero: the repo root file is the source.
+  writeFileSync(`${ws}/USER.md`, readFileSync(`${ROOT}/USER.md`, "utf8"));
+
+  // Relative links so the tree works on the MBP, the iMac and inside a bind mount.
+  const up = "../../../..";
+  ensureSymlink(`${ws}/repo`, up);
+  if (isOrchestrator) ensureSymlink(`${ws}/memory`, `${up}/memory`);
+  else mkdirSync(`${ws}/memory`, { recursive: true });
+
+  const { copied, missing } = copySkills(ws, skills);
+  return { ws, role, template: agentsTemplate, skills, copiedSkills: copied, missingSkills: missing };
+}
+
+/** agentDir is OpenClaw STATE (auth profiles, sessions). It never reads a prompt from here. */
+function writeAgentStateDir(id, wsDir) {
+  const dir = `${fleetWorkspace()}/config/openclaw/agents/${id}`;
   mkdirSync(dir, { recursive: true });
-  const homeStack =
-    "Home stack allowed: ./scripts/*.mjs, abra run gotchibot -- *, wallet-roster, identity, localhost / *.aarcadeghst.com / cartridge sim / subgraph.aarcadeghst.com. Never Blockscout. Never arbitrary web curl.";
-  const footer = isOrchestrator
-    ? "Follow `ORCHESTRATOR.md`. Ignore sub-agent / dispatch-session wording in workspace `AGENTS.md` — you are the orchestrator hero, not a spawned sub-agent.\n" + homeStack
-    : "Follow the GotchiBot workspace `AGENTS.md` and `ORCHESTRATOR.md`.\n" + homeStack;
-  writeFileSync(`${dir}/AGENTS.md`, `${systemPrompt}\n\n${footer}\n`);
+  writeFileSync(
+    `${dir}/AGENTS.md`,
+    [
+      `OpenClaw agentDir for ${id}: auth profiles, model registry, sessions.`,
+      "OpenClaw does NOT read a prompt from this directory.",
+      `The live persona is ${wsDir}/AGENTS.md, rendered from config/openclaw/templates/`,
+      "by scripts/openclaw-fleet.mjs sync. Edit the templates, then sync.",
+      "",
+    ].join("\n"),
+  );
   return dir;
 }
 
-function buildEntry(hero, { isOrchestrator }) {
+function buildEntry(hero, { isOrchestrator, orchId }) {
   const id = heroToAgentId(hero.id);
   const name =
     hero.name ||
     (isOrchestrator ? "Gotchi" : String(hero.collateral || id).toUpperCase());
-  const systemPrompt = isOrchestrator ? ORCH_PROMPT : subSystemPrompt(hero, name);
-  const ws = fleetWorkspace();
-  const agentDir = writeAgentPromptDir(id, systemPrompt, { isOrchestrator });
+  const emoji = isOrchestrator ? "👻" : collateralEmoji(hero.collateral);
+  const rendered = writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orchId });
+  const agentDir = writeAgentStateDir(id, rendered.ws);
   const entry = {
-    identity: {
-      name,
-      emoji: isOrchestrator ? "👻" : collateralEmoji(hero.collateral),
-    },
-    workspace: ws,
-    agentDir: `${ws}/config/openclaw/agents/${id}`,
+    identity: { name, emoji },
+    workspace: rendered.ws,
+    agentDir,
+    skills: rendered.skills,
+    // Fleet heroes work the HOST: tmux windows on the desktop, docker, the Claude
+    // CLI (login keychain), launchagents. A sandbox container has none of that and
+    // mounts only the workspace, so a hero under agents.defaults.sandbox.mode=all
+    // cannot run a single row of its AGENTS.md. Per-agent beats defaults.
+    sandbox: { mode: "off" },
   };
   if (isOrchestrator) {
     entry.default = true;
     entry.groupChat = { mentionPatterns: ["@gotchi", "@Gotchi", "gotchi"] };
   }
-  return { id, entry };
+  return { id, entry, rendered };
 }
 
 async function loadHeroes() {
   const meta = loadMeta();
-  if (!meta?.cartridgeId) return [];
-  try {
-    return await fetchCartridgeHeroes(meta.cartridgeId);
-  } catch {
-    const orch = orchestratorHeroId();
-    return orch ? [{ id: orch, name: "Gotchi", bindType: "owned" }] : [];
+  let heroes = [];
+  if (meta?.cartridgeId) {
+    try {
+      heroes = await fetchCartridgeHeroes(meta.cartridgeId);
+    } catch {
+      heroes = [];
+    }
   }
+  if (heroes.length) return heroes;
+  // Cartridge API down: keep the last generated roster instead of shrinking the
+  // fleet to the orchestrator alone (which silently deleted every other hero's entry).
+  const last = readGeneratedJson(FLEET_LIST, []);
+  if (Array.isArray(last) && last.length) {
+    console.error(`openclaw-fleet: cartridge heroes unavailable — reusing ${last.length} ids from ${FLEET_LIST}`);
+    return last
+      .filter((e) => e?.id && !e.aliasOf && e.id !== "gotchi")
+      .map((e) => ({ id: e.id, name: e.identity?.name || null, bindType: null }));
+  }
+  const orch = orchestratorHeroId();
+  return orch ? [{ id: orch, name: "Gotchi", bindType: "owned" }] : [];
 }
 
 function entriesToList(entries) {
@@ -311,10 +440,12 @@ export async function syncFleet({ quiet = false } = {}) {
   const entries = {};
   const map = {};
 
+  const rendered = {};
   for (const hero of heroes) {
     const isOrchestrator = hero.id === orchId;
-    const { id, entry } = buildEntry(hero, { isOrchestrator });
+    const { id, entry, rendered: r } = buildEntry(hero, { isOrchestrator, orchId });
     entries[id] = entry;
+    rendered[id] = r;
     map[id] = {
       heroId: hero.id,
       name: hero.name || null,
@@ -326,11 +457,12 @@ export async function syncFleet({ quiet = false } = {}) {
   }
 
   if (!Object.keys(entries).length && orchId) {
-    const { id, entry } = buildEntry(
+    const { id, entry, rendered: r } = buildEntry(
       { id: orchId, name: "Gotchi", bindType: "owned" },
-      { isOrchestrator: true },
+      { isOrchestrator: true, orchId },
     );
     entries[id] = entry;
+    rendered[id] = r;
     map[id] = { heroId: orchId, isOrchestrator: true, status: "available" };
   }
 
@@ -338,33 +470,175 @@ export async function syncFleet({ quiet = false } = {}) {
   const orchAgentId = heroToAgentId(orchId);
   if (entries[orchAgentId] && orchAgentId !== "gotchi") {
     const { default: _orchDefault, ...orchRest } = entries[orchAgentId];
-    const aliasDir = writeAgentPromptDir("gotchi", ORCH_PROMPT, { isOrchestrator: true });
+    // Same workspace (same persona), its own agentDir (OpenClaw forbids sharing state dirs).
+    const aliasDir = writeAgentStateDir("gotchi", orchRest.workspace);
     entries.gotchi = { ...orchRest, agentDir: aliasDir };
     map.gotchi = { ...map[orchAgentId], aliasOf: orchAgentId, isOrchestrator: true };
   }
 
   writeFleetArtifacts({ entries, map, orchId });
 
+  const doctor = doctorFleet({ entries });
   const payload = {
-    ok: true,
+    ok: doctor.ok,
     orchestratorHeroId: orchId,
     orchestratorAgentId: orchAgentId,
     count: Object.keys(entries).length,
     agents: Object.keys(entries),
     fleetConfig: FLEET_ENTRIES,
     installSnippet: INSTALL_SNIPPET,
+    workspaces: heroWorkspaceRoot(),
+    problems: doctor.problems,
   };
   if (!quiet) {
     console.log(`openclaw fleet synced → ${payload.count} agents`);
     console.log(`  config: ${FLEET_ENTRIES}`);
+    console.log(`  workspaces: ${payload.workspaces}`);
     for (const id of payload.agents) {
       const m = map[id];
+      const r = rendered[id];
       const tag = m?.isOrchestrator ? "orch" : "sub";
       const alias = m?.aliasOf ? ` (alias → ${m.aliasOf})` : "";
-      console.log(`  · ${id} [${tag}]${alias}`);
+      const role = r ? ` role=${r.role} skills=${r.copiedSkills.length}` : "";
+      console.log(`  · ${id} [${tag}]${alias}${role}`);
     }
   }
+  if (doctor.problems.length) {
+    console.error(`openclaw-fleet doctor: ${doctor.problems.length} problem(s) — run ./scripts/openclaw-fleet.mjs doctor`);
+    for (const p of doctor.problems) console.error(`  ✗ ${p}`);
+  }
   return payload;
+}
+
+/**
+ * Prove every hero can actually follow its prompt: workspace files present and
+ * under OpenClaw's bootstrap caps, no unresolved placeholders, every allowed skill
+ * really copied with a matching frontmatter name, every `./scripts/<file>` the
+ * prompt names really on disk. Silent versions of all four are how the fleet ran
+ * blind for three days.
+ */
+export function doctorFleet({ entries } = {}) {
+  const cfgEntries = entries || readGeneratedJson(FLEET_ENTRIES, null);
+  const problems = [];
+  const checks = [];
+  const repo = fleetWorkspace();
+  if (!cfgEntries || !Object.keys(cfgEntries).length) {
+    problems.push(`no fleet entries at ${FLEET_ENTRIES} — run sync`);
+    return { ok: false, problems, checks };
+  }
+  // Effective sandbox mode on THIS host: per-agent entry, else the gateway's
+  // agents.defaults (read from the live ~/.openclaw/openclaw.json when present).
+  const liveCfg = readJsonFile(`${homedir()}/.openclaw/openclaw.json`, null);
+  const defaultSandbox = liveCfg?.agents?.defaults?.sandbox?.mode;
+  if (defaultSandbox) checks.push(`gateway agents.defaults.sandbox.mode=${defaultSandbox}`);
+  const skillName = (file) => {
+    try {
+      const m = readFileSync(file, "utf8").match(/^name:\s*(.+?)\s*$/m);
+      return m ? m[1].replace(/^["']|["']$/g, "") : null;
+    } catch {
+      return null;
+    }
+  };
+  for (const [id, e] of Object.entries(cfgEntries)) {
+    const ws = e.workspace;
+    if (!ws || !existsSync(ws)) {
+      problems.push(`${id}: workspace missing (${ws})`);
+      continue;
+    }
+    if (!e.agentDir || !existsSync(e.agentDir)) problems.push(`${id}: agentDir missing (${e.agentDir})`);
+    const mode = e.sandbox?.mode || defaultSandbox || "off";
+    if (mode === "all")
+      problems.push(`${id}: effective sandbox mode is "all" — tools run in a container without the repo, tmux, docker or the Claude CLI; set agents.entries.${id}.sandbox.mode to "off"`);
+    let total = 0;
+    for (const f of BOOTSTRAP_FILES) {
+      const p = `${ws}/${f}`;
+      if (!existsSync(p)) {
+        problems.push(`${id}: ${f} missing`);
+        continue;
+      }
+      const body = readFileSync(p, "utf8");
+      total += body.length;
+      if (body.length > BOOTSTRAP_MAX_CHARS)
+        problems.push(`${id}: ${f} is ${body.length} chars; OpenClaw truncates at ${BOOTSTRAP_MAX_CHARS}`);
+      const left = body.match(/\{\{[A-Z_]+\}\}/g);
+      if (left) problems.push(`${id}: ${f} has unresolved placeholders ${[...new Set(left)].join(" ")}`);
+      checks.push(`${id}: ${f} ${body.length} chars`);
+    }
+    if (total > BOOTSTRAP_TOTAL_MAX_CHARS)
+      problems.push(`${id}: bootstrap total ${total} chars exceeds ${BOOTSTRAP_TOTAL_MAX_CHARS}`);
+    for (const sk of e.skills || []) {
+      const file = `${ws}/skills/${sk}/SKILL.md`;
+      if (!existsSync(file)) {
+        problems.push(`${id}: skill "${sk}" not in ${ws}/skills (source .opencode/skills/${sk}/SKILL.md ${existsSync(`${OPENCODE_SKILLS}/${sk}/SKILL.md`) ? "exists — resync" : "does not exist"})`);
+        continue;
+      }
+      const n = skillName(file);
+      if (n !== sk) problems.push(`${id}: skill dir "${sk}" but SKILL.md name is "${n}" — OpenClaw matches on name`);
+    }
+    try {
+      const agents = readFileSync(`${ws}/AGENTS.md`, "utf8");
+      const seen = new Set();
+      for (const m of agents.matchAll(/\.\/scripts\/([\w./-]+)/g)) {
+        const rel = m[1].replace(/[.,;:]+$/, "");
+        if (seen.has(rel)) continue;
+        seen.add(rel);
+        if (!existsSync(`${repo}/scripts/${rel}`)) problems.push(`${id}: AGENTS.md names ./scripts/${rel} which does not exist`);
+      }
+      for (const m of agents.matchAll(/skill `([\w-]+)`/g)) {
+        if (!(e.skills || []).includes(m[1])) problems.push(`${id}: AGENTS.md tells it to read skill "${m[1]}" but that skill is not in its allowlist`);
+      }
+    } catch {
+      /* reported above */
+    }
+    try {
+      const st = lstatSync(`${ws}/repo`);
+      if (!st.isSymbolicLink()) problems.push(`${id}: ${ws}/repo is not a symlink`);
+    } catch {
+      problems.push(`${id}: ${ws}/repo symlink missing`);
+    }
+  }
+  return { ok: problems.length === 0, problems, checks };
+}
+
+/**
+ * One real prompt through the gateway per target (orchestrator + focused sub hero
+ * when different), on a dedicated probe session so main chat history stays clean.
+ * The only check that catches a dead model key behind a healthy gateway.
+ */
+export async function doctorLive() {
+  const map = loadAgentMap();
+  const orchId = map?.orchestratorAgentId || heroToAgentId(orchestratorHeroId());
+  const focused = (() => {
+    try {
+      return resolveOpenClawTuiAgentId();
+    } catch {
+      return orchId;
+    }
+  })();
+  const targets = [...new Set([orchId, focused].filter(Boolean))];
+  const out = [];
+  for (const agentId of targets) {
+    if (!(await gatewayReachable())) {
+      out.push({ agentId, ok: false, error: `gateway unreachable at ${gatewayUrl()}` });
+      continue;
+    }
+    const r = await chatViaHttp(agentId, "Reply with the single word: pong", {
+      sessionKey: `agent:${agentId}:probe`,
+      timeoutMs: 90_000,
+    });
+    if (r.ok) out.push({ agentId, ok: true, reply: String(r.stdout || "").trim() });
+    else {
+      let detail = r.reason || "unknown";
+      try {
+        const j = JSON.parse(r.stdout || "");
+        detail = j?.error?.message ? `${r.reason}: ${j.error.message}` : detail;
+      } catch {
+        if (r.stdout) detail = `${detail}: ${String(r.stdout).slice(0, 160)}`;
+      }
+      out.push({ agentId, ok: false, error: detail });
+    }
+  }
+  return out;
 }
 
 export function loadAgentMap() {
@@ -491,7 +765,9 @@ export async function gatewayReachable() {
   const url = `${gatewayUrl()}/healthz`;
   try {
     const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), 2500);
+    // Tailscale cold path to the iMac has measured 7s on the first hit; 2.5s
+    // reported a healthy gateway as unreachable and blocked every sub chat.
+    const t = setTimeout(() => ac.abort(), 8000);
     const r = await fetch(url, { signal: ac.signal });
     clearTimeout(t);
     return r.ok;
@@ -626,7 +902,7 @@ function openaiContent(data) {
 }
 
 /** Headless HTTP chat — works even when `openclaw` CLI config is invalid. */
-export async function chatViaHttp(agentId, message, { timeoutMs = 120_000, sessionKey } = {}) {
+export async function chatViaHttp(agentId, message, { timeoutMs = 240_000, sessionKey } = {}) {
   const gateway = gatewayUrl().replace(/\/$/, "");
   const token = gatewayToken();
   const id = heroToAgentId(agentId);
@@ -650,7 +926,17 @@ export async function chatViaHttp(agentId, message, { timeoutMs = 120_000, sessi
     });
     const raw = await r.text();
     if (!r.ok) {
-      return { ok: false, reason: `http-${r.status}`, stdout: raw, sessionKey: key };
+      // Name the provider failure so a hero's "no reply" is never a mystery again:
+      // 401 = dead model key on the Hub, 429/402 = model rate-limited or out of quota.
+      let detail = "";
+      try {
+        detail = JSON.parse(raw)?.error?.message || "";
+      } catch {
+        detail = String(raw || "").slice(0, 160);
+      }
+      const label =
+        r.status === 401 ? "model-auth" : r.status === 429 || r.status === 402 ? "rate-limited" : `http-${r.status}`;
+      return { ok: false, reason: detail ? `${label}: ${detail}` : label, status: r.status, stdout: raw, sessionKey: key };
     }
     let text = raw;
     try {
@@ -675,17 +961,21 @@ export async function chatViaOpenClaw(agentId, message, { json = false, sessionK
     return { ok: false, reason: "gateway-unreachable", gateway: gatewayUrl() };
   }
 
-  // Prefer HTTP when CLI is missing or known-broken (invalid ~/.openclaw config).
+  // HTTP first: it is the path the Hub actually serves, and a provider error it
+  // returns (401 dead key, 429 rate limit) is FINAL — retrying through the CLI only
+  // burns minutes. The CLI is a fallback for transport failures only, and on this
+  // Desk it currently fails config validation before it even connects.
+  const key = sessionKey || tuiSessionKey(agentId);
+  const http = await chatViaHttp(agentId, message, { sessionKey: key });
+  if (http.ok) return http;
+  if (http.status) return http; // the gateway answered; nothing the CLI can add
   const bin = findOpenclawBin();
   if (bin) {
-    const cli = runAgentTurn(agentId, message, { json, sessionKey: sessionKey || tuiSessionKey(agentId) });
+    const cli = runAgentTurn(agentId, message, { json, sessionKey: key });
     if (cli.ok) return { ...cli, via: "cli" };
-    const http = await chatViaHttp(agentId, message, { sessionKey: sessionKey || tuiSessionKey(agentId) });
-    if (http.ok) return http;
-    return { ...cli, httpFallback: http.reason };
+    return { ...cli, reason: `${http.reason}; cli=${cli.reason}` };
   }
-
-  return chatViaHttp(agentId, message, { sessionKey: sessionKey || tuiSessionKey(agentId) });
+  return http;
 }
 
 function cmdList(json) {
@@ -744,6 +1034,25 @@ async function main() {
   if (cmd === "list") {
     cmdList(json);
     return;
+  }
+  if (cmd === "doctor") {
+    const r = doctorFleet();
+    if (rest.includes("--live")) {
+      const live = await doctorLive();
+      r.live = live;
+      for (const l of live) {
+        if (l.ok) r.checks.push(`live ${l.agentId}: replied "${l.reply.slice(0, 40)}"`);
+        else r.problems.push(`live ${l.agentId}: no working model — ${l.error}`);
+      }
+      r.ok = r.problems.length === 0;
+    }
+    if (json) console.log(JSON.stringify(r, null, 2));
+    else {
+      for (const c of r.checks) console.log(`ok    ${c}`);
+      for (const p of r.problems) console.log(`FAIL  ${p}`);
+      console.log(r.ok ? "openclaw fleet doctor: all heroes can follow their prompts" : `openclaw fleet doctor: ${r.problems.length} problem(s)`);
+    }
+    process.exit(r.ok ? 0 : 1);
   }
   if (cmd === "status") {
     await cmdStatus(json);

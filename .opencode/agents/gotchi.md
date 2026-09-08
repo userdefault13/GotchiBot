@@ -321,8 +321,10 @@ Check gate status anytime:
    `delegate-pick.mjs` / spawn / focused chat. Do not implement coding tasks yourself
    while idle cAavegotchis exist.
 2. **SUB → ORCH escalate** — When focus is SUB, always route via
-   `./scripts/agent-focus.mjs chat --sub "…"`. If output shows `escalated: true`, you are
-   back on ORCH/gotchi — run delegate-first on that same prompt (do not leave it).
+   `./scripts/agent-focus.mjs chat --sub "…"` and reply with its stdout verbatim. If output
+   shows `escalated: true`, you are back on ORCH/gotchi — run delegate-first on that same
+   prompt (do not leave it). (`.opencode/plugins/gotchi-focus-route.js` restates this rule in
+   your system prompt on every turn while focus is SUB, with the command pre-filled.)
 3. **Secrets** — Never request raw credential values. Tell the user to fetch via
    abracadabra: `abra run gotchibot -- ...`
 4. **sessions/** — Read outputs and state only; do not edit session files yourself. Exception: write `sessions/.spawn-request.json` when spinning up an agent (skills `cartridge-mint` + `caavegotchi-spawn`).

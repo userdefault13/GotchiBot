@@ -3,7 +3,10 @@
  * Local OpenAI-compatible relay for gotchi mode.
  *
  * OpenCode TUI talks to 127.0.0.1; each user prompt is injected into the
- * iMac OpenClaw orchestrator TUI session (agent:<orchId>:main).
+ * iMac OpenClaw TUI session of the FOCUSED hero: the orchestrator by default
+ * (agent:<orchId>:main), or the /switch-ed sub hero (agent:<heroId>:main)
+ * while sessions/.focus.json says mode=sub. Resolved per request, so /switch
+ * takes effect on the next prompt without restarting the relay or the pane.
  *
  * Backend:
  *   1. Gateway POST /v1/chat/completions + x-openclaw-session-key (if enabled)
@@ -20,6 +23,7 @@ import {
   loadAgentMap,
   loadGatewayConfig,
   orchestratorHeroId,
+  resolveOpenClawTuiAgentId,
   runAgentTurn,
   tuiSessionKey,
 } from "./openclaw-fleet.mjs";
@@ -38,15 +42,32 @@ function authToken() {
   );
 }
 
-function orchTarget() {
+function orchestratorAgentId() {
   const map = loadAgentMap();
-  const orchestratorId =
+  return (
     process.env.GOTCHIBOT_OPENCLAW_ORCH_ID?.trim() ||
     map?.orchestratorAgentId ||
-    heroToAgentId(orchestratorHeroId());
+    heroToAgentId(orchestratorHeroId())
+  );
+}
+
+/** Who this prompt goes to: the /switch-ed sub hero while focus is SUB, else the orchestrator. */
+function relayTarget() {
+  const orchId = orchestratorAgentId();
+  let agentId = orchId;
+  try {
+    agentId = resolveOpenClawTuiAgentId() || orchId;
+  } catch {
+    agentId = orchId;
+  }
+  const focus = agentId === orchId ? "orch" : "sub";
+  // GOTCHIBOT_OPENCLAW_SESSION_KEY pins the orchestrator's session only; a sub
+  // hero always gets its own main session so its persona and history are its own.
   const sessionKey =
-    process.env.GOTCHIBOT_OPENCLAW_SESSION_KEY?.trim() || tuiSessionKey(orchestratorId);
-  return { orchestratorId, sessionKey };
+    focus === "orch"
+      ? process.env.GOTCHIBOT_OPENCLAW_SESSION_KEY?.trim() || tuiSessionKey(agentId)
+      : tuiSessionKey(agentId);
+  return { agentId, orchestratorId: agentId, orchId, focus, sessionKey };
 }
 
 function lastUserText(messages) {
@@ -253,8 +274,9 @@ function pairingHint(result) {
 }
 
 async function handleChatCompletions(req, res, body) {
-  const { orchestratorId, sessionKey } = orchTarget();
+  const { orchestratorId, sessionKey, focus } = relayTarget();
   const text = lastUserText(body?.messages).trim();
+  console.error(`[gotchi-relay] → ${orchestratorId} (${focus}) ${sessionKey}`);
   const stream = Boolean(body?.stream);
   const id = `gotchi-relay-${Date.now().toString(36)}`;
   const model = typeof body?.model === "string" && body.model.trim() ? body.model : MODEL;
@@ -352,8 +374,8 @@ const server = http.createServer(async (req, res) => {
   const path = url.pathname.replace(/\/+$/, "") || "/";
 
   if (req.method === "GET" && (path === "/healthz" || path === "/health")) {
-    const { orchestratorId, sessionKey } = orchTarget();
-    sendJson(res, 200, { ok: true, relay: "gotchi", orchestratorId, sessionKey });
+    const { agentId, orchId, focus, sessionKey } = relayTarget();
+    sendJson(res, 200, { ok: true, relay: "gotchi", agentId, focus, orchestratorId: orchId, sessionKey });
     return;
   }
 

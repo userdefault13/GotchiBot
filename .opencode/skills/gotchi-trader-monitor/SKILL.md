@@ -1,5 +1,5 @@
 ---
-name: Gotchi-Trader monitor
+name: gotchi-trader-monitor
 description: >-
   Use when checking Gotchi-Trader paper health, PnL, fills, cron, or whether the
   desk is running.

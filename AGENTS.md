@@ -1,7 +1,10 @@
 # GotchiBot Agent Rules
 
-This file is injected into OpenClaw and dispatch sessions. **Read the role
-section that applies to you first.**
+This file is injected into OpenCode dispatch sessions (`sessions/<id>/`).
+OpenClaw heroes do **not** see it: each hero has its own workspace under
+`config/openclaw/workspaces/<id>/`, rendered from `config/openclaw/templates/`
+by `./scripts/openclaw-fleet.mjs sync` (see `docs/OPENCLAW-HERO-WORKSPACES.md`).
+**Read the role section that applies to you first.**
 
 ## Craft (everyone)
 
