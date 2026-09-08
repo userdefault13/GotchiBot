@@ -15,7 +15,8 @@ A rule in markdown is a suggestion. The same rule in `.cursor/hooks/` is a wall:
 - no autonomous installs → `beforeShellExecution` / `guard-bash.mjs`
 - no writes outside the tree → `preToolUse` Write|Delete / `guard-write.mjs`
 - broken `.mjs`/`.sh`/`.json` → `afterFileEdit` + `postToolUse` / `check-syntax.mjs`
-- passoff inbox + meeting + focus → `sessionStart` / `session-brief.mjs`
+- passoff inbox + meeting + focus + capsule → `sessionStart` / `session-brief.mjs`
+- compaction safety net → `preCompact` / `contexter-precompact.mjs` + `stop` / `contexter-restore.mjs`
 
 A denial is policy, not a bug. Do not work around it; ask Julius.
 
@@ -26,6 +27,12 @@ Run `./scripts/gotchibot passoff resume`. If a packet is waiting, that is the jo
 ## Minutes stay isolated
 
 `/minutes` → Task subagent `meet-scribe`. Do not read `sessions/meetings/*/transcript.jsonl` into this context.
+
+## MCP parity with the desk
+
+Prefer project MCP tools when they exist: `gotchibot-meet`, `gotchibot-hub`,
+`gotchibot-claude`, `gotchibot-synergy`, `gotchibot-pdf`, plus the shared stack
+(abracadabra, github, base, blockscout, …). Do not invent a second install path.
 
 ## Commands and agents
 

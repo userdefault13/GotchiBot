@@ -16,6 +16,21 @@
     "github": {
       "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/github.sh"
     },
+    "gotchibot-claude": {
+      "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/gotchibot-claude.sh"
+    },
+    "gotchibot-hub": {
+      "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/gotchibot-hub.sh"
+    },
+    "gotchibot-synergy": {
+      "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/gotchibot-synergy.sh"
+    },
+    "gotchibot-pdf": {
+      "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/gotchibot-pdf.sh"
+    },
+    "gotchibot-meet": {
+      "command": "/Users/juliuswong/Dev/GotchiBot/scripts/mcp/gotchibot-meet.sh"
+    },
     "base-mcp": {
       "url": "https://mcp.base.org"
     },

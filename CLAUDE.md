@@ -27,8 +27,8 @@ This tree carries Claude Code config beside the OpenCode one (`.opencode/`):
   meeting, focus, and tree state. Scripts live in `.claude/hooks/`, wired in
   `.claude/settings.json`; policy bodies live in `scripts/gotchibot-policy/`
   (shared with Cursor). When `CURSOR_VERSION` is set these Claude hooks no-op so
-  Cursor's native layer owns the session. A denial is policy, not a bug — do not
-  work around it; ask Julius.
+  Cursor's native layer owns the session (including contexter). A denial is policy,
+  not a bug — do not work around it; ask Julius.
 - **Subagents** (`.claude/agents/`): `gotchibot-proxy` (bridge work),
   `meet-scribe` (meeting minutes without loading the transcript here),
   `script-doctor` (review a script against this repo's own failure modes).

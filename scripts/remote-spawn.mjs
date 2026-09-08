@@ -40,7 +40,8 @@ function usage() {
   remote-spawn.mjs [--model nim|pro|local|<id>] [--hero <heroId>] [--sandbox] [--json] "PROMPT"
   remote-spawn.mjs output <sessionId>
   remote-spawn.mjs wait <sessionId>…
-  remote-spawn.mjs status <sessionId>`);
+  remote-spawn.mjs status <sessionId>
+  remote-spawn.mjs interrupt <sessionId> "PROMPT"`);
   process.exit(2);
 }
 
@@ -254,6 +255,34 @@ async function cmdSpawn(argv) {
   }
 }
 
+// Interrupt a running remote session and continue it with a new prompt. The
+// provider keys travel the same way spawn's do, so the continuation runner
+// never falls back to abra on the host.
+function sshInterrupt(cfg, keyPath, { id, prompt }) {
+  const safeId = id.replace(/[^a-zA-Z0-9._-]/g, "");
+  const localEnv = writeForwardEnv({ sandbox: false });
+  const remoteEnv = `/tmp/gotchibot-interrupt-${process.pid}.env`;
+  try {
+    const scp = spawnSync(
+      "scp",
+      ["-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-i", keyPath, localEnv, `${cfg.user}@${cfg.host}:${remoteEnv}`],
+      { encoding: "utf8" },
+    );
+    if (scp.status !== 0) throw new Error(`scp env failed: ${(scp.stderr || "").slice(0, 200)}`);
+    const remoteCmd = [
+      `set -euo pipefail`,
+      `source ${shellQuote(remoteEnv)}`,
+      `rm -f ${shellQuote(remoteEnv)}`,
+      `node ./scripts/gotchi-orchestrate.mjs interrupt --host local ${shellQuote(safeId)} ${shellQuote(prompt)}`,
+    ].join("; ");
+    return runSsh(cfg, keyPath, remoteCmd, { stdio: "pipe" });
+  } finally {
+    try {
+      unlinkSync(localEnv);
+    } catch {}
+  }
+}
+
 async function withRemote(fn) {
   const cfg = assertRemoteReady();
   const key = materializeKey(cfg.key);
@@ -285,6 +314,19 @@ async function main() {
     await withRemote((cfg, keyPath) => {
       const safeId = id.replace(/[^a-zA-Z0-9._-]/g, "");
       const r = runSsh(cfg, keyPath, `sed 's/^/  /' sessions/${safeId}/state.env`, { stdio: "pipe" });
+      if (r.stdout) process.stdout.write(r.stdout);
+      if (r.stderr) process.stderr.write(r.stderr);
+      process.exit(r.status ?? 1);
+    });
+    return;
+  }
+
+  if (cmd === "interrupt") {
+    const [id, ...promptParts] = rest;
+    const prompt = promptParts.join(" ").trim();
+    if (!id || !prompt) usage();
+    await withRemote((cfg, keyPath) => {
+      const r = sshInterrupt(cfg, keyPath, { id, prompt });
       if (r.stdout) process.stdout.write(r.stdout);
       if (r.stderr) process.stderr.write(r.stderr);
       process.exit(r.status ?? 1);

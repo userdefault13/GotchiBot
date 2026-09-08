@@ -1048,24 +1048,43 @@ sb_click_wake() {
 }
 
 RENDERING=0
+PENDING_RENDER=0
+LAST_PAGE_DRAWN=""
 
 # Reset derived values only when the underlying state moved. A page flip or a
 # resize repaint reuses everything already computed for the heroes on screen.
+# Leaves the fingerprint it computed in CUR_FP so the caller can settle
+# LAST_FP without walking every session file a second time.
 memo_reset_if_stale() {
-  local fp
-  fp="$(state_fingerprint)"
-  [ "$fp" = "$LAST_FP" ] && return 0
+  CUR_FP="$(state_fingerprint)"
+  [ "$CUR_FP" = "$LAST_FP" ] && return 0
   memo_reset
 }
 
+# One repaint, then any repaint requested while it was in progress.
+#
+# A click arrives as USR1 from a separate sb-click process after it has
+# already written the page file. Dropping that signal while a render is in
+# flight used to leave the page changed on disk but not on screen; the tick
+# could not catch it either, because the page file is deliberately outside the
+# memo fingerprint. The next click then jumped two pages. So: queue, don't drop.
 safe_render() {
-  # Nested USR1/WINCH during a node thumb draw blanks the pane; skip.
-  [ "${RENDERING:-0}" = 1 ] && return 0
+  if [ "${RENDERING:-0}" = 1 ]; then
+    PENDING_RENDER=1
+    return 0
+  fi
   RENDERING=1
-  memo_reset_if_stale
-  render "$(active_status)" || true
-  # Settle the fingerprint so the next tick does not repaint what we just drew.
-  LAST_FP="$(state_fingerprint)"
+  while true; do
+    PENDING_RENDER=0
+    memo_reset_if_stale
+    render "$(active_status)" || true
+    load_page
+    LAST_PAGE_DRAWN="$PAGE"
+    # Settle on the fingerprint taken before the draw. Anything that changed
+    # during the draw differs from it and repaints on the next tick.
+    LAST_FP="$CUR_FP"
+    [ "${PENDING_RENDER:-0}" = 1 ] || break
+  done
   RENDERING=0
 }
 
@@ -1101,25 +1120,30 @@ case "${1:-watch}" in
     render "$(active_status)" || true
     LAST_FP="$(state_fingerprint)"
     refresh_roster_async
+    load_page; LAST_PAGE_DRAWN="$PAGE"
     while true; do
       key=""
       if read -rsn1 -t "$read_t" key; then
         if handle_key "$key"; then
-          memo_reset_if_stale
-          render "$(active_status)" || true
-          LAST_FP="$(state_fingerprint)"
-          continue
+          safe_render
         fi
         continue
       fi
       # Timeout. The tick is a cheap stat/pgrep fingerprint of the pane's
       # inputs — no node, no repaint — so an idle pane stays perfectly still.
       # Real changes arrive here, or immediately via USR1 (poke-avatar.sh).
+      load_page
+      if [ "$PAGE" != "$LAST_PAGE_DRAWN" ]; then
+        # Page moved on disk without a repaint (a click whose USR1 was lost).
+        safe_render
+        continue
+      fi
       fp="$(state_fingerprint)"
       [ "$fp" = "$LAST_FP" ] && continue
       memo_reset
       refresh_roster
       render "$(active_status)" || true
+      load_page; LAST_PAGE_DRAWN="$PAGE"
       LAST_FP="$(state_fingerprint)"
     done
     ;;

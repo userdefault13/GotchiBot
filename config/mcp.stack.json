@@ -94,12 +94,54 @@
       },
       "project": "aavegotchi-game-sprites",
       "note": "Pixel art generation — key in abracadabra only"
+    },
+    "gotchibot-claude": {
+      "command": "./scripts/mcp/gotchibot-claude.sh",
+      "cwd": ".",
+      "project": "GotchiBot",
+      "note": "Hub Claude bridge — claude_ask / submit / collect"
+    },
+    "gotchibot-hub": {
+      "command": "./scripts/mcp/gotchibot-hub.sh",
+      "cwd": ".",
+      "project": "GotchiBot",
+      "note": "Hub SOP — status, OpenClaw restart, vscode, bridge"
+    },
+    "gotchibot-synergy": {
+      "command": "./scripts/mcp/gotchibot-synergy.sh",
+      "cwd": ".",
+      "project": "GotchiBot",
+      "note": "Synergy / multi-agent desk tools"
+    },
+    "gotchibot-pdf": {
+      "command": "./scripts/mcp/gotchibot-pdf.sh",
+      "cwd": ".",
+      "project": "GotchiBot",
+      "note": "PyMuPDF structured PDF tools"
+    },
+    "gotchibot-meet": {
+      "command": "./scripts/mcp/gotchibot-meet.sh",
+      "cwd": ".",
+      "project": "GotchiBot",
+      "note": "Meeting room — status, say, colabo, invite, end"
     }
   },
   "projects": {
     "AarcadeGh-t": ["aarcade-cartridge-schema", "aarcade-hackathon-ideas", "base-mcp", "vercel", "snapshot", "reown-docs", "mongodb"],
     "Aarcade-AIBot": ["mongodb", "reown-docs"],
-    "GotchiBot": ["abracadabra", "aarcade-cartridge-schema", "blockscout", "github", "base-mcp", "pixellab"],
+    "GotchiBot": [
+      "abracadabra",
+      "aarcade-cartridge-schema",
+      "blockscout",
+      "github",
+      "base-mcp",
+      "pixellab",
+      "gotchibot-claude",
+      "gotchibot-hub",
+      "gotchibot-synergy",
+      "gotchibot-pdf",
+      "gotchibot-meet"
+    ],
     "ai-cron-site": ["abracadabra", "cron402", "coinbase-developer", "vercel"],
     "Gotchi-Trader": ["base-mcp", "blockscout", "mongodb"],
     "aavegotchi-envio-indexers": ["blockscout", "base-mcp"],

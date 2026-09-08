@@ -27,7 +27,9 @@ function usage() {
   gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--sandbox] [--model sub|nim|pro|local|<provider/model>] "PROMPT"
   gotchi-orchestrate.mjs list
   gotchi-orchestrate.mjs wait [--host local|imac] [<id>...]
-  gotchi-orchestrate.mjs output [--host local|imac] <id>`);
+  gotchi-orchestrate.mjs output [--host local|imac] <id>
+  gotchi-orchestrate.mjs interrupt [--host local|imac] <id> "PROMPT"
+                         stop the running turn and push PROMPT into the same session (context kept)`);
   process.exit(2);
 }
 
@@ -290,6 +292,22 @@ async function cmdOutput(argv) {
   runDispatch(["output", rest[0]]);
 }
 
+async function cmdInterrupt(argv) {
+  const { host, rest } = parseHostAndRest(argv);
+  const [id, ...promptParts] = rest;
+  const prompt = promptParts.join(" ").trim();
+  if (!id || !prompt) usage();
+  const target = await resolveHost(host);
+  if (target === "imac") {
+    const r = spawnSync(process.execPath, [REMOTE_SPAWN, "interrupt", id, prompt], {
+      stdio: "inherit",
+      cwd: ROOT,
+    });
+    process.exit(r.status ?? 1);
+  }
+  runDispatch(["interrupt", id, prompt]);
+}
+
 const cmd = process.argv[2];
 const rest = process.argv.slice(3);
 
@@ -308,6 +326,9 @@ switch (cmd) {
     break;
   case "output":
     await cmdOutput(rest);
+    break;
+  case "interrupt":
+    await cmdInterrupt(rest);
     break;
   default:
     usage();

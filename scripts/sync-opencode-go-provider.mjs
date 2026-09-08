@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 /**
  * Register OpenCode Go (opencode-go/*) in opencode.json from the live catalog.
+ *
+ * OPT-IN ONLY (GOTCHIBOT_OPENCODE_GO_APIKEY=1). The default is the OpenCode Go
+ * SUBSCRIPTION: `opencode auth login` once, and OpenCode's built-in provider
+ * serves the Go models with no key at all. The provider block this script
+ * writes is the on-demand / balance path — an openai-compatible provider with
+ * apiKey {env:OPENCODE_API_KEY} — and it SHADOWS the built-in one, which is
+ * how a logged-in subscription turned into "Missing API key". Without the
+ * opt-in, running this script REMOVES that override.
  * Makes /models show "OpenCode Go" — separate from OpenCode Zen (opencode/*).
  *
  * Per-model `provider.npm` is required: Grok/Luna/Muse use Responses (@ai-sdk/openai);
@@ -159,8 +167,31 @@ export async function syncOpenCodeGoProvider({ force = false } = {}) {
   return { changed: true, count: ids.length, hash };
 }
 
+/** Subscription mode: drop the API-key override so the built-in provider is used. */
+function removeApiKeyOverride() {
+  if (!existsSync(CONFIG)) return { changed: false };
+  const cfg = JSON.parse(readFileSync(CONFIG, "utf8"));
+  const prov = cfg.provider || {};
+  if (!prov["opencode-go"]) return { changed: false };
+  delete prov["opencode-go"];
+  if (Object.keys(prov).length) cfg.provider = prov;
+  else delete cfg.provider;
+  writeFileSync(CONFIG, `${JSON.stringify(cfg, null, 2)}\n`);
+  return { changed: true };
+}
+
 async function main() {
   const check = process.argv.includes("--check");
+  if (process.env.GOTCHIBOT_OPENCODE_GO_APIKEY !== "1") {
+    const r = removeApiKeyOverride();
+    if (check) process.exit(r.changed ? 1 : 0);
+    console.log(
+      r.changed
+        ? "OpenCode Go: removed the API-key provider override — using the subscription (opencode auth login)"
+        : "OpenCode Go: subscription mode (no provider override present)",
+    );
+    return;
+  }
   try {
     const result = await syncOpenCodeGoProvider({ force: process.argv.includes("--force") });
     if (check) {

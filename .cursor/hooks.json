@@ -34,6 +34,19 @@
         "command": "node .cursor/hooks/session-brief.mjs",
         "timeout": 15
       }
+    ],
+    "preCompact": [
+      {
+        "command": "node .cursor/hooks/contexter-precompact.mjs",
+        "timeout": 25
+      }
+    ],
+    "stop": [
+      {
+        "command": "node .cursor/hooks/contexter-restore.mjs",
+        "timeout": 20,
+        "loop_limit": 1
+      }
     ]
   }
 }

@@ -44,6 +44,9 @@ usage:
   opencode-dispatch.sh status <id>...
   opencode-dispatch.sh wait [<id>...]
   opencode-dispatch.sh output <id>
+  opencode-dispatch.sh interrupt <id> "PROMPT"
+                              stop the running turn and push PROMPT into the SAME
+                              opencode session (context kept)
   opencode-dispatch.sh export [<id>] [--out PATH] [--log] [--yes]
                               save a session transcript as Markdown
                               (prompts for a folder; ~/Downloads by default)
@@ -363,6 +366,105 @@ cmd_list() {
   done
 }
 
+# Interrupt a running session and continue it with a new prompt.
+#
+# The hero keeps its context: opencode's own session (title gotchibot:<id>) is
+# resumed with --session, so the new prompt lands as the next user turn rather
+# than a cold start. The current turn is stopped first (TERM to the opencode
+# process, then to the supervisor subshell so its trap releases the hero and
+# stamps the state). A fresh supervisor is then started around a continuation
+# runner, exactly like spawn's, writing to the same session dir.
+#
+# Sandbox sessions are not supported yet (the container holds the process).
+cmd_interrupt() {
+  local id="${1:-}" prompt="${2:-}" dir ses turn n pid runner ts model
+  [ -n "$id" ] && [ -n "$prompt" ] || usage
+  dir="$SESSIONS/$id"
+  [ -f "$dir/state.env" ] || { echo "unknown session: $id" >&2; exit 1; }
+  if [ "$(field sandbox "$dir")" = "1" ]; then
+    echo "interrupt: sandbox sessions are not supported yet ($id)" >&2; exit 3
+  fi
+  ts="$(date -u +%FT%TZ)"
+
+  # Resolve opencode's session id from the title so the continuation keeps context.
+  ses="$(opencode session list 2>/dev/null | awk -v t="gotchibot:$id" '$2==t {print $1; exit}' || true)"
+
+  # Next turn number: prompt.txt is turn 1, prompt.2.txt turn 2, …
+  n=1; while [ -f "$dir/prompt.$((n+1)).txt" ]; do n=$((n+1)); done; turn=$((n+1))
+  printf '%s\n' "$prompt" > "$dir/prompt.$turn.txt"
+  printf '{"at":"%s","turn":%d,"opencodeSession":"%s","prompt":%s}\n' \
+    "$ts" "$turn" "$ses" "$(printf '%s' "$prompt" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(JSON.stringify(d)))')" \
+    >> "$dir/redirects.jsonl"
+
+  # Stop the current turn. opencode first (it is the one doing work), then the
+  # supervisor whose TERM trap releases the hero and stamps ended=.
+  pkill -TERM -f -- "--title gotchibot:$id" 2>/dev/null || true
+  pid="$(field pid "$dir")"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+    kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+  fi
+  pkill -KILL -f -- "--title gotchibot:$id" 2>/dev/null || true
+
+  set_field "$dir" interrupted "$ts"
+  set_field "$dir" turn "$turn"
+  [ -n "$ses" ] && set_field "$dir" opencodeSession "$ses"
+  set_field "$dir" status running
+  { grep -vE '^ended=' "$dir/state.env" || true; } > "$dir/.state.tmp" && mv "$dir/.state.tmp" "$dir/state.env"
+  {
+    echo
+    echo "[gotchibot] --- interrupted $ts → turn $turn ---"
+    [ -n "$ses" ] || echo "[gotchibot] WARNING: opencode session for gotchibot:$id not found; starting a fresh session (context lost)"
+  } >> "$dir/output.log"
+  printf '\n\n---\n\n_[interrupted %s — turn %d]_\n\n' "$ts" "$turn" >> "$dir/output.md"
+
+  model="$(field model "$dir")"
+  runner="$dir/runner.$turn.sh"
+  cat > "$runner" <<RUNNER
+#!/usr/bin/env bash
+cd "$ROOT"
+PROMPT="\$(cat "$dir/prompt.$turn.txt")"
+MODEL="$model"
+HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+if [ -n "\$HERO" ]; then
+  node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" working \
+    --session "$id" --task "\$(head -c 200 "$dir/prompt.$turn.txt" | tr '\n' ' ')" \
+    --model "\$MODEL" --host local >/dev/null 2>&1 || true
+fi
+AUTO_FLAGS=()
+if [ "\${GOTCHIBOT_AUTO_APPROVE:-1}" = "1" ]; then AUTO_FLAGS+=(--auto); fi
+SESSION_FLAGS=()
+if [ -n "$ses" ]; then SESSION_FLAGS+=(--session "$ses"); else SESSION_FLAGS+=(--title "gotchibot:$id"); fi
+run_opencode() {
+  if [ "\${GOTCHIBOT_SKIP_ABRA:-}" = "1" ] || [ -n "\${NVIDIA_API_KEY:-}\${OPENROUTER_API_KEY:-}\${DEEPSEEK_API_KEY:-}\${OPENCODE_API_KEY:-}\${OPENCODE_ZEN_API_KEY:-}" ]; then
+    opencode run -m "\$MODEL" "\${SESSION_FLAGS[@]}" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" >> "$dir/output.md" 2>> "$dir/output.log"
+  elif command -v abra >/dev/null 2>&1; then
+    abra run gotchibot -- opencode run -m "\$MODEL" "\${SESSION_FLAGS[@]}" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" >> "$dir/output.md" 2>> "$dir/output.log"
+  else
+    opencode run -m "\$MODEL" "\${SESSION_FLAGS[@]}" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" >> "$dir/output.md" 2>> "$dir/output.log"
+  fi
+}
+run_opencode
+RUNNER
+  chmod +x "$runner"
+
+  ( trap 'set_field "$dir" status failed; release_hero "$dir"; set_field "$dir" ended "$(date -u +%FT%TZ)"; exit 143' TERM INT HUP
+    if "$runner"; then set_field "$dir" status done; release_hero "$dir"
+      "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
+      GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id finished."
+    else set_field "$dir" status failed; release_hero "$dir"
+      "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
+      GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id failed."
+    fi
+    set_field "$dir" ended "$(date -u +%FT%TZ)" ) >/dev/null 2>&1 </dev/null &
+  echo $! > "$dir/pid"
+  set_field "$dir" pid "$!"
+  "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
+  echo "$id"
+  echo "interrupted $id → turn $turn${ses:+ (opencode session $ses, context kept)}" >&2
+}
+
 cmd_status() {
   for id in "$@"; do
     d="$SESSIONS/$id"
@@ -573,6 +675,7 @@ case "$cmd" in
   status) [ $# -ge 1 ] || usage; cmd_status "$@" ;;
   wait) cmd_wait "$@" ;;
   output) [ $# -eq 1 ] || usage; cmd_output "$1" ;;
+  interrupt) [ $# -eq 2 ] || usage; cmd_interrupt "$1" "$2" ;;
   export) cmd_export "$@" ;;
   requests) cmd_requests ;;
   *) usage ;;

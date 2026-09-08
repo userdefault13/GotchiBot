@@ -645,7 +645,7 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Carry a session's working knowledge across a context window: save key values, decisions and dead ends before compaction, read them back after. PreCompact/PostCompact hooks automate it in Claude Code.",
+      "description": "Carry a session's working knowledge across a context window: save key values, decisions and dead ends before compaction, read them back after. Automatic in Claude Code (Pre/PostCompact) and Cursor (preCompact + stop restore).",
       "path": ".opencode/skills/contexter/SKILL.md",
       "script": "scripts/contexter.mjs",
       "addedAt": "2026-09-05"

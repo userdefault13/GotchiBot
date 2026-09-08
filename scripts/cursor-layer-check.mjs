@@ -22,11 +22,19 @@ const REQUIRED = [
   ".cursor/hooks/guard-write.mjs",
   ".cursor/hooks/check-syntax.mjs",
   ".cursor/hooks/session-brief.mjs",
+  ".cursor/hooks/contexter-precompact.mjs",
+  ".cursor/hooks/contexter-restore.mjs",
   ".cursor/rules/gotchi-cursor-layer.mdc",
   ".cursor/rules/gotchi-orchestrator.mdc",
   ".cursor/skills/passoff/SKILL.md",
   ".cursor/skills/gotchibot-mesh/SKILL.md",
   ".cursor/skills/gotchibot-meet/SKILL.md",
+  ".cursor/skills/contexter/SKILL.md",
+  ".cursor/skills/gotchibot-hub/SKILL.md",
+  ".cursor/skills/gotchibot-bridge/SKILL.md",
+  ".cursor/skills/synergy/SKILL.md",
+  ".cursor/skills/gotchibot-pdf/SKILL.md",
+  ".cursor/mcp.json",
   "scripts/gotchibot-policy/repo-root.mjs",
   "scripts/gotchibot-policy/install-guard.mjs",
   "scripts/gotchibot-policy/write-guard.mjs",
@@ -34,6 +42,8 @@ const REQUIRED = [
   "scripts/gotchibot-policy/desk-brief.mjs",
   ".claude/hooks/guard-bash.mjs",
   ".claude/hooks/session-brief.mjs",
+  ".claude/hooks/contexter-precompact.mjs",
+  ".claude/hooks/contexter-postcompact.mjs",
 ];
 
 /** Claude adapters must skip under Cursor and load shared policy. */
@@ -42,6 +52,8 @@ const CLAUDE_HOOK_MARKERS = [
   [".claude/hooks/guard-write.mjs", ["CURSOR_VERSION", "write-guard"]],
   [".claude/hooks/check-syntax.mjs", ["CURSOR_VERSION", "syntax-check"]],
   [".claude/hooks/session-brief.mjs", ["CURSOR_VERSION", "desk-brief"]],
+  [".claude/hooks/contexter-precompact.mjs", ["CURSOR_VERSION", "contexter.mjs"]],
+  [".claude/hooks/contexter-postcompact.mjs", ["CURSOR_VERSION", "contexter.mjs"]],
 ];
 
 /** Cursor hooks must import shared policy (relative). */
@@ -50,6 +62,8 @@ const CURSOR_HOOK_MARKERS = [
   [".cursor/hooks/guard-write.mjs", ["gotchibot-policy/write-guard"]],
   [".cursor/hooks/check-syntax.mjs", ["gotchibot-policy/syntax-check"]],
   [".cursor/hooks/session-brief.mjs", ["gotchibot-policy/desk-brief"]],
+  [".cursor/hooks/contexter-precompact.mjs", ["contexter.mjs", "cursor-capsule-pending"]],
+  [".cursor/hooks/contexter-restore.mjs", ["contexter.mjs", "followup_message"]],
 ];
 
 function check() {
@@ -62,8 +76,22 @@ function check() {
   try {
     const hooks = JSON.parse(readFileSync(resolve(ROOT, ".cursor/hooks.json"), "utf8"));
     if (hooks.version !== 1) problems.push("stale: .cursor/hooks.json version must be 1");
-    for (const key of ["beforeShellExecution", "preToolUse", "afterFileEdit", "sessionStart"]) {
+    for (const key of ["beforeShellExecution", "preToolUse", "afterFileEdit", "sessionStart", "preCompact", "stop"]) {
       if (!hooks.hooks?.[key]?.length) problems.push(`hooks.json missing event: ${key}`);
+    }
+
+    const mcpPath = resolve(ROOT, ".cursor/mcp.json");
+    if (existsSync(mcpPath)) {
+      const mcp = JSON.parse(readFileSync(mcpPath, "utf8"));
+      for (const name of [
+        "gotchibot-claude",
+        "gotchibot-hub",
+        "gotchibot-synergy",
+        "gotchibot-pdf",
+        "gotchibot-meet",
+      ]) {
+        if (!mcp.mcpServers?.[name]) problems.push(`mcp.json missing server: ${name}`);
+      }
     }
   } catch (e) {
     problems.push(`hooks.json unreadable: ${e?.message || e}`);

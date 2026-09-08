@@ -17,6 +17,9 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { repoRoot } from "./repo-root.mjs";
 
+/** Cursor owns compaction via .cursor/hooks — avoid double-save. */
+if (process.env.CURSOR_VERSION) process.exit(0);
+
 const HOOKS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot(HOOKS_DIR);
 

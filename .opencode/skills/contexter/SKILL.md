@@ -79,6 +79,13 @@ back into the fresh window. The hook can only capture facts, so still save your
 own capsule with the narrative at real checkpoints — the automatic one is a
 safety net, not a substitute.
 
+## In Cursor this is automatic too
+
+Cursor has no PostCompact inject. The `.cursor/` layer saves on **preCompact**,
+drops `sessions/.cursor-capsule-pending`, and the next **stop** hands the brief
+back once (`loop_limit: 1`). `sessionStart` also surfaces the latest capsule in
+the desk brief. Same rule: write a narrative capsule yourself at checkpoints.
+
 ## Related, and different
 
 | Tool | Boundary it crosses |

@@ -11,10 +11,11 @@ context it costs, who triggers it — and whether it can be ignored.
 | Mechanism | Load | Role here |
 |---|---|---|
 | **CURSOR.md** + rules | eager | Who you are, hard limits, where the layer lives |
-| **Skills** | lazy · model-invoked | Passoff / mesh / meet procedures without paying every turn |
+| **Skills** | lazy · model-invoked | Passoff / mesh / meet / contexter / hub / bridge |
 | **Subagents** | isolated | `meet-scribe`, `script-doctor`, `gotchibot-proxy` — long transcripts stay out of this window |
-| **Slash commands** | user-invoked | `/passoff` `/meet` `/mesh` `/doctor` `/minutes` — never when the model decides |
+| **Slash commands** | user-invoked | `/passoff` `/meet` `/mesh` `/doctor` `/minutes` `/contexter` — never when the model decides |
 | **Hooks** | guarantee | Policy the model cannot talk past |
+| **MCP** | tools | `gotchibot-*` + stack catalog — same as OpenCode desk |
 
 ## Where things live
 
@@ -23,11 +24,12 @@ context it costs, who triggers it — and whether it can be ignored.
 - **Subagents:** [`.claude/agents/`](.claude/agents/) — Cursor loads them via Claude compatibility; do not copy
 - **Commands:** [`.claude/commands/`](.claude/commands/) — same compat path
 - **Hooks (SoT for Cursor):** [`.cursor/hooks.json`](.cursor/hooks.json) + [`.cursor/hooks/`](.cursor/hooks/)
+- **MCP:** [`.cursor/mcp.json`](.cursor/mcp.json) ← catalog in [`config/mcp.stack.json`](config/mcp.stack.json)
 - **Shared policy:** [`scripts/gotchibot-policy/`](scripts/gotchibot-policy/) — one BLOCKED list for Claude and Cursor
 
 Claude Code keeps [`.claude/`](.claude/) as its SoT (including its own hooks). When
 `CURSOR_VERSION` is set, Claude third-party hooks no-op so this layer owns the
-session (no double brief / double deny).
+session (no double brief / double deny / double capsule).
 
 ## Rules that were text are now enforced
 
@@ -37,6 +39,7 @@ session (no double brief / double deny).
 | Stay inside this repo's working tree | `guard-write.mjs` · deny |
 | A broken script fails silently | `check-syntax.mjs` · surface |
 | Check the passoff inbox before planning | `session-brief.mjs` · inject |
+| Compaction drops expensive identifiers | `contexter-precompact` + `contexter-restore` |
 
 ## Hard limits
 
@@ -45,6 +48,7 @@ session (no double brief / double deny).
 3. No secrets in replies; credentials go through abracadabra on Desk/Hub ops only.
 4. Before fresh work: `./scripts/gotchibot passoff resume`.
 5. `/minutes` → Task `meet-scribe` — do not read the transcript into this session.
+6. Before `/compact` or when context is low: narrative `gotchibot contexter save` (hooks are the safety net).
 
 ## Give the iMac the same desk
 
@@ -56,3 +60,4 @@ There is no Cursor plugin marketplace step. Distribution is the git checkout:
 ```
 
 Hooks load automatically from `.cursor/hooks.json` in a trusted workspace.
+MCP servers listed in `.cursor/mcp.json` need a Cursor reload after pull.
