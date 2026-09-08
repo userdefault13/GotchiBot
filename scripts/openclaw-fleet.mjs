@@ -787,8 +787,12 @@ export function findOpenclawBin() {
 }
 
 export function preferOpenClawChat() {
+  // GOTCHIBOT_OPENCLAW=0 is the only off switch. GOTCHIBOT_CHAT_RUNTIME says which
+  // UI the chat pane runs (chat-pane.sh exports "opencode" into the pane), not
+  // whether heroes on the gateway may be reached; treating it as "off" meant every
+  // `agent-focus chat --sub` from inside the gotchi pane failed with
+  // openclaw-disabled while the same command worked from a plain shell.
   if (process.env.GOTCHIBOT_OPENCLAW === "0") return false;
-  if (process.env.GOTCHIBOT_CHAT_RUNTIME === "opencode") return false;
   return true;
 }
 
