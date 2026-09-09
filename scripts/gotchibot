@@ -61,6 +61,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot wsl [--check]       WSL2 install guide (Windows) or in-WSL readiness check
   gotchibot update [--check|--apply|--force]  check/install GotchiBot updates (CDN or git)
   gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
+  gotchibot infra schedule status|install|uninstall|run-now  YFI 15-min supervisor LaunchAgent (run on the iMac)
   gotchibot infra-usage [--json]    operator: install-token usage report (Mongo / cost proxy)
   gotchibot aseprite check|export|init-tileset|init-sprite|script|info|svg-import|svg-export   Aseprite CLI (pixel art)
   gotchibot connect            open browser wallet-connect (MetaMask)
@@ -91,7 +92,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot comms run|dry-run|status  WBTC comms: Claude terminal on the iMac drafts, API publishes,
                                       Claude's reply printed verbatim (never Commsies / Cloudflare AI)
                                       extra args pass through: --range AarcadeGh-t:<before>..<after>, --repo X
-  gotchibot comms-cron-deploy         install WBTC daily comms cron on iMac (runs `comms run`)
+  gotchibot comms schedule status|install  WBTC daily comms crontab on the iMac (23:50 America/Los_Angeles)
+  gotchibot comms-cron-deploy         (alias of comms schedule install)
   gotchibot commsies-imac-deploy      (legacy) keep Commsies (:3002 + Ollama) alive on iMac — not used by comms
   gotchibot remote-status             probe Tailscale/SSH readiness (no secrets)
   gotchibot hub [status|roster|dashboard|monitor|restart-gateway|doctor|bridge-…]  Hub SOP + OC/bridge dashboard
@@ -619,6 +621,7 @@ case "$cmd" in
   wsl) exec node "$ROOT/scripts/wsl-setup.mjs" "$@" ;;
   update) exec node "$ROOT/scripts/update-check.mjs" "$@" ;;
   infra)
+    if [ "${1:-}" = "schedule" ]; then shift; exec node "$ROOT/scripts/infra-schedule.mjs" "$@"; fi
     case "${1:-}" in
       register|status) exec node "$ROOT/scripts/infra-token.mjs" "$1" "${@:2}" ;;
       *) echo "usage: gotchibot infra register|status" >&2; exit 2 ;;
@@ -664,7 +667,13 @@ case "$cmd" in
       run) abra_or_node "$ROOT/scripts/comms-claude-cycle.mjs" --host imac "$@" ;;
       dry-run) abra_or_node "$ROOT/scripts/comms-claude-cycle.mjs" --host imac --dry-run "$@" ;;
       status) abra_or_node "$ROOT/scripts/comms-claude-cycle.mjs" --host imac --status "$@" ;;
-      *) echo "usage: gotchibot comms run|dry-run|status [--range repo:before..after] [--repo X]" >&2; exit 2 ;;
+      schedule)
+        case "${1:-status}" in
+          status) abra_or_node "$ROOT/scripts/comms-agent-cron-deploy.mjs" --status ;;
+          install) abra_or_node "$ROOT/scripts/comms-agent-cron-deploy.mjs" ;;
+          *) echo "usage: gotchibot comms schedule status|install" >&2; exit 2 ;;
+        esac ;;
+      *) echo "usage: gotchibot comms run|dry-run|status|schedule [--range repo:before..after] [--repo X]" >&2; exit 2 ;;
     esac ;;
   comms-cron-deploy) abra_or_node "$ROOT/scripts/comms-agent-cron-deploy.mjs" ;;
   commsies-imac-deploy) abra_or_node "$ROOT/scripts/commsies-imac-deploy.mjs" ;;

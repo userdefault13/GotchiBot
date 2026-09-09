@@ -25,7 +25,7 @@
     "deepReportCmd": "./scripts/infra-monitor-cron.mjs --json",
     "verifyCmd": "./scripts/infra-claude-verify.mjs --json",
     "watchCmd": "./scripts/infra-watch.mjs run --interval 60 --verify-every 30",
-    "autonomy": "Resident watcher in tmux gotchibot:infrawatch ticks every 60s and reports transitions, not steady state. Every 30 ticks and on every transition it asks a persistent interactive Claude CLI session, in tmux window gotchibot:claude-verify, for an independent verdict; because that session keeps context it can say what changed since the last check. A disagreement between Claude and the probes is treated as an incident. The verify session runs in ~/Dev/gotchibot-infra-verify, outside the GotchiBot repo, so it does not inherit the repo CLAUDE.md hub-proxy role and block on a scope-check prompt. Only the watched aarcade/envio containers gate the docker check. On degrade follow infra-recover (paper-only).",
+    "autonomy": "Resident watcher in tmux gotchibot:infrawatch ticks every 60s and reports transitions, not steady state. Every 30 ticks and on every transition it asks a persistent interactive Claude CLI session, in tmux window gotchibot:claude-verify, for an independent verdict; because that session keeps context it can say what changed since the last check. A disagreement between Claude and the probes is treated as an incident. The 15-minute wake is the launchd job com.gotchibot.infra-watch installed on the iMac by `./scripts/gotchibot infra schedule install`, which restarts the watcher window if it died; `./scripts/gotchibot infra schedule status` is the only source of truth for whether that job is loaded and the watcher heartbeat is fresh. The verify session runs in ~/Dev/gotchibot-infra-verify, outside the GotchiBot repo, so it does not inherit the repo CLAUDE.md hub-proxy role. Only the watched aarcade/envio containers gate the docker check. On degrade follow infra-recover (paper-only).",
     "hostLevel": {
       "selfServe": [
         "Docker autostart: ~/Library/Group Containers/group.com.docker/settings-store.json -> \"AutoStart\": true (a file, not a GUI-only checkbox)",
@@ -38,7 +38,8 @@
         "anything needing the login keychain non-interactively (docker credential helper, abra on the iMac over SSH)"
       ],
       "rule": "Before telling the user something is human-only, check whether it is a config file you can edit. Report what you did, the one thing left, and the literal command."
-    }
+    },
+    "scheduleCmd": "./scripts/gotchibot infra schedule status"
   },
   "orchestrator": {
     "title": "Orchestrator",
@@ -52,12 +53,13 @@
   },
   "aarcade-comms-handler": {
     "title": "Aarcade daily comms",
-    "summary": "Own newsfeed + tweet-draft pipeline (Commsies on iMac; tweets stay approve-gated).",
+    "summary": "Own newsfeed + tweet-draft pipeline: a real Claude terminal on the iMac drafts, the Aarcade API publishes, tweets stay approve-gated.",
     "skills": [
       "aarcade-comms",
       "browser-tool"
     ],
-    "reportCmd": "./scripts/comms-agent-cron.mjs",
-    "autonomy": "On schedule/cron (daily) and when asked: poll /communications-agent/queue, run pending repos, report sessions/comms-logs; never post to X; never print secrets."
+    "reportCmd": "./scripts/gotchibot comms schedule status",
+    "autonomy": "Daily at 23:50 America/Los_Angeles via the iMac crontab (`50 23 * * *`, installed by `abra run gotchibot -- ./scripts/gotchibot comms schedule install`), and whenever asked: run `abra run gotchibot -- ./scripts/gotchibot comms run` and relay the \"Claude said (verbatim)\" block word for word. `./scripts/gotchibot comms schedule status` is the only source of truth for whether the daily run is scheduled and when it last ran. Never post to X; never print secrets; never Commsies / Cloudflare AI.",
+    "scheduleCmd": "./scripts/gotchibot comms schedule status"
   }
 }

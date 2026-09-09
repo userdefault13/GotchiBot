@@ -85,7 +85,7 @@ Base URL `AARCADE_API_BASE` (default `https://aarcadeghst.com`), bearer
 
 ## Scheduling (iMac — owned-22899 / WBTC)
 
-Cron on the iMac runs the same cycle daily (`59 23 * * *` on the live desk):
+Cron on the iMac runs the same cycle daily at 23:50 America/Los_Angeles (`50 23 * * *`, iMac local time; `./scripts/gotchibot comms schedule status` confirms it):
 
 ```sh
 abra run gotchibot -- env COMMS_CRON_SCHEDULE="59 23 * * *" node scripts/comms-agent-cron-deploy.mjs

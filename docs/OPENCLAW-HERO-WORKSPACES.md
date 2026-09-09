@@ -77,6 +77,22 @@ effect on the next prompt with no pane restart:
   `./scripts/agent-focus.mjs chat --sub "<message>"` and relay stdout verbatim.
   Free models kept forgetting the same rule when it only lived in `gotchi.md`.
 
+## Hero schedules
+
+Every hero that is supposed to run on a clock has one command that installs the
+clock on the host it runs on and one that tells the truth about it. The prompts
+only ever quote the status command.
+
+| Hero | Command | What it installs |
+|---|---|---|
+| LINK | `gotchibot trader schedule status\|install\|uninstall\|run-now` | launchd `com.gotchibot.trader-cycle`, every 1800 s, runs `trader-cycle.mjs` |
+| YFI | `gotchibot infra schedule status\|install\|uninstall\|run-now` | launchd `com.gotchibot.infra-watch`, every 900 s, runs `infra-watch-ensure.sh` (supervises the resident 60 s watcher) |
+| WBTC | `gotchibot comms schedule status\|install` (via abra from the Desk) | iMac crontab `50 23 * * *` (23:50 America/Los_Angeles) running the comms wrapper |
+
+Install LINK's and YFI's on the iMac (`gotchibot remote -- 'cd ~/Dev/GotchiBot && …'`);
+WBTC's is installed over SSH by the deploy script and needs `COMM_AUTOMATION_SECRET`
+in abra. `scripts/lib/launchd-job.mjs` is the shared launchd code.
+
 ## LINK's schedule
 
 `./scripts/gotchibot trader schedule install` on the iMac installs the launchd

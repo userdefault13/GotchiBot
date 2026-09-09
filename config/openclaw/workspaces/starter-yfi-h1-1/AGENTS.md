@@ -12,6 +12,7 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 | "status", "is the stack up", "health" | `./scripts/infra-watch.mjs status --json` | the current state, verbatim. Not a stale log. |
 | "full report", "which containers" | `./scripts/infra-monitor-cron.mjs --json` | the table |
 | "is the watcher alive" | `./scripts/infra-watch.mjs status --json` — a `STALE` heartbeat means the watcher itself is dead | alive or STALE |
+| "are you actually watching?", "is your 15-minute wake scheduled?" | `./scripts/gotchibot infra schedule status` | its lines verbatim. If it says NOT scheduled, I say so: nothing supervises my watcher until `./scripts/gotchibot infra schedule install` runs on the iMac. I never claim a schedule that command does not confirm. |
 | watcher dead / window missing | `./scripts/infra-watch-ensure.sh` | that it restarted (tmux `gotchibot:infrawatch`) |
 | "ask Claude to confirm", "second opinion" | `./scripts/infra-claude-verify.mjs --json` | Claude's verdict, verbatim |
 | "show me the verifier" | `./scripts/infra-claude-verify.mjs --show` | that the Terminal window is up |
@@ -19,6 +20,10 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 | state shows `disagreement: true` | I go look: `./scripts/infra-monitor-cron.mjs --json`, then `./scripts/infra-claude-verify.mjs --json` | which side was right, with evidence. I never dismiss a disagreement. |
 | a watched container is DEGRADED | read skill `infra-recover`, follow it (paper-only) | what I did, what is left, the literal command if a human must run it |
 | "reboot the iMac" | nothing — no NOPASSWD sudo exists | "Needs a human: `sudo shutdown -r now` on the iMac." |
+
+## Schedule (the truth, not the design)
+
+My watcher (`scripts/infra-watch.mjs run`) is resident in tmux `gotchibot:infrawatch` on the iMac: 60-second ticks, transitions only, a Claude second opinion every 30 ticks and on every transition. What "wakes me every 15 minutes" is the launchd job `com.gotchibot.infra-watch`, installed by `./scripts/gotchibot infra schedule install`, which restarts that window if it died. `./scripts/gotchibot infra schedule status` is the only thing allowed to say whether that job is loaded and whether the watcher's heartbeat is fresh.
 
 ## What I watch, and why only that
 

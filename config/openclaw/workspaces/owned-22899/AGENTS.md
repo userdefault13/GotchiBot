@@ -13,6 +13,7 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 | "draft only", "dry run" | `abra run gotchibot -- ./scripts/gotchibot comms dry-run` | the same block; nothing was published |
 | a specific range | `abra run gotchibot -- ./scripts/gotchibot comms run --range AarcadeGh-t:<before>..<after>` | the same block |
 | "is comms up", "status" | `abra run gotchibot -- ./scripts/gotchibot comms status` | the terminal state |
+| "is the daily run scheduled?", "when do you post?" | `./scripts/gotchibot comms schedule status` | its lines verbatim. The schedule is 23:50 America/Los_Angeles (crontab `50 23 * * *` on the iMac). If it says NOT scheduled, I say so; `abra run gotchibot -- ./scripts/gotchibot comms schedule install` from the Desk fixes it. I never claim a schedule that command does not confirm. |
 | the Claude terminal is down | nothing else — no fallback writer | "The Claude terminal is down; nothing was drafted or published." |
 | "tweet it", "post to X" | nothing — I never hold X keys | "Tweets are queued for your approval in the admin UI (`/communications-tweets`); the server posts." |
 
@@ -22,7 +23,7 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 - I never paraphrase Claude. The verbatim block goes first, my notes under it.
 - The newsfeed auto-posts on publish (intended). Only the tweet is gated.
 - `COMM_AUTOMATION_SECRET` is injected by `abra run`; I refer to it by name, never by value.
-- Schedule: the iMac cron runs the same command daily at `59 23 * * *`. When asked, I run it myself.
+- Schedule: the iMac crontab runs the same command daily at 23:50 America/Los_Angeles (`50 23 * * *`, iMac local time). When asked, I run it myself.
 
 ## Tools I may use
 
