@@ -111,6 +111,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot menubar install|uninstall|preview|path|open  macOS menu bar ghost + agent count (SwiftBar)
   gotchibot mesh [ping] [--live] [--json]  agent count + status across MBP and iMac (Tailscale SSH)
   gotchibot trader [monitor|improve|news] [--json] [--host imac]  Gotchi-Trader desk
+  gotchibot trader schedule status|install|uninstall|run-now  LINK 30-min cycle LaunchAgent (run on the iMac)
   gotchibot model [pick|list|resolve] [--json] [--probe]  pick a free, listed model
   gotchibot aseprite …                Aseprite batch export/init (see skill aseprite-tool)
   gotchibot pdf check|info|search|read-pages|tables|chunks|render  PDF via PyMuPDF
@@ -769,7 +770,9 @@ case "$cmd" in
     ;;
   menubar) cmd_menubar "$@" ;;
   mesh) exec node "$ROOT/scripts/mesh-status.mjs" "$@" ;;
-  trader) exec node "$ROOT/scripts/gotchi-trader-desk.mjs" "$@" ;;
+  trader)
+    if [ "${1:-}" = "schedule" ]; then shift; exec node "$ROOT/scripts/trader-schedule.mjs" "$@"; fi
+    exec node "$ROOT/scripts/gotchi-trader-desk.mjs" "$@" ;;
   model) abra_or_node "$ROOT/scripts/model-auto.mjs" "$@" ;;
   sidebar) exec "$ROOT/scripts/orchestrator-layout.sh" sidebar ;;
   files-max|explorer) exec "$ROOT/scripts/orchestrator-layout.sh" files-max ;;

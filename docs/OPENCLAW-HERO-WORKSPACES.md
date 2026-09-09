@@ -77,6 +77,14 @@ effect on the next prompt with no pane restart:
   `./scripts/agent-focus.mjs chat --sub "<message>"` and relay stdout verbatim.
   Free models kept forgetting the same rule when it only lived in `gotchi.md`.
 
+## LINK's schedule
+
+`./scripts/gotchibot trader schedule install` on the iMac installs the launchd
+job that wakes `trader-cycle.mjs` every 1800 s; `status` reports plist, loaded
+state, last cycle and verdict, verify workspace and webhook; `run-now` kicks a
+cycle. LINK's prompt and the playbook now describe only that waker. cron402 is
+the intended future waker and is not wired (no ingress, no job).
+
 ## Things that still bite
 
 - Sandbox: fleet entries now carry `sandbox.mode: "off"` and the deploy default is `non-main`; doctor fails if a hero would resolve to `all`. Earlier the deploy set `agents.defaults.sandbox.mode`

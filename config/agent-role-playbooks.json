@@ -11,7 +11,8 @@
     "reportCmd": "./scripts/gotchi-trader-desk.mjs status",
     "cycleCmd": "./scripts/trader-cycle.mjs --json",
     "verifyWindow": "gotchibot:link-verify",
-    "autonomy": "Wakes every 30 minutes and runs a full cycle: desk health, meta-model and strategy signals, news regime, decisions clipped by explicit risk rules, then verification by a persistent interactive Claude session in a terminal visible on the desktop (PASS/CONCERN/FAIL). Paper desk: real execution requires TRADER_LIVE=1 plus a PASS verdict plus no risk breach, and no order router is wired, so the live branch refuses to fake a fill. Risk rules: min score 0.6, min cross-strategy breadth 0.5, 5000 USDC per position, 15000 USDC per cycle, sizes halved in risk-off, and no ETH/BTC adds while the desk concentration warning is live. Intended waker is cron402 via scripts/trader-webhook.mjs (:8792); until the Cloudflare ingress exists the schedule runs from config/launchagents/com.gotchibot.trader-cycle.plist."
+    "autonomy": "Runs one full cycle whenever woken: desk health, meta-model and strategy signals, news regime, decisions clipped by explicit risk rules, then verification by a persistent interactive Claude session in a terminal visible on the desktop (PASS/CONCERN/FAIL). The ONLY waker that exists is the launchd job installed on the iMac by `./scripts/gotchibot trader schedule install` (every 1800 s); `./scripts/gotchibot trader schedule status` reports whether it is loaded and when the last cycle ran, and nobody claims a schedule that command does not confirm. cron402 via scripts/trader-webhook.mjs (:8792) is the intended future waker and is not wired (no ingress, no job). Paper desk: real execution requires TRADER_LIVE=1 plus a PASS verdict plus no risk breach, and no order router is wired, so the live branch refuses to fake a fill. Risk rules: min score 0.6, min cross-strategy breadth 0.5, 5000 USDC per position, 15000 USDC per cycle, sizes halved in risk-off, and no ETH/BTC adds while the desk concentration warning is live.",
+    "scheduleCmd": "./scripts/gotchibot trader schedule status"
   },
   "infra-monitor": {
     "title": "Infra home monitor",
@@ -30,10 +31,10 @@
         "Docker autostart: ~/Library/Group Containers/group.com.docker/settings-store.json -> \"AutoStart\": true (a file, not a GUI-only checkbox)",
         "Container never returns after a reboot: docker update --restart unless-stopped <container>",
         "docker restart succeeds but StartedAt does not move: docker kill then docker start; the cure is recreating with --init",
-        "abra dies with Cannot find package ...abracadabra/dist/index.js: cd ~/Dev/abracadabra && npm ci (lockfile restore, allowed). Usually a disk-space cleanup that deleted node_modules across all of ~/Dev (42 of 45 projects on 2026-09-06) — check ls ~/Dev/<project>/node_modules before blaming the host or tunnel"
+        "abra dies with Cannot find package ...abracadabra/dist/index.js: cd ~/Dev/abracadabra && npm ci (lockfile restore, allowed). Usually a disk-space cleanup that deleted node_modules across all of ~/Dev (42 of 45 projects on 2026-09-06) \u2014 check ls ~/Dev/<project>/node_modules before blaming the host or tunnel"
       ],
       "needsUser": [
-        "sudo shutdown -r now — no NOPASSWD rule on the iMac, so no agent can reboot the host; reassigning to another hero hits the same wall",
+        "sudo shutdown -r now \u2014 no NOPASSWD rule on the iMac, so no agent can reboot the host; reassigning to another hero hits the same wall",
         "anything needing the login keychain non-interactively (docker credential helper, abra on the iMac over SSH)"
       ],
       "rule": "Before telling the user something is human-only, check whether it is a config file you can edit. Report what you did, the one thing left, and the literal command."
@@ -41,7 +42,7 @@
   },
   "orchestrator": {
     "title": "Orchestrator",
-    "summary": "Chair/delegate — do not DIY sub-agent jobs.",
+    "summary": "Chair/delegate \u2014 do not DIY sub-agent jobs.",
     "skills": [
       "delegate-first",
       "browser-tool"
