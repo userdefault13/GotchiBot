@@ -87,6 +87,14 @@ try {
     "sessions/.comms-cron.env",
     "--exclude",
     "sessions/comms-logs/",
+    // Per-host job output: LINK cycle logs and YFI infra reports are written on the
+    // host that runs the launchd job; the MBP has none, and --delete would wipe them.
+    "--exclude",
+    "sessions/trader-logs/",
+    "--exclude",
+    "sessions/infra-logs/",
+    "--exclude",
+    "sessions/c2*/",
     // Per-host state: Claude terminal records, infra-watch, claude-jobs. Synced
     // over, the MBP's "briefed" record made the iMac skip its own briefing.
     "--exclude",
@@ -103,6 +111,7 @@ try {
     [
       "-az",
       "--delete",
+      ...(process.env.REMOTE_PUSH_DRY_RUN ? ["--dry-run", "--itemize-changes"] : []),
       ...excludes,
       "-e",
       `ssh -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i ${key.path}`,
