@@ -1,8 +1,8 @@
 ---
-description: Kanban board — clawbot seats, status, assigned tasks
+description: Kanban board — 3-pane clawbot seats, details, logs
 ---
 
-Show the GotchiBot kanban (cAavegotchi seats + tasks). Run immediately, do not ask.
+Open the GotchiBot kanban (opencode-kanban-style layout). Run immediately, do not ask.
 
 ```bash
 ./scripts/gotchi-kanban.mjs $ARGUMENTS
@@ -16,9 +16,13 @@ abra run gotchibot -- ./scripts/gotchi-kanban.mjs $ARGUMENTS
 
 | Julius types | Script |
 | --- | --- |
-| `/kanban` | print board once |
+| `/kanban` | interactive 3-pane TUI (tty) |
+| `/kanban --once` | plain text dump |
 | `/kanban --json` | machine-readable board |
-| `/kanban --watch` | refresh every 5s |
+| `/kanban --watch` | plain refresh every 5s |
+
+**Layout:** left = Tasks by Category · top-right = Details · bottom-right = Logs  
+**Keys:** `j/k` select · `Space` collapse · `Tab` pane · `Enter` open session · `r` reload · `q` quit
 
 **Cockpit:** `/cockpit` → **Kanban (agents · tasks · seats)**.
 

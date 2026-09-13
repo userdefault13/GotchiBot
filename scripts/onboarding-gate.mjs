@@ -723,30 +723,18 @@ async function settingsMenu() {
 async function viewKanban() {
   clear();
   title("Kanban");
-  console.log("  Loading clawbot seats + tasks…\n");
-  const r = runAbraNode("scripts/gotchi-kanban.mjs", []);
-  if (r.stdout) process.stdout.write(r.stdout);
-  if (r.stderr && r.status !== 0) process.stderr.write(r.stderr);
-  if (r.status !== 0 && !r.stdout?.trim()) {
-    console.log(`  ✗ kanban failed (exit ${r.status ?? "?"})`);
+  console.log("  Opening 3-pane board (categories · details · logs)…");
+  console.log("  q quit · j/k select · Space collapse · Enter session\n");
+  // Interactive TUI takes over the tty; on failure fall back to plain dump.
+  let r = runAbraNode("scripts/gotchi-kanban.mjs", ["--tui"]);
+  if (r.status !== 0) {
+    r = runAbraNode("scripts/gotchi-kanban.mjs", ["--once"]);
+    if (r.stdout) process.stdout.write(r.stdout);
+    if (r.stderr) process.stderr.write(r.stderr);
+    if (r.status !== 0 && !r.stdout?.trim()) {
+      console.log(`  ✗ kanban failed (exit ${r.status ?? "?"})`);
+    }
     await pause();
-    return;
-  }
-
-  const follow = await choose("Kanban", [
-    { key: "back", label: "Back to cockpit" },
-    { key: "reload", label: "Reload board" },
-    { key: "watch", label: "Watch (refresh every 5s · Ctrl+C)" },
-  ]);
-  if (follow?.key === "reload") {
-    await viewKanban();
-    return;
-  }
-  if (follow?.key === "watch") {
-    clear();
-    title("Kanban · watch");
-    console.log("  Ctrl+C returns to cockpit.\n");
-    runAbraNode("scripts/gotchi-kanban.mjs", ["--watch"]);
   }
 }
 
