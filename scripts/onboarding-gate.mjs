@@ -725,14 +725,33 @@ async function viewKanban() {
   title("Kanban");
   console.log("  Opening 3-pane board (categories · details · logs)…");
   console.log("  q quit · j/k select · Space collapse · Enter session\n");
-  // Interactive TUI takes over the tty; on failure fall back to plain dump.
-  let r = runAbraNode("scripts/gotchi-kanban.mjs", ["--tui"]);
-  if (r.status !== 0) {
-    r = runAbraNode("scripts/gotchi-kanban.mjs", ["--once"]);
-    if (r.stdout) process.stdout.write(r.stdout);
-    if (r.stderr) process.stderr.write(r.stderr);
-    if (r.status !== 0 && !r.stdout?.trim()) {
-      console.log(`  ✗ kanban failed (exit ${r.status ?? "?"})`);
+  // runAbraNode pipes stdout — that blanks the TUI and looks "stuck".
+  // Inherit the real tty, and pause cockpit readline while the child runs.
+  const script = `${ROOT}/scripts/gotchi-kanban.mjs`;
+  try {
+    rl.pause();
+  } catch {}
+  let r;
+  try {
+    r = spawnSync(process.execPath, [script, "--tui"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: process.env,
+    });
+  } finally {
+    try {
+      rl.resume();
+    } catch {}
+  }
+  if (r?.status !== 0) {
+    clear();
+    title("Kanban");
+    console.log("  TUI unavailable — plain board:\n");
+    const dump = runAbraNode("scripts/gotchi-kanban.mjs", ["--once"]);
+    if (dump.stdout) process.stdout.write(dump.stdout);
+    if (dump.stderr) process.stderr.write(dump.stderr);
+    if (dump.status !== 0 && !dump.stdout?.trim()) {
+      console.log(`  ✗ kanban failed (exit ${dump.status ?? "?"})`);
     }
     await pause();
   }

@@ -572,7 +572,13 @@ async function main() {
     return;
   }
 
-  // Default on tty: interactive 3-pane TUI
+  // Default on tty: interactive 3-pane TUI.
+  // If --tui was forced but stdout is piped (cockpit runAbraNode), do NOT hang.
+  if (forceTui && !isTty) {
+    console.error("kanban: no tty for TUI — printing plain board (--once)");
+    printPlain(load());
+    return;
+  }
   await runTui();
 }
 
