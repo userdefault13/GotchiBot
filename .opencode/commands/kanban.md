@@ -22,7 +22,7 @@ abra run gotchibot -- ./scripts/gotchi-kanban.mjs $ARGUMENTS
 | `/kanban --watch` | plain refresh every 5s |
 
 **Layout:** left = Tasks by Category · top-right = Details · bottom-right = Logs  
-**Keys:** `j/k` select · `Space` collapse · `Tab` pane · `Enter` open session · `r` reload · `q` quit
+**Keys:** `j/k` select/scroll · `PgUp`/`PgDn` page · `Space` collapse · `Tab` pane · `Enter` session · `r` reload · `q` quit
 
 **Cockpit:** `/cockpit` → **Kanban (agents · tasks · seats)**.
 

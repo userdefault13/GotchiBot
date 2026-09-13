@@ -245,10 +245,6 @@ function selectedCard(rows, idx) {
   return null;
 }
 
-function boxLine(width, left, fill = "─", right) {
-  const inner = Math.max(0, width - 2);
-  return `${left}${fill.repeat(inner)}${right}`;
-}
 
 function pad(str, width) {
   const s = String(str);
@@ -283,32 +279,12 @@ function printPlain(board) {
   console.log("");
 }
 
-function drawTui(state) {
-  const { board, rows, sel, collapsed, focusPane, term } = state;
-  const cols = term.cols;
-  const rowsN = Math.max(24, term.rows);
-  const leftW = Math.max(28, Math.floor(cols * 0.34));
-  const rightW = cols - leftW - 1;
-  const headerH = 1;
-  const footerH = 1;
-  const bodyH = rowsN - headerH - footerH;
-  const detailsH = Math.max(10, Math.floor(bodyH * 0.55));
-  const logsH = bodyH - detailsH;
 
-  const lines = [];
-  const header =
-    `${c.bold}gotchibot-kanban${c.reset}` +
-    " ".repeat(Math.max(1, cols - 40)) +
-    `${c.dim}seats: ${board.seatsUsed}/${board.seatsTotal}  refresh: ${REFRESH_S}s${c.reset}`;
-  lines.push(pad(header, cols));
-
-  const card = selectedCard(rows, sel);
-  const logs = readSessionLogs(card?.sessionId, logsH - 3);
-
-  // Build left column lines
-  const leftLines = [];
-  leftLines.push(`${c.yellow}Tasks by Category${c.reset}`);
-  leftLines.push(c.border + "─".repeat(Math.max(8, leftW - 2)) + c.reset);
+/** Build full left-pane content; each entry tracks which selectable row it belongs to. */
+function buildLeftContent(rows, sel, leftInnerW) {
+  const out = [];
+  out.push({ text: `${c.yellow}Tasks by Category${c.reset}`, row: -1 });
+  out.push({ text: c.border + "─".repeat(Math.max(8, leftInnerW - 2)) + c.reset, row: -1 });
   let rowIdx = 0;
   for (const row of rows) {
     const selected = rowIdx === sel;
@@ -317,9 +293,10 @@ function drawTui(state) {
     if (row.type === "cat") {
       const arrow = row.collapsed ? ">" : "v";
       const n = row.count;
-      leftLines.push(
-        `${mark}${c.bold}${arrow} ${row.title} (${n}/${n})${c.reset}${end}`,
-      );
+      out.push({
+        text: `${mark}${c.bold}${arrow} ${row.title} (${n}/${n})${c.reset}${end}`,
+        row: rowIdx,
+      });
     } else {
       const cardX = row.card;
       const prog =
@@ -331,84 +308,193 @@ function drawTui(state) {
       const title = cardX.isChief
         ? `${cardX.id}:chief`
         : `${cardX.id}${cardX.collateral ? ":" + cardX.collateral : ""}`;
-      leftLines.push(`${mark}┌${"─".repeat(Math.min(leftW - 4, 34))}┐${end}`);
-      leftLines.push(
-        `${mark}│ ${c.green}${trunc(`.: ${prog}`, 12)}${c.reset} ${trunc(title, Math.min(leftW - 18, 22))}${end}`,
-      );
-      leftLines.push(
-        `${mark}│ ${c.dim}${trunc(cardX.task || "—", Math.min(leftW - 6, 32))}${c.reset}${end}`,
-      );
-      leftLines.push(`${mark}└${"─".repeat(Math.min(leftW - 4, 34))}┘${end}`);
+      const boxW = Math.min(leftInnerW - 2, 34);
+      out.push({ text: `${mark}┌${"─".repeat(boxW)}┐${end}`, row: rowIdx });
+      out.push({
+        text: `${mark}│ ${c.green}${trunc(`.: ${prog}`, 12)}${c.reset} ${trunc(title, Math.min(leftInnerW - 18, 22))}${end}`,
+        row: rowIdx,
+      });
+      out.push({
+        text: `${mark}│ ${c.dim}${trunc(cardX.task || "—", Math.min(leftInnerW - 6, 32))}${c.reset}${end}`,
+        row: rowIdx,
+      });
+      out.push({ text: `${mark}└${"─".repeat(boxW)}┘${end}`, row: rowIdx });
     }
     rowIdx++;
   }
-  while (leftLines.length < bodyH) leftLines.push("");
+  return out;
+}
 
-  // Details pane
+/** Vertical scrollbar: track ▒ + thumb █ for the visible window. */
+function scrollBarGlyph(viewH, contentH, scrollTop, y) {
+  if (contentH <= viewH) return `${c.dim}│${c.reset}`;
+  const track = Math.max(1, viewH);
+  const thumbH = Math.max(1, Math.round((viewH / contentH) * track));
+  const maxScroll = Math.max(1, contentH - viewH);
+  const thumbTop = Math.round((scrollTop / maxScroll) * (track - thumbH));
+  if (y >= thumbTop && y < thumbTop + thumbH) return `${c.cyan}█${c.reset}`;
+  return `${c.dim}▒${c.reset}`;
+}
+
+function clampScroll(scrollTop, contentH, viewH) {
+  const max = Math.max(0, contentH - viewH);
+  return Math.max(0, Math.min(max, scrollTop));
+}
+
+/** Keep the selected row's lines inside the left viewport. */
+function ensureSelVisible(leftContent, sel, scrollTop, viewH) {
+  const idxs = [];
+  for (let i = 0; i < leftContent.length; i++) {
+    if (leftContent[i].row === sel) idxs.push(i);
+  }
+  if (!idxs.length) return scrollTop;
+  const first = idxs[0];
+  const last = idxs[idxs.length - 1];
+  let next = scrollTop;
+  if (first < next) next = first;
+  if (last >= next + viewH) next = last - viewH + 1;
+  return clampScroll(next, leftContent.length, viewH);
+}
+
+function buildDetailLines(card, board, rightW) {
   const detailLines = [];
-  const dFocus = focusPane === "details" ? c.cyan : c.yellow;
-  detailLines.push(`${dFocus}Details${c.reset}`);
-  detailLines.push(c.border + "─".repeat(Math.max(8, rightW - 2)) + c.reset);
   if (!card) {
     detailLines.push(`${c.dim}(select a card)${c.reset}`);
-  } else {
-    detailLines.push(`${c.bold}OVERVIEW${c.reset}`);
-    detailLines.push(`  Title    ${trunc(card.task || card.id, rightW - 12)}`);
-    detailLines.push(`  Hero     ${card.id}${card.isChief ? " (CHIEF)" : ""}`);
-    detailLines.push(
-      `  Collateral ${card.collateral || "—"} · bind ${card.bindType || "—"} · host ${card.host}`,
-    );
-    detailLines.push("");
-    detailLines.push(`${c.bold}RUNTIME${c.reset}`);
-    const stColor = card.status === "working" || card.status === "active" ? c.green : c.white;
-    detailLines.push(`  Status   ${stColor}${String(card.status).toUpperCase()}${c.reset}`);
-    detailLines.push(`  Seats    ${board.seatsUsed}/${board.seatsTotal} used · ${board.seatsFree} free`);
-    detailLines.push(`  Session  ${card.sessionId || "—"}`);
-    if (card.model) detailLines.push(`  Model    ${card.model}`);
-    detailLines.push("");
-    detailLines.push(`${c.bold}WORK PLAN${c.reset}`);
-    const plan = workPlanFromTask(card.task);
-    if (!plan.length) detailLines.push(`  ${c.dim}(no task text)${c.reset}`);
-    for (const step of plan) {
-      const box = step.state === "done" ? `${c.green}[✓]${c.reset}` : step.state === "active" ? `${c.yellow}[•]${c.reset}` : "[ ]";
-      detailLines.push(`  ${box} ${step.text}`);
-    }
-    detailLines.push("");
-    detailLines.push(`${c.bold}ACTIONS${c.reset}`);
-    detailLines.push(`  ${c.dim}Enter open session dir · r reload · q quit${c.reset}`);
+    return detailLines;
   }
-  while (detailLines.length < detailsH) detailLines.push("");
+  detailLines.push(`${c.bold}OVERVIEW${c.reset}`);
+  detailLines.push(`  Title    ${trunc(card.task || card.id, rightW - 12)}`);
+  detailLines.push(`  Hero     ${card.id}${card.isChief ? " (CHIEF)" : ""}`);
+  detailLines.push(
+    `  Collateral ${card.collateral || "—"} · bind ${card.bindType || "—"} · host ${card.host}`,
+  );
+  detailLines.push("");
+  detailLines.push(`${c.bold}RUNTIME${c.reset}`);
+  const stColor = card.status === "working" || card.status === "active" ? c.green : c.white;
+  detailLines.push(`  Status   ${stColor}${String(card.status).toUpperCase()}${c.reset}`);
+  detailLines.push(`  Seats    ${board.seatsUsed}/${board.seatsTotal} used · ${board.seatsFree} free`);
+  detailLines.push(`  Session  ${card.sessionId || "—"}`);
+  if (card.model) detailLines.push(`  Model    ${card.model}`);
+  detailLines.push("");
+  detailLines.push(`${c.bold}WORK PLAN${c.reset}`);
+  const plan = workPlanFromTask(card.task);
+  if (!plan.length) detailLines.push(`  ${c.dim}(no task text)${c.reset}`);
+  for (const step of plan) {
+    const box =
+      step.state === "done"
+        ? `${c.green}[✓]${c.reset}`
+        : step.state === "active"
+          ? `${c.yellow}[•]${c.reset}`
+          : "[ ]";
+    detailLines.push(`  ${box} ${step.text}`);
+  }
+  detailLines.push("");
+  detailLines.push(`${c.bold}ACTIONS${c.reset}`);
+  detailLines.push(`  ${c.dim}Enter session · PgUp/PgDn scroll · q quit${c.reset}`);
+  return detailLines;
+}
 
-  // Logs pane
-  const logLines = [];
-  const lFocus = focusPane === "logs" ? c.cyan : c.yellow;
-  logLines.push(`${lFocus}Logs${c.reset} ${c.dim}| session output | e toggle${c.reset}`);
-  logLines.push(c.border + "─".repeat(Math.max(8, rightW - 2)) + c.reset);
-  if (!logs.length) {
-    logLines.push(`${c.dim}(no session logs yet)${c.reset}`);
+function drawTui(state) {
+  const {
+    board,
+    rows,
+    sel,
+    focusPane,
+    term,
+    scrollTop,
+    detailScroll,
+    logScroll,
+  } = state;
+  const cols = term.cols;
+  const rowsN = Math.max(24, term.rows);
+  const scrollCol = 1; // vertical bar width inside left pane
+  const leftW = Math.max(28, Math.floor(cols * 0.34));
+  const leftInnerW = Math.max(12, leftW - scrollCol);
+  const rightW = cols - leftW - 1;
+  const headerH = 1;
+  const footerH = 1;
+  const bodyH = rowsN - headerH - footerH;
+  const detailsH = Math.max(10, Math.floor(bodyH * 0.55));
+  const logsH = bodyH - detailsH;
+  const listViewH = Math.max(1, bodyH - 0); // full left body is the list viewport
+
+  const lines = [];
+  const header =
+    `${c.bold}gotchibot-kanban${c.reset}` +
+    " ".repeat(Math.max(1, cols - 48)) +
+    `${c.dim}seats: ${board.seatsUsed}/${board.seatsTotal}  refresh: ${REFRESH_S}s${c.reset}`;
+  lines.push(pad(header, cols));
+
+  const card = selectedCard(rows, sel);
+  const leftContent = buildLeftContent(rows, sel, leftInnerW);
+  let st = ensureSelVisible(leftContent, sel, scrollTop, listViewH);
+  st = clampScroll(st, leftContent.length, listViewH);
+  state.scrollTop = st; // write-back so callers keep sync
+
+  const detailBody = buildDetailLines(card, board, rightW);
+  const detailHeader = [
+    `${focusPane === "details" ? c.cyan : c.yellow}Details${c.reset}`,
+    c.border + "─".repeat(Math.max(8, rightW - 2)) + c.reset,
+  ];
+  const detailViewH = Math.max(1, detailsH - detailHeader.length);
+  let dScroll = clampScroll(detailScroll, detailBody.length, detailViewH);
+  state.detailScroll = dScroll;
+
+  const rawLogs = readSessionLogs(card?.sessionId, 200);
+  const logBody = [];
+  if (!rawLogs.length) {
+    logBody.push(`${c.dim}(no session logs yet)${c.reset}`);
   } else {
-    logs
+    rawLogs
       .slice()
       .reverse()
       .forEach((L, i) => {
         const prefix = i === 0 ? `${c.cyan}▶${c.reset}` : " ";
-        logLines.push(`${prefix} ${c.cyan}[${L.source}]${c.reset} ${c.dim}${trunc(L.text, rightW - 16)}${c.reset}`);
+        logBody.push(
+          `${prefix} ${c.cyan}[${L.source}]${c.reset} ${c.dim}${trunc(L.text, rightW - 18)}${c.reset}`,
+        );
       });
   }
-  while (logLines.length < logsH) logLines.push("");
+  const logHeader = [
+    `${focusPane === "logs" ? c.cyan : c.yellow}Logs${c.reset} ${c.dim}| session output | e toggle${c.reset}`,
+    c.border + "─".repeat(Math.max(8, rightW - 2)) + c.reset,
+  ];
+  const logViewH = Math.max(1, logsH - logHeader.length);
+  let lScroll = clampScroll(logScroll, logBody.length, logViewH);
+  state.logScroll = lScroll;
 
   for (let y = 0; y < bodyH; y++) {
-    const L = pad(leftLines[y] || "", leftW);
+    const contentIdx = st + y;
+    const entry = leftContent[contentIdx];
+    const leftText = entry ? entry.text : "";
+    const bar = scrollBarGlyph(listViewH, leftContent.length, st, y);
+    const L = pad(leftText, leftInnerW) + bar;
+
     let R = "";
-    if (y < detailsH) R = pad(detailLines[y] || "", rightW);
-    else R = pad(logLines[y - detailsH] || "", rightW);
+    if (y < detailsH) {
+      if (y < detailHeader.length) R = pad(detailHeader[y], rightW);
+      else {
+        const dy = y - detailHeader.length;
+        const barR = scrollBarGlyph(detailViewH, detailBody.length, dScroll, dy);
+        const line = detailBody[dScroll + dy] || "";
+        R = pad(line, Math.max(0, rightW - 1)) + (detailBody.length > detailViewH ? barR : " ");
+      }
+    } else {
+      const ly = y - detailsH;
+      if (ly < logHeader.length) R = pad(logHeader[ly], rightW);
+      else {
+        const dy = ly - logHeader.length;
+        const barR = scrollBarGlyph(logViewH, logBody.length, lScroll, dy);
+        const line = logBody[lScroll + dy] || "";
+        R = pad(line, Math.max(0, rightW - 1)) + (logBody.length > logViewH ? barR : " ");
+      }
+    }
     lines.push(`${L}${c.border}│${c.reset}${R}`);
   }
 
-  const footer = `${c.dim}j/k:select  Space:collapse  Tab:pane  Enter:session  r:reload  q:quit  ·  clawbot seats = mint count${c.reset}`;
+  const footer = `${c.dim}j/k:select  PgUp/PgDn:scroll  Space:collapse  Tab:pane  Enter:session  r:reload  q:quit${c.reset}`;
   lines.push(pad(footer, cols));
 
-  // Render
   process.stdout.write(`${ESC}[?25l${ESC}[H${ESC}[J`);
   process.stdout.write(lines.join("\n"));
   if (lines.length < rowsN) process.stdout.write("\n".repeat(rowsN - lines.length));
@@ -418,19 +504,20 @@ function openSessionDir(sessionId) {
   if (!sessionId) return;
   const dir = join(SESSIONS, sessionId);
   if (!existsSync(dir)) return;
-  // Best-effort: print path; caller may attach later
   spawnSync("open", [dir], { stdio: "ignore" });
 }
 
 async function runTui() {
   const orchId = loadOrchId();
   let collapsed = {};
-  let sel = 1; // prefer first card
+  let sel = 1;
   let focusPane = "list"; // list | details | logs
+  let scrollTop = 0;
+  let detailScroll = 0;
+  let logScroll = 0;
   let board = buildBoard(fetchRoster(), orchId);
   let rows = flatSelectable(board, collapsed);
 
-  // jump selection to first card
   const firstCard = rows.findIndex((r) => r.type === "card");
   if (firstCard >= 0) sel = firstCard;
 
@@ -442,17 +529,37 @@ async function runTui() {
     rows: process.stdout.rows || 40,
   };
 
+  const paint = () => {
+    const state = {
+      board,
+      rows,
+      sel,
+      collapsed,
+      focusPane,
+      term,
+      scrollTop,
+      detailScroll,
+      logScroll,
+    };
+    drawTui(state);
+    scrollTop = state.scrollTop;
+    detailScroll = state.detailScroll;
+    logScroll = state.logScroll;
+  };
+
+  const page = () => Math.max(5, Math.floor(((term.rows || 40) - 2) * 0.4));
+
   const redraw = () => {
     board = buildBoard(fetchRoster(), orchId);
     rows = flatSelectable(board, collapsed);
     if (sel >= rows.length) sel = Math.max(0, rows.length - 1);
-    drawTui({ board, rows, sel, collapsed, focusPane, term });
+    paint();
   };
 
   const onResize = () => {
     term.cols = process.stdout.columns || 100;
     term.rows = process.stdout.rows || 40;
-    drawTui({ board, rows, sel, collapsed, focusPane, term });
+    paint();
   };
   process.stdout.on("resize", onResize);
 
@@ -477,12 +584,7 @@ async function runTui() {
   await new Promise((resolve) => {
     process.stdin.on("keypress", (str, key) => {
       if (!key) return;
-      if (key.ctrl && key.name === "c") {
-        cleanup();
-        resolve();
-        return;
-      }
-      if (key.name === "q" || key.name === "escape") {
+      if ((key.ctrl && key.name === "c") || key.name === "q" || key.name === "escape") {
         cleanup();
         resolve();
         return;
@@ -499,17 +601,42 @@ async function runTui() {
       }
       if (key.name === "tab") {
         focusPane = focusPane === "list" ? "details" : focusPane === "details" ? "logs" : "list";
-        drawTui({ board, rows, sel, collapsed, focusPane, term });
+        paint();
         return;
       }
+
+      // Page scroll — focused pane
+      if (key.name === "pageup" || (key.ctrl && key.name === "u")) {
+        if (focusPane === "details") detailScroll = Math.max(0, detailScroll - page());
+        else if (focusPane === "logs") logScroll = Math.max(0, logScroll - page());
+        else {
+          sel = Math.max(0, sel - page());
+        }
+        paint();
+        return;
+      }
+      if (key.name === "pagedown" || (key.ctrl && key.name === "d")) {
+        if (focusPane === "details") detailScroll += page();
+        else if (focusPane === "logs") logScroll += page();
+        else {
+          sel = Math.min(rows.length - 1, sel + page());
+        }
+        paint();
+        return;
+      }
+
       if (key.name === "j" || key.name === "down") {
-        sel = Math.min(rows.length - 1, sel + 1);
-        drawTui({ board, rows, sel, collapsed, focusPane, term });
+        if (focusPane === "details") detailScroll += 1;
+        else if (focusPane === "logs") logScroll += 1;
+        else sel = Math.min(rows.length - 1, sel + 1);
+        paint();
         return;
       }
       if (key.name === "k" || key.name === "up") {
-        sel = Math.max(0, sel - 1);
-        drawTui({ board, rows, sel, collapsed, focusPane, term });
+        if (focusPane === "details") detailScroll = Math.max(0, detailScroll - 1);
+        else if (focusPane === "logs") logScroll = Math.max(0, logScroll - 1);
+        else sel = Math.max(0, sel - 1);
+        paint();
         return;
       }
       if (str === " " || key.name === "space") {
@@ -517,16 +644,15 @@ async function runTui() {
         if (row?.type === "cat") {
           collapsed[row.key] = !collapsed[row.key];
           rows = flatSelectable(board, collapsed);
-          drawTui({ board, rows, sel, collapsed, focusPane, term });
+          paint();
         } else if (row?.type === "card") {
-          // collapse parent category
           collapsed[row.cat] = true;
           rows = flatSelectable(board, collapsed);
           sel = Math.max(
             0,
             rows.findIndex((r) => r.type === "cat" && r.key === row.cat),
           );
-          drawTui({ board, rows, sel, collapsed, focusPane, term });
+          paint();
         }
         return;
       }
@@ -537,7 +663,7 @@ async function runTui() {
       }
       if (str === "e") {
         focusPane = focusPane === "logs" ? "details" : "logs";
-        drawTui({ board, rows, sel, collapsed, focusPane, term });
+        paint();
       }
     });
   });
