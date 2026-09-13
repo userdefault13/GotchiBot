@@ -18,6 +18,8 @@ Read `SOUL.md`. That is how you talk and how you decide. Short version:
 
 Orchestrator vs sub-agent does not change the craft. It only changes who does the coding.
 
+Chief hire brief: read `CHARTER.md` (own / good / never + clawbot seat cap).
+
 ## Role (pick one)
 
 ### Orchestrator — OpenClaw agent `owned-954` (alias `gotchi`)

@@ -719,6 +719,37 @@ async function settingsMenu() {
   }
 }
 
+
+async function viewKanban() {
+  clear();
+  title("Kanban");
+  console.log("  Loading clawbot seats + tasks…\n");
+  const r = runAbraNode("scripts/gotchi-kanban.mjs", []);
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr && r.status !== 0) process.stderr.write(r.stderr);
+  if (r.status !== 0 && !r.stdout?.trim()) {
+    console.log(`  ✗ kanban failed (exit ${r.status ?? "?"})`);
+    await pause();
+    return;
+  }
+
+  const follow = await choose("Kanban", [
+    { key: "back", label: "Back to cockpit" },
+    { key: "reload", label: "Reload board" },
+    { key: "watch", label: "Watch (refresh every 5s · Ctrl+C)" },
+  ]);
+  if (follow?.key === "reload") {
+    await viewKanban();
+    return;
+  }
+  if (follow?.key === "watch") {
+    clear();
+    title("Kanban · watch");
+    console.log("  Ctrl+C returns to cockpit.\n");
+    runAbraNode("scripts/gotchi-kanban.mjs", ["--watch"]);
+  }
+}
+
 async function viewAgentRoster() {
   clear();
   title("OpenClaw agent roster");
@@ -1017,6 +1048,7 @@ async function mainMenu(wallet, cartridgeId) {
       { key: "hub", label: "Hub status (iMac OpenClaw · tunnel · Docker)" },
       { key: "hub-infra", label: "Hub infra (Docker container table)" },
       { key: "roster", label: "View agent roster (MBP + iMac · status)" },
+      { key: "kanban", label: "Kanban (agents · tasks · seats)" },
       { key: "export-roster", label: "Export agent roster to CSV" },
       { key: "settings", label: "Settings (voice, read speed, mouse, replay)" },
       { key: "import", label: "Import on-chain gotchi / browse cartridge cAavegotchis" },
@@ -1083,6 +1115,11 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "roster") {
       await viewAgentRoster();
+      continue;
+    }
+
+    if (pick.key === "kanban") {
+      await viewKanban();
       continue;
     }
 
