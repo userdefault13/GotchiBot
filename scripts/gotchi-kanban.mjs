@@ -25,12 +25,15 @@ import {
   statSync,
 } from "node:fs";
 import readline from "node:readline";
+import { resolveHeroColors } from "./collateral-resolve.mjs";
+import { renderKanbanAscii } from "./gotchi-art.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = join(ROOT, "sessions");
 const ORCH_ID = "owned-954";
 const WATCH_MS = Number(process.env.GOTCHIBOT_KANBAN_WATCH_MS || 5000);
 const REFRESH_S = Math.max(0.5, WATCH_MS / 1000);
+const KANBAN_ART_W = 7;
 
 const args = process.argv.slice(2);
 const wantJson = args.includes("--json");
@@ -174,11 +177,160 @@ function workPlanFromTask(task) {
   }));
 }
 
+
+function readJsonSafe(path, fallback = null) {
+  try {
+    if (!existsSync(path)) return fallback;
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+function loadRoleCatalog() {
+  const roles = readJsonSafe(join(ROOT, "config/agent-roles.json"), {}) || {};
+  const playbooks = readJsonSafe(join(ROOT, "config/agent-role-playbooks.json"), {}) || {};
+  return { roles, playbooks };
+}
+
+/** Known cron/log sources keyed by role (cheap filesystem reads only). */
+const CRON_LOG_SOURCES = {
+  "infra-monitor": {
+    dir: join(SESSIONS, "infra-logs"),
+    pattern: /^infra-check-.*\.md$/i,
+    statePath: join(ROOT, "var/infra-watch/state.json"),
+    scheduleHint: "scheduled every ~900s · infra schedule (launchd supervise)",
+  },
+  "aarcade-comms-handler": {
+    dir: join(SESSIONS, "comms-logs"),
+    pattern: /^comms-.*\.md$/i,
+    scheduleHint: "daily 23:50 PT · comms schedule",
+  },
+  "trader-desk": {
+    dir: join(SESSIONS, "trader-logs"),
+    pattern: /^cycle-.*\.md$/i,
+    scheduleHint: "every ~1800s · trader schedule",
+  },
+};
+
+function formatPtStamp(isoOrMs) {
+  try {
+    const d = new Date(isoOrMs);
+    if (Number.isNaN(d.getTime())) return "—";
+    const s = d.toLocaleString("en-US", {
+      timeZone: "America/Los_Angeles",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    return `${s} PT`;
+  } catch {
+    return "—";
+  }
+}
+
+function extractCronStatus(text, filename) {
+  const raw = String(text || "");
+  const overall = raw.match(/\*\*Overall:\*\*\s*(.+)/i);
+  if (overall) return overall[1].replace(/\s+/g, " ").trim();
+  const claude = raw.match(/^Claude:\s*(.+)$/im);
+  if (claude) return claude[1].replace(/\s+/g, " ").trim();
+  const h1 = raw.match(/^#\s+(.+)$/m);
+  if (h1) return h1[1].replace(/\s+/g, " ").trim();
+  const first = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l && !l.startsWith("#") && !l.startsWith("API "));
+  if (first) return first.replace(/\s+/g, " ").trim();
+  return filename || "run";
+}
+
+function listCronHistory(src, limit = 8) {
+  if (!src?.dir || !existsSync(src.dir)) return [];
+  let names = [];
+  try {
+    names = readdirSync(src.dir);
+  } catch {
+    return [];
+  }
+  const files = names
+    .filter((n) => src.pattern.test(n))
+    .map((n) => {
+      const p = join(src.dir, n);
+      let mtime = 0;
+      try {
+        mtime = statSync(p).mtimeMs;
+      } catch {
+        mtime = 0;
+      }
+      return { name: n, path: p, mtime };
+    })
+    .sort((a, b) => b.mtime - a.mtime)
+    .slice(0, limit);
+
+  return files.map((f) => {
+    let status = f.name;
+    try {
+      const text = readFileSync(f.path, "utf8").slice(0, 2500);
+      status = extractCronStatus(text, f.name);
+    } catch {
+      /* keep filename */
+    }
+    return {
+      file: f.name,
+      at: f.mtime ? new Date(f.mtime).toISOString() : null,
+      status,
+    };
+  });
+}
+
+function readInfraWatchStateLine(statePath) {
+  const s = readJsonSafe(statePath, null);
+  if (!s || typeof s !== "object") return null;
+  const failing = Array.isArray(s.failing) && s.failing.length ? s.failing.join(",") : "none";
+  const age =
+    s.updatedAt != null
+      ? formatPtStamp(s.updatedAt)
+      : "—";
+  return `status ${s.status || "?"} · tick ${s.tick ?? "?"} · failing ${failing} · updated ${age}`;
+}
+
+/** Load cron history + optional state once per board refresh (not per keypress). */
+function loadCronBundle(playbooks) {
+  const out = {};
+  for (const [role, src] of Object.entries(CRON_LOG_SOURCES)) {
+    out[role] = {
+      cron: true,
+      history: listCronHistory(src, 8),
+      stateLine: src.statePath ? readInfraWatchStateLine(src.statePath) : null,
+      scheduleHint: src.scheduleHint || null,
+    };
+  }
+  for (const [role, pb] of Object.entries(playbooks || {})) {
+    if (!pb?.scheduleCmd) continue;
+    if (out[role]) continue;
+    out[role] = {
+      cron: true,
+      history: [],
+      stateLine: null,
+      scheduleHint: null,
+    };
+  }
+  return out;
+}
+
 function buildBoard(roster, orchId) {
+  const { roles, playbooks } = loadRoleCatalog();
+  const cronByRole = loadCronBundle(playbooks);
   const numbered = Array.isArray(roster?.numbered) ? roster.numbered : [];
   const heroes = numbered.filter((e) => e.kind === "hero");
   const cards = heroes.map((h) => {
     const id = h.id || h.hero;
+    const role = roles[id] || null;
+    const pb = role ? playbooks[role] : null;
+    const cron = role && cronByRole[role] ? cronByRole[role] : null;
     return {
       id,
       column: columnFor({ ...h, id }, orchId),
@@ -194,6 +346,13 @@ function buildBoard(roster, orchId) {
       hero: id,
       model: null,
       started: null,
+      role,
+      roleTitle: pb?.title || null,
+      roleSummary: pb?.summary || null,
+      isCronRole: Boolean(cron?.cron),
+      cronHistory: cron?.history || null,
+      cronStateLine: cron?.stateLine || null,
+      cronScheduleHint: cron?.scheduleHint || null,
     };
   });
 
@@ -253,6 +412,38 @@ function pad(str, width) {
   return s + " ".repeat(width - visible.length);
 }
 
+function visLen(str) {
+  return String(str || "").replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
+function padVis(str, width) {
+  const s = String(str || "");
+  const n = visLen(s);
+  if (n >= width) return s;
+  return s + " ".repeat(width - n);
+}
+
+const artCache = new Map();
+
+function artForCard(card) {
+  if (!card || card.kind === "session") return null;
+  const key = `${card.id}|${card.collateral || ""}`;
+  if (artCache.has(key)) return artCache.get(key);
+  const colors =
+    resolveHeroColors(
+      {
+        id: card.id,
+        collateral: card.collateral,
+        hauntId: card.hauntId,
+      },
+      card.id,
+    ) || null;
+  const art = renderKanbanAscii(colors, { useColor: true });
+  const lines = art.split("\n");
+  artCache.set(key, lines);
+  return lines;
+}
+
 function printPlain(board) {
   console.log("");
   console.log("GotchiBot Kanban — clawbot seats + tasks");
@@ -308,17 +499,42 @@ function buildLeftContent(rows, sel, leftInnerW) {
       const title = cardX.isChief
         ? `${cardX.id}:chief`
         : `${cardX.id}${cardX.collateral ? ":" + cardX.collateral : ""}`;
-      const boxW = Math.min(leftInnerW - 2, 34);
-      out.push({ text: `${mark}┌${"─".repeat(boxW)}┐${end}`, row: rowIdx });
-      out.push({
-        text: `${mark}│ ${c.green}${trunc(`.: ${prog}`, 12)}${c.reset} ${trunc(title, Math.min(leftInnerW - 18, 22))}${end}`,
-        row: rowIdx,
-      });
-      out.push({
-        text: `${mark}│ ${c.dim}${trunc(cardX.task || "—", Math.min(leftInnerW - 6, 32))}${c.reset}${end}`,
-        row: rowIdx,
-      });
-      out.push({ text: `${mark}└${"─".repeat(boxW)}┘${end}`, row: rowIdx });
+      const art = artForCard(cardX);
+      const textW = Math.max(10, leftInnerW - (art ? KANBAN_ART_W + 2 : 0));
+      const sideLabel =
+        cardX.roleTitle ||
+        (cardX.task && cardX.role && cardX.task === cardX.role
+          ? cardX.role
+          : null) ||
+        cardX.task ||
+        "—";
+      const meta = [
+        `${c.green}${trunc(`.: ${prog}`, 12)}${c.reset} ${trunc(title, Math.max(8, textW - 14))}`,
+        `${c.dim}${trunc(sideLabel, Math.max(8, textW - 1))}${c.reset}`,
+      ];
+      if (art?.length) {
+        const h = Math.max(art.length, meta.length);
+        for (let i = 0; i < h; i++) {
+          const thumb = padVis(art[i] || "", KANBAN_ART_W);
+          const body = meta[i] || "";
+          out.push({
+            text: `${mark}${thumb} ${body}${end}`,
+            row: rowIdx,
+          });
+        }
+      } else {
+        const boxW = Math.min(leftInnerW - 2, 34);
+        out.push({ text: `${mark}┌${"─".repeat(boxW)}┐${end}`, row: rowIdx });
+        out.push({
+          text: `${mark}│ ${meta[0]}${end}`,
+          row: rowIdx,
+        });
+        out.push({
+          text: `${mark}│ ${meta[1]}${end}`,
+          row: rowIdx,
+        });
+        out.push({ text: `${mark}└${"─".repeat(boxW)}┘${end}`, row: rowIdx });
+      }
     }
     rowIdx++;
   }
@@ -362,12 +578,43 @@ function buildDetailLines(card, board, rightW) {
     detailLines.push(`${c.dim}(select a card)${c.reset}`);
     return detailLines;
   }
+  const title =
+    card.roleTitle ||
+    (card.task && card.task !== card.role ? card.task : null) ||
+    card.task ||
+    card.id;
   detailLines.push(`${c.bold}OVERVIEW${c.reset}`);
-  detailLines.push(`  Title    ${trunc(card.task || card.id, rightW - 12)}`);
+  detailLines.push(`  Title    ${trunc(title, rightW - 12)}`);
   detailLines.push(`  Hero     ${card.id}${card.isChief ? " (CHIEF)" : ""}`);
   detailLines.push(
     `  Collateral ${card.collateral || "—"} · bind ${card.bindType || "—"} · host ${card.host}`,
   );
+  detailLines.push("");
+  detailLines.push(`${c.bold}ASSIGNMENT${c.reset}`);
+  if (card.role) {
+    detailLines.push(
+      `  Role     ${card.role}${card.roleTitle ? ` — ${card.roleTitle}` : ""}`,
+    );
+  } else if (card.kind === "session") {
+    detailLines.push(`  Role     ${c.dim}(session — no seat role)${c.reset}`);
+  } else {
+    detailLines.push(`  Role     ${c.dim}(none in agent-roles.json)${c.reset}`);
+  }
+  // Idle seats often store the role key as agentTask; still show standing assignment.
+  const liveTask =
+    card.task && card.role && card.task === card.role
+      ? null
+      : card.task;
+  if (liveTask) {
+    detailLines.push(`  Task     ${trunc(liveTask, rightW - 12)}`);
+  } else if (card.role) {
+    detailLines.push(`  Task     ${c.dim}(standing role; no live task)${c.reset}`);
+  } else {
+    detailLines.push(`  Task     ${trunc(card.task || "—", rightW - 12)}`);
+  }
+  if (card.roleSummary) {
+    detailLines.push(`  ${c.dim}${trunc(card.roleSummary, Math.max(20, rightW - 4))}${c.reset}`);
+  }
   detailLines.push("");
   detailLines.push(`${c.bold}RUNTIME${c.reset}`);
   const stColor = card.status === "working" || card.status === "active" ? c.green : c.white;
@@ -377,8 +624,17 @@ function buildDetailLines(card, board, rightW) {
   if (card.model) detailLines.push(`  Model    ${card.model}`);
   detailLines.push("");
   detailLines.push(`${c.bold}WORK PLAN${c.reset}`);
-  const plan = workPlanFromTask(card.task);
-  if (!plan.length) detailLines.push(`  ${c.dim}(no task text)${c.reset}`);
+  // Prefer live task text; standing role key alone is not a work plan.
+  const planTask =
+    card.task && card.role && card.task === card.role ? "" : card.task;
+  const plan = workPlanFromTask(planTask);
+  if (!plan.length) {
+    detailLines.push(
+      card.role
+        ? `  ${c.dim}(standing ${card.role} — no live work plan)${c.reset}`
+        : `  ${c.dim}(no task text)${c.reset}`,
+    );
+  }
   for (const step of plan) {
     const box =
       step.state === "done"
@@ -387,6 +643,27 @@ function buildDetailLines(card, board, rightW) {
           ? `${c.yellow}[•]${c.reset}`
           : "[ ]";
     detailLines.push(`  ${box} ${step.text}`);
+  }
+  if (card.isCronRole) {
+    detailLines.push("");
+    detailLines.push(`${c.bold}CRON HISTORY${c.reset}`);
+    if (card.cronScheduleHint) {
+      detailLines.push(`  ${c.dim}${trunc(card.cronScheduleHint, Math.max(20, rightW - 4))}${c.reset}`);
+    }
+    if (card.cronStateLine) {
+      detailLines.push(`  State    ${trunc(card.cronStateLine, rightW - 12)}`);
+    }
+    const hist = Array.isArray(card.cronHistory) ? card.cronHistory : [];
+    if (!hist.length) {
+      detailLines.push(`  ${c.dim}(no recent cron logs)${c.reset}`);
+    } else {
+      for (const run of hist) {
+        const when = formatPtStamp(run.at);
+        detailLines.push(
+          `  • ${when}  ${trunc(run.status || run.file || "run", Math.max(12, rightW - when.length - 6))}`,
+        );
+      }
+    }
   }
   detailLines.push("");
   detailLines.push(`${c.bold}ACTIONS${c.reset}`);
