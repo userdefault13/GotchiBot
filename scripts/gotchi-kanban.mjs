@@ -776,7 +776,7 @@ function buildDetailLines(card, board, rightW) {
   detailLines.push("");
   detailLines.push(`${c.bold}ACTIONS${c.reset}`);
   detailLines.push(
-    `  ${c.dim}Enter: focus seat (open session folder if present) · PgUp/PgDn · q${c.reset}`,
+    `  ${c.dim}Enter: open this agent's chat · PgUp/PgDn · q${c.reset}`,
   );
   return detailLines;
 }
@@ -886,7 +886,7 @@ function drawTui(state) {
   const footerStatus = statusMsg
     ? `${c.yellow}${trunc(statusMsg, Math.max(10, cols - 72))}${c.reset}  `
     : "";
-  const footer = `${footerStatus}${c.dim}j/k:select  PgUp/PgDn:scroll  Space:collapse  Tab:pane  Enter:focus seat  r:reload  q:quit${c.reset}`;
+  const footer = `${footerStatus}${c.dim}j/k:select  PgUp/PgDn:scroll  Space:collapse  Tab:pane  Enter:open chat  r:reload  q:quit${c.reset}`;
   lines.push(pad(footer, cols));
 
   process.stdout.write(`${ESC}[?25l${ESC}[H${ESC}[J`);
@@ -1170,6 +1170,25 @@ async function runTui() {
       }
       if (key.name === "return" || key.name === "enter") {
         const card = selectedCard(rows, sel);
+        // Hero seat → leave kanban and open that agent's chat (switch + respawn pane).
+        if (card?.kind === "hero") {
+          const heroId = card.id || card.hero;
+          if (!heroId) {
+            setStatus("no hero id on card");
+            paint();
+            return;
+          }
+          setStatus(`opening chat → ${heroId}…`);
+          paint();
+          cleanup();
+          const r = spawnSync(
+            process.execPath,
+            [join(ROOT, "scripts/agent-focus.mjs"), "switch", String(heroId), "--respawn"],
+            { cwd: ROOT, stdio: "inherit", env: process.env },
+          );
+          // 10 = opened a seat chat (cockpit should not keep looping the menu)
+          process.exit(r.status === 0 ? 10 : r.status ?? 1);
+        }
         enterCardAction(card, {
           setStatus,
           onFocusDone: () => {

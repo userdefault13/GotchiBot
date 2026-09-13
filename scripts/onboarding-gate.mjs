@@ -743,7 +743,25 @@ async function viewKanban() {
       rl.resume();
     } catch {}
   }
-  if (r?.status !== 0) {
+  // 10 = user picked a seat and we respawned chat into that agent
+  if (r?.status === 10) {
+    if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") {
+      // chat-pane.sh continues after cockpit exits
+      return;
+    }
+    // Standalone cockpit: hand off to chat pane
+    try {
+      rl.close();
+    } catch {}
+    const chatPane = `${ROOT}/scripts/chat-pane.sh`;
+    spawnSync(chatPane, [], {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: { ...process.env, GOTCHIBOT_SKIP_ONBOARDING: "1", GOTCHIBOT_SKIP_COCKPIT: "1" },
+    });
+    process.exit(0);
+  }
+  if (r?.status !== 0 && r?.status != null) {
     clear();
     title("Kanban");
     console.log("  TUI unavailable — plain board:\n");
