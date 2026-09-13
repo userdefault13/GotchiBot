@@ -15,7 +15,7 @@
  *
  * Seat cap = cartridge mint count. Chief = owned-954.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -142,22 +142,37 @@ function recentFailedSessions(roster, limit = 8) {
   return numbered
     .filter((e) => e.kind === "session" && String(e.status || "").toLowerCase() === "failed")
     .slice(0, limit)
-    .map((e) => ({
-      id: e.id,
-      column: "rework",
-      status: "failed",
-      collateral: null,
-      bindType: null,
-      name: null,
-      sessionId: e.id,
-      task: e.model ? `failed session · ${e.model}` : "failed session",
-      host: e.host || "local",
-      isChief: false,
-      kind: "session",
-      hero: e.hero || null,
-      model: e.model || null,
-      started: e.started || null,
-    }));
+    .map((e) => {
+      const startedAt = parseSessionStarted(e.id, e.started || null);
+      return {
+        id: e.id,
+        column: "rework",
+        status: "failed",
+        collateral: null,
+        bindType: null,
+        name: null,
+        sessionId: e.id,
+        task: e.model ? `failed session · ${e.model}` : "failed session",
+        host: e.host || "local",
+        isChief: false,
+        kind: "session",
+        hero: e.hero || null,
+        model: e.model || null,
+        started: startedAt ? startedAt.toISOString() : e.started || null,
+        ageMs: startedAt ? Math.max(0, Date.now() - startedAt.getTime()) : null,
+        ageLabel: formatAge(startedAt),
+        stale: false,
+        isCronRole: false,
+        cronMapped: false,
+        cronNeedsRole: false,
+        cronHistory: null,
+        cronStateLine: null,
+        cronScheduleHint: null,
+        role: null,
+        roleTitle: null,
+        roleSummary: null,
+      };
+    });
 }
 
 function workPlanFromTask(task) {
@@ -230,6 +245,50 @@ function formatPtStamp(isoOrMs) {
     return "—";
   }
 }
+
+
+function parseSessionStarted(sessionId, fallbackStarted) {
+  if (fallbackStarted) {
+    const d = new Date(fallbackStarted);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  const m = String(sessionId || "").match(
+    /^s(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/,
+  );
+  if (!m) return null;
+  // Session ids use local wall-clock when minted.
+  return new Date(
+    Number(m[1]),
+    Number(m[2]) - 1,
+    Number(m[3]),
+    Number(m[4]),
+    Number(m[5]),
+    Number(m[6]),
+  );
+}
+
+function formatAge(fromDate, now = new Date()) {
+  if (!fromDate || Number.isNaN(fromDate.getTime())) return null;
+  const ms = Math.max(0, now.getTime() - fromDate.getTime());
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return `${hr}h`;
+  const days = Math.floor(hr / 24);
+  return `${days}d`;
+}
+
+/** Treat task text as cron-ish even without agent-roles mapping. */
+function isCronishTask(task) {
+  return /\bcron\b|scheduleCmd|launchd|env-frustration|scheduled every|every\s*~\d+s/i.test(
+    String(task || ""),
+  );
+}
+
+/** Age threshold for "stale" assigned/working seats (ms). */
+const STALE_MS = Number(process.env.GOTCHIBOT_KANBAN_STALE_MS || 2 * 24 * 60 * 60 * 1000);
 
 function extractCronStatus(text, filename) {
   const raw = String(text || "");
@@ -331,6 +390,15 @@ function buildBoard(roster, orchId) {
     const role = roles[id] || null;
     const pb = role ? playbooks[role] : null;
     const cron = role && cronByRole[role] ? cronByRole[role] : null;
+    const task = h.agentTask || null;
+    const sessionId = h.agentSessionId || null;
+    const startedAt = parseSessionStarted(sessionId, h.started || null);
+    const ageMs = startedAt ? Math.max(0, Date.now() - startedAt.getTime()) : null;
+    const cronish = Boolean(cron?.cron) || isCronishTask(task);
+    const stale =
+      ageMs != null &&
+      ageMs >= STALE_MS &&
+      ["assigned", "working", "watching", "active"].includes(normStatus(h));
     return {
       id,
       column: columnFor({ ...h, id }, orchId),
@@ -338,21 +406,26 @@ function buildBoard(roster, orchId) {
       collateral: h.collateral || null,
       bindType: h.bindType || null,
       name: h.name || null,
-      sessionId: h.agentSessionId || null,
-      task: h.agentTask || null,
+      sessionId,
+      task,
       host: h.host || "cartridge",
       isChief: id === orchId,
       kind: "hero",
       hero: id,
       model: null,
-      started: null,
+      started: startedAt ? startedAt.toISOString() : null,
       role,
       roleTitle: pb?.title || null,
       roleSummary: pb?.summary || null,
-      isCronRole: Boolean(cron?.cron),
+      isCronRole: cronish,
+      cronMapped: Boolean(cron?.cron),
+      cronNeedsRole: cronish && !role,
       cronHistory: cron?.history || null,
       cronStateLine: cron?.stateLine || null,
       cronScheduleHint: cron?.scheduleHint || null,
+      ageMs,
+      ageLabel: formatAge(startedAt),
+      stale,
     };
   });
 
@@ -618,9 +691,21 @@ function buildDetailLines(card, board, rightW) {
   detailLines.push("");
   detailLines.push(`${c.bold}RUNTIME${c.reset}`);
   const stColor = card.status === "working" || card.status === "active" ? c.green : c.white;
-  detailLines.push(`  Status   ${stColor}${String(card.status).toUpperCase()}${c.reset}`);
+  const staleTag = card.stale
+    ? ` ${c.yellow}stale · last activity ${card.ageLabel || "—"}${c.reset}`
+    : card.ageLabel
+      ? ` ${c.dim}· age ${card.ageLabel}${c.reset}`
+      : "";
+  detailLines.push(
+    `  Status   ${stColor}${String(card.status).toUpperCase()}${c.reset}${staleTag}`,
+  );
   detailLines.push(`  Seats    ${board.seatsUsed}/${board.seatsTotal} used · ${board.seatsFree} free`);
   detailLines.push(`  Session  ${card.sessionId || "—"}`);
+  if (card.started) {
+    detailLines.push(
+      `  Started  ${formatPtStamp(card.started)}${card.ageLabel ? ` · age ${card.ageLabel}` : ""}`,
+    );
+  }
   if (card.model) detailLines.push(`  Model    ${card.model}`);
   detailLines.push("");
   detailLines.push(`${c.bold}WORK PLAN${c.reset}`);
@@ -647,15 +732,32 @@ function buildDetailLines(card, board, rightW) {
   if (card.isCronRole) {
     detailLines.push("");
     detailLines.push(`${c.bold}CRON HISTORY${c.reset}`);
+    if (card.cronNeedsRole) {
+      detailLines.push(
+        `  ${c.yellow}cron-ish task · no role in agent-roles.json${c.reset}`,
+      );
+      detailLines.push(
+        `  ${c.dim}map a role (+ playbook scheduleCmd) to load cron logs here${c.reset}`,
+      );
+    }
     if (card.cronScheduleHint) {
       detailLines.push(`  ${c.dim}${trunc(card.cronScheduleHint, Math.max(20, rightW - 4))}${c.reset}`);
     }
     if (card.cronStateLine) {
       detailLines.push(`  State    ${trunc(card.cronStateLine, rightW - 12)}`);
     }
+    if (card.stale) {
+      detailLines.push(
+        `  ${c.yellow}stale · last activity ${formatPtStamp(card.started) || card.ageLabel || "—"}${c.reset}`,
+      );
+    }
     const hist = Array.isArray(card.cronHistory) ? card.cronHistory : [];
     if (!hist.length) {
-      detailLines.push(`  ${c.dim}(no recent cron logs)${c.reset}`);
+      detailLines.push(
+        card.cronMapped
+          ? `  ${c.dim}(no recent cron logs)${c.reset}`
+          : `  ${c.dim}(no cron logs — not a mapped cron role)${c.reset}`,
+      );
     } else {
       for (const run of hist) {
         const when = formatPtStamp(run.at);
@@ -664,10 +766,18 @@ function buildDetailLines(card, board, rightW) {
         );
       }
     }
+  } else if (card.stale) {
+    detailLines.push("");
+    detailLines.push(`${c.bold}ACTIVITY${c.reset}`);
+    detailLines.push(
+      `  ${c.yellow}stale · last activity ${formatPtStamp(card.started) || card.ageLabel || "—"}${c.reset}`,
+    );
   }
   detailLines.push("");
   detailLines.push(`${c.bold}ACTIONS${c.reset}`);
-  detailLines.push(`  ${c.dim}Enter session · PgUp/PgDn scroll · q quit${c.reset}`);
+  detailLines.push(
+    `  ${c.dim}Enter: focus seat (open session folder if present) · PgUp/PgDn · q${c.reset}`,
+  );
   return detailLines;
 }
 
@@ -681,6 +791,7 @@ function drawTui(state) {
     scrollTop,
     detailScroll,
     logScroll,
+    statusMsg = "",
   } = state;
   const cols = term.cols;
   const rowsN = Math.max(24, term.rows);
@@ -696,10 +807,13 @@ function drawTui(state) {
   const listViewH = Math.max(1, bodyH - 0); // full left body is the list viewport
 
   const lines = [];
-  const header =
-    `${c.bold}gotchibot-kanban${c.reset}` +
-    " ".repeat(Math.max(1, cols - 48)) +
-    `${c.dim}seats: ${board.seatsUsed}/${board.seatsTotal}  refresh: ${REFRESH_S}s${c.reset}`;
+  const statusBit = statusMsg
+    ? `${c.yellow} ${trunc(statusMsg, Math.max(12, cols - 56))}${c.reset}`
+    : "";
+  const rightMeta = `${c.dim}seats: ${board.seatsUsed}/${board.seatsTotal}  refresh: ${REFRESH_S}s${c.reset}`;
+  const headerLeft = `${c.bold}gotchibot-kanban${c.reset}${statusBit}`;
+  const gap = Math.max(1, cols - visLen(headerLeft) - visLen(rightMeta));
+  const header = `${headerLeft}${" ".repeat(gap)}${rightMeta}`;
   lines.push(pad(header, cols));
 
   const card = selectedCard(rows, sel);
@@ -769,7 +883,10 @@ function drawTui(state) {
     lines.push(`${L}${c.border}│${c.reset}${R}`);
   }
 
-  const footer = `${c.dim}j/k:select  PgUp/PgDn:scroll  Space:collapse  Tab:pane  Enter:session  r:reload  q:quit${c.reset}`;
+  const footerStatus = statusMsg
+    ? `${c.yellow}${trunc(statusMsg, Math.max(10, cols - 72))}${c.reset}  `
+    : "";
+  const footer = `${footerStatus}${c.dim}j/k:select  PgUp/PgDn:scroll  Space:collapse  Tab:pane  Enter:focus seat  r:reload  q:quit${c.reset}`;
   lines.push(pad(footer, cols));
 
   process.stdout.write(`${ESC}[?25l${ESC}[H${ESC}[J`);
@@ -777,11 +894,113 @@ function drawTui(state) {
   if (lines.length < rowsN) process.stdout.write("\n".repeat(rowsN - lines.length));
 }
 
+const STATUS_TTL_MS = Number(process.env.GOTCHIBOT_KANBAN_STATUS_MS || 4500);
+
+function sessionDirPath(sessionId) {
+  if (!sessionId) return null;
+  return join(SESSIONS, sessionId);
+}
+
+function sessionDirExists(sessionId) {
+  const dir = sessionDirPath(sessionId);
+  return Boolean(dir && existsSync(dir));
+}
+
+/** Open Finder to sessions/<id> when present. Never silent about missing dirs. */
 function openSessionDir(sessionId) {
-  if (!sessionId) return;
-  const dir = join(SESSIONS, sessionId);
-  if (!existsSync(dir)) return;
-  spawnSync("open", [dir], { stdio: "ignore" });
+  if (!sessionId) return { ok: false, reason: "no-id" };
+  const dir = sessionDirPath(sessionId);
+  if (!existsSync(dir)) return { ok: false, reason: "missing", dir };
+  try {
+    const child = spawn("open", [dir], { stdio: "ignore", detached: true });
+    child.unref();
+    return { ok: true, dir };
+  } catch (e) {
+    return { ok: false, reason: String(e.message || e), dir };
+  }
+}
+
+/**
+ * Focus/switch avatar+chat into a hero seat (like /switch). Non-blocking so the
+ * TUI does not hang while agent-focus refreshes roster / OpenClaw.
+ */
+function focusHeroSeat(heroId, { onDone } = {}) {
+  const child = spawn(
+    process.execPath,
+    [join(ROOT, "scripts/agent-focus.mjs"), "switch", String(heroId)],
+    {
+      cwd: ROOT,
+      env: process.env,
+      stdio: ["ignore", "ignore", "pipe"],
+    },
+  );
+  let err = "";
+  child.stderr?.on("data", (buf) => {
+    err += String(buf);
+  });
+  child.on("close", (code) => {
+    if (typeof onDone === "function") {
+      onDone({
+        code: code ?? 1,
+        err: err.trim().split("\n").filter(Boolean).slice(-1)[0] || "",
+      });
+    }
+  });
+  child.on("error", (e) => {
+    if (typeof onDone === "function") {
+      onDone({ code: 1, err: String(e.message || e) });
+    }
+  });
+  return child;
+}
+
+function enterCardAction(card, { setStatus, onFocusDone } = {}) {
+  if (!card) {
+    setStatus?.("no card selected");
+    return;
+  }
+  if (card.kind === "hero") {
+    const heroId = card.id || card.hero;
+    if (!heroId) {
+      setStatus?.("no hero id on card");
+      return;
+    }
+    setStatus?.(`focusing → ${heroId}…`);
+    focusHeroSeat(heroId, {
+      onDone: ({ code, err }) => {
+        if (code === 0) {
+          const sess = card.sessionId;
+          if (sess && sessionDirExists(sess)) {
+            openSessionDir(sess);
+            setStatus?.(`switched → ${heroId} · opened session`);
+          } else if (sess) {
+            setStatus?.(`no session dir · focusing hero ${heroId}`);
+          } else {
+            setStatus?.(`switched → ${heroId}`);
+          }
+        } else {
+          setStatus?.(
+            `focus failed · ${heroId}${err ? " · " + trunc(err, 40) : ""}`,
+          );
+        }
+        onFocusDone?.();
+      },
+    });
+    // Open session dir immediately when present (don't wait for switch).
+    if (card.sessionId && sessionDirExists(card.sessionId)) {
+      openSessionDir(card.sessionId);
+    }
+    return;
+  }
+
+  // Failed-session (or other) cards: open dir if present, else status.
+  if (!card.sessionId) {
+    setStatus?.("no sessionId on card");
+    return;
+  }
+  const opened = openSessionDir(card.sessionId);
+  if (opened.ok) setStatus?.(`opened ${card.sessionId}`);
+  else setStatus?.(`no session dir · ${card.sessionId}`);
 }
 
 async function runTui() {
@@ -792,8 +1011,23 @@ async function runTui() {
   let scrollTop = 0;
   let detailScroll = 0;
   let logScroll = 0;
+  let statusMsg = "";
+  let statusUntil = 0;
   let board = buildBoard(fetchRoster(), orchId);
   let rows = flatSelectable(board, collapsed);
+
+  const setStatus = (msg, ttl = STATUS_TTL_MS) => {
+    statusMsg = String(msg || "");
+    statusUntil = Date.now() + ttl;
+  };
+  const currentStatus = () => {
+    if (!statusMsg) return "";
+    if (Date.now() > statusUntil) {
+      statusMsg = "";
+      return "";
+    }
+    return statusMsg;
+  };
 
   const firstCard = rows.findIndex((r) => r.type === "card");
   if (firstCard >= 0) sel = firstCard;
@@ -817,6 +1051,7 @@ async function runTui() {
       scrollTop,
       detailScroll,
       logScroll,
+      statusMsg: currentStatus(),
     };
     drawTui(state);
     scrollTop = state.scrollTop;
@@ -935,7 +1170,17 @@ async function runTui() {
       }
       if (key.name === "return" || key.name === "enter") {
         const card = selectedCard(rows, sel);
-        if (card?.sessionId) openSessionDir(card.sessionId);
+        enterCardAction(card, {
+          setStatus,
+          onFocusDone: () => {
+            try {
+              paint();
+            } catch {
+              /* ignore */
+            }
+          },
+        });
+        paint();
         return;
       }
       if (str === "e") {
