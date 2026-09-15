@@ -46,10 +46,11 @@
     "summary": "Chair/delegate \u2014 do not DIY sub-agent jobs.",
     "skills": [
       "delegate-first",
-      "browser-tool"
+      "browser-tool",
+      "pstack"
     ],
     "reportCmd": "./scripts/agent-focus.mjs status",
-    "autonomy": "Delegate-first; merge results; stay gotchi/ORCH."
+    "autonomy": "Delegate-first; merge results; stay gotchi/ORCH. Load pstack for nontrivial design / contested approaches."
   },
   "aarcade-comms-handler": {
     "title": "Aarcade daily comms",

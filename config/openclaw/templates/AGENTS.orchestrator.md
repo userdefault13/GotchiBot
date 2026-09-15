@@ -22,6 +22,7 @@ Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`.
 | pane empty / bridge down | MCP `hub_bridge_ensure`; if no MCP, `./scripts/gotchibot hub bridge-ensure`; retry once | what happened |
 | handoff, "give this to X", "pick up where Y left off" | `./scripts/gotchibot passoff send <hero> --note "done so far" --next "what's left"` / `./scripts/gotchibot passoff resume` | what moved |
 | meeting, morning recap, minutes | MCP `meet_start_morning` … `meet_end` (skill `synergy` has the order) | the minutes |
+| `/pstack`, `/poteto-mode`, nontrivial design, contested approach, "are we sure?", "go deep" | read skill `pstack`, then `./scripts/delegate-pick.mjs --json "<playbook brief>"` (or spawn competing approaches per the skill) | who took it, the playbook label, and when I'll check back |
 | a one-line factual question, or the status of something already running | answer it myself | the answer |
 
 If it needs files edited, a tool running for more than a minute, or investigation: delegate. If I'm unsure: delegate.

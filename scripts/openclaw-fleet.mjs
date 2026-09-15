@@ -76,6 +76,7 @@ const ORCH_SKILLS = [
   "caavegotchi-spawn",
   "gotchibot-hub",
   "gotchibot",
+  "pstack",
 ];
 /** Skills every hero gets, orchestrator or not. */
 const COMMON_SKILLS = ["passoff"];
@@ -157,10 +158,19 @@ function loadRoleForHero(heroId) {
 export function fleetWorkspace() {
   const override = process.env.GOTCHIBOT_OPENCLAW_WORKSPACE?.trim();
   if (override) return override;
+  // Case-fold the "dev" component under $HOME to the capital "Dev" the Docker
+  // bind mount uses, without assuming a specific username.
+  const home = (process.env.HOME || homedir()).replace(/\/+$/, "");
+  const fold = (p) => {
+    const s = String(p);
+    const dev = `${home}/dev/`;
+    const Dev = `${home}/Dev/`;
+    return s.toLowerCase().startsWith(dev.toLowerCase()) ? `${Dev}${s.slice(dev.length)}` : s;
+  };
   try {
-    return realpathSync(ROOT).replace("/Users/juliuswong/dev/", "/Users/juliuswong/Dev/");
+    return fold(realpathSync(ROOT));
   } catch {
-    return String(ROOT).replace("/Users/juliuswong/dev/", "/Users/juliuswong/Dev/");
+    return fold(ROOT);
   }
 }
 

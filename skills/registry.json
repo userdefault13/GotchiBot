@@ -446,6 +446,14 @@
       "script": "scripts/delegate-pick.mjs",
       "addedAt": "2026-08-27"
     },
+    "pstack": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "GotchiBot-adapted pstack/poteto rigor for the orchestrator. Remaps Cursor Task/swarm/arena to delegate-pick, gotchi-orchestrate, passoff, and cursor-cli.",
+      "path": ".opencode/skills/pstack/SKILL.md",
+      "addedAt": "2026-09-15"
+    },
     "gotchibot-mesh": {
       "status": "approved",
       "type": "skill",
