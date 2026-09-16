@@ -49,6 +49,7 @@ import {
   ROOT,
   SESSIONS,
 } from "./onboarding-lib.mjs";
+import { buildPersonaLine } from "./gotchi-persona.mjs";
 
 const __DIR = dirname(fileURLToPath(import.meta.url));
 export { ROOT, SESSIONS };
@@ -261,6 +262,7 @@ export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orch
     EMOJI: emoji,
     ROLE: role,
     ROLE_TITLE: playbook?.title || (role === "worker" ? "Worker hero" : role),
+    PERSONA: buildPersonaLine({ ...hero, name }),
     ORCH_ID: orchId,
     ORCH_NOTE: isOrchestrator ? " — that is me" : " — my boss; orchestration goes to it",
     REPO: repo,
