@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 /**
- * Gotchi persona — Closet/GVR-style trait voice for OpenClaw IDENTITY.
+ * Gotchi Voice — Closet/GVR-style trait color for OpenClaw IDENTITY.
  *
  *   node scripts/gotchi-persona.mjs --json '{"name":"Gotchi","modifiedTraits":[40,58,44,50],"kinship":2546}'
  *   node scripts/gotchi-persona.mjs --hero owned-954
  *   node scripts/gotchi-persona.mjs --hero owned-954 --json-out
  *
- * Renders one "Persona" COLOR line for config/openclaw/templates/IDENTITY.md
+ * Renders one "Voice" COLOR line for config/openclaw/templates/IDENTITY.md
  * from the hero's first four traits (NRG, AGG, SPK, BRN) + kinship, Closet/GVR
  * style with GotchiBot tweaks:
  *   - dead zone |v-50| <= 5 → axis skipped (50 is NOT a high trait)
  *   - stage only from a real createdAt/mintedAt — never invented from a block
  *   - kinship clause only when kinship > 0
- * SOUL.md craft is untouched: this colors the voice, it never replaces it.
+ * This builds the Voice / communication line — how the gotchi talks. It is
+ * NOT a role or playbook (the job). Role comes from the playbook; Voice comes
+ * from traits. SOUL.md craft is untouched: this colors the voice, it never
+ * replaces it.
  */
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -111,7 +114,7 @@ function joinTones(tones) {
 }
 
 /**
- * One persona line: name + trait tone + kinship. No archetype — the tone words
+ * One voice line: name + trait tone + kinship. No archetype — the tone words
  * already cover SPK/BRN, so an archetype would be redundant.
  */
 export function buildPersonaLine(gotchiLike = {}) {
