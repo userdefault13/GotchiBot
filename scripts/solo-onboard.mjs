@@ -7,8 +7,9 @@
 import { spawnSync } from "node:child_process";
 import { isMainModule } from "./is-main.mjs";
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureLocalConfig } from "./ensure-local-config.mjs";
 import { getTopology, setTopology, topologyFileExists } from "./topology.mjs";
 import { hasInstallToken, hasOperatorServiceKey } from "./infra-client.mjs";
 import { readWallet, registerInstall } from "./infra-token.mjs";
@@ -68,6 +69,11 @@ async function main() {
   console.log("======================");
   console.log(`Platform: ${platformLabel()}`);
   console.log("One command: wallet → register → cartridge → doctor\n");
+
+  // Seed missing local configs before any early-exit (fresh npm / friends installs).
+  const seededEarly = ensureLocalConfig(ROOT, { quiet: true });
+  for (const f of seededEarly.created) ok(`config seeded: ${relative(ROOT, f)}`);
+  if (seededEarly.hubHostSet) ok("hub-bridge.json host set from env");
 
   if (!force && hasCartridge() && readWallet()) {
     console.log("Already set up (wallet + cartridge cached).");

@@ -71,6 +71,29 @@ When the user gives you a task, follow this loop:
   `scripts/gotchibot handoff` to carry prior context forward.
 - Checkpoint milestones to the cartridge via `scripts/gotchibot checkpoint`.
 
+# pstack (chief + hero workers)
+
+When Julius says `/pstack`, `/poteto-mode`, "go deep", or contested design:
+load `.opencode/skills/pstack/SKILL.md`. You are the **chief** (owned-954):
+match a playbook, author briefs via `./scripts/gotchibot pstack brief …`,
+spawn role-tagged heroes (never LINK/YFI/WBTC as generic workers), drain and
+merge. No product-code edits while pstack is sticky. Roles:
+`config/pstack-roles.json`. Store: `sessions/pstack/<slug>/`. Does not replace
+delegate-first.
+
+# ralph (iterative loop)
+
+When Julius says `/ralph` or wants the same prompt iterated until a completion
+promise: load `.opencode/skills/ralph/SKILL.md`. Chief (owned-954) frames the
+prompt + `<promise>` text + max-iterations (default 20, never unlimited);
+`./scripts/gotchibot ralph start …` writes `sessions/ralph/<slug>/` and the
+`ACTIVE` pointer. Hooks (`.cursor/hooks/ralph-capture.mjs` + `ralph-stop.mjs`,
+stop runs before contexter-restore) feed the prompt back each turn until done /
+max. Each iteration is delegated to a worker hero (prefer spare DAI; never
+LINK/YFI/WBTC). VERIFY the real artifact before reporting done. Cancel:
+`./scripts/gotchibot ralph cancel`. Upstream plugin vendored at
+`plugins/ralph-loop-upstream/` (`/add-plugin ralph-loop` in Cursor UI).
+
 # Hard rules (in addition to AGENTS.md)
 
 1. **Delegate-first**: for real work, run `scripts/delegate-pick.mjs` and assign

@@ -13,13 +13,13 @@
       ],
       "summary": "Surveys sum prior rounds via getRoundAlchemica; Bounce Gate uses 145.gif (removed northGate override); left column 280px / page 1100px; installations grouped in collapsible drawers by kind.",
       "files": [
-        "/Users/juliuswong/Dev/AarcadeGh-t/src/composables/useParcelRealmDetail.ts",
-        "/Users/juliuswong/Dev/AarcadeGh-t/src/components/MyLand/ParcelRealmPanel.vue",
-        "/Users/juliuswong/Dev/AarcadeGh-t/src/helpers/installationThumbs.ts",
-        "/Users/juliuswong/Dev/AarcadeGh-t/src/helpers/parcelInstallStatus.ts",
-        "/Users/juliuswong/Dev/AarcadeGh-t/src/config/realmBase.ts",
-        "/Users/juliuswong/Dev/AarcadeGh-t/src/views/MyLand.vue",
-        "/Users/juliuswong/Dev/AarcadeGh-t/lib/cartridgeSim.cjs"
+        "src/composables/useParcelRealmDetail.ts",
+        "src/components/MyLand/ParcelRealmPanel.vue",
+        "src/helpers/installationThumbs.ts",
+        "src/helpers/parcelInstallStatus.ts",
+        "src/config/realmBase.ts",
+        "src/views/MyLand.vue",
+        "lib/cartridgeSim.cjs"
       ],
       "authorHero": "cursor",
       "consumerHero": "owned-22899",

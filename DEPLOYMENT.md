@@ -15,7 +15,7 @@ stay running after migration.
 | Machine | Role |
 |---|---|
 | MacBook Pro (M2, 8GB) | Dev/test host now → later: Cursor CLI orchestrator, interactive opencode, abracadabra vault (Touch ID), Envio indexers |
-| iMac (`192.168.1.162`) | Always-on OpenClaw gateway in Docker + Cloudflare tunnel + Access; already runs Ollama (`:11434`) |
+| Hub (home always-on host) | Always-on OpenClaw gateway in Docker + Cloudflare tunnel + Access; typically runs Ollama (`:11434`) |
 
 ## Phase 0 — Cloudflare (before iMac migration)
 
@@ -118,7 +118,7 @@ OpenCode provider config (`~/.config/opencode/opencode.json`) gains:
 |---|---|---|
 | default | `deepseek-v4-flash` | volume coding work |
 | escalation | `deepseek-v4-pro` | hard reasoning tasks |
-| fallback | `ollama/deepseek-r1:8b` @ `192.168.1.162:11434` | offline/private |
+| fallback | `ollama/deepseek-r1:8b` @ hub `:11434` | offline/private |
 
 (`deepseek-chat`/`deepseek-reasoner` aliases retired 2026-07-24 — do not use.)
 

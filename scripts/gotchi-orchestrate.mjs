@@ -11,7 +11,8 @@
  *   Requires GOTCHIBOT_HERO_ID with status === available. Never auto-mint.
  */
 import { spawnSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkSpawnGate } from "./wallet-gate.mjs";
 import { getTopology } from "./topology.mjs";
@@ -24,7 +25,7 @@ const REMOTE_SPAWN = `${ROOT}/scripts/remote-spawn.mjs`;
 function usage() {
   console.error(`usage:
   gotchi-orchestrate.mjs gate [--json]
-  gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--sandbox] [--model sub|nim|pro|local|<provider/model>] "PROMPT"
+  gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--sandbox] [--fallback-local] [--model sub|nim|pro|local|<provider/model>] "PROMPT"
   gotchi-orchestrate.mjs list
   gotchi-orchestrate.mjs wait [--host local|imac] [<id>...]
   gotchi-orchestrate.mjs output [--host local|imac] <id>
@@ -64,12 +65,15 @@ async function probeRemote() {
 function parseHostAndRest(argv) {
   let host = (process.env.GOTCHIBOT_SPAWN_HOST || "auto").toLowerCase();
   let sandbox = process.env.GOTCHIBOT_SANDBOX === "1";
+  let fallbackLocal = false;
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--host" && argv[i + 1]) {
       host = String(argv[++i]).toLowerCase();
     } else if (argv[i] === "--sandbox") {
       sandbox = true;
+    } else if (argv[i] === "--fallback-local") {
+      fallbackLocal = true;
     } else {
       rest.push(argv[i]);
     }
@@ -79,7 +83,7 @@ function parseHostAndRest(argv) {
     process.exit(2);
   }
   if (host === "remote") host = "imac";
-  return { host, sandbox, rest };
+  return { host, sandbox, fallbackLocal, rest };
 }
 
 async function resolveHost(want) {
@@ -118,7 +122,7 @@ async function cmdGate() {
 }
 
 async function cmdSpawn(argv) {
-  const { host: wantHost, sandbox, rest: argv2 } = parseHostAndRest(argv);
+  const { host: wantHost, sandbox, fallbackLocal, rest: argv2 } = parseHostAndRest(argv);
   const host = await resolveHost(wantHost);
 
   if (sandbox) {
@@ -134,6 +138,7 @@ async function cmdSpawn(argv) {
   if (host === "imac") {
     const args = [...argv2];
     if (sandbox && !args.includes("--sandbox")) args.unshift("--sandbox");
+    if (fallbackLocal && !args.includes("--fallback-local")) args.unshift("--fallback-local");
     if (process.argv.includes("--json") && !args.includes("--json")) args.push("--json");
     const r = spawnSync(process.execPath, [REMOTE_SPAWN, ...args], {
       cwd: ROOT,
@@ -232,6 +237,13 @@ async function cmdSpawn(argv) {
     if (sandbox) dArgs.push("--sandbox");
     dArgs.push(prompt);
     id = runDispatch(dArgs, { capture: true, env });
+  }
+
+  // Ghost guard (local): dispatch echoes the id only after mkdir, but never
+  // trust it blindly — same class of bug as u1 s20260915-230158-20052 on imac.
+  if (/^s\d{8}-\d{6}-\d+$/.test(id) && !existsSync(join(ROOT, "sessions", id))) {
+    console.error(`GHOST SESSION: dispatch returned ${id} but sessions/${id}/ does not exist locally`);
+    process.exit(20);
   }
 
   spawnSync("bash", [`${ROOT}/scripts/poke-avatar.sh`], { stdio: "ignore" });

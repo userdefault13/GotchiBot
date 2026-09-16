@@ -66,6 +66,17 @@ function leaveMeetGalleryLayout() {
   meetGalleryLayout("leave-meet-gallery");
 }
 
+/** Switch tmux to pstack dossier layout — chat stays in work.1, dossier replaces avatar (work.2). */
+function enterPstackDossierLayout() {
+  if (!tmuxSessionName()) {
+    console.log("\n  ✗ attach tmux first: ./scripts/gotchibot tmux\n");
+    return;
+  }
+  runLayout("enter-pstack-dossier");
+  console.log("\n  ✓ pstack dossier pane open (work.2).");
+  console.log("    Leave with: ./scripts/orchestrator-layout.sh leave-pstack-dossier");
+}
+
 const rl = readline.createInterface({ input, output });
 
 function clear() {
@@ -1074,6 +1085,7 @@ async function mainMenu(wallet, cartridgeId) {
       { key: "hub-infra", label: "Hub infra (Docker container table)" },
       { key: "roster", label: "View agent roster (MBP + iMac · status)" },
       { key: "kanban", label: "Kanban (agents · tasks · seats)" },
+      { key: "pstack", label: "Pstack (dossier pane · program store)" },
       { key: "export-roster", label: "Export agent roster to CSV" },
       { key: "settings", label: "Settings (voice, read speed, mouse, replay)" },
       { key: "import", label: "Import on-chain gotchi / browse cartridge cAavegotchis" },
@@ -1145,6 +1157,12 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "kanban") {
       await viewKanban();
+      continue;
+    }
+
+    if (pick.key === "pstack") {
+      enterPstackDossierLayout();
+      await pause();
       continue;
     }
 

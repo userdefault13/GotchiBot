@@ -21,7 +21,7 @@ export function plistPath(label) {
   return join(AGENTS_DIR, `${label}.plist`);
 }
 
-export function renderPlist({ label, program, args = [], cwd, intervalSec, logDir, env = {} }) {
+export function renderPlist({ label, program, args = [], cwd, intervalSec, logDir, env = {}, runAtLoad = false }) {
   const node = process.execPath;
   const path = `${dirname(node)}:/usr/local/bin:/opt/homebrew/bin:${homedir()}/.local/bin:/usr/bin:/bin`;
   const prog = program || node;
@@ -37,7 +37,7 @@ ${[prog, ...args].map((a) => `    <string>${esc(a)}</string>`).join("\n")}
   </array>
   <key>WorkingDirectory</key><string>${esc(cwd)}</string>
   <key>StartInterval</key><integer>${Number(intervalSec)}</integer>
-  <key>RunAtLoad</key><false/>
+  <key>RunAtLoad</key><${runAtLoad ? "true" : "false"}/>
   <key>KeepAlive</key><false/>
   <key>StandardOutPath</key><string>${esc(join(logDir, `${label}.out.log`))}</string>
   <key>StandardErrorPath</key><string>${esc(join(logDir, `${label}.err.log`))}</string>

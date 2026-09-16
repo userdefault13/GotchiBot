@@ -74,7 +74,7 @@ abra run gotchibot -- ./scripts/gotchibot hub bridge-info
 ## Call (orchestrator / interactive Desk)
 
 Desks on Tailscale/LAN **always** hit the Hub bridge (`config/hub-bridge.json` →
-`http://juliuss-imac-2:45678/prompt`), then SSH fallback. Never a local Claude.
+`http://<hub-host>:45678/prompt`), then SSH fallback. Never a local Claude.
 
 ### Async (preferred for long Claude work — no orch wait/poll)
 

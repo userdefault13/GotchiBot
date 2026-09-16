@@ -54,6 +54,37 @@ export function displayCollateralLabel(libraryName, spiritId) {
   return String(libraryName || spirit).trim();
 }
 
+/** Single-glyph forehead mark for mini ASCII (kanban / thumbs). */
+const SPIRIT_CHARS = {
+  dai: "D",
+  weth: "E",
+  aave: "A",
+  link: "L",
+  usdt: "T",
+  usdc: "C",
+  tusd: "S",
+  uni: "U",
+  yfi: "Y",
+  wbtc: "B",
+  matic: "M",
+};
+
+/**
+ * Preset collateral character for `#` slots in ASCII templates.
+ * Prefer explicit `character` on a colors row, else spirit map, else label initial.
+ */
+export function collateralCharacter(spiritOrLabel, colorsRow = null) {
+  const fromRow = colorsRow?.character ?? colorsRow?.char;
+  if (fromRow != null && String(fromRow).length) {
+    return [...String(fromRow)][0];
+  }
+  const spirit = libraryNameToSpiritId(spiritOrLabel) || String(spiritOrLabel || "").trim().toLowerCase();
+  if (spirit && SPIRIT_CHARS[spirit]) return SPIRIT_CHARS[spirit];
+  const label = displayCollateralLabel(spiritOrLabel, spirit);
+  const letter = [...String(label || spirit || "?")][0];
+  return letter ? letter.toUpperCase() : "?";
+}
+
 export function hexNormalize(raw) {
   if (!raw) return null;
   let h = String(raw).trim().replace(/^0x/i, "").replace(/^#/, "");
@@ -88,7 +119,7 @@ function packColors(row) {
   const secondary = hexNormalize(row.secondaryColor ?? row.secondary);
   if (!primary && !secondary) return null;
   const spirit = libraryNameToSpiritId(row.name || row.spirit || "");
-  return {
+  const packed = {
     name: row.name || null,
     spirit: spirit || null,
     label: displayCollateralLabel(row.name, spirit),
@@ -98,6 +129,8 @@ function packColors(row) {
     hauntId: row.haunt != null ? Number(row.haunt) : (row.hauntId != null ? Number(row.hauntId) : null),
     collateralType: row.collateralType ? String(row.collateralType).toLowerCase() : null,
   };
+  packed.character = collateralCharacter(spirit || row.name, row);
+  return packed;
 }
 
 let _table = null;

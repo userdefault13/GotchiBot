@@ -35,7 +35,7 @@ Never call Grok `~/.grok/bin/agent`. Never `cursor agent` as the primary binary.
 
 ```bash
 ./scripts/cursor-cli.mjs run "self-contained prompt: goal, constraints, repo path, done criteria"
-./scripts/cursor-cli.mjs run "…" --cwd /Users/juliuswong/Dev/GotchiBot
+./scripts/cursor-cli.mjs run "…" --cwd ~/Dev/GotchiBot
 ./scripts/cursor-cli.mjs run "…" --mode plan
 ./scripts/cursor-cli.mjs run "…" --mode ask
 ./scripts/cursor-cli.mjs resume "follow-up in the same Cursor chat"
@@ -70,3 +70,17 @@ Hand a **self-contained** prompt (goal, constraints, repo path, done criteria). 
 ## After run
 
 Summarize. Stay on Hy3/Nemotron for the reply. Do not change OpenCode `/model` to Cursor.
+
+## Hub desk (workers)
+
+On the iMac, worker heroes do **not** keep a Terminal open. If Julius should watch the turn:
+
+```bash
+./scripts/gotchibot desk-terminals use <hero-id>
+./scripts/cursor-cli.mjs run "…"
+./scripts/gotchibot desk-terminals close <hero-id>
+```
+
+One-shot: `./scripts/gotchibot desk-terminals use <hero-id> -- node ./scripts/cursor-cli.mjs run "…"`.
+Headless `cursor-cli run` alone is fine when nobody needs a visible window.
+Never reuse LINK/YFI/WBTC verify windows.

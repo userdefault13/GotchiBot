@@ -52,11 +52,11 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "
 import { spawnSync } from "node:child_process";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { hostname } from "node:os";
+import { hostname, homedir } from "node:os";
 
 const LIB_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(LIB_DIR, "..", "..");
-const HOME = process.env.HOME || "/Users/juliuswong";
+const HOME = process.env.HOME || homedir();
 
 const TMUX =
   [process.env.TMUX_BIN, "/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"].find(

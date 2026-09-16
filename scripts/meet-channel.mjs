@@ -4,7 +4,7 @@
  *
  *   node scripts/meet-channel.mjs --render [--cols N] [--rows N] [--scroll N]
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   readFileSync,
   writeFileSync,
@@ -144,9 +144,13 @@ function wrapLines(text, width) {
 
 const thumbCache = new Map();
 
+function thumbDiskPath(heroId) {
+  return `${THUMB_CACHE_DIR}/${String(heroId).replace(/[^\w.-]+/g, "_")}.ansi`;
+}
+
 function thumbForHero(heroId) {
   mkdirSync(THUMB_CACHE_DIR, { recursive: true });
-  const disk = `${THUMB_CACHE_DIR}/${String(heroId).replace(/[^\w.-]+/g, "_")}.ansi`;
+  const disk = thumbDiskPath(heroId);
   try {
     if (existsSync(disk)) {
       const art = readFileSync(disk, "utf8").trimEnd();
@@ -176,7 +180,8 @@ function thumbForHero(heroId) {
   return art.split("\n");
 }
 
-function getThumb(heroId) {
+/** Thumb lines for a hero: in-process map → sessions/.meet-thumbs → gotchi-art. */
+export function getThumb(heroId) {
   if (!heroId || heroId === "userdefault") {
     try {
       return readFileSync(THUMB_FALLBACK, "utf8").trimEnd().split("\n");
@@ -186,6 +191,47 @@ function getThumb(heroId) {
   }
   if (!thumbCache.has(heroId)) thumbCache.set(heroId, thumbForHero(heroId));
   return thumbCache.get(heroId);
+}
+
+/**
+ * Fill the on-disk thumb cache for heroes that miss it, one async child at a
+ * time, so the first visit to a room page never blocks on gotchi-art spawns.
+ */
+export function warmThumbs(ids, done) {
+  const queue = [...new Set((ids || []).filter((id) => id && id !== "userdefault"))];
+  const next = () => {
+    const id = queue.shift();
+    if (!id) return done?.();
+    const disk = thumbDiskPath(id);
+    if (thumbCache.has(id) || existsSync(disk)) return next();
+    let child;
+    try {
+      child = spawn(process.execPath, [`${ROOT}/scripts/gotchi-art.mjs`, "--thumb", "--hero", id, "--color"], {
+        cwd: ROOT,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      return next();
+    }
+    let out = "";
+    child.stdout.on("data", (d) => {
+      out += d;
+    });
+    child.on("error", () => next());
+    child.on("close", () => {
+      const art = out.trimEnd();
+      if (art) {
+        try {
+          mkdirSync(THUMB_CACHE_DIR, { recursive: true });
+          writeFileSync(disk, `${art}\n`);
+        } catch {
+          /* ok */
+        }
+      }
+      next();
+    });
+  };
+  next();
 }
 
 function renderHeader(meeting, cols, interactive = false) {
@@ -526,6 +572,7 @@ export async function runMeetChannelLive() {
       cols,
       id,
       mtime(tr),
+      mtime(id ? `${MEETINGS}/${id}/meeting.json` : ""),
       mtime(PENDING),
       mtime(`${MEETINGS}/.current`),
     ].join("|");
@@ -605,7 +652,9 @@ export async function runMeetChannelLive() {
 
   function schedulePaint(forceContent = false, delayMs = 32) {
     if (forceContent) forceNext = true;
-    if (paintTimer) clearTimeout(paintTimer);
+    // Throttle, not debounce: a trackpad wheel burst arrives faster than the
+    // old 16–24ms reset, so the paint kept sliding until the finger stopped.
+    if (paintTimer) return;
     paintTimer = setTimeout(() => {
       paintTimer = null;
       const force = forceNext;
@@ -615,19 +664,18 @@ export async function runMeetChannelLive() {
   }
 
   function adjustScroll(delta) {
-    const { cols, rows } = paneSize();
-    const max = Math.max(0, ensureLines(cols, rows, false).length - Math.max(8, rows));
-    scroll = Math.max(0, Math.min(max, loadScroll() + delta));
-    saveScroll(scroll);
-    // Scroll-only: no content rebuild — just re-slice (debounce tiny).
-    schedulePaint(false, 16);
+    setScrollAbs(scroll + delta);
   }
 
   function setScrollAbs(n) {
     const { cols, rows } = paneSize();
     const max = Math.max(0, ensureLines(cols, rows, false).length - Math.max(8, rows));
-    scroll = Math.max(0, Math.min(max, n));
+    const next = Math.max(0, Math.min(max, n));
+    if (next === scroll) return;
+    scroll = next;
+    // One write per input chunk; the watcher below ignores our own value.
     saveScroll(scroll);
+    // Scroll-only: no content rebuild — just re-slice.
     schedulePaint(false, 16);
   }
 
@@ -657,11 +705,16 @@ export async function runMeetChannelLive() {
       watch(dir, { persistent: true }, (evt, fname) => {
         const f = String(fname || "");
         if (f.includes("meet-channel-scroll")) {
+          // Our own saveScroll fires this too — only external writers matter.
+          if (loadScroll() !== scroll) schedulePaint(false, 16);
+          return;
+        }
+        if (f.includes("meet-channel.stamp")) {
+          // Stamp = "look again"; contentKey decides whether lines rebuild.
           schedulePaint(false, 24);
           return;
         }
         if (
-          f.includes("meet-channel.stamp") ||
           f.includes("meet-pending") ||
           f.includes(".current") ||
           f.includes("transcript") ||
@@ -696,6 +749,12 @@ export async function runMeetChannelLive() {
     let esc = "";
     input.on("data", (chunk) => {
       const s = String(chunk);
+      // A trackpad delivers many wheel events per chunk — sum them, apply once.
+      let delta = 0;
+      const jump = (n) => {
+        delta = 0;
+        setScrollAbs(n);
+      };
       for (let i = 0; i < s.length; i++) {
         const ch = s[i];
         if (esc || ch === "\x1b") {
@@ -707,15 +766,15 @@ export async function runMeetChannelLive() {
             const m = seq.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
             if (m) {
               const btn = Number(m[1]);
-              if (btn === 64 || btn === 4) adjustScroll(SCROLL_STEP);
-              else if (btn === 65 || btn === 5) adjustScroll(-SCROLL_STEP);
+              if (btn === 64 || btn === 4) delta += SCROLL_STEP;
+              else if (btn === 65 || btn === 5) delta -= SCROLL_STEP;
               else if (btn === 0 && m[4] === "M") handleClick(Number(m[2]), Number(m[3]));
               continue;
             }
-            if (/\x1b\[A$|\x1bOA$/.test(seq) || seq.endsWith("5~")) adjustScroll(SCROLL_STEP * (seq.endsWith("5~") ? 3 : 1));
-            else if (/\x1b\[B$|\x1bOB$/.test(seq) || seq.endsWith("6~")) adjustScroll(-(SCROLL_STEP * (seq.endsWith("6~") ? 3 : 1)));
-            else if (/\x1b\[H$|\x1bOH$|1~$|7~$/.test(seq)) setScrollAbs(maxScrollFromBottom(paneSize()));
-            else if (/\x1b\[F$|\x1bOF$|4~$|8~$/.test(seq)) setScrollAbs(0);
+            if (/\x1b\[A$|\x1bOA$/.test(seq) || seq.endsWith("5~")) delta += SCROLL_STEP * (seq.endsWith("5~") ? 3 : 1);
+            else if (/\x1b\[B$|\x1bOB$/.test(seq) || seq.endsWith("6~")) delta -= SCROLL_STEP * (seq.endsWith("6~") ? 3 : 1);
+            else if (/\x1b\[H$|\x1bOH$|1~$|7~$/.test(seq)) jump(Number.MAX_SAFE_INTEGER);
+            else if (/\x1b\[F$|\x1bOF$|4~$|8~$/.test(seq)) jump(0);
           } else if (esc.length > 32) esc = "";
           continue;
         }
@@ -723,13 +782,14 @@ export async function runMeetChannelLive() {
           teardown();
           return;
         }
-        if (ch === "k" || ch === "K" || ch === "h" || ch === "[") adjustScroll(SCROLL_STEP);
-        else if (ch === "j" || ch === "J" || ch === "l" || ch === "]") adjustScroll(-SCROLL_STEP);
-        else if (ch === "g") setScrollAbs(maxScrollFromBottom(paneSize()));
-        else if (ch === "G" || ch === "\x04") setScrollAbs(0);
-        else if (ch === " ") adjustScroll(-(SCROLL_STEP * 3));
-        else if (ch === "b" || ch === "B") adjustScroll(SCROLL_STEP * 3);
+        if (ch === "k" || ch === "K" || ch === "h" || ch === "[") delta += SCROLL_STEP;
+        else if (ch === "j" || ch === "J" || ch === "l" || ch === "]") delta -= SCROLL_STEP;
+        else if (ch === "g") jump(Number.MAX_SAFE_INTEGER);
+        else if (ch === "G" || ch === "\x04") jump(0);
+        else if (ch === " ") delta -= SCROLL_STEP * 3;
+        else if (ch === "b" || ch === "B") delta += SCROLL_STEP * 3;
       }
+      if (delta) adjustScroll(delta);
     });
   }
 

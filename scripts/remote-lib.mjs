@@ -13,7 +13,7 @@ export function remoteConfig() {
   const user = process.env.REMOTE_USER || process.env.GOTCHIBOT_REMOTE_USER || "";
   let dir = (process.env.REMOTE_DIR || process.env.GOTCHIBOT_REMOTE_DIR || "").trim();
   if (!dir || dir.includes("$HOME") || dir.startsWith("~/")) {
-    dir = user ? `/Users/${user}/Dev/GotchiBot` : "/Users/juliuswong/Dev/GotchiBot";
+    dir = user ? `/Users/${user}/Dev/GotchiBot` : "$HOME/Dev/GotchiBot";
   }
   const key = process.env.SSH_PRIVATE_KEY || "";
   return { host, user, dir, key };
@@ -100,6 +100,32 @@ export function runSsh(cfg, keyPath, remoteCommand, { stdio = "inherit", timeout
   const opts = { stdio, encoding: "utf8" };
   if (timeout != null) opts.timeout = timeout;
   return spawnSync("ssh", args, opts);
+}
+
+// Session id shapes produced by the dispatch layer.
+// opencode-dispatch.sh new: s<YYYYMMDD>-<HHMMSS>-<pid>
+export const SESSION_ID_RE = /^s\d{8}-\d{6}-\d+$/;
+// cursor-cli route: synchronous run, no session dir by design
+export const CURSOR_ID_RE = /^cursor-\d+-[a-z0-9]+$/;
+
+/** "s" | "cursor" | "invalid" — what a spawn's last stdout line should be. */
+export function classifySessionId(id) {
+  const s = String(id || "").trim();
+  if (SESSION_ID_RE.test(s)) return "s";
+  if (CURSOR_ID_RE.test(s)) return "cursor";
+  return "invalid";
+}
+
+/**
+ * True when the remote host actually has sessions/<id>/.
+ * Ghost guard: a spawn that prints an id without creating the session dir must
+ * not be reported as success (lesson u1 s20260915-230158-20052).
+ */
+export function sshSessionDirExists(cfg, keyPath, id) {
+  const safeId = String(id || "").replace(/[^a-zA-Z0-9._-]/g, "");
+  if (!safeId) return false;
+  const r = runSsh(cfg, keyPath, `test -d sessions/${safeId} && echo exists`, { stdio: "pipe" });
+  return r.status === 0 && String(r.stdout || "").includes("exists");
 }
 
 export function runScp(cfg, keyPath, localPaths, remoteSubdir = "sessions") {

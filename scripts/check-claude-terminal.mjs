@@ -2,9 +2,10 @@
 // Runs: abra run gotchibot -- ./scripts/gotchibot hub status
 
 import { execSync } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = join('/Users/juliuswong/Dev/GotchiBot');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
 
 try {

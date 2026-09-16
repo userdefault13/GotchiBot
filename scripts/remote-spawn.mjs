@@ -13,7 +13,15 @@ import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { assertRemoteReady, materializeKey, runSsh, runScp, localSessionFiles } from "./remote-lib.mjs";
+import {
+  assertRemoteReady,
+  materializeKey,
+  runSsh,
+  runScp,
+  localSessionFiles,
+  classifySessionId,
+  sshSessionDirExists,
+} from "./remote-lib.mjs";
 import { checkSpawnGate } from "./wallet-gate.mjs";
 import { looksStandingTask, assertSandboxHeroAvailable } from "./hero-agent-state.mjs";
 
@@ -37,11 +45,14 @@ function shellQuote(s) {
 
 function usage() {
   console.error(`usage:
-  remote-spawn.mjs [--model nim|pro|local|<id>] [--hero <heroId>] [--sandbox] [--json] "PROMPT"
+  remote-spawn.mjs [--model nim|pro|local|<id>] [--hero <heroId>] [--sandbox] [--fallback-local] [--json] "PROMPT"
   remote-spawn.mjs output <sessionId>
   remote-spawn.mjs wait <sessionId>…
   remote-spawn.mjs status <sessionId>
-  remote-spawn.mjs interrupt <sessionId> "PROMPT"`);
+  remote-spawn.mjs interrupt <sessionId> "PROMPT"
+
+  --fallback-local  if the remote session dir cannot be verified after spawn
+                    (ghost id), respawn on the MBP instead of failing`);
   process.exit(2);
 }
 
@@ -50,6 +61,7 @@ function parseArgs(argv) {
   let hero = process.env.GOTCHIBOT_HERO_ID || "";
   let json = false;
   let sandbox = process.env.GOTCHIBOT_SANDBOX === "1";
+  let fallbackLocal = false;
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -61,11 +73,13 @@ function parseArgs(argv) {
       json = true;
     } else if (a === "--sandbox") {
       sandbox = true;
+    } else if (a === "--fallback-local") {
+      fallbackLocal = true;
     } else {
       rest.push(a);
     }
   }
-  return { model, hero, json, sandbox, rest };
+  return { model, hero, json, sandbox, fallbackLocal, rest };
 }
 
 function writeForwardEnv({ sandbox = false } = {}) {
@@ -162,8 +176,29 @@ function sshField(cfg, keyPath, id, key) {
   return (r.stdout || "").trim();
 }
 
+// Ghost guard fallback: respawn on the MBP through the normal local path when the
+// remote session dir cannot be verified. Reuses orchestrate's local spawn so the
+// gate, model policy and hero binding run exactly as a --host local spawn.
+function fallbackSpawnLocal({ model, hero, sandbox, json, prompt }) {
+  const args = ["spawn", "--host", "local"];
+  if (model && model !== "auto") args.push("--model", model);
+  if (sandbox) args.push("--sandbox");
+  if (json) args.push("--json");
+  args.push(prompt);
+  const env = { ...process.env };
+  if (hero) env.GOTCHIBOT_HERO_ID = hero;
+  const r = spawnSync(process.execPath, [`${ROOT}/scripts/gotchi-orchestrate.mjs`, ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+    env,
+  });
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  process.exit(r.status ?? 1);
+}
+
 async function cmdSpawn(argv) {
-  const { model, hero, json, sandbox, rest } = parseArgs(argv);
+  const { model, hero, json, sandbox, fallbackLocal, rest } = parseArgs(argv);
   const prompt = rest.join(" ").trim();
   if (!prompt) usage();
 
@@ -206,6 +241,35 @@ async function cmdSpawn(argv) {
     // Last non-empty line is session id from orchestrate
     const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
     const sessionId = lines[lines.length - 1] || "";
+    // Ghost guard: never report success on a remote spawn whose session dir we
+    // cannot see. Lesson u1 s20260915-230158-20052: the iMac printed an id but
+    // sessions/<id>/ never existed on MBP or iMac; the same program worked with
+    // --host local.
+    const kind = classifySessionId(sessionId);
+    let verified = false;
+    let ghostReason = "";
+    if (kind === "invalid") {
+      ghostReason = `remote spawn did not return a session id (last stdout line: ${JSON.stringify(sessionId)})`;
+    } else if (kind === "s") {
+      verified = sshSessionDirExists(cfg, key.path, sessionId);
+      if (!verified) {
+        ghostReason = `GHOST SESSION: remote printed ${sessionId} but sessions/${sessionId}/ does not exist on ${cfg.host}`;
+      }
+    } else {
+      // cursor-cli route: synchronous run, no session dir by design
+      verified = true;
+    }
+    if (ghostReason) {
+      if (fallbackLocal) {
+        console.error(`remote spawn verify failed — ${ghostReason}`);
+        console.error("falling back to local spawn (--fallback-local)…");
+        fallbackSpawnLocal({ model, hero: hero || gate.activeHeroId || "", sandbox, json, prompt });
+        return;
+      }
+      console.error(ghostReason);
+      console.error("  fix: retry with --fallback-local (spawn on MBP) or --host local — the same program usually works locally.");
+      process.exit(20);
+    }
     if (json) {
       console.log(
         JSON.stringify(
@@ -213,6 +277,7 @@ async function cmdSpawn(argv) {
             ok: true,
             host: "imac",
             sessionId,
+            verified,
             model,
             sandbox: !!sandbox,
             hero: hero || gate.activeHeroId || null,
@@ -227,7 +292,7 @@ async function cmdSpawn(argv) {
     } else {
       console.log(sessionId);
       console.error(
-        `spawned ${sessionId} on imac (${cfg.host}) model=${model} hero=${hero || gate.activeHeroId || "roster"}${sandbox ? " sandbox" : ""}`,
+        `spawned ${sessionId} on imac (${cfg.host}) model=${model} hero=${hero || gate.activeHeroId || "roster"}${sandbox ? " sandbox" : ""}${verified ? " verified" : ""}`,
       );
     }
     const hid = hero || gate.activeHeroId || "";

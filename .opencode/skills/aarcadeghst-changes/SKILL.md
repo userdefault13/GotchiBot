@@ -59,7 +59,7 @@ abra run gotchibot -- node scripts/hero-agent-state.mjs set owned-22899 assigned
 ### 2. BTC Bot reads AarcadeGh-t changes
 
 The bot can reference the plan file at `~/.cursor/plans/MyLand/surveys UI-7993409c.plan.md`
-and the associated implementation files in `/Users/juliuswong/Dev/AarcadeGh-t/`.
+and the associated implementation files in `~/Dev/AarcadeGh-t/`.
 
 ### 3. BTC Bot writes/syncs changes
 
@@ -78,7 +78,7 @@ abra run gotchibot -- node scripts/hero-agent-state.mjs set owned-22899 assigned
 
 ## Files Touched
 
-Typical AarcadeGh-t changes touch these files in `/Users/juliuswong/Dev/AarcadeGh-t/`:
+Typical AarcadeGh-t changes touch these files in `~/Dev/AarcadeGh-t/`:
 
 | File | Change |
 |------|--------|

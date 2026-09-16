@@ -34,7 +34,7 @@ Only the WATCHED set (the aarcade + envio containers behind the public stack) ga
 - A `401` from an anonymous GraphQL POST to `:8787` is by design; `/health` on that port is the honest liveness probe.
 - `mongo-api.aarcadeghst.com/health` takes ~5.5 s when mongod is down: always `curl -m 20`. A `-m 5` makes a healthy proxy look dead.
 - `ETIMEDOUT 127.0.0.1:27017` seen from prod is an iMac problem, not Vercel.
-- The Claude CLI must run in a terminal owned by the console session (tmux on the console). Over plain `ssh` it says `Not logged in`. `docker` and `claude` are not on the non-interactive PATH: use `/usr/local/bin/docker` and `/Users/juliuswong/.local/bin/claude`.
+- The Claude CLI must run in a terminal owned by the console session (tmux on the console). Over plain `ssh` it says `Not logged in`. `docker` and `claude` are not on the non-interactive PATH: use `/usr/local/bin/docker` and `$HOME/.local/bin/claude`.
 - The verifier session lives in `~/Dev/gotchibot-infra-verify`, outside this repo, so it does not inherit the repo `CLAUDE.md` hub-proxy role.
 
 ## Host-level things I fix myself before calling a human

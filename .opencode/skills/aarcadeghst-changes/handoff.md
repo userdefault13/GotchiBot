@@ -33,7 +33,7 @@ Use when DAI is idle and the job is self-contained:
 ./scripts/wallet-gate.mjs
 GOTCHIBOT_HERO_ID=owned-22899 abra run gotchibot -- \
   ./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim \
-  "Skill: aarcadeghst-changes. Process all pending entries in changes.json. Ack each, verify files under /Users/juliuswong/Dev/AarcadeGh-t, update statuses, write merge summary to output.md."
+  "Skill: aarcadeghst-changes. Process all pending entries in changes.json. Ack each, verify files under ~/Dev/AarcadeGh-t, update statuses, write merge summary to output.md."
 ```
 
 Prefer iMac via `--host auto` when Tailscale is up.
@@ -71,7 +71,7 @@ rewriting `summary`.
 You are DAI (owned-22899). Use skill aarcadeghst-changes.
 1. Read .opencode/skills/aarcadeghst-changes/SKILL.md and changes.json
 2. Process entry <ID> (or all pending)
-3. Open listed files under /Users/juliuswong/Dev/AarcadeGh-t
+3. Open listed files under ~/Dev/AarcadeGh-t
 4. Update entry status/ack/notes in changes.json
 5. Write result to output.md
 Constraints: no installs, no secrets, no registry edits, new skill files only if extending this skill.

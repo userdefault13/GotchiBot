@@ -20,7 +20,7 @@ gotchibot onboard
 gotchibot tmux
 ```
 
-`onboard` connects a wallet, registers your **install token** (`GOTCHIBOT_INFRA_TOKEN` in abra), mints the cartridge, and runs doctor.
+`onboard` connects a wallet, registers your **install token** (`GOTCHIBOT_INFRA_TOKEN` in abra), mints the cartridge, and runs doctor. Local config files are seeded automatically from `.example` templates (no manual copies).
 
 ## Linux notes
 

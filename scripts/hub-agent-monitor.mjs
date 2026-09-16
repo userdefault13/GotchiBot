@@ -116,10 +116,16 @@ function loadEnv(path) {
 
 function probeBridge() {
   const cfg = loadJson(join(ROOT, "config/hub-bridge.json")) || {};
+  const host =
+    process.env.GOTCHIBOT_HUB_HOST ||
+    process.env.REMOTE_HOST ||
+    process.env.GOTCHIBOT_REMOTE_HOST ||
+    cfg.host ||
+    "hub";
   const url =
     process.env.GOTCHIBOT_HUB_BRIDGE_URL ||
     cfg.url ||
-    "http://juliuss-imac-2:45678/prompt";
+    `http://${host}:45678/prompt`;
   const health = String(url).replace(/\/prompt\/?$/, "/health");
   const r = spawnSync("curl", ["-sf", "--max-time", "2", "-w", "\n%{http_code}", health], {
     encoding: "utf8",

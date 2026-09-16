@@ -84,6 +84,11 @@ function offerMultitaskDialog(api: any, rootDir: string) {
               description: "Codex-style — keep this chat running, work in a fresh session",
             },
             {
+              title: "Interrupt & steer (send the prompt now)",
+              value: "steer",
+              description: "Stop the running turn, send what is in the prompt, same session and context",
+            },
+            {
               title: "Stay here (leave message queued)",
               value: "stay",
               description: "Current turn finishes, then queued prompts run",
@@ -92,6 +97,13 @@ function offerMultitaskDialog(api: any, rootDir: string) {
           onSelect: (opt: { value: string }) => {
             api.ui.dialog.clear()
             if (opt?.value === "new") void createAndOpenSession(api, rootDir, "dialog")
+            if (opt?.value === "steer") {
+              try {
+                api.keymap.dispatchCommand("gotchi.session.steer")
+              } catch (err) {
+                log(rootDir, "steer-dispatch-failed", { err: String(err) })
+              }
+            }
           },
         }),
     )
@@ -162,7 +174,7 @@ const tui: TuiPlugin = async (api) => {
       lastBusyToastAt = now
       try {
         api.ui.toast({
-          message: "QUEUED/busy — /new opens a parallel session (Codex-style)",
+          message: "QUEUED/busy — ctrl+o (or alt+return, /steer) interrupts and sends now · /new for a parallel session",
           variant: "info",
           duration: 5000,
         })

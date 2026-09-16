@@ -104,6 +104,16 @@ meet_gallery_correct() {
   [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *meet-room* ]] && [[ "$c2" == *meet-channel* ]]
 }
 
+# pstack dossier wizard: sidebar | chat | dossier pane (work.2 replaces avatar).
+pstack_dossier_correct() {
+  layout_ready || return 1
+  local c0 c1 c2
+  c0="$(pane_start_cmd 0)"
+  c1="$(pane_start_cmd 1)"
+  c2="$(pane_start_cmd 2)"
+  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *pstack-pane* ]]
+}
+
 rebuild_panes() {
   local need=$((sidebar_collapsed + min_center + min_right + 2))
   tmux resize-window -t "$sess:work" -x "$win_w_default" -y "$win_h_default" 2>/dev/null || true
@@ -161,7 +171,6 @@ install_meet_gallery_mouse() {
   local av_if='#{==:#{@gotchibot-avatar},1}'
   local scroll_up="cd '$ROOT' && GOTCHIBOT_TMUX_SESSION='$sess_name' '$ROOT/scripts/meet-channel-scroll.sh' up"
   local scroll_down="cd '$ROOT' && GOTCHIBOT_TMUX_SESSION='$sess_name' '$ROOT/scripts/meet-channel-scroll.sh' down"
-  local def_wheel='if-shell -F "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"'
   local def_drag='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
 
   tmux set-option -g mouse on 2>/dev/null || true
@@ -172,13 +181,21 @@ install_meet_gallery_mouse() {
   tmux unbind-key -n MouseDown1Pane 2>/dev/null || true
   tmux unbind-key -n MouseDrag1Pane 2>/dev/null || true
 
-  # Wheel over # meet → transcript scroll (cwd + session fixed — was clamping to 0).
+  # Wheel over # meet: the live pane (meet-channel.mjs --live) reads SGR wheel
+  # itself, so pass the event straight through — no run-shell, no node spawn
+  # per tick (that was ~90ms each and the source of the scroll lag). The
+  # run-shell scroll script is only the fallback when the live process is gone.
+  # Avatar wheel stays a no-op; other panes keep the tmux default.
+  local pass_if='#{&&:#{!=:#{@gotchibot-avatar},1},#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}}'
+  local plain_if='#{&&:#{!=:#{@gotchibot-avatar},1},#{!=:#{@gotchibot-meet-channel},1}}'
+  local plain_wheel="if-shell -F \"$plain_if\" \"copy-mode -e\""
+  local plain_wheel_q="${plain_wheel//\"/\\\"}"
   tmux bind-key -n WheelUpPane \
-    if-shell -F "$ch_if" "run-shell '$scroll_up'" \
-    "if-shell -F \"#{!=:#{@gotchibot-avatar},1}\" \"$def_wheel\"" 2>/dev/null || true
+    if-shell -F "$pass_if" "send-keys -M" \
+    "if-shell -F \"$ch_if\" \"run-shell '$scroll_up'\" \"$plain_wheel_q\"" 2>/dev/null || true
   tmux bind-key -n WheelDownPane \
-    if-shell -F "$ch_if" "run-shell '$scroll_down'" \
-    "if-shell -F \"#{!=:#{@gotchibot-avatar},1}\" \"$def_wheel\"" 2>/dev/null || true
+    if-shell -F "$pass_if" "send-keys -M" \
+    "if-shell -F \"$ch_if\" \"run-shell '$scroll_down'\" \"$plain_wheel_q\"" 2>/dev/null || true
   tmux bind-key -n MouseDown1Pane \
     if-shell -F "$av_if" "run-shell '$ROOT/scripts/avatar-pane.sh sb-click #{mouse_x} #{mouse_y} #{pane_pid}'" \
     'select-pane -t = ; send-keys -M' 2>/dev/null || true
@@ -230,9 +247,9 @@ start_pane_commands() {
   require_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || \
     tmux send-keys -t "$sess:work.0" C-c Enter "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" Enter
-  # Skip welcome/cockpit on desk boot — OpenCode is the load target (/cockpit still opens menu).
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || \
-    tmux send-keys -t "$sess:work.1" C-c Enter "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" Enter
+  # Desk boot lands in the cockpit menu when onboarding is complete (chat-pane.sh default).
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 exec ./scripts/chat-pane.sh" 2>/dev/null || \
+    tmux send-keys -t "$sess:work.1" C-c Enter "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 exec ./scripts/chat-pane.sh" Enter
   tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || \
@@ -289,9 +306,13 @@ expand_sidebar() {
   set_layout_mode normal
 }
 
-guard_not_meet_gallery() {
+guard_special_modes() {
   if [ "$(layout_mode)" = "meet-gallery" ]; then
     tmux display-message -t "$sess" "meet gallery — /meet end (or leave menu) to change layout" 2>/dev/null || true
+    return 1
+  fi
+  if [ "$(layout_mode)" = "pstack-dossier" ]; then
+    tmux display-message -t "$sess" "pstack dossier — /pstack leave (or leave-pstack-dossier) to change layout" 2>/dev/null || true
     return 1
   fi
   return 0
@@ -458,9 +479,111 @@ leave_meet_gallery() {
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
 }
 
+# pstack dossier wizard: work.2 (avatar) → pstack-pane.sh; chat stays in work.1.
+build_pstack_dossier_tiles() {
+  collapse_to_three_panes || return 1
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  collapse_sidebar
+  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
+
+  # Dossier pane on the right — unmark avatar so wheel scrolls the wizard text.
+  tmux set-option -p -t "$sess:work.2" -u @gotchibot-avatar 2>/dev/null || true
+  local c2
+  c2="$(pane_start_cmd 2)"
+  if [[ "$c2" != *pstack-pane* ]]; then
+    tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/pstack-pane.sh watch" 2>/dev/null || true
+  fi
+  tmux set-option -p -t "$sess:work.2" @gotchibot-pstack-dossier 1 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' pstack · dossier ' 2>/dev/null || true
+
+  # Chat stays the live OpenCode pane (wizard edits happen via CLI in chat).
+  local c1
+  c1="$(pane_start_cmd 1)"
+  if [[ "$c1" != *chat-pane* ]]; then
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  fi
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+
+  while [ "$(pane_count)" -gt 3 ]; do
+    tmux kill-pane -t "$sess:work.3" 2>/dev/null || break
+  done
+  apply_pstack_dossier_sizes
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/sessions/.pstack-dossier.stamp" 2>/dev/null || true
+}
+
+apply_pstack_dossier_sizes() {
+  local win_w dossier_w
+  win_w="$(window_width)"
+  collapse_sidebar
+  dossier_w=$(( win_w * 42 / 100 ))
+  [ "$dossier_w" -lt 44 ] && dossier_w=44
+  [ "$dossier_w" -gt 72 ] && dossier_w=72
+  tmux resize-pane -t "$sess:work.0" -x "$sidebar_collapsed" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.2" -x "$dossier_w" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.1" -x "$((win_w - sidebar_collapsed - dossier_w - 2))" 2>/dev/null || true
+}
+
+enter_pstack_dossier() {
+  session_exists || return 1
+  apply_window_policy
+  if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ] || [ "$(layout_mode)" = "chat-max" ]; then
+    set_layout_mode normal
+    collapse_to_three_panes || true
+    tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  fi
+  if [ "$(layout_mode)" != "pstack-dossier" ]; then
+    require_three_panes || return 1
+  fi
+  set_layout_mode pstack-dossier
+  build_pstack_dossier_tiles || return 1
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  save_layout
+}
+
+refresh_pstack_dossier() {
+  if [ "$(layout_mode)" != "pstack-dossier" ]; then
+    return 0
+  fi
+  if ! pstack_dossier_correct; then
+    build_pstack_dossier_tiles || return 1
+  else
+    apply_pstack_dossier_sizes
+  fi
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  save_layout
+}
+
+leave_pstack_dossier() {
+  if [ "$(layout_mode)" != "pstack-dossier" ]; then
+    return 0
+  fi
+  # Mark normal before respawns so resize hooks don't re-enter pstack-dossier.
+  set_layout_mode normal
+  if [ "$(pane_count)" -lt 3 ]; then
+    require_three_panes || true
+  fi
+  collapse_to_three_panes || true
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+  mark_avatar_pane
+  collapse_sidebar
+  apply_pane_sizes
+  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  save_layout
+  signal_panes
+  install_avatar_mouse 2>/dev/null || true
+}
+
 # Files take remaining width; chat collapses to a thin Gotchi bar; avatar stays.
 enter_files_max() {
-  if ! guard_not_meet_gallery; then return 1; fi
+  if ! guard_special_modes; then return 1; fi
   require_three_panes || return 1
   if [ "$(layout_mode)" = "avatar-max" ]; then
     # Leave avatar-max without restoring chat yet — we collapse chat again below.
@@ -484,7 +607,7 @@ enter_files_max() {
 
 # Avatar takes remaining width; chat → bar; files stay collapsed.
 enter_avatar_max() {
-  if ! guard_not_meet_gallery; then return 1; fi
+  if ! guard_special_modes; then return 1; fi
   require_three_panes || return 1
   if [ "$(layout_mode)" = "files-max" ]; then
     tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
@@ -507,7 +630,7 @@ enter_avatar_max() {
 }
 
 enter_chat_max() {
-  if ! guard_not_meet_gallery; then return 1; fi
+  if ! guard_special_modes; then return 1; fi
   require_three_panes || return 1
   if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ]; then
     tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
@@ -541,7 +664,7 @@ apply_chat_max_sizes() {
 # OpenCode's info sidebar is internal (not a tmux pane) and can hide work.2
 # when chat goes wide; this splits avatar back out.
 restore_avatar_pane() {
-  if ! guard_not_meet_gallery; then return 1; fi
+  if ! guard_special_modes; then return 1; fi
   local count
   count="$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')"
   if [ "${count:-0}" -lt 3 ]; then
@@ -579,6 +702,10 @@ restore_normal_layout() {
     leave_meet_gallery
     return
   fi
+  if [ "$(layout_mode)" = "pstack-dossier" ]; then
+    leave_pstack_dossier
+    return
+  fi
   layout_ready || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh"
@@ -613,7 +740,7 @@ toggle_avatar_max() {
 toggle_sidebar() {
   local pw
   if [ "$(layout_mode)" = "meet-gallery" ]; then
-    guard_not_meet_gallery
+    guard_special_modes
     return
   fi
   if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ]; then
@@ -668,6 +795,14 @@ fit_quiet() {
       build_meet_gallery_tiles || true
     else
       apply_meet_gallery_sizes
+    fi
+    return 0
+  fi
+  if [ "$(layout_mode)" = "pstack-dossier" ]; then
+    if ! pstack_dossier_correct; then
+      build_pstack_dossier_tiles || true
+    else
+      apply_pstack_dossier_sizes
     fi
     return 0
   fi
@@ -742,9 +877,14 @@ install_agent_keys() {
   install_layout_keys gotchi-files
   install_layout_keys gotchi-avatar
   # Pagination clicks on avatar; wheel unbound there (orch face stays pinned).
-  install_avatar_mouse
   if [ "$(layout_mode)" = "meet-gallery" ]; then
     install_meet_gallery_mouse 2>/dev/null || true
+  elif [ "$(layout_mode)" = "pstack-dossier" ]; then
+    # Wizard pane keeps default wheel/scroll — never mark it as avatar.
+    tmux set-option -p -t "$sess:work.2" -u @gotchibot-avatar 2>/dev/null || true
+    tmux set-option -p -t "$sess:work.2" @gotchibot-pstack-dossier 1 2>/dev/null || true
+  else
+    install_avatar_mouse
   fi
   # Orchestrator focus — F3 / prefix o / Option+O
   tmux bind-key -T gotchi-chat F3 run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
@@ -833,6 +973,8 @@ case "$cmd" in
   refresh-soft)
     if [ "$(layout_mode)" = "meet-gallery" ]; then
       refresh_meet_gallery
+    elif [ "$(layout_mode)" = "pstack-dossier" ]; then
+      refresh_pstack_dossier
     elif ! layout_ready; then
       disable_resize_hook
       rm -f "$LAYOUT_FILE"
@@ -855,6 +997,10 @@ case "$cmd" in
   refresh)
     if [ "$(layout_mode)" = "meet-gallery" ]; then
       leave_meet_gallery
+      exit 0
+    fi
+    if [ "$(layout_mode)" = "pstack-dossier" ]; then
+      leave_pstack_dossier
       exit 0
     fi
     disable_resize_hook
@@ -899,6 +1045,15 @@ case "$cmd" in
   leave-meet-gallery)
     leave_meet_gallery
     ;;
+  enter-pstack-dossier|pstack-dossier)
+    enter_pstack_dossier
+    ;;
+  refresh-pstack-dossier)
+    refresh_pstack_dossier
+    ;;
+  leave-pstack-dossier)
+    leave_pstack_dossier
+    ;;
   require-three)
     # Invoked via run-shell from a side pane so rebuild is not aborted mid-flight.
     rebuild_panes || exit 1
@@ -919,7 +1074,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|require-three|fit|install-mouse]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|enter-pstack-dossier|refresh-pstack-dossier|leave-pstack-dossier|require-three|fit|install-mouse]" >&2
     exit 2
     ;;
 esac

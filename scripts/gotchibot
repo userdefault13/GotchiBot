@@ -63,8 +63,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot update [--check|--apply|--force]  check/install GotchiBot updates (CDN or git)
   gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
   gotchibot infra schedule status|install|uninstall|run-now  YFI 15-min supervisor LaunchAgent (run on the iMac)
-  gotchibot desk-terminals status|open|close|install|uninstall [hero…] [--host imac|local]
-                                  one always-open Claude/Cursor Terminal window per live agent on the iMac desk
+  gotchibot desk-terminals status|open|close|use|install|uninstall [hero…] [--host imac|local]
+                                  driven desks stay up; workers: use → tool → close (ephemeral)
   gotchibot infra-usage [--json]    operator: install-token usage report (Mongo / cost proxy)
   gotchibot aseprite check|export|init-tileset|init-sprite|script|info|svg-import|svg-export   Aseprite CLI (pixel art)
   gotchibot connect            open browser wallet-connect (MetaMask)
@@ -75,6 +75,14 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot passoff send <to> [--from …] [--note "…"] [--next "…"] [--dry-run]
                                   hand live work to another gotchi (packet + message)
   gotchibot passoff list|show|accept|resume|drop  the receiving side (/passoff)
+  gotchibot pstack init|status|list|roles|brief|unit|ledger|decision
+                                  pstack chief program store (skill: pstack; never spawns)
+  gotchibot pstack dossier new|show|set|ready|list|fields|current
+                                  pstack dossier SoT per program slug (wizard pane: work.2)
+  gotchibot ralph start|status|cancel|list|bump
+                                  ralph-loop store (skill: ralph; never spawns; hooks drive iterations)
+  gotchibot add-dir <path>|list|remove <path>|clear
+                                  extra workspace roots for write-guard (/add-dir)
   gotchibot claude-plugin [build|--check]  package .claude/ (hooks, commands, agents)
                                   as an installable plugin for the iMac
   gotchibot contexter save|latest|show|list|prune   carry key values, decisions and
@@ -117,6 +125,9 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot mesh [ping] [--live] [--json]  agent count + status across MBP and iMac (Tailscale SSH)
   gotchibot trader [monitor|improve|news] [--json] [--host imac]  Gotchi-Trader desk
   gotchibot trader schedule status|install|uninstall|run-now  LINK 30-min cycle LaunchAgent (run on the iMac)
+  gotchibot moltbook watch [--json] [--env-file <path>]  Moltbook watch desk — one cycle (queue only, no posting)
+  gotchibot moltbook schedule status|install|uninstall|run-now  Moltbook 15-min watch LaunchAgent (run on the iMac)
+  gotchibot moltbook reply [--run|--show] [--json]  draft replies for queued Moltbook items (dry-run default; drafts only, never posts)
   gotchibot model [pick|list|resolve] [--json] [--probe]  pick a free, listed model
   gotchibot aseprite …                Aseprite batch export/init (see skill aseprite-tool)
   gotchibot pdf check|info|search|read-pages|tables|chunks|render  PDF via PyMuPDF
@@ -648,6 +659,14 @@ case "$cmd" in
   roster) cmd_roster "$@" ;;
   handoff) cmd_handoff "$@" ;;
   passoff) exec node "$ROOT/scripts/passoff.mjs" "$@" ;;
+  pstack)
+    if [ "${1:-}" = "dossier" ]; then
+      shift
+      exec node "$ROOT/scripts/pstack-dossier.mjs" "$@"
+    fi
+    exec node "$ROOT/scripts/pstack-orch.mjs" "$@" ;;
+  ralph) exec node "$ROOT/scripts/ralph-orch.mjs" "$@" ;;
+  add-dir) exec node "$ROOT/scripts/add-dir.mjs" "$@" ;;
   claude-plugin) exec node "$ROOT/scripts/claude-plugin-build.mjs" "$@" ;;
   contexter|context) exec node "$ROOT/scripts/contexter.mjs" "$@" ;;
   cursor-layer)
@@ -795,6 +814,12 @@ case "$cmd" in
   trader)
     if [ "${1:-}" = "schedule" ]; then shift; exec node "$ROOT/scripts/trader-schedule.mjs" "$@"; fi
     exec node "$ROOT/scripts/gotchi-trader-desk.mjs" "$@" ;;
+  moltbook)
+    case "${1:-}" in
+      schedule) shift; exec node "$ROOT/scripts/moltbook-schedule.mjs" "$@" ;;
+      reply) shift; exec node "$ROOT/scripts/moltbook-reply.mjs" "$@" ;;
+      *) exec node "$ROOT/scripts/moltbook-watch.mjs" "$@" ;;
+    esac ;;
   model) abra_or_node "$ROOT/scripts/model-auto.mjs" "$@" ;;
   sidebar) exec "$ROOT/scripts/orchestrator-layout.sh" sidebar ;;
   files-max|explorer) exec "$ROOT/scripts/orchestrator-layout.sh" files-max ;;

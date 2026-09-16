@@ -34,7 +34,7 @@ export function isHubMachine() {
     return true;
   }
   const h = String(hostname() || "").toLowerCase();
-  if (/imac|juliuss-imac/.test(h)) return true;
+  if (/imac/.test(h)) return true;
   const cfg = loadHubBridgeConfig();
   const hubHost = String(cfg.host || "").toLowerCase();
   if (hubHost && (h === hubHost || h.startsWith(hubHost.split(".")[0]))) return true;
@@ -48,7 +48,7 @@ export function hubNetworkHost() {
     process.env.REMOTE_HOST?.trim() ||
     process.env.GOTCHIBOT_REMOTE_HOST?.trim() ||
     loadHubBridgeConfig().host ||
-    "juliuss-imac-2"
+    "hub"
   );
 }
 

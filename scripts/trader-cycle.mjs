@@ -44,11 +44,12 @@ import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hostServiceUrl } from "./lib/host-services.mjs";
 import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
 
 import { createClaudeTerminal } from "./lib/claude-terminal.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const HOME = process.env.HOME || "/Users/juliuswong";
+const HOME = process.env.HOME || homedir();
 const API = process.env.GOTCHIBOT_TRADER_URL || hostServiceUrl(4000);
 const WORKSPACE = process.env.TRADER_VERIFY_WORKSPACE || `${HOME}/Dev/gotchibot-trader-verify`;
 const LOG_DIR = process.env.TRADER_LOG_DIR || join(ROOT, "sessions/trader-logs");

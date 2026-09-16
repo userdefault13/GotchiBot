@@ -41,7 +41,18 @@
         "timeout": 25
       }
     ],
+    "afterAgentResponse": [
+      {
+        "command": "node .cursor/hooks/ralph-capture.mjs",
+        "timeout": 10
+      }
+    ],
     "stop": [
+      {
+        "command": "node .cursor/hooks/ralph-stop.mjs",
+        "timeout": 20,
+        "loop_limit": null
+      },
       {
         "command": "node .cursor/hooks/contexter-restore.mjs",
         "timeout": 20,

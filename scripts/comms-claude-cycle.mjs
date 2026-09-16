@@ -43,14 +43,14 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { hostname, tmpdir } from "node:os";
+import { hostname, homedir, tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClaudeTerminal } from "./lib/claude-terminal.mjs";
 import { assertRemoteReady, materializeKey, runSsh } from "./remote-lib.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const HOME = process.env.HOME || "/Users/juliuswong";
+const HOME = process.env.HOME || homedir();
 const API_BASE = (process.env.AARCADE_API_BASE || "https://aarcadeghst.com").replace(/\/+$/, "");
 const DEV_ROOT = process.env.COMMS_DEV_ROOT || `${HOME}/Dev`;
 const WORKSPACE = process.env.COMMS_CLAUDE_WORKSPACE || `${HOME}/Dev/gotchibot-comms-claude`;
@@ -72,8 +72,8 @@ function shellQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
-// "Am I the iMac?" — hostname against the abra REMOTE_HOST (juliuss-imac-2 vs
-// Juliuss-iMac-2.local), or an explicit marker for a box without abra.
+// "Am I the iMac?" — hostname against the abra REMOTE_HOST (e.g. hub-host vs
+// hub-host.local), or an explicit marker for a box without abra.
 function onImac() {
   if (process.env.GOTCHIBOT_ON_IMAC === "1") return true;
   const want = String(process.env.REMOTE_HOST || process.env.GOTCHIBOT_REMOTE_HOST || "").toLowerCase().split(".")[0];

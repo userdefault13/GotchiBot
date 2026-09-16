@@ -5,17 +5,15 @@
  *   node scripts/meet-room.mjs --render [--cols N] [--rows N] [--page N]
  *   node scripts/meet-room.mjs --members [--json]
  */
-import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadCurrentMeeting, participantInfo } from "./meet-channel.mjs";
+import { loadCurrentMeeting, participantInfo, getThumb } from "./meet-channel.mjs";
 import { loadMeetStatus, statusFor, statusLabel } from "./meet-status.mjs";
 import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PAGE_FILE = `${ROOT}/sessions/.meet-room-page`;
-const THUMB_FALLBACK = `${ROOT}/assets/gotchi-thumb.ascii`;
 const GRID_COLS = Math.max(1, Number(process.env.GOTCHIBOT_MEET_ROOM_COLS || 3) || 3);
 const GRID_ROWS = Math.max(1, Number(process.env.GOTCHIBOT_MEET_ROOM_ROWS || 2) || 2);
 const PER_PAGE = Math.max(1, Number(process.env.GOTCHIBOT_MEET_ROOM_PER_PAGE || GRID_COLS * GRID_ROWS) || GRID_COLS * GRID_ROWS);
@@ -71,36 +69,8 @@ function nameColor(role) {
   return C.agent;
 }
 
-const thumbCache = new Map();
-
-function thumbForHero(heroId) {
-  const r = spawnSync(process.execPath, [`${ROOT}/scripts/gotchi-art.mjs`, "--thumb", "--hero", heroId, "--color"], {
-    cwd: ROOT,
-    encoding: "utf8",
-    timeout: 8000,
-  });
-  let art = (r.stdout || "").trimEnd();
-  if (!art) {
-    try {
-      art = readFileSync(THUMB_FALLBACK, "utf8").trimEnd();
-    } catch {
-      art = "  ▄▄▄▄▄▄";
-    }
-  }
-  return art.split("\n");
-}
-
-function getThumb(id) {
-  if (!id || id === "userdefault") {
-    try {
-      return readFileSync(THUMB_FALLBACK, "utf8").trimEnd().split("\n");
-    } catch {
-      return ["  ▄▄▄▄▄▄"];
-    }
-  }
-  if (!thumbCache.has(id)) thumbCache.set(id, thumbForHero(id));
-  return thumbCache.get(id);
-}
+// Thumbs come from meet-channel.mjs: same on-disk cache (sessions/.meet-thumbs)
+// as the # meet transcript pane, so a page never spawns gotchi-art twice.
 
 export function listMeetMembers(meeting = loadCurrentMeeting()) {
   if (!meeting) return [];
@@ -244,7 +214,7 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
   lines.push(renderPager(cur, pages, cols));
   if (includeHint) {
     lines.push("");
-    lines.push(`${C.hint}Message the room (@LINK …) — transcript in # meet →${C.reset}`);
+    lines.push(`${C.hint}Message the room (@LINK · @everyone) — transcript in # meet →${C.reset}`);
   }
 
   const maxLines = Math.max(10, rows - 2);

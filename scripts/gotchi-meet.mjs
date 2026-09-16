@@ -905,6 +905,21 @@ function bareNameMentions(meeting, text) {
   return out;
 }
 
+/** @everyone / @all / @channel / @here — the whole room answers, no chair pick. */
+function isEveryoneMention(text) {
+  return /(^|[^A-Za-z0-9_-])@(everyone|all|channel|here)(?=$|[^A-Za-z0-9_-])/i.test(
+    String(text || ""),
+  );
+}
+
+/** Every non-user participant, chair first, then the roster order. */
+function everyoneSpeakers(meeting) {
+  const parts = (meeting.participants || []).filter((p) => p.role !== "user");
+  const chair = parts.find((p) => p.id === meeting.chairId);
+  const rest = parts.filter((p) => p.id !== meeting.chairId);
+  return [...(chair ? [chair] : []), ...rest].map((p) => p.id);
+}
+
 function resolveMentionedSpeakers(meeting, userText) {
   const mentioned = [];
   for (const tok of mentionsFromText(userText)) {
@@ -1196,6 +1211,16 @@ async function runMeetingTurn(agentId, message, { timeoutS, sessionKey }) {
 }
 
 async function chairPickSpeakers(meeting, userText) {
+  // @everyone: the line reaches every gotchi directly and each one answers.
+  if (isEveryoneMention(userText)) {
+    return {
+      speakers: everyoneSpeakers(meeting),
+      note: "@everyone: every gotchi answers in turn",
+      fallback: false,
+      everyone: true,
+    };
+  }
+
   // Morning meeting: deterministic orch chair + next/@mentions — not LLM roulette.
   // Agents also via /colabo or morning collect/present.
   if (meeting.kind === "morning-recap") {
@@ -1268,8 +1293,15 @@ async function agentReply(meeting, speakerId) {
         `Autonomy: ${playbook?.autonomy || ""}`,
       ]
     : ["Persistent job: none"];
+  const lastUser = [...turns].reverse().find((t) => t.role === "user");
+  const everyoneCue = isEveryoneMention(lastUser?.text)
+    ? [
+        "The latest user line is addressed to @everyone: each gotchi answers it directly, one after another. Give your own answer for your own desk — do not summarize or speak for the others.",
+      ]
+    : [];
   const prompt = [
     "You are in a GotchiBot meeting. Reply in 3–8 sentences as this gotchi. Don't chair unless you are the chair. Don't repeat others.",
+    ...everyoneCue,
     `Your id: ${speakerId}`,
     `Your name: ${p?.name || speakerId}`,
     `Your meeting role: ${p?.role || "agent"}`,
@@ -1673,7 +1705,7 @@ function usage() {
   gotchi-meet.mjs invite <n|id|name>
   gotchi-meet.mjs invite all
   gotchi-meet.mjs status [--json]
-  gotchi-meet.mjs say "user message"
+  gotchi-meet.mjs say "user message"      # @LINK picks a gotchi · @everyone → all answer
   gotchi-meet.mjs morning collect|present|next|finish|status|tasks …
   gotchi-meet.mjs colabo "prompt for all agents"
   gotchi-meet.mjs end
@@ -1717,7 +1749,7 @@ async function main() {
       console.log("        ./scripts/gotchi-meet.mjs invite all");
     }
     console.log('colabo  ./scripts/gotchi-meet.mjs colabo "…"');
-    console.log('say     ./scripts/gotchi-meet.mjs say "…"');
+    console.log('say     ./scripts/gotchi-meet.mjs say "…"        (@everyone → all answer)');
     if (tmuxSessionName()) {
       console.log("layout  meet gallery (Meet · room | # meet)");
     } else {

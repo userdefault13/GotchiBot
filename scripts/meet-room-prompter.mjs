@@ -18,6 +18,7 @@ import {
   clampPage,
 } from "./meet-room.mjs";
 import { setMeetStatus } from "./meet-status.mjs";
+import { warmThumbs } from "./meet-channel.mjs";
 import { runLayout } from "./tmux-layout.mjs";
 import { isMainModule } from "./is-main.mjs";
 
@@ -70,13 +71,16 @@ function paneSize() {
 }
 
 function mentionTags() {
-  return listMeetMembers()
+  const members = listMeetMembers()
     .filter((m) => m.role !== "user")
     .map((m) => ({
       tag: `@${String(m.label || m.id).replace(/\s+/g, "")}`,
       label: m.label,
       id: m.id,
     }));
+  if (!members.length) return members;
+  // @everyone: the whole room answers (gotchi-meet.mjs sayTurn fans it out).
+  return [{ tag: "@everyone", label: "everyone", id: "everyone" }, ...members];
 }
 
 function activeMentionQuery(buffer) {
@@ -593,8 +597,10 @@ function drawBody() {
     includeHint: false,
   });
 
-  stdout.write("\x1b[H\x1b[J");
-  stdout.write(gallery);
+  // Home + clear-to-EOL per line (one write) instead of a full-screen clear:
+  // no blank flash on /next, /prev, or a status tick.
+  const galleryLines = String(gallery).split("\n");
+  stdout.write(`\x1b[H${galleryLines.map((l) => `${l}\x1b[K`).join("\n")}\n\x1b[J`);
 
   const top = rows - PROMPT_PANEL_ROWS + 1;
   const q = activeMentionQuery(editor.buffer);
@@ -763,6 +769,13 @@ function main() {
   markTmuxPane();
   setup();
   draw();
+  // Pre-render every member's thumb to disk in the background so the first
+  // visit to each room page is a file read, not a gotchi-art spawn per tile.
+  try {
+    warmThumbs(listMeetMembers().map((m) => m.id));
+  } catch {
+    /* ok */
+  }
 
   process.on("SIGUSR1", () => {
     ensureStatusAnim();

@@ -78,6 +78,7 @@ const ORCH_SKILLS = [
   "gotchibot-hub",
   "gotchibot",
   "pstack",
+  "ralph",
 ];
 /** Skills every hero gets, orchestrator or not. */
 const COMMON_SKILLS = ["passoff"];

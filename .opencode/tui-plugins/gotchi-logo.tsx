@@ -108,6 +108,7 @@ const SessionPromptWithLogo = (props: {
   })
 
   const Prompt = props.api.ui.Prompt
+  const Slot = props.api.ui.Slot
 
   // session_prompt is mode:replace — host drops the default prompt unless we paint it.
   //
@@ -152,7 +153,14 @@ const SessionPromptWithLogo = (props: {
         visible={props.visible}
         disabled={props.disabled}
         onSubmit={props.onSubmit}
-        ref={props.promptRef}
+        // The host passes session_prompt_right here; keep it so plugins (gotchi-steer)
+        // can put a button beside the prompt.
+        right={<Slot name="session_prompt_right" session_id={props.sessionId} />}
+        ref={(r: unknown) => {
+          // Shared with gotchi-steer.ts (interrupt & steer needs the live prompt).
+          ;(globalThis as any).__gotchiPromptRef = r
+          props.promptRef?.(r)
+        }}
       />
     </box>
   )

@@ -29,6 +29,10 @@ For every user job that involves coding, investigation, edits, research that nee
    - `action=blocked` → tell the user the gate fix; do not DIY the task
 3. **Monitor & merge** — use the picker's `wait` / `output` lines (imac sessions need
    `--host imac`), then summarize for the user.
+   Remote spawns are verified: `remote-spawn.mjs` refuses to report success until
+   `sessions/<id>/` exists on the iMac (ghost ids exit 20 — lesson
+   `s20260915-230158-20052`). If a ghost id shows up, respawn with
+   `--fallback-local` or `--host local`; the same program usually works locally.
 
 Prefer **iMac via Tailscale** when SSH is up (always-on). Prefer **local MBP** when
 remote is down or the user says local/private.

@@ -18,7 +18,7 @@ Always use `abra run gotchibot -- …` from Desk (MBP). Secrets stay in abracada
 | Role | Machine | Notes |
 | --- | --- | --- |
 | Desk | MBP | Julius chats here; OpenCode TUI |
-| Hub | iMac (`juliuss-imac-2`) | OpenClaw gateway `:18789`, Docker, VS Code Claude bridge `:45678` |
+| Hub | iMac (hostname in `config/hub-bridge.json`) | OpenClaw gateway `:18789`, Docker, VS Code Claude bridge `:45678` |
 | Tunnel | Cloudflare | `subgraph.aarcadeghst.com` |
 
 Bar line: `OC✗` = OpenClaw gateway unreachable. `tun✓`/`tun✗` = subgraph tunnel. `dk N↓` = unhealthy Docker.
@@ -260,7 +260,7 @@ Work top-down, exact commands, all from Desk via abra:
     restarts the container. It is the CLI equivalent of steps 1–3 above.
 
 3. **Config lives at `~/.openclaw/openclaw.json`**
-   (`/Users/juliuswong/.openclaw/openclaw.json`), mounted into the container.
+   (hub home), mounted into the container.
    If it is clobbered / double-written (missing `gateway.mode`), `restart-gateway`
    restores it from `.bak` / `.last-good` and rewrites it. Check it for a valid
    `gateway.mode: "local"` and the plugin block above.

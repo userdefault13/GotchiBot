@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "name": "pstack-program-dossier",
+  "description": "Chief (owned-954) SoT for an active pstack program. Mirrors the Orchestrate brief template. Not sandbox /project intake.",
+  "rules": {
+    "chiefSoT": true,
+    "neverAutoSpawn": true,
+    "neverAutoStart": true,
+    "mirrorBriefTemplate": true,
+    "separateFromProjectIntake": true,
+    "chiefNoProductEditsWhileSticky": true
+  },
+  "fields": [
+    {
+      "id": "title",
+      "prompt": "Program title (human name)?",
+      "required": true,
+      "hint": "Display name; slug stays on sessions/pstack/<slug>/"
+    },
+    {
+      "id": "goal",
+      "prompt": "GOAL — one sentence outcome a stranger can execute?",
+      "required": true
+    },
+    {
+      "id": "playbook",
+      "prompt": "Playbook label?",
+      "required": true,
+      "hint": "Sticky until Julius says new task / exit pstack",
+      "options": [
+        { "value": "Investigation", "title": "Investigation", "description": "Read-only: how / why / are we sure" },
+        { "value": "Bug fix", "title": "Bug fix", "description": "Reproduce → root cause → fix + evidence" },
+        { "value": "Perf issue", "title": "Perf issue", "description": "Measured slowness vs baseline" },
+        { "value": "Feature", "title": "Feature", "description": "New or changed behavior from a named data shape" },
+        { "value": "Refactoring", "title": "Refactoring", "description": "Behavior-preserving structure change" },
+        { "value": "Prototype", "title": "Prototype", "description": "Cheap sketch to settle an empirical fork" },
+        { "value": "Multi-phase plan", "title": "Multi-phase plan", "description": "Phases or stacked PRs" },
+        { "value": "Babysit", "title": "Babysit", "description": "Drive a PR / stack to merge-ready" },
+        { "value": "Autonomous run", "title": "Autonomous run", "description": "One long task to a checkable predicate" },
+        { "value": "Orchestrate", "title": "Orchestrate", "description": "Multi-unit program; chief owns queue + store" }
+      ]
+    },
+    {
+      "id": "scope",
+      "prompt": "SCOPE — paths this program may write; paths it may not?",
+      "required": true,
+      "hint": "One path or rule per line"
+    },
+    {
+      "id": "context",
+      "prompt": "CONTEXT — file/PR pointers; upstream reports workers cannot see?",
+      "required": false,
+      "default": ""
+    },
+    {
+      "id": "acceptance",
+      "prompt": "ACCEPTANCE — checkable criteria (one per line)?",
+      "required": true
+    },
+    {
+      "id": "verify",
+      "prompt": "VERIFY — exact command or surface + known gotchas?",
+      "required": true,
+      "hint": "e.g. ./scripts/gotchibot pstack dossier ready <slug>"
+    },
+    {
+      "id": "forbidden",
+      "prompt": "FORBIDDEN — Charter + program bans?",
+      "required": true,
+      "default": "no installs; no secrets; never LINK/YFI/WBTC as generic workers"
+    },
+    {
+      "id": "done",
+      "prompt": "Done when… (chief may exit pstack)?",
+      "required": true,
+      "hint": "Measurable exit — not vibes"
+    },
+    {
+      "id": "timebox",
+      "prompt": "TIMEBOX — rough cap per unit or whole program?",
+      "required": false,
+      "default": "one session per unit; partial on expiry"
+    },
+    {
+      "id": "units",
+      "prompt": "Planned units sketch (id · role · one-line goal)?",
+      "required": false,
+      "default": "",
+      "hint": "u1 how-explorer · u2 worker · u3 verifier — chief fills as program evolves"
+    },
+    {
+      "id": "principles",
+      "prompt": "Principles in play (pstack checklist names)?",
+      "required": false,
+      "default": "",
+      "hint": "e.g. model-the-domain, sequence-verifiable-units, guard-the-context-window"
+    },
+    {
+      "id": "approaches",
+      "prompt": "Arena approaches A/B/C (if contested)?",
+      "required": false,
+      "default": ""
+    },
+    {
+      "id": "host",
+      "prompt": "Default spawn host for units: imac | local | auto?",
+      "required": false,
+      "default": "auto"
+    },
+    {
+      "id": "report",
+      "prompt": "Where unit deliverables land?",
+      "required": false,
+      "default": "sessions/<unit-session>/output.md · program store sessions/pstack/<slug>/"
+    },
+    {
+      "id": "notes",
+      "prompt": "Chief notes (freeform)?",
+      "required": false,
+      "default": ""
+    }
+  ]
+}

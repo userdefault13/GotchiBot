@@ -10,12 +10,15 @@
  * usage: node scripts/gotchi-art.mjs [--inverted] [--no-color] [--no-rarity] [idle|running]
  *        node scripts/gotchi-art.mjs --color --no-rarity --hero owned-22899
  *        node scripts/gotchi-art.mjs --thumb --collateral wbtc --haunt 2
+ *        node scripts/gotchi-art.mjs --kanban --hero starter-dai-h1-1 --color
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isMainModule } from "./is-main.mjs";
 import { call, loadMeta } from "./identity.mjs";
 import {
+  collateralCharacter,
   findCollateralColors,
   hexNormalize,
   persistHeroCollateral,
@@ -25,6 +28,7 @@ import {
 } from "./collateral-resolve.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const KANBAN_ASCII = `${ROOT}/assets/gotchi-kanban.ascii`;
 
 const RARITY_COLOR = {
   common: "9CA3AF",
@@ -57,7 +61,7 @@ function colorEnabled() {
   return Boolean(process.stdout.isTTY);
 }
 
-function paint(text, hex) {
+export function paint(text, hex) {
   const h = hexNormalize(hex);
   if (!h) return text;
   const r = parseInt(h.slice(0, 2), 16);
@@ -66,23 +70,56 @@ function paint(text, hex) {
   return `\x1b[38;2;${r};${g};${b}m${text}\x1b[0m`;
 }
 
-function recolorAscii(art, { primary, secondary, useColor }) {
-  if (!useColor || (!primary && !secondary)) return art;
+export function recolorAscii(art, { primary, secondary, useColor, markHex = null, markChars = "" }) {
+  if (!useColor || (!primary && !secondary && !markHex)) return art;
   const primarySet = new Set([...PRIMARY_CHARS]);
   const secondarySet = new Set([...SECONDARY_CHARS]);
+  const markSet = new Set([...(markChars || "")]);
 
   return art
     .split("\n")
     .map((line) => {
       let out = "";
       for (const ch of line) {
-        if (primary && primarySet.has(ch)) out += paint(ch, primary);
+        if (markHex && markSet.has(ch)) out += paint(ch, markHex);
+        else if (primary && primarySet.has(ch)) out += paint(ch, primary);
         else if (secondary && secondarySet.has(ch)) out += paint(ch, secondary);
         else out += ch;
       }
       return out;
     })
     .join("\n");
+}
+
+/** Replace `#` placeholders with the preset collateral character. */
+export function applyCollateralChar(art, character) {
+  const ch = [...String(character || "?")][0] || "?";
+  return art.replaceAll("#", ch);
+}
+
+/**
+ * Mini kanban gotchi: template + collateral colors + forehead spirit char.
+ * Returns ANSI string (no trailing requirement) and plain lines for width.
+ */
+export function renderKanbanAscii(colors = null, { useColor = true } = {}) {
+  const base = existsSync(KANBAN_ASCII)
+    ? readFileSync(KANBAN_ASCII, "utf8").replace(/\s+$/, "")
+    : "  ▄▄▄  \n▄▀ # ▀▄\n█ ▀ ▀ █\n█     █\n▀▄▀▄▀▄▀";
+  const spirit = colors?.spirit || colors?.usedKey || colors?.name || "";
+  const character =
+    colors?.character ||
+    collateralCharacter(spirit || colors?.label || "?", colors);
+  let art = applyCollateralChar(base, character);
+  if (useColor && (colors?.primary || colors?.secondary)) {
+    art = recolorAscii(art, {
+      primary: colors.primary,
+      secondary: colors.secondary,
+      useColor: true,
+      markHex: colors.primary || colors.cheek || colors.secondary,
+      markChars: character,
+    });
+  }
+  return art;
 }
 
 const EYE_GLYPHS = [
@@ -240,11 +277,14 @@ async function main() {
   const args = process.argv.slice(2);
   const useColor = colorEnabled() || args.includes("--color") || args.includes("--thumb");
 
-  if (args.includes("--thumb")) {
-    const thumbPath = `${ROOT}/assets/gotchi-thumb.ascii`;
+  if (args.includes("--thumb") || args.includes("--kanban")) {
+    const isKanban = args.includes("--kanban");
+    const thumbPath = isKanban ? KANBAN_ASCII : `${ROOT}/assets/gotchi-thumb.ascii`;
     const base = existsSync(thumbPath)
       ? readFileSync(thumbPath, "utf8")
-      : "  ▄▄▄▄▄▄\n";
+      : isKanban
+        ? "  ▄▄▄  \n▄▀ # ▀▄\n█ ▀ ▀ █\n█     █\n▀▄▀▄▀▄▀\n"
+        : "  ▄▄▄▄▄▄\n";
     let colors = colorsFromCli(args);
     const heroId = argValue(args, "--hero") || args.find((a) => /^owned-|starter-/i.test(a)) || null;
     if (!colors?.primary && heroId) {
@@ -255,13 +295,18 @@ async function main() {
         colors = resolveHeroColors(enriched, heroId);
       }
     }
-    let art = base;
-    if (colors && useColor) {
-      art = recolorAscii(base, {
-        primary: colors.primary,
-        secondary: colors.secondary,
-        useColor: true,
-      });
+    let art;
+    if (isKanban) {
+      art = renderKanbanAscii(colors, { useColor });
+    } else {
+      art = base;
+      if (colors && useColor) {
+        art = recolorAscii(base, {
+          primary: colors.primary,
+          secondary: colors.secondary,
+          useColor: true,
+        });
+      }
     }
     process.stdout.write(art.endsWith("\n") ? art : `${art}\n`);
     return;
@@ -312,7 +357,9 @@ async function main() {
   process.stdout.write(art.endsWith("\n") ? art : `${art}\n`);
 }
 
-main().catch(() => {
-  const fallback = `${ROOT}/assets/gotchi.ascii`;
-  if (existsSync(fallback)) process.stdout.write(readFileSync(fallback, "utf8"));
-});
+if (isMainModule(import.meta.url)) {
+  main().catch(() => {
+    const fallback = `${ROOT}/assets/gotchi.ascii`;
+    if (existsSync(fallback)) process.stdout.write(readFileSync(fallback, "utf8"));
+  });
+}

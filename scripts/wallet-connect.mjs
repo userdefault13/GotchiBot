@@ -34,7 +34,10 @@ function openBrowser(url) {
 }
 
 function castBin() {
-  return process.env.CAST_BIN ?? "/Users/juliuswong/.foundry/bin/cast";
+  if (process.env.CAST_BIN) return process.env.CAST_BIN;
+  const r = spawnSync("which", ["cast"], { encoding: "utf8" });
+  if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
+  return "cast"; // rely on PATH
 }
 
 function freePort() {

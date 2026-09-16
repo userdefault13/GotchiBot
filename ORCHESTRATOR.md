@@ -56,6 +56,11 @@ manages the skill registry, and handles context handoffs between sessions.
   - **`@claudemode` / Hub Claude Code** → stay on big-pickle; run
     `claudemode-ask.mjs` / `gotchibot bridge` (skill `gotchibot-bridge`), then
     act on the reply — not `/model @claudemode`, not a sub-agent spawn
+  - **`/pstack` / contested design** → skill `pstack`: gotchi stays chief
+    (no product edits); role-tagged heroes run briefs; store under
+    `sessions/pstack/<slug>/` via `gotchibot pstack`. Prefer plain
+    `delegate-first` when there is no contested fork. Standing desks
+    (LINK/YFI/WBTC) stay on their own playbooks.
 
 ### 2. Parallel execution & monitoring
 - Sub-agents are spawned via `scripts/opencode-dispatch.sh`, one process per

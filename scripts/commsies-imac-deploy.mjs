@@ -34,7 +34,7 @@ function main() {
   const key = materializeKey(cfg.key);
   const commsiesDir =
     process.env.COMMSIES_DIR ||
-    (cfg.user ? `/Users/${cfg.user}/Dev/commsies` : "/Users/juliuswong/Dev/commsies");
+    (cfg.user ? `/Users/${cfg.user}/Dev/commsies` : "$HOME/Dev/commsies");
   const logDir = `${commsiesDir}/sessions`;
   const watchdogPath = `${commsiesDir}/scripts/imac-watchdog.sh`;
 

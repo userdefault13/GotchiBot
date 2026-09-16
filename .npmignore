@@ -1,10 +1,31 @@
+# Always keep out of the published tarball (desk / VCS / junk)
 sessions/
 .cursor/
+.tmp/
 tmp/
 .git/
-KNOWLEDGE.md
-USER.md
 .mc.menu
 .opencode/node_modules/
+.opencode/plans/
 **/.DS_Store
 *.log
+KNOWLEDGE.md
+
+# Personal dossiers (nested copies under hero workspaces)
+**/USER.md
+
+# Live OpenClaw desks + generated fleet (friends sync from templates)
+config/openclaw/workspaces/
+config/openclaw/agents/
+config/openclaw.fleet.generated.json5
+config/openclaw.fleet.list.json5
+config/openclaw.install.json5
+
+# Machine-local hub / tools paths (ship *.example instead)
+config/launchagents/
+config/hub-bridge.json
+config/aseprite.json
+
+# Julius desk stubs with absolute paths (other *-workspace dirs may ship)
+config/comms-claude-workspace/
+config/agent-desk-workspace/

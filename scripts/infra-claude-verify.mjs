@@ -36,11 +36,12 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const HOME = process.env.HOME || "/Users/juliuswong";
+const HOME = process.env.HOME || homedir();
 const STATE_DIR = process.env.INFRA_WATCH_DIR || join(ROOT, "var/infra-watch");
 const SESSION_FILE = join(STATE_DIR, "claude-session.json");
 const LOCK_FILE = join(STATE_DIR, "claude-verify.lock");

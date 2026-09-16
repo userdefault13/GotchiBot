@@ -1,0 +1,12 @@
+{
+  "$comment": "Copy to config/aseprite.json. Prefer env GOTCHIBOT_SVG_IMPORTER / GOTCHIBOT_SVG_EXPORTER / ASEPRITE_BIN over hardcoding paths.",
+  "bin": "${ASEPRITE_BIN:-aseprite}",
+  "extensions": {
+    "svgImporter": "${GOTCHIBOT_SVG_IMPORTER:-}",
+    "svgExporter": "${GOTCHIBOT_SVG_EXPORTER:-}"
+  },
+  "allowReadRoots": [".", "~/Downloads", "~/Dev"],
+  "allowWriteRoots": [".", "build", "assets", "output", "sessions", "~/Downloads", "~/Dev"],
+  "defaultExportDir": "build/aseprite",
+  "sheetTypes": ["rows", "columns", "horizontal", "vertical", "packed"]
+}

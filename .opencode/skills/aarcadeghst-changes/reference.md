@@ -1,6 +1,6 @@
 # AarcadeGh-t UI reference (My Paarcels)
 
-Repo root: `/Users/juliuswong/Dev/AarcadeGh-t`
+Repo root: `~/Dev/AarcadeGh-t` (sibling of GotchiBot)
 
 Sibling skill in that repo: `.cursor/skills/aarcadeghst/SKILL.md` (routes, stack,
 hackathon — general). This GotchiBot skill is narrower: **parcel detail UI

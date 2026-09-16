@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "description": "pstack role → GotchiBot hero assignment. Coordinator never codes; workers are available spares. Standing desks are protected.",
+  "coordinator": {
+    "heroId": "owned-954",
+    "modelHint": "orch-chat",
+    "notes": "Always owned-954. Frames, briefs, drain, judgment only."
+  },
+  "roles": {
+    "worker": {
+      "preferCollateral": ["dai"],
+      "preferHeroIds": ["starter-dai-h1-2", "starter-dai-h1-3", "starter-dai-h1-1"],
+      "modelHint": "sub",
+      "spawnModel": "sub",
+      "notes": "Next available spare; prefer idle DAI. Never protected desks."
+    },
+    "verifier": {
+      "preferCollateral": ["dai"],
+      "preferHeroIds": ["starter-dai-h1-3", "starter-dai-h1-2", "starter-dai-h1-1"],
+      "modelHint": "cursor-cli",
+      "spawnModel": "sub",
+      "differentFrom": "worker",
+      "notes": "Different hero than the worker. Judgment-heavy VERIFY → worker or verifier runs cursor-cli."
+    },
+    "how-explorer": {
+      "preferCollateral": ["dai"],
+      "preferHeroIds": ["starter-dai-h1-2", "starter-dai-h1-3"],
+      "modelHint": "sub",
+      "spawnModel": "sub",
+      "readOnly": true,
+      "notes": "Read-only Investigation /how slice."
+    },
+    "why-investigator": {
+      "preferCollateral": ["dai"],
+      "preferHeroIds": ["starter-dai-h1-3", "starter-dai-h1-2"],
+      "modelHint": "sub",
+      "spawnModel": "sub",
+      "readOnly": true,
+      "notes": "Read-only /why evidence slice."
+    },
+    "arena-runner": {
+      "preferCollateral": ["dai"],
+      "preferHeroIds": ["starter-dai-h1-2", "starter-dai-h1-3", "starter-dai-h1-1"],
+      "modelHint": "sub",
+      "spawnModel": "sub",
+      "oneHeroPerCandidate": true,
+      "notes": "One available hero per approach letter A/B/C."
+    }
+  },
+  "protectedHeroIds": [
+    "starter-link-h1-1",
+    "starter-yfi-h1-1",
+    "owned-22899"
+  ],
+  "protectedNotes": "LINK trader, YFI infra, WBTC comms — never generic pstack workers unless Julius explicitly routes that desk's work.",
+  "modelHints": {
+    "orch-chat": "OpenClaw / Cursor orch chat (big-pickle)",
+    "sub": "gotchi-orchestrate --model sub (model-policy subagentPrefer)",
+    "nim": "gotchi-orchestrate --model nim",
+    "cursor-cli": "Worker/verifier runs ./scripts/cursor-cli.mjs run for hard judgment"
+  }
+}

@@ -47,6 +47,8 @@ abra doctor
 gotchibot onboard
 ```
 
+Local config (`config/hub-bridge.json`, `config/aseprite.json`, `config/openclaw.install.json5`) is seeded automatically from `.example` files on install and during `onboard` — no manual copies.
+
 **From git:**
 
 ```bash

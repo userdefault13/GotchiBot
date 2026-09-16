@@ -27,8 +27,8 @@
     },
     "sub-local": {
       "model": "opencode-go/glm-5.2",
-      "endpoint": "http://192.168.1.162:11434",
-      "role": "offline/private fallback (via tunnel after migration)",
+      "endpoint": "http://127.0.0.1:11434",
+      "role": "offline/private fallback (hub Ollama; override endpoint for remote hub)",
       "sandbox": "workspace-only"
     }
   },

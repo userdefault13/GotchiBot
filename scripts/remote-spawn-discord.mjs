@@ -29,8 +29,8 @@ const prompt = `You are GotchiBot sub-agent bound to cAavegotchi starter-link-h1
 GOAL: Make GotchiBot reachable from iPhone via Discord. User DMs or @mentions a Discord bot; OpenClaw (or a thin bridge) on the iMac routes prompts to the gotchi orchestrator / opencode serve and posts replies back.
 
 CONTEXT (already true on this machine):
-- Host: Juliuss-iMac-2, Tailscale 100.68.95.90
-- Repo: /Users/juliuswong/Dev/GotchiBot
+- Host: iMac hub (REMOTE_HOST), Tailscale 100.68.95.90
+- Repo: ${cfg.dir}
 - Wallet logged in; cartridge sim-0677e437f12f1955; heroes owned-954 + starter-link-h1-1
 - opencode serve is running Tailscale-only on http://100.68.95.90:4096 (health OK)
 - OpenClaw Discord is the preferred path (config/openclaw.gotchi.json5 already defines gotchi agent + gotchi-orchestrate.mjs spawn)
@@ -95,10 +95,10 @@ try {
   const remoteEnv = `/tmp/${localEnv.split("/").pop()}`;
   const remotePrompt = `/tmp/${promptFile.split("/").pop()}`;
   const script = [
-    `cp /tmp/opencode-dispatch.sh /Users/juliuswong/Dev/GotchiBot/scripts/opencode-dispatch.sh`,
-    `chmod +x /Users/juliuswong/Dev/GotchiBot/scripts/opencode-dispatch.sh`,
+    `cp /tmp/opencode-dispatch.sh ${cfg.dir}/scripts/opencode-dispatch.sh`,
+    `chmod +x ${cfg.dir}/scripts/opencode-dispatch.sh`,
     `set -a; source ${q(remoteEnv)}; set +a`,
-    `cd /Users/juliuswong/Dev/GotchiBot`,
+    `cd ${cfg.dir}`,
     `PROMPT=$(cat ${q(remotePrompt)})`,
     `test -n "$PROMPT" || { echo empty_prompt; exit 2; }`,
     `./scripts/opencode-dispatch.sh new --model sub "$PROMPT"`,

@@ -45,7 +45,7 @@ Stop reading once you have a solid **anchor** (file + selector + last values).
 From the latest continuity source, extract:
 
 ```
-repo:     e.g. /Users/juliuswong/Dev/AarcadeGh-t
+repo:     e.g. ~/Dev/AarcadeGh-t
 file:     e.g. src/components/AssetDetail/AssetDetail.vue
 selector: e.g. .asset-detail--realm .svg-display img
 parent:   e.g. .detail-svg
@@ -67,7 +67,7 @@ Path: `sessions/.thread-anchor.json` (GotchiBot workspace)
   "updatedAt": "ISO-8601",
   "hero": "owned-22899",
   "topic": "mypaarcel-detail-css",
-  "repo": "/Users/juliuswong/Dev/AarcadeGh-t",
+  "repo": "~/Dev/AarcadeGh-t",
   "files": ["src/components/AssetDetail/AssetDetail.vue"],
   "selector": ".asset-detail--realm .svg-display img",
   "parent": ".detail-svg",

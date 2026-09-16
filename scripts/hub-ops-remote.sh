@@ -9,7 +9,7 @@ TIMEOUT="${2:-90}"
 WAIT="${3:-1}"
 
 OC_DIR=""
-for d in "$HOME/Dev/openclaw" "$HOME/dev/openclaw" "/Users/juliuswong/Dev/openclaw"; do
+for d in "$HOME/Dev/openclaw" "$HOME/dev/openclaw"; do
   if [ -f "$d/docker-compose.yml" ]; then OC_DIR="$d"; break; fi
 done
 

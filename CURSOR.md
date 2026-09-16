@@ -13,7 +13,11 @@ context it costs, who triggers it — and whether it can be ignored.
 | **CURSOR.md** + rules | eager | Who you are, hard limits, where the layer lives |
 | **Skills** | lazy · model-invoked | Passoff / mesh / meet / contexter / hub / bridge |
 | **Subagents** | isolated | `meet-scribe`, `script-doctor`, `gotchibot-proxy` — long transcripts stay out of this window |
-| **Slash commands** | user-invoked | `/passoff` `/meet` `/mesh` `/doctor` `/minutes` `/contexter` — never when the model decides |
+| **Slash commands** | user-invoked | `/passoff` `/meet` `/mesh` `/doctor` `/minutes` `/contexter` `/pstack` `/goal` `/add-dir` — never when the model decides |
+
+pstack dossier pane: `enter-pstack-dossier` swaps tmux work.2 for the wizard
+(`scripts/pstack-pane.sh`); SoT is `sessions/pstack/<slug>/dossier.json`, edited
+via `gotchibot pstack dossier set`; `leave-pstack-dossier` restores the avatar.
 | **Hooks** | guarantee | Policy the model cannot talk past |
 | **MCP** | tools | `gotchibot-*` + stack catalog — same as OpenCode desk |
 
@@ -44,7 +48,7 @@ session (no double brief / double deny / double capsule).
 ## Hard limits
 
 1. Never install packages, MCP servers, or skills on your own.
-2. Stay inside this working tree (writes also ok under `~/.cursor`, `~/.claude`, tmp).
+2. Stay inside this working tree (writes also ok under `~/.cursor`, `~/.claude`, tmp, and `/add-dir` roots).
 3. No secrets in replies; credentials go through abracadabra on Desk/Hub ops only.
 4. Before fresh work: `./scripts/gotchibot passoff resume`.
 5. `/minutes` → Task `meet-scribe` — do not read the transcript into this session.
@@ -61,3 +65,20 @@ There is no Cursor plugin marketplace step. Distribution is the git checkout:
 
 Hooks load automatically from `.cursor/hooks.json` in a trusted workspace.
 MCP servers listed in `.cursor/mcp.json` need a Cursor reload after pull.
+
+## ralph-loop (upstream plugin + GotchiBot native)
+
+Two install paths, both documented:
+
+- **Upstream Cursor plugin** — vendored in-repo at
+  [`plugins/ralph-loop-upstream/`](plugins/ralph-loop-upstream/) (full plugin:
+  skills, hooks, plugin.json, LICENSE, README; no npm install). Install in the
+  Cursor UI with `/add-plugin ralph-loop`; a cache copy is also staged under
+  `~/.cursor/plugins/cache/cursor-public/ralph-loop/<sha>/` (mirrors the pstack
+  cache install). Prefer the in-repo vendor so MBP + iMac share via git.
+- **GotchiBot-native** — `/ralph` → `.opencode/skills/ralph/SKILL.md` +
+  `./scripts/gotchibot ralph start|status|cancel|list|bump` (bookkeeping only,
+  never spawns). Hooks: `.cursor/hooks/ralph-capture.mjs` (promise → done
+  flag) + `ralph-stop.mjs` (bump + followup, runs before contexter-restore).
+  Store: `sessions/ralph/<slug>/` + `sessions/ralph/ACTIVE`. Never unlimited:
+  max-iterations defaults to 20.

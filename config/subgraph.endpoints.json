@@ -37,5 +37,5 @@
     "mongoProxy": "https://mongo-api.aarcadeghst.com",
     "homeCdn": "https://cdn.aarcadeghst.com"
   },
-  "lanNote": "iMac LAN ports are not directly reachable from the MBP (firewall/AP isolation) — always go through the tunnel hostnames, never http://192.168.1.162:*"
+  "lanNote": "Hub LAN ports are often unreachable from the desk client (firewall/AP isolation) — always go through the tunnel hostnames, never raw LAN IPs."
 }

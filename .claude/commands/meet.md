@@ -16,6 +16,7 @@ No arguments → `status` (the open meeting, or none).
 | --- | --- |
 | `/meet` | `status` |
 | `/meet say let's recap @LINK` | `say "…"` — `@mentions` pick who answers |
+| `/meet say @everyone status?` | `say "…"` — every gotchi answers, one after another |
 | `/meet colabo "ship or hold?"` | every invited agent answers |
 | `/meet invite LINK` / `invite all` | add participants |
 | `/meet end` | minutes + handoff |

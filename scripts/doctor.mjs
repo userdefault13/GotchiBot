@@ -4,8 +4,9 @@
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ensureLocalConfig } from "./ensure-local-config.mjs";
 import { getTopology, topologyPath } from "./topology.mjs";
 import { authMode, AUTH_CFG } from "./infra-client.mjs";
 import {
@@ -92,6 +93,13 @@ else fail(`tmux missing — ${tmuxInstallHint()}`);
   } catch {
     warn("config/tui.json unreadable");
   }
+}
+
+/* ─── 1c. local config seed (from .example, never overwrite) ── */
+{
+  const seeded = ensureLocalConfig(ROOT, { quiet: true });
+  for (const f of seeded.created) ok(`seeded ${relative(ROOT, f)} from .example`);
+  if (seeded.hubHostSet) ok("hub-bridge.json host set from env");
 }
 
 const topoEarly = getTopology();

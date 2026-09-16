@@ -29,11 +29,19 @@ MEMO_KEYS=""
 MEMO_VAR=""
 LAST_FP=""
 
+# GOTCHIBOT_AVATAR_DEBUG=<file>: append one line per repaint decision, so a
+# slow prev/next can be read off a log instead of guessed at.
+dbg() {
+  [ -n "${GOTCHIBOT_AVATAR_DEBUG:-}" ] || return 0
+  printf '%s %s\n' "$(date +%H:%M:%S)" "$*" >> "$GOTCHIBOT_AVATAR_DEBUG" 2>/dev/null || true
+}
+
 memo_reset() {
   local v
   for v in $MEMO_KEYS; do unset "$v"; done
   MEMO_KEYS=""
   unset MEMO_ORCH_ID MEMO_FOCUS_HERO
+  WARM_DONE=0
 }
 
 memo_var() { MEMO_VAR="MEMO_${1//[^A-Za-z0-9]/_}"; }
@@ -48,6 +56,7 @@ memo_call() {
     eval "$out=\"\$$var\""
     return 0
   fi
+  dbg "memo miss: $key"
   val="$("$@")"
   eval "$var=\$val"
   MEMO_KEYS="$MEMO_KEYS $var"
@@ -405,6 +414,10 @@ active_status() {
 }
 
 pane_height() {
+  if [ -n "${PANE_H_CACHE:-}" ]; then
+    printf '%s\n' "$PANE_H_CACHE"
+    return 0
+  fi
   if [ -n "${TMUX:-}" ]; then
     local h tgt="${TMUX_PANE:-}"
     if [ -n "$tgt" ]; then
@@ -421,6 +434,10 @@ pane_height() {
 }
 
 pane_width() {
+  if [ -n "${PANE_W_CACHE:-}" ]; then
+    printf '%s\n' "$PANE_W_CACHE"
+    return 0
+  fi
   if [ -n "${TMUX:-}" ]; then
     local w tgt="${TMUX_PANE:-}"
     if [ -n "$tgt" ]; then
@@ -434,6 +451,22 @@ pane_width() {
     fi
   fi
   tput cols 2>/dev/null || echo 40
+}
+
+# pane_width/pane_height each shell out to tmux (~10ms). A paint asks for them
+# many times, so the size is read once per paint and served from here until
+# the paint ends. WINCH re-enters through safe_render, which re-reads it.
+PANE_W_CACHE=""
+PANE_H_CACHE=""
+pane_dims_lock() {
+  PANE_W_CACHE=""
+  PANE_H_CACHE=""
+  PANE_W_CACHE="$(pane_width)"
+  PANE_H_CACHE="$(pane_height)"
+}
+pane_dims_unlock() {
+  PANE_W_CACHE=""
+  PANE_H_CACHE=""
 }
 
 RENDER_MAX_ROW=-1
@@ -612,16 +645,38 @@ thumb_art() {
 
 
 # Visible width: strip CSI/SGR ANSI, then character length.
+# Visible width without a fork. vislen_set leaves the answer in $VIS (no
+# subshell); vislen prints it. Walks CSI sequences with anchored prefix/suffix
+# removals — an extglob substitution looked neat but is quadratic in bash 3.2
+# (~400ms on one truecolor art line); this is ~2ms and needs no sed.
+VIS=0
+ESC_CH=$'\033'
+vislen_set() {
+  local s="${1:-}" n=0 rest head
+  if [[ "$s" != *"$ESC_CH"* ]]; then
+    VIS="${#s}"
+    return 0
+  fi
+  rest="$s"
+  while [[ "$rest" == *"$ESC_CH["* ]]; do
+    head="${rest%%"$ESC_CH["*}"
+    n=$((n + ${#head}))
+    rest="${rest#*"$ESC_CH["}"
+    rest="${rest#*[a-zA-Z]}"
+  done
+  VIS=$((n + ${#rest}))
+}
+
 vislen() {
-  local stripped
-  stripped="$(printf '%s' "${1:-}" | sed $'s/\033\\[[0-9;?]*[a-zA-Z]//g')"
-  printf '%s' "${#stripped}"
+  vislen_set "${1:-}"
+  printf '%s' "$VIS"
 }
 
 # Center $1 in $2 columns. left pad = floor((width - vislen) / 2). Wider than width → as-is.
 center_pad() {
   local text="${1:-}" width="${2:-0}" vis lp
-  vis="$(vislen "$text")"
+  vislen_set "$text"
+  vis="$VIS"
   if [ "$width" -le 0 ] || [ "$vis" -ge "$width" ]; then
     printf '%s' "$text"
     return 0
@@ -634,7 +689,8 @@ center_pad() {
 # pane cols using ANSI-stripped vis. Never clips (wider than cols → as-is).
 block_pad_line() {
   local text="${1:-}" width="${2:-0}" lp="${3:-0}" vis
-  vis="$(vislen "$text")"
+  vislen_set "$text"
+  vis="$VIS"
   [ "$lp" -ge 0 ] || lp=0
   if [ "$width" -le 0 ] || [ "$vis" -ge "$width" ]; then
     printf '%s' "$text"
@@ -650,7 +706,8 @@ block_pad_line() {
 # Right-pad $1 to $2 columns so 3-col concat stays even. Wider → as-is.
 pad_cell_line() {
   local text="${1:-}" width="${2:-0}" vis
-  vis="$(vislen "$text")"
+  vislen_set "$text"
+  vis="$VIS"
   if [ "$width" -le 0 ] || [ "$vis" -ge "$width" ]; then
     printf '%s' "$text"
     return 0
@@ -735,7 +792,8 @@ cell_block() {
   local line id_show
   if [ -n "${art:-}" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
-      printf '%s\n' "$(pad_cell_line "$line" "$cell_w")"
+      pad_cell_line "$line" "$cell_w"
+      printf '\n'
     done < <(printf '%s' "$art")
   fi
   printf '%b%s%b\n' "$status_color" "$(center_pad "$label" "$cell_w")" $'\033[0m'
@@ -819,7 +877,11 @@ render_main_art() {
 # so an unchanged pane never flashes. Wrapped in synchronized output (DECSET
 # 2026) so terminals that support it swap the frame in one go.
 render() {
-  local status="${1:-idle}" r ph
+  local status="${1:-idle}" r ph locked=0
+  if [ -z "${PANE_W_CACHE:-}" ]; then
+    pane_dims_lock
+    locked=1
+  fi
   RENDER_MAX_ROW=-1
   printf '\033[?2026h'
   render_body "$status" || true
@@ -829,6 +891,77 @@ render() {
   done
   LAST_MAX_ROW="$RENDER_MAX_ROW"
   printf '\033[1;1H\033[?2026l'
+  if [ "$locked" = 1 ]; then
+    pane_dims_unlock
+  fi
+}
+
+# Framed orch block (art + caption), padded once per art/caption/width and
+# memoized by the caller. Same left pad on every line so the box stays aligned.
+render_header_block() {
+  local main="$1" caption="$2" cols="$3" max_rows="$4"
+  local -a ART_LINES=()
+  local line max_vis=0 block_lp=0 i n=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    ART_LINES+=("$line")
+    vislen_set "$line"
+    [ "$VIS" -gt "$max_vis" ] && max_vis=$VIS
+  done < <(printf '%s\n' "$main")
+  vislen_set "$caption"
+  [ "$VIS" -gt "$max_vis" ] && max_vis=$VIS
+  if [ "$cols" -gt 0 ] && [ "$max_vis" -lt "$cols" ]; then
+    block_lp=$(( (cols - max_vis) / 2 ))
+  fi
+  local art_n=${#ART_LINES[@]}
+  for ((i = 0; i < art_n; i++)); do
+    [ "$n" -ge "$max_rows" ] && break
+    block_pad_line "${ART_LINES[i]}" "$cols" "$block_lp"
+    printf '\n'
+    n=$((n + 1))
+  done
+  block_pad_line "$caption" "$cols" "$block_lp"
+  printf '\n'
+}
+
+# One 3-col roster row: blank-fill missing cells, then join. Memoized by the
+# caller on the three cell keys so a page revisit is a variable read.
+page_row_block() {
+  local left="$1" mid="$2" right="$3" gap="$4" cell_w="$5"
+  local nlines
+  nlines=$(printf '%s\n' "${left:-${mid:-$right}}" | wc -l | tr -d ' ')
+  [ -z "$nlines" ] && nlines=1
+  [ -z "$left" ] && left="$(blank_block "$cell_w" "$nlines")"
+  [ -z "$mid" ] && mid="$(blank_block "$cell_w" "$nlines")"
+  [ -z "$right" ] && right="$(blank_block "$cell_w" "$nlines")"
+  pair_blocks "$left" "$mid" "$right" "$gap"
+}
+
+# Pre-render the tiles that are NOT on screen, right after a paint, so prev/next
+# never spawns node while you wait. Once per memo epoch; memo_call skips tiles
+# already computed. A click (USR1) still interrupts between tiles.
+WARM_DONE=0
+WARM_N=0
+warm_other_cells() {
+  [ "${WARM_DONE:-0}" = 1 ] && return 0
+  [ "${WARM_N:-0}" -gt 0 ] || return 0
+  local i v
+  dbg "warm: $WARM_N tiles @ ${WARM_W}x${WARM_H}"
+  for ((i = 0; i < WARM_N; i++)); do
+    memo_call v "cell|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|$WARM_W|$WARM_H" \
+      cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}"
+  done
+  WARM_DONE=1
+  dbg "warm: done"
+
+}
+
+# active_status is a file walk plus a node JSON parse (~30ms); every input it
+# reads is in the state fingerprint, so it is memoized per epoch like the art.
+render_now() {
+  local st
+  memo_call st "status" active_status
+  render "$st"
 }
 
 render_body() {
@@ -847,6 +980,7 @@ render_body() {
     return
   fi
 
+  WARM_N=0
   local role roster_raw
   role="$(role_label)"
   local gallery=0
@@ -870,17 +1004,6 @@ render_body() {
   memo_call main "art|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget" \
     render_main_art "$status" "$cols" "$main_budget"
 
-  # Framed orch (art + caption) as one block: max vis width → same left_pad
-  # on every line so the box stays aligned. Do not clip the face.
-  local -a ART_LINES=()
-  local vis max_vis=0 block_lp=0
-  while IFS= read -r line || [ -n "$line" ]; do
-    [ -z "$line" ] && continue
-    ART_LINES+=("$line")
-    vis="$(vislen "$line")"
-    [ "$vis" -gt "$max_vis" ] && max_vis=$vis
-  done < <(printf '%s\n' "$main")
-
   local role_color=$'\033[38;5;39m'
   [ "$role" = "sub-agent" ] && role_color=$'\033[38;5;213m'
   [ "$gallery" = 1 ] && role_color=$'\033[38;5;51m'
@@ -899,20 +1022,16 @@ render_body() {
   [ -z "$pin_id" ] && pin_id="$(orch_id)"
   local caption
   caption="$(printf '%b── %s ──%b  %b%s%b  %s' "$role_color" "$role" $'\033[0m' "$status_color" "$status" $'\033[0m' "${pin_id}")"
-  vis="$(vislen "$caption")"
-  [ "$vis" -gt "$max_vis" ] && max_vis=$vis
-  if [ "$cols" -gt 0 ] && [ "$max_vis" -lt "$cols" ]; then
-    block_lp=$(( (cols - max_vis) / 2 ))
-  fi
 
-  local art_i art_n=${#ART_LINES[@]}
-  for ((art_i = 0; art_i < art_n; art_i++)); do
-    put_line "$row" "$(block_pad_line "${ART_LINES[art_i]}" "$cols" "$block_lp")"
+  # Framed orch (art + caption) padded once per (art, caption, width); a page
+  # flip or a repaint only replays the lines. Do not clip the face.
+  local hdr
+  memo_call hdr "hdr|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_id" \
+    render_header_block "$main" "$caption" "$cols" "$main_budget"
+  while IFS= read -r line || [ -n "$line" ]; do
+    put_line "$row" "$line"
     row=$((row + 1))
-    [ "$row" -ge "$main_budget" ] && break
-  done
-  put_line "$row" "$(block_pad_line "$caption" "$cols" "$block_lp")"
-  row=$((row + 1))
+  done < <(printf '%s\n' "$hdr")
 
   if [ "$gallery" = 1 ]; then
     printf '\033[1;1H'
@@ -963,29 +1082,37 @@ render_body() {
   clamp_page
   save_page
 
-  local i left mid right pair nlines
+  # Hand the roster to warm_other_cells (runs after this paint is on screen).
+  WARM_N="$n_ids"
+  WARM_W="$cell_w"
+  WARM_H="$cell_h"
+  W_ID=("${ID_ARR[@]}")
+  W_ST=("${ST_ARR[@]}")
+  W_SVG=("${SVG_ARR[@]}")
+  W_COL=("${COL_ARR[@]}")
+  W_HAUNT=("${HAUNT_ARR[@]}")
+
+  local i left mid right pair k1="" k2="" k3=""
   i=$((PAGE * page_size))
   left=""
   mid=""
   right=""
   if [ "$i" -lt "$n_ids" ]; then
-    memo_call left "cell|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|$cell_w|$cell_h" \
+    k1="cell|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|$cell_w|$cell_h"
+    memo_call left "$k1" \
       cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}"
   fi
   if [ $((i + 1)) -lt "$n_ids" ]; then
-    memo_call mid "cell|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|$cell_w|$cell_h" \
+    k2="cell|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|$cell_w|$cell_h"
+    memo_call mid "$k2" \
       cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}"
   fi
   if [ $((i + 2)) -lt "$n_ids" ]; then
-    memo_call right "cell|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|$cell_w|$cell_h" \
+    k3="cell|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|$cell_w|$cell_h"
+    memo_call right "$k3" \
       cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}"
   fi
-  nlines=$(printf '%s\n' "${left:-${mid:-$right}}" | wc -l | tr -d ' ')
-  [ -z "$nlines" ] && nlines=1
-  [ -z "$left" ] && left="$(blank_block "$cell_w" "$nlines")"
-  [ -z "$mid" ] && mid="$(blank_block "$cell_w" "$nlines")"
-  [ -z "$right" ] && right="$(blank_block "$cell_w" "$nlines")"
-  pair="$(pair_blocks "$left" "$mid" "$right" "$gap")"
+  memo_call pair "row|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
   while IFS= read -r line || [ -n "$line" ]; do
     [ -z "$line" ] && continue
     put_line "$row" "$line"
@@ -1030,7 +1157,7 @@ render_body() {
 
 rerender() {
   refresh_roster
-  render "$(active_status)"
+  render_now
 }
 
 sb_click_wake() {
@@ -1058,6 +1185,7 @@ LAST_PAGE_DRAWN=""
 memo_reset_if_stale() {
   CUR_FP="$(state_fingerprint)"
   [ "$CUR_FP" = "$LAST_FP" ] && return 0
+  dbg "memo reset: fp changed (${LAST_FP:-none} -> $CUR_FP)"
   memo_reset
 }
 
@@ -1076,8 +1204,12 @@ safe_render() {
   RENDERING=1
   while true; do
     PENDING_RENDER=0
+    pane_dims_lock
     memo_reset_if_stale
-    render "$(active_status)" || true
+    dbg "safe_render: paint page=$(cat "$PAGE_FILE" 2>/dev/null || echo ?) memo_keys=$(printf '%s' "$MEMO_KEYS" | wc -w | tr -d ' ')"
+    render_now || true
+    dbg "safe_render: painted"
+    pane_dims_unlock
     load_page
     LAST_PAGE_DRAWN="$PAGE"
     # Settle on the fingerprint taken before the draw. Anything that changed
@@ -1086,11 +1218,14 @@ safe_render() {
     [ "${PENDING_RENDER:-0}" = 1 ] || break
   done
   RENDERING=0
+  warm_other_cells || true
 }
 
 on_usr1() {
   # Page click already wrote PAGE; poke already wrote the roster cache.
+  dbg "usr1"
   safe_render
+  dbg "usr1 painted"
 }
 
 case "${1:-watch}" in
@@ -1102,7 +1237,7 @@ case "${1:-watch}" in
     memo_reset
     refresh_roster
     refresh_roster_async
-    render "$(active_status)"
+    render_now
     ;;
   sb-click)
     mkdir -p "$SESSIONS"
@@ -1115,12 +1250,17 @@ case "${1:-watch}" in
     trap safe_render WINCH
     read_t="${INTERVAL%%.*}"
     [ -n "$read_t" ] || read_t=8
+    dbg "watch: start"
     watch_enter
     refresh_roster
-    render "$(active_status)" || true
+    dbg "watch: roster refreshed"
+    render_now || true
+    dbg "watch: first paint done"
     LAST_FP="$(state_fingerprint)"
     refresh_roster_async
     load_page; LAST_PAGE_DRAWN="$PAGE"
+    warm_other_cells || true
+    dbg "watch: warm done"
     while true; do
       key=""
       if read -rsn1 -t "$read_t" key; then
@@ -1140,11 +1280,13 @@ case "${1:-watch}" in
       fi
       fp="$(state_fingerprint)"
       [ "$fp" = "$LAST_FP" ] && continue
+      dbg "tick: fp changed ($LAST_FP -> $fp)"
       memo_reset
       refresh_roster
-      render "$(active_status)" || true
+      render_now || true
       load_page; LAST_PAGE_DRAWN="$PAGE"
       LAST_FP="$(state_fingerprint)"
+      warm_other_cells || true
     done
     ;;
   *)

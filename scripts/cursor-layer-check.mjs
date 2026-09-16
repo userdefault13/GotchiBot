@@ -24,6 +24,8 @@ const REQUIRED = [
   ".cursor/hooks/session-brief.mjs",
   ".cursor/hooks/contexter-precompact.mjs",
   ".cursor/hooks/contexter-restore.mjs",
+  ".cursor/hooks/ralph-capture.mjs",
+  ".cursor/hooks/ralph-stop.mjs",
   ".cursor/rules/gotchi-cursor-layer.mdc",
   ".cursor/rules/gotchi-orchestrator.mdc",
   ".cursor/skills/passoff/SKILL.md",
@@ -34,6 +36,13 @@ const REQUIRED = [
   ".cursor/skills/gotchibot-bridge/SKILL.md",
   ".cursor/skills/synergy/SKILL.md",
   ".cursor/skills/gotchibot-pdf/SKILL.md",
+  ".cursor/skills/ralph/SKILL.md",
+  ".cursor/skills/goal/SKILL.md",
+  ".cursor/skills/add-dir/SKILL.md",
+  "scripts/ralph-orch.mjs",
+  "scripts/add-dir.mjs",
+  ".claude/commands/goal.md",
+  ".claude/commands/add-dir.md",
   ".cursor/mcp.json",
   "scripts/gotchibot-policy/repo-root.mjs",
   "scripts/gotchibot-policy/install-guard.mjs",
@@ -64,6 +73,8 @@ const CURSOR_HOOK_MARKERS = [
   [".cursor/hooks/session-brief.mjs", ["gotchibot-policy/desk-brief"]],
   [".cursor/hooks/contexter-precompact.mjs", ["contexter.mjs", "cursor-capsule-pending"]],
   [".cursor/hooks/contexter-restore.mjs", ["contexter.mjs", "followup_message"]],
+  [".cursor/hooks/ralph-capture.mjs", ["ralph-orch", "completion_promise"]],
+  [".cursor/hooks/ralph-stop.mjs", ["ralph-orch", "followup_message"]],
 ];
 
 function check() {
@@ -76,7 +87,7 @@ function check() {
   try {
     const hooks = JSON.parse(readFileSync(resolve(ROOT, ".cursor/hooks.json"), "utf8"));
     if (hooks.version !== 1) problems.push("stale: .cursor/hooks.json version must be 1");
-    for (const key of ["beforeShellExecution", "preToolUse", "afterFileEdit", "sessionStart", "preCompact", "stop"]) {
+    for (const key of ["beforeShellExecution", "preToolUse", "afterFileEdit", "sessionStart", "preCompact", "afterAgentResponse", "stop"]) {
       if (!hooks.hooks?.[key]?.length) problems.push(`hooks.json missing event: ${key}`);
     }
 
@@ -104,6 +115,11 @@ function check() {
     for (const n of needles) {
       if (!body.includes(n)) problems.push(`unwired: ${rel} missing "${n}"`);
     }
+  }
+
+  const wg = readFileSync(resolve(ROOT, "scripts/gotchibot-policy/write-guard.mjs"), "utf8");
+  for (const n of ["readAddDirs", "gotchibot-add-dirs"]) {
+    if (!wg.includes(n)) problems.push(`unwired: write-guard.mjs missing "${n}"`);
   }
 
   return problems;

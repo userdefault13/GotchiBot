@@ -9,6 +9,9 @@
 # Tab/F2: OpenCode TUI cycles agents (tab). tmux does not steal Tab. Mini: GOTCHIBOT_OPENCODE_MINI=1
 # Fallback: `./scripts/gotchibot mode cycle --restart` | Ctrl+X A agent menu
 # Copy: /copy or Ctrl+Y (last assistant reply → clipboard). Shift+drag selects text in terminal.
+# Steer: while the gotchi is working, ctrl+o / alt+Enter / /steer / the [⏹ steer] button beside the
+#   prompt interrupt the turn and send the prompt now, same session, context kept. Plain Enter
+#   while busy queues the line for after the turn.
 # Shell: start an empty prompt with ! (OpenCode shell mode, like Claude Code's !). Enter runs the
 #   command via bash; the output lands in chat as context the gotchi can see. Esc leaves shell mode.
 #   The meet room prompter does the same: !cmd posts command + output to the room.
@@ -136,6 +139,8 @@ run_onboarding_gate() {
 }
 
 enter_meet_room() {
+  # Stop the live loading bar before the meet room pane takes the terminal.
+  progress_end
   export GOTCHIBOT_SKIP_COCKPIT=1
   export GOTCHIBOT_SKIP_ONBOARDING=1
   if [ -n "${TMUX:-}" ]; then

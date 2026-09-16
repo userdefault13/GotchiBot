@@ -35,6 +35,10 @@ const ALLOWED = new Set([
   "meet-gallery",
   "refresh-meet-gallery",
   "leave-meet-gallery",
+  "enter-pstack-dossier",
+  "pstack-dossier",
+  "refresh-pstack-dossier",
+  "leave-pstack-dossier",
   "require-three",
 ]);
 
