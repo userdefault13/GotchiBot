@@ -17,6 +17,8 @@ const PAGE_FILE = `${ROOT}/sessions/.meet-room-page`;
 const GRID_COLS = Math.max(1, Number(process.env.GOTCHIBOT_MEET_ROOM_COLS || 3) || 3);
 const GRID_ROWS = Math.max(1, Number(process.env.GOTCHIBOT_MEET_ROOM_ROWS || 2) || 2);
 const PER_PAGE = Math.max(1, Number(process.env.GOTCHIBOT_MEET_ROOM_PER_PAGE || GRID_COLS * GRID_ROWS) || GRID_COLS * GRID_ROWS);
+/** Blank lines between seat rows (role label of row above vs thumb of row below). */
+const ROW_GAP = Math.max(1, Number(process.env.GOTCHIBOT_MEET_ROOM_ROW_GAP || 5) || 5);
 
 const C = {
   reset: "\x1b[0m",
@@ -165,7 +167,9 @@ function renderGrid(members, cols, gridCols = GRID_COLS, gridRows = GRID_ROWS, s
     const blockH = blocks[0]?.length || 1;
     while (blocks.length < colsN) blocks.push(blankBlock(cellW, blockH));
     rows.push(...joinBlocks(blocks, gap));
-    if (r < gridRows - 1 && slice.length > (r + 1) * colsN) rows.push("");
+    if (r < gridRows - 1 && slice.length > (r + 1) * colsN) {
+      for (let g = 0; g < ROW_GAP; g++) rows.push("");
+    }
   }
   return rows;
 }

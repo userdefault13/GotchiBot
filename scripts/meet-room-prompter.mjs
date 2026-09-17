@@ -26,6 +26,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STAMP = `${ROOT}/sessions/.meet-room.stamp`;
 const LEAVE = `${ROOT}/sessions/.meet-leave`;
 const PENDING = `${ROOT}/sessions/.meet-pending.json`;
+const EDIT_REQUEST = `${ROOT}/sessions/.meet-edit-request.json`;
 const PROMPT_INPUT_ROWS = 3;
 const PROMPT_FOOTER_ROWS = 1;
 const PROMPT_PANEL_ROWS = PROMPT_INPUT_ROWS + PROMPT_FOOTER_ROWS;
@@ -430,12 +431,40 @@ function backToChat() {
 
 function pagePrev() {
   const members = listMeetMembers();
-  savePage(clampPage(loadPage() - 1, members));
+  const before = loadPage();
+  const next = clampPage(before - 1, members);
+  savePage(next);
+  return next !== before;
 }
 
 function pageNext() {
   const members = listMeetMembers();
-  savePage(clampPage(loadPage() + 1, members));
+  const before = loadPage();
+  const next = clampPage(before + 1, members);
+  savePage(next);
+  return next !== before;
+}
+
+/** 1-based row of the pager in the last draw (for mouse hits). */
+let lastPagerRow = 0;
+let lastPagerCols = 80;
+
+/** Pick up [edit] clicks from the # meet channel pane. */
+function consumeEditRequest() {
+  try {
+    const raw = readFileSync(EDIT_REQUEST, "utf8");
+    unlinkSync(EDIT_REQUEST);
+    const req = JSON.parse(raw);
+    const ts = String(req?.ts || "").trim();
+    if (!ts) return false;
+    editTargetTs = ts;
+    editor.buffer = String(req.text ?? "");
+    editor.cursor = editor.buffer.length;
+    editor.menuIdx = 0;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function padPanelLine(text, cols) {
@@ -538,7 +567,7 @@ function drawInputPanel(top, cols) {
   } else {
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
-      `${T.panel}${T.muted} · !cmd shell · ^C leave · /end${T.reset}`;
+      `${T.panel}${T.muted} · ←→ page · /edit · /start · /end · ^C leave${T.reset}`;
   }
   writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols, visLen(footerCore)), cols));
 
@@ -709,6 +738,7 @@ class Prompter {
 const editor = new Prompter();
 
 function drawBody() {
+  consumeEditRequest();
   const { cols, rows } = paneSize();
   const mentionRow = rows - PROMPT_PANEL_ROWS;
   const galleryRows = Math.max(8, rows - PROMPT_PANEL_ROWS - 1);
@@ -723,6 +753,12 @@ function drawBody() {
   // Home + clear-to-EOL per line (one write) instead of a full-screen clear:
   // no blank flash on /next, /prev, or a status tick.
   const galleryLines = String(gallery).split("\n");
+  lastPagerCols = cols;
+  lastPagerRow = 0;
+  for (let i = 0; i < galleryLines.length; i++) {
+    const plain = galleryLines[i].replace(/\x1b\[[0-9;]*m/g, "");
+    if (/prev/.test(plain) && /next/.test(plain)) lastPagerRow = i + 1; // 1-based
+  }
   stdout.write(`\x1b[H${galleryLines.map((l) => `${l}\x1b[K`).join("\n")}\n\x1b[J`);
 
   const top = rows - PROMPT_PANEL_ROWS + 1;
@@ -775,7 +811,8 @@ function teardown() {
     /* ok */
   }
   stdin.pause();
-  stdout.write("\x1b[?25h\x1b[?7h\x1b[?1049l");
+  // Disable mouse + alt screen
+  stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?7h\x1b[?1049l");
 }
 
 function setup() {
@@ -783,7 +820,8 @@ function setup() {
     console.error("Meet room needs an interactive terminal (attach the tmux chat pane).");
     process.exit(1);
   }
-  stdout.write("\x1b[?1049h\x1b[?7l\x1b[?25h");
+  // Alt screen, no wrap, mouse click (SGR + X10) for pager prev/next.
+  stdout.write("\x1b[?1049h\x1b[?7l\x1b[?25h\x1b[?1000h\x1b[?1006h");
   try {
     stdin.setRawMode(true);
   } catch (e) {
@@ -796,10 +834,51 @@ function setup() {
 
 let escBuf = "";
 
+function bufferEmpty() {
+  return !String(editor.buffer || "").trim();
+}
+
+/** Mouse click on pager row: left third = prev, right third = next (1-based x,y). */
+function applyPagerClick(x, y) {
+  if (!lastPagerRow || y < lastPagerRow || y > lastPagerRow + 1) return false;
+  const w = Math.max(1, lastPagerCols || 40);
+  const leftEnd = Math.floor(w / 3);
+  const rightStart = w - Math.floor(w / 3);
+  if (x < leftEnd) return pagePrev();
+  if (x >= rightStart) return pageNext();
+  return false;
+}
+
 function handleKey(chunk) {
   if (escBuf) {
     escBuf += chunk;
-    if (/[A-Za-z~]$/.test(escBuf) || escBuf.length > 8) {
+    // SGR mouse: \x1b[<b;x;yM  or  \x1b[<b;x;ym
+    if (escBuf.startsWith("\x1b[<")) {
+      const m = escBuf.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
+      if (m) {
+        escBuf = "";
+        const btn = Number(m[1]);
+        const x = Number(m[2]);
+        const y = Number(m[3]);
+        const release = m[4] === "m";
+        if (!release && (btn === 0 || btn === 32)) {
+          if (applyPagerClick(x, y)) return "redraw";
+        }
+        return "noop";
+      }
+      if (escBuf.length > 32) escBuf = "";
+      return;
+    }
+    // X10 mouse: \x1b[MCbCxCy  (3 bytes after M)
+    if (escBuf.startsWith("\x1b[M") && escBuf.length >= 6) {
+      const b = escBuf.charCodeAt(3) - 32;
+      const x = escBuf.charCodeAt(4) - 32;
+      const y = escBuf.charCodeAt(5) - 32;
+      escBuf = "";
+      if ((b & 3) === 0 && applyPagerClick(x, y)) return "redraw";
+      return "noop";
+    }
+    if (/[A-Za-z~]$/.test(escBuf) || escBuf.length > 12) {
       const seq = escBuf;
       escBuf = "";
       return handleEsc(seq);
@@ -810,6 +889,18 @@ function handleKey(chunk) {
   if (chunk === "\x1b") {
     escBuf = "\x1b";
     return;
+  }
+
+  // Immediate page keys when the prompt is empty (no Enter needed).
+  if (bufferEmpty() && !editTargetTs) {
+    if (chunk === "," || chunk === "[" || chunk === "h") {
+      pagePrev();
+      return "redraw";
+    }
+    if (chunk === "." || chunk === "]" || chunk === "l") {
+      pageNext();
+      return "redraw";
+    }
   }
 
   switch (chunk) {
@@ -838,6 +929,29 @@ function handleKey(chunk) {
 }
 
 function handleEsc(seq) {
+  // PageUp / PageDown — always page the seat carousel.
+  if (seq === "\x1b[5~" || seq === "\x1b[6~") {
+    if (seq === "\x1b[5~") pagePrev();
+    else pageNext();
+    return "redraw";
+  }
+  // Left / Right: page when prompt empty; otherwise move cursor.
+  if (seq === "\x1b[C" || seq === "\x1bOC") {
+    if (bufferEmpty() && !editTargetTs) {
+      pageNext();
+      return "redraw";
+    }
+    editor.move(1);
+    return "redraw";
+  }
+  if (seq === "\x1b[D" || seq === "\x1bOD") {
+    if (bufferEmpty() && !editTargetTs) {
+      pagePrev();
+      return "redraw";
+    }
+    editor.move(-1);
+    return "redraw";
+  }
   if (seq === "\x1b[A") {
     // ↑ on an empty buffer: pull the last user line into edit mode.
     if (!editor.buffer && !editTargetTs && loadEditTarget(null)) return "redraw";
@@ -846,14 +960,6 @@ function handleEsc(seq) {
   }
   if (seq === "\x1b[B") {
     editor.historyDown();
-    return "redraw";
-  }
-  if (seq === "\x1b[C") {
-    editor.move(1);
-    return "redraw";
-  }
-  if (seq === "\x1b[D") {
-    editor.move(-1);
     return "redraw";
   }
   if (seq === "\x1b[H" || seq === "\x1b[1~" || seq === "\x1bOH") {
@@ -925,55 +1031,50 @@ function main() {
   });
 
   stdin.on("data", (chunk) => {
-  if (escBuf) {
-    escBuf += chunk;
-    if (/[A-Za-z~]$/.test(escBuf) || escBuf.length > 12) {
-      const action = handleEsc(escBuf);
-      escBuf = "";
-      if (action === "end") endMeeting();
-      else if (action === "chat") backToChat();
-      else if (action === "redraw") draw();
+    const text = String(chunk);
+    // Escape / mouse sequences must go through handleKey (accumulates escBuf).
+    if (escBuf || text.startsWith("\x1b") || text.includes("\x1b")) {
+      for (const ch of text) {
+        // Lone Esc cancels edit mode (before it accumulates into a CSI sequence).
+        if (!escBuf && ch === "\x1b" && editTargetTs && text.length === 1) {
+          editTargetTs = null;
+          draw();
+          return;
+        }
+        const action = handleKey(ch);
+        if (action === "end") {
+          endMeeting();
+          return;
+        }
+        if (action === "chat") {
+          backToChat();
+          return;
+        }
+        if (action === "redraw") draw();
+      }
+      return;
     }
-    return;
-  }
 
-  if (chunk.startsWith("\x1b")) {
-    if (chunk.length === 1) {
-      if (editTargetTs) {
-        editTargetTs = null; // lone Esc cancels edit mode
-        draw();
+    if (text.length > 1 && !/[\x00-\x1f\x7f]/.test(text)) {
+      editor.insert(text);
+      editor.menuIdx = 0;
+      draw();
+      return;
+    }
+
+    for (const ch of text) {
+      const action = handleKey(ch);
+      if (action === "end") {
+        endMeeting();
         return;
       }
-      escBuf = chunk;
-      return;
+      if (action === "chat") {
+        backToChat();
+        return;
+      }
+      if (action === "redraw") draw();
     }
-    const action = handleEsc(chunk);
-    if (action === "end") endMeeting();
-    else if (action === "chat") backToChat();
-    else if (action === "redraw") draw();
-    return;
-  }
-
-  if (chunk.length > 1 && !/[\x00-\x1f\x7f]/.test(chunk)) {
-    editor.insert(chunk);
-    editor.menuIdx = 0;
-    draw();
-    return;
-  }
-
-  for (const ch of chunk) {
-    const action = handleKey(ch);
-    if (action === "end") {
-      endMeeting();
-      return;
-    }
-    if (action === "chat") {
-      backToChat();
-      return;
-    }
-    if (action === "redraw") draw();
-  }
-});
+  });
 }
 
 if (isMainModule(import.meta.url)) main();

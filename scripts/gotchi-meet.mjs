@@ -25,7 +25,8 @@ import {
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { printSlackTurns } from "./meet-channel.mjs";
+import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./meet-channel.mjs";
+import { isProfLinkCubeId } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
 import {
   ROOT,
@@ -794,8 +795,15 @@ export async function inviteParticipant(query) {
     id: hero.id,
     role,
     name: displayNameFor(hero),
+    ...(hero.kind === "npc" ? { kind: "npc" } : {}),
   };
-  meeting.participants.push(p);
+  // Prof (and anyone seated beside orch): keep right after the chair in the carousel.
+  if (hero.kind === "npc" || isProfLinkCubeId(hero.id)) {
+    meeting.participants = insertBesideChair(meeting.participants, p, meeting.chairId);
+  } else {
+    meeting.participants.push(p);
+    meeting.participants = orderMeetingParticipants(meeting.participants, meeting.chairId);
+  }
   meeting.updatedAt = new Date().toISOString();
   saveMeeting(meeting);
   syncMeetMentionAgents(loadMeeting(meeting.id) || meeting);

@@ -17,9 +17,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin as input, stdout as output } from "node:process";
 import { isMainModule } from "./is-main.mjs";
+import { resolveMeetingsRoot } from "./project-context.mjs";
+import { isProfLinkCubeId } from "./gotchi-art.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const MEETINGS = `${ROOT}/sessions/meetings`;
 const PENDING = `${ROOT}/sessions/.meet-pending.json`;
 const SCROLL_FILE = `${ROOT}/sessions/.meet-channel-scroll`;
 const STAMP = `${ROOT}/sessions/.meet-channel.stamp`;
@@ -31,8 +32,14 @@ const SCROLL_STEP = Math.max(1, Number(process.env.GOTCHIBOT_MEET_CHANNEL_SCROLL
 const COPY_LABEL = "[copy]";
 const COPIED_LABEL = "[copied]";
 const COPY_FAILED_LABEL = "[copy failed]";
+const EDIT_LABEL = "[edit]";
 /** How long the copied/failed flash stays on the button. */
 const COPY_FLASH_MS = 1400;
+const EDIT_REQUEST = `${ROOT}/sessions/.meet-edit-request.json`;
+
+function meetingsRoot() {
+  return resolveMeetingsRoot().root;
+}
 
 
 const C = {
@@ -58,16 +65,17 @@ function readJson(path, fallback = null) {
 }
 
 export function loadCurrentMeeting() {
-  if (!existsSync(`${MEETINGS}/.current`)) return null;
-  const id = String(readFileSync(`${MEETINGS}/.current`, "utf8")).trim();
+  const root = meetingsRoot();
+  if (!existsSync(`${root}/.current`)) return null;
+  const id = String(readFileSync(`${root}/.current`, "utf8")).trim();
   if (!id) return null;
-  const m = readJson(`${MEETINGS}/${id}/meeting.json`, null);
+  const m = readJson(`${root}/${id}/meeting.json`, null);
   if (!m || m.status !== "open") return null;
   return m;
 }
 
 export function readTranscript(id) {
-  const path = `${MEETINGS}/${id}/transcript.jsonl`;
+  const path = `${meetingsRoot()}/${id}/transcript.jsonl`;
   try {
     return readFileSync(path, "utf8")
       .split("\n")
@@ -89,7 +97,54 @@ export function participantInfo(meeting, speakerId) {
   if (name === speakerId && speakerId.startsWith("owned-")) {
     name = role === "chair" ? "Gotchi" : speakerId;
   }
+  if (isProfLinkCubeId(speakerId)) name = "Prof. Link-Cube";
   return { name, role, id: speakerId };
+}
+
+/**
+ * Visual / speaking seat order: user → chair (orch) → Prof. Link-Cube → rest.
+ * Keeps Prof glued beside the orchestrator in the Zoom carousel.
+ */
+export function orderMeetingParticipants(participants, chairId = null) {
+  const list = [...(participants || [])];
+  if (!list.length) return list;
+  const chair =
+    list.find((p) => p.role === "chair") ||
+    (chairId ? list.find((p) => p.id === chairId) : null);
+  const user = list.find((p) => p.role === "user");
+  const prof = list.find((p) => isProfLinkCubeId(p.id));
+  const rest = list.filter(
+    (p) =>
+      p !== user &&
+      p !== chair &&
+      p !== prof &&
+      !isProfLinkCubeId(p.id),
+  );
+  const out = [];
+  if (user) out.push(user);
+  if (chair) out.push(chair);
+  if (prof && prof !== chair) out.push(prof);
+  out.push(...rest);
+  return out;
+}
+
+/** Insert participant immediately after the chair (or after user if no chair). */
+export function insertBesideChair(participants, participant, chairId = null) {
+  const without = (participants || []).filter((p) => p.id !== participant.id);
+  const ordered = orderMeetingParticipants(without, chairId);
+  const chairIdx = ordered.findIndex(
+    (p) => p.role === "chair" || (chairId && p.id === chairId),
+  );
+  if (chairIdx >= 0) {
+    ordered.splice(chairIdx + 1, 0, participant);
+    return ordered;
+  }
+  const userIdx = ordered.findIndex((p) => p.role === "user");
+  if (userIdx >= 0) {
+    ordered.splice(userIdx + 1, 0, participant);
+    return ordered;
+  }
+  return [participant, ...ordered];
 }
 
 function formatTime(iso) {
@@ -148,13 +203,29 @@ function thumbDiskPath(heroId) {
   return `${THUMB_CACHE_DIR}/${String(heroId).replace(/[^\w.-]+/g, "_")}.ansi`;
 }
 
+function plainLen(s) {
+  return String(s || "").replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
+/** Keep every thumb row the same width — trailing spaces on the last row matter for diamond tips. */
+function normalizeThumbLines(art) {
+  const lines = String(art || "")
+    .replace(/\n+$/, "")
+    .split("\n");
+  const width = Math.max(12, ...lines.map((l) => plainLen(l)));
+  return lines.map((l) => {
+    const pad = width - plainLen(l);
+    return pad > 0 ? `${l}${" ".repeat(pad)}` : l;
+  });
+}
+
 function thumbForHero(heroId) {
   mkdirSync(THUMB_CACHE_DIR, { recursive: true });
   const disk = thumbDiskPath(heroId);
   try {
     if (existsSync(disk)) {
-      const art = readFileSync(disk, "utf8").trimEnd();
-      if (art) return art.split("\n");
+      const art = readFileSync(disk, "utf8");
+      if (art.trim()) return normalizeThumbLines(art);
     }
   } catch {
     /* regenerate */
@@ -164,27 +235,28 @@ function thumbForHero(heroId) {
     encoding: "utf8",
     timeout: 8000,
   });
-  let art = (r.stdout || "").trimEnd();
-  if (!art) {
+  let art = r.stdout || "";
+  if (!art.trim()) {
     try {
-      art = readFileSync(THUMB_FALLBACK, "utf8").trimEnd();
+      art = readFileSync(THUMB_FALLBACK, "utf8");
     } catch {
       art = "  ▄▄▄▄▄▄";
     }
   }
+  const lines = normalizeThumbLines(art);
   try {
-    writeFileSync(disk, `${art}\n`);
+    writeFileSync(disk, `${lines.join("\n")}\n`);
   } catch {
     /* ok */
   }
-  return art.split("\n");
+  return lines;
 }
 
 /** Thumb lines for a hero: in-process map → sessions/.meet-thumbs → gotchi-art. */
 export function getThumb(heroId) {
   if (!heroId || heroId === "userdefault") {
     try {
-      return readFileSync(THUMB_FALLBACK, "utf8").trimEnd().split("\n");
+      return normalizeThumbLines(readFileSync(THUMB_FALLBACK, "utf8"));
     } catch {
       return ["  ▄▄▄▄▄▄"];
     }
@@ -219,11 +291,12 @@ export function warmThumbs(ids, done) {
     });
     child.on("error", () => next());
     child.on("close", () => {
-      const art = out.trimEnd();
-      if (art) {
+      const lines = normalizeThumbLines(out);
+      if (lines.some((l) => plainLen(l) > 0)) {
         try {
           mkdirSync(THUMB_CACHE_DIR, { recursive: true });
-          writeFileSync(disk, `${art}\n`);
+          writeFileSync(disk, `${lines.join("\n")}\n`);
+          thumbCache.set(id, lines);
         } catch {
           /* ok */
         }
@@ -237,7 +310,7 @@ export function warmThumbs(ids, done) {
 function renderHeader(meeting, cols, interactive = false) {
   const topic = meeting.topic || "Untitled meeting";
   const agents = (meeting.participants || []).filter((p) => p.role !== "user").length;
-  const clickHint = interactive ? " · click [copy]" : "";
+  const clickHint = interactive ? " · click [copy] · [edit]" : "";
   return [
     `${C.topic}# ${topic}${C.reset}`,
     `${C.dim}${agents} gotchi${agents === 1 ? "" : "s"} · ↑↓ wheel · j/k · PgUp/Dn · scrollbar${clickHint}${C.reset}`,
@@ -284,13 +357,19 @@ function renderPendingTail(meeting, cols, turns) {
 }
 
 /**
- * Append a clickable copy affordance to a turn header and record its hitbox.
- * `hit` is { hits, line, key, copied } handed down by buildMeetChannelLines;
+ * Append a clickable copy/edit affordance to a turn header and record its hitbox.
+ * `hit` is { hits, line, key, action, copied } handed down by buildMeetChannelLines;
  * columns are 0-based and visible (ANSI stripped), matching the painted frame.
  */
-function withCopyButton(meta, turn, cols, hit) {
-  const label =
-    hit.copied === "ok" ? COPIED_LABEL : hit.copied === "fail" ? COPY_FAILED_LABEL : COPY_LABEL;
+function withActionButton(meta, turn, cols, hit) {
+  const isEdit = hit.action === "edit";
+  const label = isEdit
+    ? EDIT_LABEL
+    : hit.copied === "ok"
+      ? COPIED_LABEL
+      : hit.copied === "fail"
+        ? COPY_FAILED_LABEL
+        : COPY_LABEL;
   const colStart = THUMB_W + 1 + visLen(meta) + 1;
   if (colStart + label.length > cols) return meta;
   hit.hits.push({
@@ -299,6 +378,8 @@ function withCopyButton(meta, turn, cols, hit) {
     colEnd: colStart + label.length - 1,
     key: hit.key,
     text: turn.text,
+    ts: turn.ts,
+    action: isEdit ? "edit" : "copy",
   });
   const color = hit.copied === "ok" ? C.chair : hit.copied === "fail" ? C.topic : C.dim;
   return `${meta} ${color}${label}${C.reset}`;
@@ -312,7 +393,7 @@ function renderTurn(turn, meeting, cols, hit = null) {
   // Quiet "edited" cue on the user's own corrected messages — not a badge card.
   const edited = turn.editedAt && role === "user" ? ` ${C.dim}(edited)${C.reset}` : "";
   const meta = `${nameColor(role)}${name}${C.reset} ${C.dim}${formatTime(turn.ts)}${C.reset}${edited}`;
-  const header = hit ? withCopyButton(meta, turn, cols, hit) : meta;
+  const header = hit ? withActionButton(meta, turn, cols, hit) : meta;
   const blockH = Math.max(thumb.length, 1 + bodyLines.length);
   const rows = [];
 
@@ -330,6 +411,8 @@ function renderTurn(turn, meeting, cols, hit = null) {
     }
   }
   rows.push("");
+  rows.push("");
+  rows.push(""); // air between iMessage turns — thumbs otherwise kiss
   return rows;
 }
 
@@ -348,15 +431,20 @@ export function buildMeetChannelLines(meeting, cols, contentCols = cols, opts = 
     turns.forEach((t, i) => {
       const role = t.role || participantInfo(meeting, t.speaker).role;
       const key = `${i}:${t.ts || ""}`;
-      const hit =
-        hits && role !== "user"
-          ? {
-              hits,
-              line: lines.length,
-              key,
-              copied: opts.copiedKey === key ? opts.copiedState || "ok" : null,
-            }
-          : null;
+      let hit = null;
+      if (hits) {
+        if (role === "user") {
+          hit = { hits, line: lines.length, key, action: "edit", copied: null };
+        } else {
+          hit = {
+            hits,
+            line: lines.length,
+            key,
+            action: "copy",
+            copied: opts.copiedKey === key ? opts.copiedState || "ok" : null,
+          };
+        }
+      }
       lines.push(...renderTurn(t, meeting, contentCols, hit));
     });
   }
@@ -569,14 +657,15 @@ export async function runMeetChannelLive() {
   function contentKey(cols) {
     const meeting = loadCurrentMeeting();
     const id = meeting?.id || "";
-    const tr = id ? `${MEETINGS}/${id}/transcript.jsonl` : "";
+    const root = meetingsRoot();
+    const tr = id ? `${root}/${id}/transcript.jsonl` : "";
     return [
       cols,
       id,
       mtime(tr),
-      mtime(id ? `${MEETINGS}/${id}/meeting.json` : ""),
+      mtime(id ? `${root}/${id}/meeting.json` : ""),
       mtime(PENDING),
-      mtime(`${MEETINGS}/.current`),
+      mtime(`${root}/.current`),
     ].join("|");
   }
 
@@ -681,12 +770,28 @@ export async function runMeetChannelLive() {
     schedulePaint(false, 16);
   }
 
-  /** Left click: copy the response whose [copy] button was hit. */
+  /** Left click: [copy] agent replies, [edit] your own user turns. */
   function handleClick(col, row) {
     const line = view.start + (row - 1) - (view.hasOlder ? 1 : 0);
     const x = col - 1;
     const hit = hits.find((h) => h.line === line && x >= h.colStart && x <= h.colEnd);
     if (!hit) return;
+    if (hit.action === "edit") {
+      try {
+        writeFileSync(
+          EDIT_REQUEST,
+          `${JSON.stringify({
+            ts: hit.ts,
+            text: hit.text,
+            requestedAt: new Date().toISOString(),
+          })}\n`,
+        );
+        spawnSync("bash", [`${ROOT}/scripts/poke-meet-room.sh`], { stdio: "ignore" });
+      } catch {
+        /* ok */
+      }
+      return;
+    }
     copied = { key: hit.key, state: copyTurnText(hit.text) ? "ok" : "fail" };
     if (copyFlashTimer) clearTimeout(copyFlashTimer);
     copyFlashTimer = setTimeout(() => {
@@ -700,7 +805,7 @@ export async function runMeetChannelLive() {
   // Watch scroll + stamp + pending — quiet scroll.sh only touches scroll file.
   const watchTargets = [
     `${ROOT}/sessions`,
-    MEETINGS,
+    meetingsRoot(),
   ];
   for (const dir of watchTargets) {
     try {

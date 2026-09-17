@@ -58,9 +58,14 @@ export function isProfLinkCubeId(id) {
 
 /** Meeting thumb for Prof. Link-Cube — LINK-blue recolor of the cube glyph. */
 export function renderProfLinkCubeAscii(colors = null, { useColor = true } = {}) {
-  const base = existsSync(PROF_LINK_CUBE_ASCII)
-    ? readFileSync(PROF_LINK_CUBE_ASCII, "utf8").replace(/\s+$/, "")
-    : "     ▄▄\n   ▄▀  ▀▄\n ▄▀  ▄▀  ▀▄\n█▀▄ ▀▄   ▄▀█\n█▒▒▀▄  ▄▀░░█\n█▒▒▒▒▀▀░░░░█\n ▀▄▒▒▒░░░▄▀\n   ▀▄▒░▄▀\n   ▀▀";
+  const raw = existsSync(PROF_LINK_CUBE_ASCII)
+    ? readFileSync(PROF_LINK_CUBE_ASCII, "utf8").replace(/\n+$/, "")
+    : "     ▄▄\n   ▄▀  ▀▄\n ▄▀  ▄▀  ▀▄\n█▀▄ ▀▄   ▄▀█\n█▒▒▀▄  ▄▀░░█\n█▒▒▒▒▀▀░░░░█\n ▀▄▒▒▒░░░▄▀\n   ▀▄▒░▄▀\n    ▀▀";
+  // Pad every row to the same width — a bare `\s+$` trim was eating the tip's
+  // trailing spaces and left-shifting the diamond point in meet room + channel.
+  const rows = raw.split("\n");
+  const width = Math.max(12, ...rows.map((l) => l.length));
+  const base = rows.map((l) => l.padEnd(width, " ")).join("\n");
   const link = findCollateralColors("link", 1) || {};
   const primary = colors?.primary || link.primary || "0000b9";
   const secondary = colors?.secondary || link.secondary || "d4def8";
