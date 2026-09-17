@@ -1,5 +1,5 @@
 {
-  "$comment": "Morning meeting recap — each agent runs these checks then submits a concise report to the chair. Edit freely; skill morning-recap documents the shape.",
+  "$comment": "Morning meeting recap — each agent runs these checks then submits a concise report to the chair. Edit freely; skill morning-recap documents the shape. Overnight dept reports (03:00 America/Los_Angeles, iMessage meet channel → orch) feed orch's morning prep — project overview, day's plan/workflow/goals, open issues needing answers — before/with this recap.",
   "title": "Morning recap",
   "defaultTasks": [
     "What did you finish yesterday (or last session)? Cite paths/PRs if any.",

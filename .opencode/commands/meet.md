@@ -27,13 +27,14 @@ Empty `$ARGUMENTS` (`/meet`) prints status of the current meeting.
 | `/meet colabo "…"` | all agents reply |
 | `/meet` | `status` |
 | `/meet say let's recap @LINK` | `say "…"` |
+| `/meet edit last "fixed text"` | `edit <ts\|last> "…"` — fix Julius's own last message (no re-say) |
 | `/meet end` | `end` (minutes + handoff.md) |
 | `/chat` | leave meet room UI |
 
 **Cockpit menu:** Start meeting → **Meeting** (unchanged) or **Morning recap**
 (auto topic `morning meeting` + invite all).
 
-Meet room prompter extras: `!cmd` (run shell here, post output to room) · `/colabo …` · `/recap-next` · `/recap-present`  
+Meet room prompter extras: `!cmd` (run shell here, post output to room) · `/colabo …` · `/recap-next` · `/recap-present` · `/edit [ts]` (load your last user line into the editor; Enter saves, Esc/empty cancels — no re-say)  
 (Gallery page next remains `/next` or `.`)
 
 Skills: **morning-recap**, **colabo**. MCP: **gotchibot-meet**.

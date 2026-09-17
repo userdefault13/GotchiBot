@@ -21,7 +21,8 @@ Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`.
 | "ask Claude", `@claudemode`, Hub Claude pane | MCP `claude_submit {prompt}` → I keep working → `claude_collect {id}` when told it's ready. Quick sync question: MCP `claude_ask`. No MCP: `node ./scripts/claudemode-submit.mjs "…"` then `node ./scripts/claude-jobs.mjs collect <id>` | Claude's reply. Yes, I have this tool. It is a tool, not a model: never `/model @claudemode`. |
 | pane empty / bridge down | MCP `hub_bridge_ensure`; if no MCP, `./scripts/gotchibot hub bridge-ensure`; retry once | what happened |
 | handoff, "give this to X", "pick up where Y left off" | `./scripts/gotchibot passoff send <hero> --note "done so far" --next "what's left"` / `./scripts/gotchibot passoff resume` | what moved |
-| meeting, morning recap, minutes | MCP `meet_start_morning` … `meet_end` (skill `synergy` has the order) | the minutes |
+| meeting, morning recap, minutes | MCP `meet_start_morning` … `meet_end` (skill `synergy` / `gotchibot-meet`). Room is persistent; start/end = recording only | the minutes / room stays open |
+| overnight dept reports (03:00 PT iMessage meet channel), "prep the morning report" | collect the dept iMessage reports from the meet channel, then prep the morning overview: project status, day's plan/workflow/goals, open issues needing answers | the morning report, ready before/with the morning recap |
 | `/pstack`, `/poteto-mode`, nontrivial design, contested approach, "are we sure?", "go deep" | read skill `pstack`, then `./scripts/delegate-pick.mjs --json "<playbook brief>"` (or spawn competing approaches per the skill) | who took it, the playbook label, and when I'll check back |
 | a one-line factual question, or the status of something already running | answer it myself | the answer |
 

@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadCurrentMeeting, participantInfo, getThumb } from "./meet-channel.mjs";
+import { loadCurrentMeeting, participantInfo, getThumb, orderMeetingParticipants } from "./meet-channel.mjs";
 import { loadMeetStatus, statusFor, statusLabel } from "./meet-status.mjs";
 import { isMainModule } from "./is-main.mjs";
 
@@ -74,7 +74,7 @@ function nameColor(role) {
 
 export function listMeetMembers(meeting = loadCurrentMeeting()) {
   if (!meeting) return [];
-  return (meeting.participants || []).map((p) => {
+  return orderMeetingParticipants(meeting.participants || [], meeting.chairId).map((p) => {
     const info = participantInfo(meeting, p.id);
     return {
       id: p.id,
@@ -186,7 +186,7 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
   const meeting = loadCurrentMeeting();
   if (!meeting) {
     return [
-      `${C.dim}No open meeting${C.reset}`,
+      `${C.dim}No open room — gotchibot meet open${C.reset}`,
       "",
       "Start from cockpit or: ./scripts/gotchi-meet.mjs start",
       "",
@@ -202,7 +202,7 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
   const lines = [];
   lines.push(`${C.topic}# ${meeting.topic || "Untitled meeting"}${C.reset}`);
   lines.push(
-    `${C.dim}${members.length} in room · ${GRID_COLS}×${GRID_ROWS} grid · /chat desk · /end leave${C.reset}`,
+    `${C.dim}${members.length} in room · ${GRID_COLS}×${GRID_ROWS} grid · ←→ page · /chat leave UI · /end record${C.reset}`,
   );
   lines.push(`${C.bar}${"─".repeat(Math.min(cols - 2, 58))}${C.reset}`);
   lines.push("");
@@ -214,12 +214,25 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
   lines.push(renderPager(cur, pages, cols));
   if (includeHint) {
     lines.push("");
-    lines.push(`${C.hint}Message the room (@LINK · @everyone) — transcript in # meet →${C.reset}`);
+    lines.push(
+      `${C.hint}← → /prev /next page seats · @LINK · @everyone — transcript in # meet →${C.reset}`,
+    );
   }
 
   const maxLines = Math.max(10, rows - 2);
   if (lines.length > maxLines) {
-    return lines.slice(-maxLines).join("\n");
+    // Keep topic/header + as much grid as fits + always keep the pager.
+    // (Old slice(-maxLines) dropped the top of the grid and made next/prev look broken.)
+    const pagerIdx = lines.findLastIndex(
+      (l) => /prev/.test(stripAnsi(l)) && /next/.test(stripAnsi(l)),
+    );
+    const pagerLine = pagerIdx >= 0 ? lines[pagerIdx] : null;
+    const budget = Math.max(1, maxLines - (pagerLine ? 1 : 0));
+    const prefix = lines
+      .filter((_, i) => i !== pagerIdx)
+      .slice(0, budget);
+    if (pagerLine) prefix.push(pagerLine);
+    return prefix.join("\n");
   }
   return lines.join("\n");
 }

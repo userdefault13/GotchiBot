@@ -13,8 +13,10 @@
  *        node scripts/gotchi-art.mjs --kanban --hero starter-dai-h1-1 --color
  *        node scripts/gotchi-art.mjs --roster --hero owned-954 --color
  *        node scripts/gotchi-art.mjs --roster --color --collateral wbtc
+ *        node scripts/gotchi-art.mjs --thumb --npc prof-link-cube --color
  *   --thumb / --kanban = large thumb, plain recolor, regular ▄▄/▀▀ eyes (iMessage + kanban)
  *   --roster           = same art + doubled forehead collateral, eyes left alone (sub-agents)
+ *   --npc prof-link-cube = Prof. Link-Cube meeting thumb (assets/prof-link-cube.ascii)
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -38,6 +40,35 @@ const THUMB_FALLBACK =
   "  ▄▀▀▀▀▀▀▄  \n▄▀   ░░   ▀▄\n█  ▄▄  ▄▄ ░█\n█  ▀▀  ▀▀ ░█\n█   ▀▄▄▀  ░█\n█ ▄      ▄░█\n█  ▀▄  ▄▀ ░█\n█ ▀▀    ▀▀░█\n█▄▄▀▀▄▄▀▀▄▄█";
 /** @deprecated alias — mini seat file no longer used for kanban/roster */
 const KANBAN_ASCII = THUMB_ASCII;
+/** Prof. Link-Cube NPC — meeting / invite thumb (not a cAavegotchi). */
+const PROF_LINK_CUBE_ASCII = `${ROOT}/assets/prof-link-cube.ascii`;
+export const PROF_LINK_CUBE_ID = "prof-link-cube";
+
+export function isProfLinkCubeId(id) {
+  const s = String(id || "").trim().toLowerCase();
+  return (
+    s === PROF_LINK_CUBE_ID ||
+    s === "link-cube" ||
+    s === "prof.link-cube" ||
+    s === "prof" ||
+    s === "professor" ||
+    s === "prof-linkcube"
+  );
+}
+
+/** Meeting thumb for Prof. Link-Cube — LINK-blue recolor of the cube glyph. */
+export function renderProfLinkCubeAscii(colors = null, { useColor = true } = {}) {
+  const base = existsSync(PROF_LINK_CUBE_ASCII)
+    ? readFileSync(PROF_LINK_CUBE_ASCII, "utf8").replace(/\s+$/, "")
+    : "     ▄▄\n   ▄▀  ▀▄\n ▄▀  ▄▀  ▀▄\n█▀▄ ▀▄   ▄▀█\n█▒▒▀▄  ▄▀░░█\n█▒▒▒▒▀▀░░░░█\n ▀▄▒▒▒░░░▄▀\n   ▀▄▒░▄▀\n   ▀▀";
+  const link = findCollateralColors("link", 1) || {};
+  const primary = colors?.primary || link.primary || "0000b9";
+  const secondary = colors?.secondary || link.secondary || "d4def8";
+  if (useColor && (primary || secondary)) {
+    return recolorAscii(base, { primary, secondary, useColor: true });
+  }
+  return base;
+}
 const KANBAN_ASCII_FALLBACK = THUMB_FALLBACK;
 
 const RARITY_COLOR = {
@@ -428,10 +459,20 @@ async function main() {
   if (args.includes("--thumb") || args.includes("--kanban") || args.includes("--roster")) {
     // --thumb / --kanban = plain recolor (iMessage + kanban seats)
     // --roster = doubled forehead collateral, eyes left alone (avatar sub-agents)
+    // --npc / --hero prof-link-cube = Prof. Link-Cube meeting glyph
+    const npcArg = argValue(args, "--npc");
+    const heroId =
+      argValue(args, "--hero") ||
+      args.find((a) => /^owned-|starter-|prof/i.test(a)) ||
+      null;
+    if (isProfLinkCubeId(npcArg) || isProfLinkCubeId(heroId) || args.includes("--prof-link-cube")) {
+      const art = renderProfLinkCubeAscii(null, { useColor });
+      process.stdout.write(art.endsWith("\n") ? art : `${art}\n`);
+      return;
+    }
     const isRoster = args.includes("--roster");
     let colors = colorsFromCli(args);
-    const heroId = argValue(args, "--hero") || args.find((a) => /^owned-|starter-/i.test(a)) || null;
-    if (!colors?.primary && heroId) {
+    if (!colors?.primary && heroId && !isProfLinkCubeId(heroId)) {
       const hero = (await loadCartridgeHero(heroId)) || { id: heroId };
       colors = resolveHeroColors(hero, heroId);
       if (!colors?.primary) {

@@ -41,7 +41,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot project-kanban …            sealed project + desk mini task boards
   gotchibot project-tickets …           agent request/claim/submit tickets (PKM owns lifecycle)
   gotchibot project-mailbox …           per-desk local mailboxes (inbox+sent) under project AgentMail
-  gotchibot meet start|open|invite|status|say|morning|colabo|end   meeting room (/meet)
+  gotchibot meet start|open|invite|status|say|morning|colabo|end   persistent room (/meet); start/end = record
   gotchibot model-policy [show|pick|candidates|enforce]  working-models-only policy
   gotchibot tui-policy [show|enforce|apply]  Tab cycles in OpenCode TUI (no tmux steal)
   gotchibot layout-check [check|desk|meet]  verify tmux panes (non-destructive)

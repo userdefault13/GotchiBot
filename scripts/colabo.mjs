@@ -98,8 +98,8 @@ export async function colabo(prompt, { timeoutS = 90 } = {}) {
   if (!text) throw new Error('usage: colabo.mjs "prompt"');
 
   const m = await meetMod();
-  const meeting = m.loadCurrentMeeting();
-  if (!meeting) throw new Error("no open meeting — start one first");
+  const meeting = (await m.ensureRoom?.()) || m.loadCurrentMeeting();
+  if (!meeting) throw new Error("no open room — run: gotchibot meet open");
 
   const agents = agentIds(meeting);
   if (!agents.length) {

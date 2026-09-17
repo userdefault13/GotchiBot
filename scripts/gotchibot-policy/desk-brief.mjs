@@ -48,7 +48,7 @@ export function deskBriefLines(fromFileDir) {
     if (meeting?.status === "open") {
       const agents = (meeting.participants || []).filter((p) => p.role !== "user").length;
       lines.push(
-        `Meeting OPEN: "${meeting.topic || id}" (${agents} gotchi${agents === 1 ? "" : "s"}) — /meet say, /meet end.`,
+        `Room OPEN: "${meeting.topic || id}" (${agents} gotchi${agents === 1 ? "" : "s"}) — /meet say; /start·/end = record.`,
       );
     }
   } catch {

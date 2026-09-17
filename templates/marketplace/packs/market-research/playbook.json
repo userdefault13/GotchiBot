@@ -1,0 +1,12 @@
+{
+  "title": "Market Research",
+  "summary": "Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only — not the trader monitor.",
+  "skills": [
+    "browser-tool",
+    "pymupdf",
+    "market-news-feed"
+  ],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "autonomy": "Owns deeper market research for the trade desk: themes, relative value, filings via pymupdf, short IC memos (bottom line → evidence → drivers → risks → confidence) under an agreed path. Prefer market-news for headline sweeps. Desk health / execution stays with financial-analyst (LINK) / orch. Analysis only — no trades, no posts, no spend/mint. Fact/inference/opinion; dead source → `unknown`.",
+  "scheduleCmd": ""
+}

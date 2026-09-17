@@ -1,0 +1,31 @@
+{
+  "id": "market-research",
+  "roleId": "market-research",
+  "version": "1.0.0",
+  "title": "Market Research",
+  "summary": "Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only — not the trader monitor.",
+  "skills": [
+    "browser-tool",
+    "pymupdf",
+    "market-news-feed"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "research",
+    "ic",
+    "filings"
+  ],
+  "downloadPath": "packs/market-research",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/market-news-feed/SKILL.md",
+    "skills/pymupdf/SKILL.md"
+  ]
+}

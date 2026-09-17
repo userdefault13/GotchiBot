@@ -1,0 +1,29 @@
+{
+  "id": "market-news",
+  "roleId": "market-news",
+  "version": "1.0.0",
+  "title": "Market News",
+  "summary": "Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only — not the trader monitor.",
+  "skills": [
+    "market-news-feed",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "news",
+    "headlines",
+    "regime"
+  ],
+  "downloadPath": "packs/market-news",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/market-news-feed/SKILL.md"
+  ]
+}

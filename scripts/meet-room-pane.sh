@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Meet room — Zoom carousel + OpenCode-style prompter (no OpenCode chat).
-# On /end or /chat the prompter exits cleanly, then we restore layout from
-# another pane so we never respawn ourselves mid-flight.
+# Room is persistent. /end stops recording only (prompter stays up).
+# /chat or Ctrl+C leaves the UI; room stays open for /meet say.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SESS="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
@@ -31,14 +31,13 @@ while true; do
   fi
   case "$intent" in
     end)
-      # End meeting state first (no layout leave — we do that next).
-      node "$ROOT/scripts/gotchi-meet.mjs" end --keep-layout >/dev/null 2>&1 || true
+      # Legacy: prompter used to leave+end. Now /end stays in-room; treat as leave UI only.
+      # Recording stop is handled inside the prompter via gotchi-meet end.
       restore_orch_desk
-      # Stay alive briefly until respawn replaces this pane.
       sleep 8
       ;;
     chat)
-      # Leave room UI → OpenCode chat + avatar; meeting may stay open for /meet open.
+      # Leave room UI → OpenCode chat + avatar; room stays open for /meet say / open.
       restore_orch_desk
       sleep 8
       ;;

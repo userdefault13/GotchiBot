@@ -1,0 +1,27 @@
+{
+  "id": "arcade-game-monitor",
+  "roleId": "arcade-game-monitor",
+  "version": "1.0.0",
+  "title": "Arcade Game Monitor",
+  "summary": "Monitor one Aarcade game / named arcade project: health, blockers, tickets, status digests. One hero per game. Seated by Prof / Product Manager.",
+  "skills": [
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "arcade",
+    "game",
+    "monitor"
+  ],
+  "downloadPath": "packs/arcade-game-monitor",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md"
+  ]
+}

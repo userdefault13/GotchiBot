@@ -30,7 +30,8 @@ MCP `aarcade-cartridge-schema` is schema-only. Writes still go to sim `:8791`. S
 
 1. **Available hero** — `status === "available"` only. Spawn. Do not mint. Never `owned-954`. Never steal assigned desks (`starter-yfi-h1-1` infra-monitor; `owned-22899` WBTC daily comms).
 2. **Named collateral first** (`yifi`→`yfi`, `btc`→`wbtc`, maYFI→yfi): query the **cartridge** (`abra run gotchibot -- ./scripts/agent-focus.mjs list --json` or identity roster). If a matching hero is `available` → spawn that hero. Do **not** mint. Do **not** ask for a token id.
-3. **Mint new collateral** — only after cartridge miss. List the **16 starter collaterals** (DialogSelect / `/spawn`). Julius confirms. Then `onboarding-api.mjs mint-sub <spiritId>` with simPay ($5 sim).
+3. **Mint new collateral** — only after cartridge miss. List the **16 starter collaterals** (DialogSelect / `/spawn`). Julius confirms. Then `onboarding-api.mjs mint-sub <spiritId>` with simPay.
+   - **Fees:** GotchiBot **contract/admin owner** wallet → always free. Else **1:1** — each L1 Aavegotchi on the cartridge owner wallet grants one free mint; beyond that → `$5` first unpaid / `$3` further. No wallet gotchis → `$5` then `$3`.
    - Spirit ids: `dai weth aave link usdt usdc tusd uni yfi wbtc matic`
    - Labels: maDAI (H1) maWETH (H1) maAAVE (H1) maLINK (H1) maUSDT (H1) maUSDC (H1) maTUSD (H1) maUNI (H1) maYFI (H1) amDAI (H2) amWETH (H2) amAAVE (H2) amUSDT (H2) amUSDC (H2) amWBTC (H2) amWMATIC (H2)
    - Haunt 3 brand names are **not** in the 16.

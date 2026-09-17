@@ -349,7 +349,7 @@ after a cartridge miss so the overlay name list is ready.
 
 Default (no collateral named): after no-available, the 3-choice includes
 **Mint new collateral**, which lists the **16 starter collaterals** in
-DialogSelect (permission-style). Confirm → `mint-sub` ($5 sim).
+DialogSelect (permission-style). Confirm → `mint-sub` (owner free · promo whitelist · 1 free seat per L1 wallet gotchi; else `$5` first / `$3` further).
 
 If he names a collateral (YFI, BTC, LINK, DAI, … — typos like **yifi → yfi**)
 and no available cartridge match:
@@ -365,12 +365,12 @@ Aliases: yifi / yearn / maYFI → yfi; btc → wbtc.
 
 The overlay **skips** the 3-choice **and skips portal talk**. DialogSelect:
 
-- Matching 16 starters (e.g. `maYFI (H1)` spirit yfi) — title = label, description = `mint new cAavegotchi · $5 sim`
+- Matching 16 starters (e.g. `maYFI (H1)` spirit yfi) — title = label, description = `mint new cAavegotchi · free if owner/promo/wallet seat else $5/$3 sim`
 - Matching unbound wallet gotchis (collateral name/spirit contains yfi) — title = `name (#id)`, description = `bind from wallet`
 
 ALWAYS show this list even if 1 match. Never auto-mint. If zero matches: full
 16-collateral list + toast `no YFI match — pick from the 16`.
-Confirm (`$5 sim — mint maYFI (H1)?`) then `mint-sub`. Wallet pick → confirm →
+Confirm (`mint maYFI (H1)?` — free if owner/promo/wallet seat, else `$5`/`$3`) then `mint-sub`. Wallet pick → confirm →
 `bind-owned`. NEVER `identity bind` / portals / VRF / pack_pending_vrf.
 
 If the overlay does not appear, respawn the chat pane with `--continue`

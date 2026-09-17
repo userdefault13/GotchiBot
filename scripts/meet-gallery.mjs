@@ -10,6 +10,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { orderMeetingParticipants } from "./meet-channel.mjs";
+import { isProfLinkCubeId } from "./gotchi-art.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MEETINGS = `${ROOT}/sessions/meetings`;
@@ -53,7 +55,10 @@ function orchFallback() {
 }
 
 export function listGalleryTiles(meeting = loadCurrentMeeting()) {
-  const parts = (meeting?.participants || []).filter((p) => p && p.role !== "user");
+  const parts = orderMeetingParticipants(
+    (meeting?.participants || []).filter((p) => p && p.role !== "user"),
+    meeting?.chairId,
+  );
   if (!parts.length) {
     return {
       meetingId: meeting?.id || null,
@@ -65,9 +70,9 @@ export function listGalleryTiles(meeting = loadCurrentMeeting()) {
 
   const heroes = parts.map((p) => ({
     id: p.id,
-    label: shortLabel(p),
+    label: isProfLinkCubeId(p.id) ? "Prof. Link-Cube" : shortLabel(p),
     role: p.role || "agent",
-    kind: "hero",
+    kind: isProfLinkCubeId(p.id) ? "npc" : "hero",
   }));
 
   if (heroes.length <= MAX_TILES) {

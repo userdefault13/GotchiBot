@@ -5,7 +5,7 @@ This file lists the core capabilities of the GotchiBot orchestrator and its agen
 | Ability | Description | Hero Requirement |
 |---|---|---|
 | **Agent Orchestration** | Spawn and manage sub-agents via `gotchi-orchestrate.mjs`; each sub-agent requires an available cAavegotchi on the cartridge. | 1 free hero per session |
-| **Spawn / Mint** | Mint new cAavegotchi from 16 starter collaterals (maDAI, maWETH, maLINK, etc.) via `$5 sim pay`; or bind-owned from wallet by name; never auto-mint, always confirm from the overlay. | Free hero → binds at spawn |
+| **Spawn / Mint** | Mint new cAavegotchi from 16 starter collaterals via sim pay: **owner free** · **promo whitelist** · **1 free seat per L1 wallet gotchi**; else first `$5`, further `$3`. Or bind-owned from wallet by name (free). Never auto-mint. | Free hero → binds at spawn |
 | **GoBall Cartridge** | Mint and bind GoBall cartridges from the Games catalog; requires goball rules registered on the cartridge SIM (`services/cartridge-sim-proxy`). | Free hero |
 | **GoChi-Trader Monitor** | Check paper desk health, PnL, fills, cron status, and whether the desk is running. | Free hero |
 | **GoChi-Trader Improve** | Auto-improve or retune a paper trader from its realized trade history. | Free hero |
@@ -25,6 +25,6 @@ This file lists the core capabilities of the GotchiBot orchestrator and its agen
 - **Each sub-agent** binds a hero at spawn; the hero is released when the session completes (`output.md` written).
 - **Cartridge SIM** runs on the iMac at `127.0.0.1:8791` behind a Cloudflare tunnel (`cartridge.aarcadeghst.com`).
 - **Two backends**: lore API `:3010` (read-only, SIM disabled) vs cartridge SIM `:8791` (mint/bind writer only).
-- **Mint paths**: available hero → spawn; cartridge miss → mint-sub (16 starters, $5 sim) or bind-owned (free, by name).
+- **Mint paths**: available hero → spawn; cartridge miss → mint-sub (16 starters; **owner free** · **promo whitelist** · **1 free per L1 wallet gotchi**, else `$5` then `$3`) or bind-owned (free, by name).
 - **GoBall**: same mint/bind flow; collateral whitelist: `usdc, dai, weth, aave, link, usdt, wbtc, matic, sushi, yfi, uni, tusd, usdp, frax, lusd, rai, amazon, apple, disney, gamestop, microsoft, nike, nvidia, spacex, tesla, usollfund`.
 - **After mint**: `openclaw-fleet.mjs sync`, then `GOTCHIBOT_HERO_ID=<id> abra run gotchibot -- ./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim "<task>"`.

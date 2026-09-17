@@ -1,0 +1,11 @@
+{
+  "title": "Market News",
+  "summary": "Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only — not the trader monitor.",
+  "skills": [
+    "market-news-feed",
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "autonomy": "Owns market news intake: pull regime/headlines via skill market-news-feed and/or `./scripts/gotchi-trader-desk.mjs news --json`, write short digests under an agreed path, cite sources, dead feed → `unknown` never blocks a brief. Hand deep research to market-research; hand desk health / execution to financial-analyst (LINK) / orch. Analysis only — no trades, no posts, no spend/mint.",
+  "scheduleCmd": ""
+}

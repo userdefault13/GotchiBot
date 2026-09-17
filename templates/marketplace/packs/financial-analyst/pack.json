@@ -2,8 +2,8 @@
   "id": "financial-analyst",
   "roleId": "financial-analyst",
   "version": "1.0.0",
-  "title": "Financial Analyst",
-  "summary": "Institutional-grade research analyst: regime/news, IC memos, PDF filings, relative-value and risk framing. Analysis only — no execution, no posting.",
+  "title": "Financial Analyst / Trade Desk",
+  "summary": "Owns the Gotchi-Trader trade desk (monitor, improve, waker health) as main priority. Staffs market-news and market-research children for headlines and deep memos. Analysis/paper only — no live execution.",
   "skills": [
     "market-news-feed",
     "browser-tool",
@@ -18,7 +18,8 @@
   ],
   "tags": [
     "analysis",
-    "news"
+    "news",
+    "trader"
   ],
   "downloadPath": "packs/financial-analyst",
   "files": [

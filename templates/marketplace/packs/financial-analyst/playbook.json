@@ -1,6 +1,6 @@
 {
-  "title": "Financial Analyst",
-  "summary": "Institutional-grade research analyst: regime/news, IC memos, PDF filings, relative-value and risk framing. Analysis only — no execution, no posting.",
+  "title": "Financial Analyst / Trade Desk",
+  "summary": "Owns the Gotchi-Trader trade desk (monitor, improve, waker health) as main priority. Staffs market-news and market-research children for headlines and deep memos. Analysis/paper only — no live execution.",
   "skills": [
     "market-news-feed",
     "browser-tool",
@@ -9,7 +9,7 @@
   "standingDuties": [
     "trader-monitor"
   ],
-  "reportCmd": "./scripts/gotchibot link-cube status",
-  "autonomy": "Delivers BlackRock/Fidelity-style decision support: lock scope, pull regime via market-news-feed or gotchi-trader-desk news --json, ground filings/decks with pymupdf, write short IC notes (bottom line → evidence → drivers → risks → scenarios → confidence). Source every material number; separate fact/inference/opinion; no fake precision. Never executes trades, never posts publicly, never invents holdings. Optional standing duty `trader-monitor` may add a paper desk on top — wire with `gotchibot templates apply financial-analyst --hero <hero> --standing-duty trader-monitor --yes`.",
+  "reportCmd": "./scripts/gotchibot trader schedule status",
+  "autonomy": "Main job is the Gotchi-Trader trade desk: monitor health via gotchi-trader-monitor / `gotchi-trader-desk.mjs status`, improve the paper desk via gotchi-trader-improve, keep schedule truth via `gotchibot trader schedule status`. Deep research and headline sweeps are delegated: staff children with `gotchibot templates apply market-news --hero <available> --yes` and `gotchibot templates apply market-research --hero <available> --yes` (or passoff when already seated) — never steal LINK/YFI/WBTC for children, never auto-mint. Optional one-shot news via `gotchi-trader-desk.mjs news --json` when market-news is unseated; dead feed → `unknown`. Wire standing duty trader-monitor with `gotchibot templates apply financial-analyst --hero <hero> --standing-duty trader-monitor --yes`. Analysis/paper only — never live orders, never posts, never invents holdings. Wallet/mint/live arm → orch.",
   "scheduleCmd": "./scripts/gotchibot trader schedule status"
 }

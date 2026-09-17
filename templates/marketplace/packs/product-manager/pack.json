@@ -3,7 +3,7 @@
   "roleId": "product-manager",
   "version": "1.0.0",
   "title": "Product Manager",
-  "summary": "Own product discovery → roadmap → specs → ship coordination for AarcadeGh-t / GotchiBot product surfaces (features, games, haunts, FE/BE workstreams). PM craft — briefs and routes; never DIY engineering.",
+  "summary": "Sole product desk: discovery → roadmap → specs → ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers — including one arcade-game-monitor per Aarcade game. Not Prof; not chief.",
   "skills": [
     "browser-tool",
     "pymupdf",

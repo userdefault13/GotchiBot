@@ -1,6 +1,6 @@
 ---
-description: GotchiBot meeting room — status, say, colabo, end
-argument-hint: [status | say "…" | colabo "…" | invite <hero> | end]
+description: GotchiBot meeting room — status, say, edit, colabo, end
+argument-hint: [status | say "…" | edit <ts|last> "…" | colabo "…" | invite <hero> | end]
 allowed-tools: Bash(./scripts/gotchibot meet:*), Bash(node scripts/gotchi-meet.mjs:*), Bash(cat sessions/meetings/*)
 ---
 
@@ -17,6 +17,7 @@ No arguments → `status` (the open meeting, or none).
 | `/meet` | `status` |
 | `/meet say let's recap @LINK` | `say "…"` — `@mentions` pick who answers |
 | `/meet say @everyone status?` | `say "…"` — every gotchi answers, one after another |
+| `/meet edit last "fixed text"` | `edit <ts\|last> "…"` — fix Julius's own last message (no re-say) |
 | `/meet colabo "ship or hold?"` | every invited agent answers |
 | `/meet invite LINK` / `invite all` | add participants |
 | `/meet end` | minutes + handoff |

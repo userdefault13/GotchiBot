@@ -13,6 +13,9 @@ metadata:
 
 # Morning recap
 
+The meet **room is persistent**. Morning recap is a **recording** (`meet start --morning`)
+on that room — `/end` stops the recording and writes minutes; the room stays for chat.
+
 ## Menu (unchanged meeting otherwise)
 
 Cockpit **Start meeting** now asks:
@@ -45,6 +48,14 @@ OpenClaw. 402/429 models are cooled down and skipped.
 ./scripts/gotchibot meet morning tasks
 ./scripts/gotchibot meet morning tasks --hero starter-link-h1-1
 ```
+
+## Overnight dept reports feed orch's prep
+
+Every day at 03:00 America/Los_Angeles, each department desk posts a short report to the
+orchestrator via the project **iMessage meet channel** (`./scripts/gotchibot meet say "…"`,
+tagged for orch) — not AgentMail, not mail-courier. Orch collects those overnight reports
+and preps the morning report (project overview, day's plan/workflow/goals, open issues
+needing answers) before/with this recap. Policy text only — no cron installer here.
 
 ## Chair loop
 

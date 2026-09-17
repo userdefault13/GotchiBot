@@ -37,12 +37,12 @@ function runMeet(argv) {
 const TOOLS = [
   {
     name: "meet_status",
-    description: "Current GotchiBot meeting status (id, topic, kind, participants).",
+    description: "Current GotchiBot room status (id, topic, recording idle|active, participants).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "meet_start_morning",
-    description: "Start a morning-recap meeting (kind=morning-recap). Then invite + morning_collect.",
+    description: "Start a morning-recap *recording* on the persistent room (kind=morning-recap). Then invite + morning_collect.",
     inputSchema: {
       type: "object",
       properties: { topic: { type: "string" } },
@@ -91,7 +91,7 @@ const TOOLS = [
   },
   {
     name: "meet_end",
-    description: "End meeting; write minutes.md + handoff.md (big-pickle + Claude-as-tool checklist).",
+    description: "Stop the active recording; write minutes + handoff. Persistent room stays open for iMessage chat.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
 ];

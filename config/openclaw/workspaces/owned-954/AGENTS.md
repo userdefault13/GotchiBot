@@ -22,7 +22,8 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 | "ask Claude", `@claudemode`, Hub Claude pane | MCP `claude_submit {prompt}` → I keep working → `claude_collect {id}` when told it's ready. Quick sync question: MCP `claude_ask`. No MCP: `node ./scripts/claudemode-submit.mjs "…"` then `node ./scripts/claude-jobs.mjs collect <id>` | Claude's reply. Yes, I have this tool. It is a tool, not a model: never `/model @claudemode`. |
 | pane empty / bridge down | MCP `hub_bridge_ensure`; if no MCP, `./scripts/gotchibot hub bridge-ensure`; retry once | what happened |
 | handoff, "give this to X", "pick up where Y left off" | `./scripts/gotchibot passoff send <hero> --note "done so far" --next "what's left"` / `./scripts/gotchibot passoff resume` | what moved |
-| meeting, morning recap, minutes | MCP `meet_start_morning` … `meet_end` (skill `synergy` has the order) | the minutes |
+| meeting, morning recap, minutes | MCP `meet_start_morning` … `meet_end` (skill `synergy` / `gotchibot-meet`). Room is persistent; start/end = recording only | the minutes / room stays open |
+| overnight dept reports (03:00 PT iMessage meet channel), "prep the morning report" | collect the dept iMessage reports from the meet channel, then prep the morning overview: project status, day's plan/workflow/goals, open issues needing answers | the morning report, ready before/with the morning recap |
 | `/pstack`, `/poteto-mode`, nontrivial design, contested approach, "are we sure?", "go deep" | read skill `pstack`, then `./scripts/delegate-pick.mjs --json "<playbook brief>"` (or spawn competing approaches per the skill) | who took it, the playbook label, and when I'll check back |
 | a one-line factual question, or the status of something already running | answer it myself | the answer |
 
@@ -67,3 +68,11 @@ I stay on the gateway default model. `@claudemode` is a tool row above, not a mo
 - Project mini kanban (when a sealed project is selected): `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/project-kanban.mjs desk ensure owned-954` then `desk show owned-954` / `add "…" --desk owned-954` / `move <id> <column> --desk owned-954`. The project **kanban-manager** owns the main board and `sync`.
 - Project tickets (when a sealed project is selected): desks may `./scripts/project-tickets.mjs request/claim/submit` for their own hero id (`--by owned-954`); the project **kanban-manager** owns `accept` / `rework` / `close` / `digest`.
 - Desk mailbox (when a sealed project is selected): `./scripts/project-mailbox.mjs desk ensure owned-954` then `inbox owned-954` / `sent owned-954` / `read owned-954 <messageId>`. The project **mail-courier** owns AgentMail send/receive and appends to my inbox/sent on every successful send + relayed inbound — I read my own files, I never send directly.
+
+## Nightly department report (every day, 03:00 America/Los_Angeles)
+
+- Every seated department desk submits a short daily report to the orchestrator (`owned-954`) via the project **iMessage meet channel**: `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot meet say "…"`, tagged for orch. Not AgentMail, not the desk mailbox, not mail-courier.
+- The meet **room is persistent** — `say` works anytime (recording optional). `/start` and `/end` only toggle a recorded meeting window; they do not close the room.
+- Include: progress since yesterday, ideas, issues, and questions needing an answer.
+- The orchestrator collects the overnight reports and preps the morning report (project overview, day's plan/workflow/goals, open issues needing answers) for the morning recap.
+- AgentMail / desk mailbox stays for external mail only — **mail-courier** does not collect or relay daily dept reports or morning rollups.

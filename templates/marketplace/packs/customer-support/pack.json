@@ -1,0 +1,29 @@
+{
+  "id": "customer-support",
+  "roleId": "customer-support",
+  "version": "1.0.0",
+  "title": "Customer Support",
+  "summary": "Own the client-facing support desk: manage a web chat bot that clients use to get help — configure/monitor the bot, triage conversations, draft replies, escalate blockers, keep a support ledger. On GotchiBot/AarcadeGh-t installs, also owns the project messaging system (AgentMail + desk mailboxes + tickets until a web widget is wired). Never posts marketing; never spends.",
+  "skills": [
+    "browser-tool",
+    "project-mailbox"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "support",
+    "chat",
+    "clients"
+  ],
+  "downloadPath": "packs/customer-support",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/project-mailbox/SKILL.md"
+  ]
+}

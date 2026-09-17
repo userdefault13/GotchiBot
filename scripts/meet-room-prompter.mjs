@@ -18,7 +18,7 @@ import {
   clampPage,
 } from "./meet-room.mjs";
 import { setMeetStatus } from "./meet-status.mjs";
-import { warmThumbs } from "./meet-channel.mjs";
+import { warmThumbs, readTranscript, loadCurrentMeeting } from "./meet-channel.mjs";
 import { runLayout } from "./tmux-layout.mjs";
 import { isMainModule } from "./is-main.mjs";
 
@@ -132,6 +132,9 @@ let drawing = false;
 let redrawPending = false;
 let statusAnimTimer = null;
 
+/** When set, the next submit edits this user turn instead of saying. */
+let editTargetTs = null;
+
 function hasActiveMeetStatus() {
   try {
     const j = JSON.parse(readFileSync(`${ROOT}/sessions/.meet-status.json`, "utf8"));
@@ -191,6 +194,87 @@ function clearPending() {
   } catch {
     /* ok */
   }
+}
+
+function currentUserId() {
+  try {
+    return loadCurrentMeeting()?.participants?.find((p) => p.role === "user")?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Most recent user-role turn owned by the current user, or null. */
+function lastUserTurn() {
+  const id = currentUserId();
+  const meeting = loadCurrentMeeting();
+  if (!id || !meeting) return null;
+  const turns = readTranscript(meeting.id);
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i].role === "user" && turns[i].speaker === id) return turns[i];
+  }
+  return null;
+}
+
+/**
+ * Load a user turn (by ISO ts, or the last one) into the editor as an edit
+ * target. Only the current user's own user-role turns load. Returns false
+ * (leaving the buffer alone) when there is nothing editable.
+ */
+function loadEditTarget(ts) {
+  const id = currentUserId();
+  const meeting = loadCurrentMeeting();
+  if (!id || !meeting) return false;
+  const turns = readTranscript(meeting.id);
+  let turn = null;
+  if (ts) {
+    turn = turns.find((t) => t.ts === ts) || null;
+  } else {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === "user" && turns[i].speaker === id) {
+        turn = turns[i];
+        break;
+      }
+    }
+  }
+  if (!turn || turn.role !== "user" || turn.speaker !== id) return false;
+  editTargetTs = turn.ts;
+  editor.buffer = turn.text;
+  editor.cursor = editor.buffer.length;
+  return true;
+}
+
+/** Edit an existing user turn in place — no re-say, no agent wake. */
+function editToRoom(ts, msg) {
+  const text = String(msg || "").trim();
+  if (!text || sendBusy) return;
+  sendBusy = true;
+  sendError = null;
+  startSendTimer();
+  draw();
+
+  const child = spawn(
+    process.execPath,
+    [`${ROOT}/scripts/gotchi-meet.mjs`, "edit", ts, text],
+    { cwd: ROOT, stdio: "ignore", env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1" } },
+  );
+  activeChild = child;
+  child.on("error", () => {
+    if (activeChild === child) activeChild = null;
+    sendBusy = false;
+    stopSendTimer();
+    sendError = "edit failed";
+    pokeChannel();
+    draw();
+  });
+  child.on("close", (code) => {
+    if (activeChild === child) activeChild = null;
+    sendBusy = false;
+    stopSendTimer();
+    pokeChannel();
+    if (code !== 0) sendError = "edit failed";
+    draw();
+  });
 }
 
 function drawFooterOnly() {
@@ -447,6 +531,10 @@ function drawInputPanel(top, cols) {
     const dots = ".".repeat(sendDots);
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}Sending${dots}${T.reset}`;
+  } else if (editTargetTs) {
+    footerCore =
+      `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}editing message${T.reset}` +
+      `${T.panel}${T.muted} · Enter saves · Esc/empty cancels${T.reset}`;
   } else {
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
@@ -544,28 +632,53 @@ class Prompter {
   submit() {
     const line = this.buffer.trim();
     this.clear();
-    if (!line) return "noop";
-    if (line === "/end" || line === "/quit" || line === "/leave") return "end";
-    if (line === "/chat" || line === "/opencode" || line === "/desk") return "chat";
+    if (!line) {
+      if (editTargetTs) editTargetTs = null; // empty submit cancels edit
+      return "noop";
+    }
+    if (line === "/end" || line === "/quit" || line === "/leave") {
+      editTargetTs = null;
+      return "end";
+    }
+    if (line === "/chat" || line === "/opencode" || line === "/desk") {
+      editTargetTs = null;
+      return "chat";
+    }
+    if (line === "/edit") {
+      if (loadEditTarget(null)) return "redraw";
+      sendError = "no user message to edit";
+      return "redraw";
+    }
+    if (line.startsWith("/edit ")) {
+      const ts = line.slice(6).trim();
+      if (loadEditTarget(ts)) return "redraw";
+      sendError = `no user message at ${ts}`;
+      return "redraw";
+    }
     if (line === "/prev" || line === ",") {
+      editTargetTs = null;
       pagePrev();
       return "redraw";
     }
     if (line === "/next" || line === ".") {
+      editTargetTs = null;
       pageNext();
       return "redraw";
     }
     if (line === "/recap-next" || line === "/agent-next") {
+      editTargetTs = null;
       runMeetHelper(["morning", "next"]);
       return "redraw";
     }
     if (line === "/recap-present") {
+      editTargetTs = null;
       runMeetHelper(["morning", "present"]);
       return "redraw";
     }
     if (line.startsWith("!")) {
       const cmd = line.slice(1).trim();
       if (!cmd) return "noop";
+      editTargetTs = null;
       this.history.push(line);
       if (this.history.length > 100) this.history.shift();
       runShellInRoom(cmd);
@@ -573,11 +686,21 @@ class Prompter {
     }
     if (line.startsWith("/colabo ") || line.startsWith("/collabo ")) {
       const prompt = line.replace(/^\/col+abo\s+/i, "").trim();
-      if (prompt) runMeetHelper(["colabo", prompt]);
+      if (prompt) {
+        editTargetTs = null;
+        runMeetHelper(["colabo", prompt]);
+      }
       return "redraw";
     }
     this.history.push(line);
     if (this.history.length > 100) this.history.shift();
+    if (editTargetTs) {
+      // Editing: rewrite the target turn in place — do NOT say / wake agents.
+      const ts = editTargetTs;
+      editTargetTs = null;
+      editToRoom(ts, line);
+      return "redraw";
+    }
     sayToRoom(line);
     return "redraw";
   }
@@ -716,6 +839,8 @@ function handleKey(chunk) {
 
 function handleEsc(seq) {
   if (seq === "\x1b[A") {
+    // ↑ on an empty buffer: pull the last user line into edit mode.
+    if (!editor.buffer && !editTargetTs && loadEditTarget(null)) return "redraw";
     editor.historyUp();
     return "redraw";
   }
@@ -814,6 +939,11 @@ function main() {
 
   if (chunk.startsWith("\x1b")) {
     if (chunk.length === 1) {
+      if (editTargetTs) {
+        editTargetTs = null; // lone Esc cancels edit mode
+        draw();
+        return;
+      }
       escBuf = chunk;
       return;
     }

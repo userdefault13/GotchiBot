@@ -13,10 +13,14 @@ Drive meetings only through the CLI. Do not invent agents or turns.
 ```bash
 ./scripts/gotchibot meet                  # status (default)
 ./scripts/gotchibot meet say "…"          # @mentions pick who answers
+./scripts/gotchibot meet edit last "…"    # fix your own last message (no re-say)
 ./scripts/gotchibot meet colabo "…"       # every invited agent answers
 ./scripts/gotchibot meet invite LINK      # or: invite all
 ./scripts/gotchibot meet end              # minutes + handoff
 ```
+
+`edit <ts|last> "text"` rewrites Julius's own user-role turn in place (stamps
+`editedAt`, keeps the original `ts`) — it never re-says and never wakes agents.
 
 ## Quota
 

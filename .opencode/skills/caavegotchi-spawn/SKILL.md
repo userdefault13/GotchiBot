@@ -42,7 +42,7 @@ never `identity bind` portal VRF. Home-stack subgraph **is** allowed through
 **NEVER run `gotchibot identity bind`** — that is portal VRF, not mint.
 **NEVER discuss packs, pack_pending_vrf, portal paths, or "need token ID".**
 Mint is overlay DialogSelect → confirm → `onboarding-api.mjs mint-sub <spirit>`
-($5 simPay). Wallet match → confirm → `bind-owned`. Never auto-mint.
+($5/$3 simPay when no free seat — owner / promo whitelist / 1:1 wallet gotchi). Wallet match → confirm → `bind-owned`. Never auto-mint.
 
 If he names a collateral (YFI, BTC, LINK, DAI, … — typo **yifi → yfi**):
 
@@ -54,11 +54,11 @@ If he names a collateral (YFI, BTC, LINK, DAI, … — typo **yifi → yfi**):
 2. If none available, write spawn-request with that spirit and **wait for the overlay**.
    Skip the 3-choice AND skip portal talk. Overlay lists:
 
-- Matching 16 starters (e.g. maYFI (H1) spirit yfi) — title = label, description = `mint new cAavegotchi · $5 sim`
+- Matching 16 starters (e.g. maYFI (H1) spirit yfi) — title = label, description = `mint new cAavegotchi · free/seat or $5/$3`
 - Matching unbound wallet gotchis (collateral name/spirit contains yfi) — title = `name (#id)`, description = `bind from wallet`
 
 ALWAYS show this list even if 1 match. Zero matches → full 16 + toast
-`no YFI match — pick from the 16`. Confirm (`$5 sim — mint maYFI (H1)?`) then mint.
+`no YFI match — pick from the 16`. Confirm (free if owner/promo/wallet seat, else `$5`/`$3`) then mint.
 
 Default `/spawn` with no collateral: after no-available, **Mint new collateral**
 already lists the 16 — keep that. Julius wants that list automatic.
@@ -152,7 +152,7 @@ Exact 3-choice copy (only when **no** collateral was named and none available):
 - title: `No available gotchis`
 - Make an agent available — Unassign a currently assigned cAavegotchi, then continue
 - Mint from wallet — Bind an on-chain Aavegotchi you already own
-- Mint new collateral — Mint a new cAavegotchi from the 16 starter collaterals ($5 sim)
+- Mint new collateral — Mint a new cAavegotchi from the 16 starter collaterals (owner free · promo whitelist · 1 free seat per L1 wallet gotchi; else `$5`/`$3`)
 
 When `collateral` is set, skip that card. Go straight to the **YFI/BTC/… matches**
 list (16 starters + wallet). Do not ask which of 3 portal paths.
@@ -177,7 +177,7 @@ abra run gotchibot -- node scripts/wallet-roster.mjs --json
 abra run gotchibot -- node scripts/onboarding-api.mjs bind-owned <tokenId>
 abra run gotchibot -- node scripts/openclaw-fleet.mjs sync
 
-# mint-sub ($5 simPay) — pass SPIRIT id (dai, weth, …) NOT libraryName
+# mint-sub (owner free · promo whitelist · 1 free seat per L1 wallet gotchi; else $5 first / $3 further) — pass SPIRIT id (dai, weth, …) NOT libraryName
 abra run gotchibot -- node scripts/onboarding-api.mjs mint-sub <spiritId>
 abra run gotchibot -- node scripts/openclaw-fleet.mjs sync
 ```

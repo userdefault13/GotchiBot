@@ -53,28 +53,12 @@ import {
   setMeetStatuses,
   clearMeetStatus,
 } from "./meet-status.mjs";
-import {
-  resolveMeetingsRoot,
-  requireProjectSlug,
-  currentProjectSlug,
-  rosterHas,
-  rosterAdd,
-  loadRoster,
-} from "./project-context.mjs";
 
-/** Project-sealed meetings root (falls back to sessions/meetings if no project). */
-function meetingsRoot() {
-  return resolveMeetingsRoot().root;
-}
-function meetingsCurrentPath() {
-  return `${meetingsRoot()}/.current`;
-}
-function meetAgentStatePath() {
-  return `${meetingsRoot()}/.mention-agents.json`;
-}
-
+const MEETINGS = `${SESSIONS}/meetings`;
+const CURRENT = `${MEETINGS}/.current`;
 const LIST_CACHE = `${SESSIONS}/.focus-list.json`;
 const MEET_AGENTS_DIR = `${ROOT}/.opencode/agents`;
+const MEET_AGENT_STATE = `${MEETINGS}/.mention-agents.json`;
 const MEET_AGENT_MARKER = "gotchibot-meet-agent";
 const RESERVED_AGENT_NAMES = new Set([
   "gotchi",
@@ -94,7 +78,7 @@ const TURN_TIMEOUT_S = 90;
 const CHAIR_TIMEOUT_S = 60;
 
 function ensureMeetings() {
-  mkdirSync(meetingsRoot(), { recursive: true });
+  mkdirSync(MEETINGS, { recursive: true });
 }
 
 function readJson(path, fallback = null) {
@@ -121,7 +105,7 @@ function loadRoleForHero(heroId) {
   return { roleId, playbook: playbooks[roleId] || null };
 }
 
-function meetBashPermissionYaml(roleId, playbook, heroId) {
+function meetBashPermissionYaml(roleId, playbook) {
   // Headless OpenClaw chat only — never agent-focus select (that respawns the pane).
   const allows = {
     "./scripts/openclaw-fleet.mjs chat*": "allow",
@@ -130,11 +114,7 @@ function meetBashPermissionYaml(roleId, playbook, heroId) {
     "./scripts/gotchi-meet.mjs status*": "allow",
     "node ./scripts/gotchi-meet.mjs status*": "allow",
   };
-  // A rehatched hero keeps its old desk's tooling via config/agent-standing-duties.json.
-  const standing = heroId
-    ? (readJson(`${ROOT}/config/agent-standing-duties.json`, {}) || {})[heroId] || null
-    : null;
-  const reportCmd = String(playbook?.reportCmd || standing?.reportCmd || "").trim();
+  const reportCmd = String(playbook?.reportCmd || "").trim();
   if (reportCmd.startsWith("./scripts/gotchi-trader-desk.mjs") || roleId === "trader-desk") {
     allows["./scripts/gotchi-trader-desk.mjs*"] = "allow";
     allows["abra run gotchibot -- ./scripts/gotchi-trader-desk.mjs*"] = "allow";
@@ -193,7 +173,7 @@ model: ${meetPinnedModel()}
 color: "#B650FF"
 permission:
   edit: deny
-${meetBashPermissionYaml(roleId, playbook, heroId)}
+${meetBashPermissionYaml(roleId, playbook)}
 ---
 <!-- ${MEET_AGENT_MARKER} -->
 You are ${name} (${heroId}). Meeting role label: ${meetingRole}.
@@ -371,7 +351,7 @@ function agentSlugFor(p, used) {
 }
 
 function clearMeetMentionAgents() {
-  const state = readJson(meetAgentStatePath(), null);
+  const state = readJson(MEET_AGENT_STATE, null);
   const files = Array.isArray(state?.files) ? state.files : [];
   for (const file of files) {
     const base = String(file || "").replace(/^.*\//, "");
@@ -389,7 +369,7 @@ function clearMeetMentionAgents() {
     }
   }
   try {
-    unlinkSync(meetAgentStatePath());
+    unlinkSync(MEET_AGENT_STATE);
   } catch {
     /* ok */
   }
@@ -423,7 +403,7 @@ function syncMeetMentionAgents(meeting) {
     writeFileSync(`${MEET_AGENTS_DIR}/${file}`, body);
     files.push(file);
   }
-  writeJson(meetAgentStatePath(), {
+  writeJson(MEET_AGENT_STATE, {
     meetingId: meeting.id,
     files,
     updatedAt: new Date().toISOString(),
@@ -457,7 +437,7 @@ function displayNameFor(hero) {
 }
 
 function meetingDir(id) {
-  return `${meetingsRoot()}/${id}`;
+  return `${MEETINGS}/${id}`;
 }
 
 function meetingPath(id) {
@@ -470,7 +450,7 @@ function transcriptPath(id) {
 
 export function currentMeetingId() {
   try {
-    const raw = readFileSync(meetingsCurrentPath(), "utf8").trim();
+    const raw = readFileSync(CURRENT, "utf8").trim();
     return raw || null;
   } catch {
     return null;
@@ -488,7 +468,7 @@ export function loadCurrentMeeting() {
   const m = loadMeeting(id);
   if (!m || m.status !== "open") {
     try {
-      unlinkSync(meetingsCurrentPath());
+      unlinkSync(CURRENT);
     } catch {}
     return null;
   }
@@ -513,12 +493,12 @@ function saveMeeting(meeting) {
 
 function setCurrent(id) {
   ensureMeetings();
-  writeFileSync(meetingsCurrentPath(), `${id}\n`);
+  writeFileSync(CURRENT, `${id}\n`);
 }
 
 function clearCurrent() {
   try {
-    unlinkSync(meetingsCurrentPath());
+    unlinkSync(CURRENT);
   } catch {}
 }
 
@@ -552,6 +532,45 @@ function appendTranscript(id, rec) {
   };
   appendFileSync(transcriptPath(id), `${JSON.stringify(row)}\n`);
   return row;
+}
+
+/**
+ * Rewrite one user turn in place. `turnKey` is the turn's ISO `ts` or the
+ * literal `last` (most recent role===user turn for the current user id).
+ * Only the user's own user-role turns are editable; the original `ts` is
+ * preserved and `editedAt` is stamped. Rewrites the whole JSONL file, then
+ * pokes # meet. Never re-says, never wakes agents.
+ */
+function editTranscriptTurn(meetingId, turnKey, newText) {
+  const text = String(newText ?? "").trim();
+  if (!text) throw new Error('usage: gotchi-meet.mjs edit <ts|last> "new text"');
+  const meeting = loadMeeting(meetingId);
+  if (!meeting) throw new Error(`no meeting: ${meetingId}`);
+  const user = meeting.participants.find((p) => p.role === "user") || userParticipant();
+  const turns = readTranscript(meetingId);
+  let idx = -1;
+  if (turnKey === "last") {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === "user" && turns[i].speaker === user.id) {
+        idx = i;
+        break;
+      }
+    }
+  } else {
+    idx = turns.findIndex((t) => t.ts === turnKey);
+  }
+  if (idx === -1) throw new Error(`no user turn found for key: ${turnKey}`);
+  const turn = turns[idx];
+  if (turn.role !== "user" || turn.speaker !== user.id) {
+    throw new Error(
+      `turn ${turnKey} is ${turn.speaker}'s ${turn.role} message — only your own user turns can be edited`,
+    );
+  }
+  turn.text = text;
+  turn.editedAt = new Date().toISOString();
+  writeFileSync(transcriptPath(meetingId), `${turns.map((t) => JSON.stringify(t)).join("\n")}\n`);
+  pokeMeetChannel();
+  return { ok: true, turn };
 }
 
 function participantLabel(meeting, id) {
@@ -718,8 +737,6 @@ function chairHero() {
 
 export async function startMeeting(topic = "Untitled meeting", opts = {}) {
   const kind = opts.kind === "morning-recap" ? "morning-recap" : "meeting";
-  // Meetings are closed to the selected project (sealed room).
-  const project = requireProjectSlug();
   const open = loadCurrentMeeting();
   if (open) {
     throw new Error(
@@ -737,7 +754,6 @@ export async function startMeeting(topic = "Untitled meeting", opts = {}) {
   const meeting = {
     id,
     kind,
-    project,
     topic: defaultTopic,
     createdAt: new Date().toISOString(),
     status: "open",
@@ -752,12 +768,6 @@ export async function startMeeting(topic = "Untitled meeting", opts = {}) {
       },
     ],
   };
-  // Chair always belongs to the project roster.
-  try {
-    rosterAdd(chair.id, project);
-  } catch {
-    /* ignore */
-  }
   saveMeeting(meeting);
   setCurrent(id);
   syncMeetMentionAgents(meeting);
@@ -768,13 +778,6 @@ export async function startMeeting(topic = "Untitled meeting", opts = {}) {
 export async function inviteParticipant(query) {
   const meeting = requireOpenMeeting();
   const hero = await resolveInviteTarget(query);
-  const project = meeting.project || currentProjectSlug();
-  if (project && !rosterHas(hero.id, project)) {
-    throw new Error(
-      `${hero.id} is not on project ${project}'s closed roster.\n` +
-        `  add: ./scripts/project-context.mjs roster-add ${hero.id} ${project}`,
-    );
-  }
   const already = meeting.participants.find((p) => p.id === hero.id);
   if (already) {
     throw new Error(`${hero.id} is already in the meeting (${already.role})`);
@@ -804,8 +807,6 @@ export async function inviteParticipant(query) {
 
 export async function inviteAllParticipants() {
   let meeting = requireOpenMeeting();
-  const project = meeting.project || currentProjectSlug();
-  const sealed = project ? loadRoster(project).heroes : [];
   const roster = await loadInviteRoster({ refresh: true });
   const inRoom = new Set((meeting.participants || []).map((p) => p.id));
   const userId = userParticipant().id;
@@ -823,8 +824,6 @@ export async function inviteAllParticipants() {
     if (!id || seen.has(id)) continue;
     if (inRoom.has(id)) continue;
     if (id === userId) continue;
-    // Closed project: only rostered heroes. Empty sealed list = not locked yet.
-    if (sealed.length && !sealed.includes(id)) continue;
     seen.add(id);
     ids.push(id);
   }
@@ -1480,6 +1479,16 @@ export async function shellTurn(command) {
   return { row, code: res.code, timedOut: res.timedOut };
 }
 
+/**
+ * Edit the current user's own turn in the open meeting (no re-say, no agent
+ * wake). `turnKey` is the turn's ISO `ts` or `last` for the most recent user
+ * line. Mirrors sayTurn's meeting resolution.
+ */
+export async function editTurn(turnKey, newText) {
+  const meeting = requireOpenMeeting();
+  return editTranscriptTurn(meeting.id, turnKey, newText);
+}
+
 export async function sayTurn(userText) {
   const text = String(userText || "").trim();
   if (!text) throw new Error('usage: gotchi-meet.mjs say "user message"');
@@ -1732,6 +1741,7 @@ function printStatus(meeting, { json } = {}) {
   }
   console.log("");
   console.log('say    ./scripts/gotchi-meet.mjs say "…"');
+  console.log('edit   ./scripts/gotchi-meet.mjs edit last "…"  (fix your own last message)');
   console.log("invite ./scripts/gotchi-meet.mjs invite <n|id|name>");
   console.log("       ./scripts/gotchi-meet.mjs invite all");
   console.log("end    ./scripts/gotchi-meet.mjs end");
@@ -1746,6 +1756,7 @@ function usage() {
   gotchi-meet.mjs invite all
   gotchi-meet.mjs status [--json]
   gotchi-meet.mjs say "user message"      # @LINK picks a gotchi · @everyone → all answer
+  gotchi-meet.mjs edit <ts|last> "text"   # fix your own last user message (no re-say)
   gotchi-meet.mjs morning collect|present|next|finish|status|tasks …
   gotchi-meet.mjs colabo "prompt for all agents"
   gotchi-meet.mjs end
@@ -1876,6 +1887,21 @@ async function main() {
 
   if (cmd === "say") {
     await sayTurn(rest.join(" ").trim());
+    return;
+  }
+
+  if (cmd === "edit") {
+    const key = rest[0];
+    const text = rest.slice(1).join(" ").trim();
+    if (!key) {
+      console.error('usage: gotchi-meet.mjs edit <ts|last> "new text"');
+      process.exit(2);
+    }
+    const { turn } = await editTurn(key, text);
+    if (!process.env.GOTCHIBOT_MEET_QUIET) {
+      console.log(`edited ${turn.ts}  (${turn.speaker})`);
+      console.log(turn.text);
+    }
     return;
   }
 

@@ -27,3 +27,11 @@
 - Project mini kanban (when a sealed project is selected): `cd {{REPO}} && ./scripts/project-kanban.mjs desk ensure {{ID}}` then `desk show {{ID}}` / `add "…" --desk {{ID}}` / `move <id> <column> --desk {{ID}}`. The project **kanban-manager** owns the main board and `sync`.
 - Project tickets (when a sealed project is selected): desks may `./scripts/project-tickets.mjs request/claim/submit` for their own hero id (`--by {{ID}}`); the project **kanban-manager** owns `accept` / `rework` / `close` / `digest`.
 - Desk mailbox (when a sealed project is selected): `./scripts/project-mailbox.mjs desk ensure {{ID}}` then `inbox {{ID}}` / `sent {{ID}}` / `read {{ID}} <messageId>`. The project **mail-courier** owns AgentMail send/receive and appends to my inbox/sent on every successful send + relayed inbound — I read my own files, I never send directly.
+
+## Nightly department report (every day, 03:00 America/Los_Angeles)
+
+- Every seated department desk submits a short daily report to the orchestrator (`{{ORCH_ID}}`) via the project **iMessage meet channel**: `cd {{REPO}} && ./scripts/gotchibot meet say "…"`, tagged for orch. Not AgentMail, not the desk mailbox, not mail-courier.
+- The meet **room is persistent** — `say` works anytime (recording optional). `/start` and `/end` only toggle a recorded meeting window; they do not close the room.
+- Include: progress since yesterday, ideas, issues, and questions needing an answer.
+- The orchestrator collects the overnight reports and preps the morning report (project overview, day's plan/workflow/goals, open issues needing answers) for the morning recap.
+- AgentMail / desk mailbox stays for external mail only — **mail-courier** does not collect or relay daily dept reports or morning rollups.

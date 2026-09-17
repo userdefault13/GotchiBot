@@ -1,0 +1,32 @@
+{
+  "id": "art-director",
+  "roleId": "art-director",
+  "version": "1.0.0",
+  "title": "Art Director",
+  "summary": "Owns the AarcadeGh-t pixel-art studio AND branding kits: generate and iterate pixel art for arcade games, haunts, UI sprites, and in-world assets, plus brand-kit / design-system deliverables (logo lockups, color/type tokens, social templates, pitch decks, one-sheets, leave-behinds, merch art-ready exports).",
+  "skills": [
+    "browser-tool",
+    "aseprite-tool"
+  ],
+  "skillsExternal": [
+    "mcp-pixellab"
+  ],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "art",
+    "pixel",
+    "studio",
+    "brand"
+  ],
+  "downloadPath": "packs/art-director",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/aseprite-tool/SKILL.md",
+    "skills/browser-tool/SKILL.md"
+  ]
+}

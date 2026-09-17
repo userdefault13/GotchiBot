@@ -134,3 +134,11 @@ Report what I fixed, the one thing left, and the literal command.
 - Project mini kanban (when a sealed project is selected): `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/project-kanban.mjs desk ensure starter-yfi-h1-1` then `desk show starter-yfi-h1-1` / `add "…" --desk starter-yfi-h1-1` / `move <id> <column> --desk starter-yfi-h1-1`. The project **kanban-manager** owns the main board and `sync`.
 - Project tickets (when a sealed project is selected): desks may `./scripts/project-tickets.mjs request/claim/submit` for their own hero id (`--by starter-yfi-h1-1`); the project **kanban-manager** owns `accept` / `rework` / `close` / `digest`.
 - Desk mailbox (when a sealed project is selected): `./scripts/project-mailbox.mjs desk ensure starter-yfi-h1-1` then `inbox starter-yfi-h1-1` / `sent starter-yfi-h1-1` / `read starter-yfi-h1-1 <messageId>`. The project **mail-courier** owns AgentMail send/receive and appends to my inbox/sent on every successful send + relayed inbound — I read my own files, I never send directly.
+
+## Nightly department report (every day, 03:00 America/Los_Angeles)
+
+- Every seated department desk submits a short daily report to the orchestrator (`owned-954`) via the project **iMessage meet channel**: `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot meet say "…"`, tagged for orch. Not AgentMail, not the desk mailbox, not mail-courier.
+- The meet **room is persistent** — `say` works anytime (recording optional). `/start` and `/end` only toggle a recorded meeting window; they do not close the room.
+- Include: progress since yesterday, ideas, issues, and questions needing an answer.
+- The orchestrator collects the overnight reports and preps the morning report (project overview, day's plan/workflow/goals, open issues needing answers) for the morning recap.
+- AgentMail / desk mailbox stays for external mail only — **mail-courier** does not collect or relay daily dept reports or morning rollups.

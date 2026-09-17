@@ -57,7 +57,9 @@ const PRODUCT_DESK_ROLES = new Set([
 ]);
 
 const TAG_MAP = {
-  "financial-analyst": ["analysis", "news"],
+  "financial-analyst": ["analysis", "news", "trader"],
+  "market-news": ["news", "headlines", "regime"],
+  "market-research": ["research", "ic", "filings"],
   "infra-monitor": ["infra", "ops", "home"],
   "infra-docker": ["infra", "docker"],
   "infra-tunnel": ["infra", "tunnel"],
@@ -73,6 +75,9 @@ const TAG_MAP = {
   "merch-desk": ["merch", "pod", "plush", "toys", "quotes"],
   "brand-design": ["design", "brand", "kits"],
   "product-manager": ["product", "pm", "roadmap"],
+  "arcade-game-monitor": ["arcade", "game", "monitor"],
+  "art-director": ["art", "pixel", "studio", "brand"],
+  "customer-support": ["support", "chat", "clients"],
   "accountant": ["finance", "ap", "ar"],
   "mail-courier": ["mail", "courier", "inbox", "email", "agentmail"],
   "kanban-manager": ["kanban", "project", "boards", "tasks"],
