@@ -55,7 +55,7 @@ export function displayCollateralLabel(libraryName, spiritId) {
 }
 
 /** Single-glyph forehead mark for mini ASCII (kanban / thumbs). */
-const SPIRIT_CHARS = {
+export const SPIRIT_CHARS = {
   dai: "D",
   weth: "E",
   aave: "A",
@@ -65,7 +65,7 @@ const SPIRIT_CHARS = {
   tusd: "S",
   uni: "U",
   yfi: "Y",
-  wbtc: "B",
+  wbtc: "₿",
   matic: "M",
 };
 

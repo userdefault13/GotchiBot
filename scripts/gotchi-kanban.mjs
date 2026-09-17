@@ -33,7 +33,7 @@ const SESSIONS = join(ROOT, "sessions");
 const ORCH_ID = "owned-954";
 const WATCH_MS = Number(process.env.GOTCHIBOT_KANBAN_WATCH_MS || 5000);
 const REFRESH_S = Math.max(0.5, WATCH_MS / 1000);
-const KANBAN_ART_W = 7;
+const KANBAN_ART_W = 12; // gotchi-thumb.ascii width (large tombstone, not the 5-line mini)
 
 const args = process.argv.slice(2);
 const wantJson = args.includes("--json");
@@ -406,6 +406,7 @@ function buildBoard(roster, orchId) {
       collateral: h.collateral || null,
       bindType: h.bindType || null,
       name: h.name || null,
+      traits: h.traits ?? h.modifiedTraits ?? null,
       sessionId,
       task,
       host: h.host || "cartridge",
@@ -500,7 +501,9 @@ const artCache = new Map();
 
 function artForCard(card) {
   if (!card || card.kind === "session") return null;
-  const key = `${card.id}|${card.collateral || ""}`;
+  const traits = Array.isArray(card.traits) ? card.traits : null;
+  const traitsKey = traits ? traits.join(",") : "";
+  const key = `${card.id}|${card.collateral || ""}|${traitsKey}`;
   if (artCache.has(key)) return artCache.get(key);
   const colors =
     resolveHeroColors(
@@ -511,7 +514,9 @@ function artForCard(card) {
       },
       card.id,
     ) || null;
-  const art = renderKanbanAscii(colors, { useColor: true });
+  const art = renderKanbanAscii(colors, {
+    useColor: true,
+  });
   const lines = art.split("\n");
   artCache.set(key, lines);
   return lines;

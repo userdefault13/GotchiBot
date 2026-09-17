@@ -787,7 +787,7 @@ async function cmdCockpit() {
   if (process.env.TMUX) {
     runLayout("enter-chat-max");
     console.log("Opening GotchiBot cockpit in chat pane…");
-    console.log("  mint cAavegotchi · change orchestrator avatar · return to chat");
+    console.log("  mint cAavegotchi · change orchestrator avatar · return to project · select project");
     respawnChatPane({ GOTCHIBOT_COCKPIT: "1" });
     return;
   }

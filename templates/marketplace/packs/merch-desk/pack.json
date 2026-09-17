@@ -1,0 +1,36 @@
+{
+  "id": "merch-desk",
+  "roleId": "merch-desk",
+  "version": "1.0.0",
+  "title": "Merch Desk",
+  "summary": "Own the merch store supplier desk: research print-on-demand companies that make custom plushies and toys, rank API-capable vendors, approve-gated outreach to every shortlisted supplier, and pull brand kits / one-sheets / mocks from brand-design and product desks. Never sends without approval; never spends.",
+  "skills": [
+    "browser-tool",
+    "market-news-feed",
+    "pymupdf"
+  ],
+  "skillsExternal": [
+    "mcp-pixellab",
+    "resend"
+  ],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "merch",
+    "pod",
+    "plush",
+    "toys",
+    "quotes"
+  ],
+  "downloadPath": "packs/merch-desk",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/market-news-feed/SKILL.md",
+    "skills/pymupdf/SKILL.md"
+  ]
+}

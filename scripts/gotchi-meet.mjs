@@ -53,12 +53,28 @@ import {
   setMeetStatuses,
   clearMeetStatus,
 } from "./meet-status.mjs";
+import {
+  resolveMeetingsRoot,
+  requireProjectSlug,
+  currentProjectSlug,
+  rosterHas,
+  rosterAdd,
+  loadRoster,
+} from "./project-context.mjs";
 
-const MEETINGS = `${SESSIONS}/meetings`;
-const CURRENT = `${MEETINGS}/.current`;
+/** Project-sealed meetings root (falls back to sessions/meetings if no project). */
+function meetingsRoot() {
+  return resolveMeetingsRoot().root;
+}
+function meetingsCurrentPath() {
+  return `${meetingsRoot()}/.current`;
+}
+function meetAgentStatePath() {
+  return `${meetingsRoot()}/.mention-agents.json`;
+}
+
 const LIST_CACHE = `${SESSIONS}/.focus-list.json`;
 const MEET_AGENTS_DIR = `${ROOT}/.opencode/agents`;
-const MEET_AGENT_STATE = `${MEETINGS}/.mention-agents.json`;
 const MEET_AGENT_MARKER = "gotchibot-meet-agent";
 const RESERVED_AGENT_NAMES = new Set([
   "gotchi",
@@ -78,7 +94,7 @@ const TURN_TIMEOUT_S = 90;
 const CHAIR_TIMEOUT_S = 60;
 
 function ensureMeetings() {
-  mkdirSync(MEETINGS, { recursive: true });
+  mkdirSync(meetingsRoot(), { recursive: true });
 }
 
 function readJson(path, fallback = null) {
@@ -105,7 +121,7 @@ function loadRoleForHero(heroId) {
   return { roleId, playbook: playbooks[roleId] || null };
 }
 
-function meetBashPermissionYaml(roleId, playbook) {
+function meetBashPermissionYaml(roleId, playbook, heroId) {
   // Headless OpenClaw chat only — never agent-focus select (that respawns the pane).
   const allows = {
     "./scripts/openclaw-fleet.mjs chat*": "allow",
@@ -114,7 +130,11 @@ function meetBashPermissionYaml(roleId, playbook) {
     "./scripts/gotchi-meet.mjs status*": "allow",
     "node ./scripts/gotchi-meet.mjs status*": "allow",
   };
-  const reportCmd = String(playbook?.reportCmd || "").trim();
+  // A rehatched hero keeps its old desk's tooling via config/agent-standing-duties.json.
+  const standing = heroId
+    ? (readJson(`${ROOT}/config/agent-standing-duties.json`, {}) || {})[heroId] || null
+    : null;
+  const reportCmd = String(playbook?.reportCmd || standing?.reportCmd || "").trim();
   if (reportCmd.startsWith("./scripts/gotchi-trader-desk.mjs") || roleId === "trader-desk") {
     allows["./scripts/gotchi-trader-desk.mjs*"] = "allow";
     allows["abra run gotchibot -- ./scripts/gotchi-trader-desk.mjs*"] = "allow";
@@ -173,7 +193,7 @@ model: ${meetPinnedModel()}
 color: "#B650FF"
 permission:
   edit: deny
-${meetBashPermissionYaml(roleId, playbook)}
+${meetBashPermissionYaml(roleId, playbook, heroId)}
 ---
 <!-- ${MEET_AGENT_MARKER} -->
 You are ${name} (${heroId}). Meeting role label: ${meetingRole}.
@@ -351,7 +371,7 @@ function agentSlugFor(p, used) {
 }
 
 function clearMeetMentionAgents() {
-  const state = readJson(MEET_AGENT_STATE, null);
+  const state = readJson(meetAgentStatePath(), null);
   const files = Array.isArray(state?.files) ? state.files : [];
   for (const file of files) {
     const base = String(file || "").replace(/^.*\//, "");
@@ -369,7 +389,7 @@ function clearMeetMentionAgents() {
     }
   }
   try {
-    unlinkSync(MEET_AGENT_STATE);
+    unlinkSync(meetAgentStatePath());
   } catch {
     /* ok */
   }
@@ -403,7 +423,7 @@ function syncMeetMentionAgents(meeting) {
     writeFileSync(`${MEET_AGENTS_DIR}/${file}`, body);
     files.push(file);
   }
-  writeJson(MEET_AGENT_STATE, {
+  writeJson(meetAgentStatePath(), {
     meetingId: meeting.id,
     files,
     updatedAt: new Date().toISOString(),
@@ -437,7 +457,7 @@ function displayNameFor(hero) {
 }
 
 function meetingDir(id) {
-  return `${MEETINGS}/${id}`;
+  return `${meetingsRoot()}/${id}`;
 }
 
 function meetingPath(id) {
@@ -450,7 +470,7 @@ function transcriptPath(id) {
 
 export function currentMeetingId() {
   try {
-    const raw = readFileSync(CURRENT, "utf8").trim();
+    const raw = readFileSync(meetingsCurrentPath(), "utf8").trim();
     return raw || null;
   } catch {
     return null;
@@ -468,7 +488,7 @@ export function loadCurrentMeeting() {
   const m = loadMeeting(id);
   if (!m || m.status !== "open") {
     try {
-      unlinkSync(CURRENT);
+      unlinkSync(meetingsCurrentPath());
     } catch {}
     return null;
   }
@@ -493,12 +513,12 @@ function saveMeeting(meeting) {
 
 function setCurrent(id) {
   ensureMeetings();
-  writeFileSync(CURRENT, `${id}\n`);
+  writeFileSync(meetingsCurrentPath(), `${id}\n`);
 }
 
 function clearCurrent() {
   try {
-    unlinkSync(CURRENT);
+    unlinkSync(meetingsCurrentPath());
   } catch {}
 }
 
@@ -698,6 +718,8 @@ function chairHero() {
 
 export async function startMeeting(topic = "Untitled meeting", opts = {}) {
   const kind = opts.kind === "morning-recap" ? "morning-recap" : "meeting";
+  // Meetings are closed to the selected project (sealed room).
+  const project = requireProjectSlug();
   const open = loadCurrentMeeting();
   if (open) {
     throw new Error(
@@ -715,6 +737,7 @@ export async function startMeeting(topic = "Untitled meeting", opts = {}) {
   const meeting = {
     id,
     kind,
+    project,
     topic: defaultTopic,
     createdAt: new Date().toISOString(),
     status: "open",
@@ -729,6 +752,12 @@ export async function startMeeting(topic = "Untitled meeting", opts = {}) {
       },
     ],
   };
+  // Chair always belongs to the project roster.
+  try {
+    rosterAdd(chair.id, project);
+  } catch {
+    /* ignore */
+  }
   saveMeeting(meeting);
   setCurrent(id);
   syncMeetMentionAgents(meeting);
@@ -739,6 +768,13 @@ export async function startMeeting(topic = "Untitled meeting", opts = {}) {
 export async function inviteParticipant(query) {
   const meeting = requireOpenMeeting();
   const hero = await resolveInviteTarget(query);
+  const project = meeting.project || currentProjectSlug();
+  if (project && !rosterHas(hero.id, project)) {
+    throw new Error(
+      `${hero.id} is not on project ${project}'s closed roster.\n` +
+        `  add: ./scripts/project-context.mjs roster-add ${hero.id} ${project}`,
+    );
+  }
   const already = meeting.participants.find((p) => p.id === hero.id);
   if (already) {
     throw new Error(`${hero.id} is already in the meeting (${already.role})`);
@@ -768,6 +804,8 @@ export async function inviteParticipant(query) {
 
 export async function inviteAllParticipants() {
   let meeting = requireOpenMeeting();
+  const project = meeting.project || currentProjectSlug();
+  const sealed = project ? loadRoster(project).heroes : [];
   const roster = await loadInviteRoster({ refresh: true });
   const inRoom = new Set((meeting.participants || []).map((p) => p.id));
   const userId = userParticipant().id;
@@ -785,6 +823,8 @@ export async function inviteAllParticipants() {
     if (!id || seen.has(id)) continue;
     if (inRoom.has(id)) continue;
     if (id === userId) continue;
+    // Closed project: only rostered heroes. Empty sealed list = not locked yet.
+    if (sealed.length && !sealed.includes(id)) continue;
     seen.add(id);
     ids.push(id);
   }

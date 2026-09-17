@@ -1,0 +1,31 @@
+{
+  "id": "infra-bridge",
+  "roleId": "infra-bridge",
+  "version": "1.0.0",
+  "title": "Desk→Hub Claude bridge",
+  "summary": "Own Desk→Hub Claude bridge: ensure/check, VS Code open, claude pane init, short claude-ask. Stay on big-pickle — never /model @claudemode.",
+  "skills": [
+    "hub-sop",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [
+    "infra-bridge"
+  ],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "infra",
+    "bridge"
+  ],
+  "downloadPath": "packs/infra-bridge",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/hub-sop/SKILL.md",
+    "standing-duties/infra-bridge.md"
+  ]
+}

@@ -3,8 +3,8 @@
  * pstack-dossier — chief (owned-954) SoT per program slug.
  *
  * The dossier.json at sessions/pstack/<slug>/dossier.json is the single source
- * of truth for a pstack program's template fields. The wizard pane
- * (scripts/pstack-pane.sh, tmux work.2 while mode=pstack-dossier) renders it;
+ * of truth for a pstack program's template fields. The dossier window
+ * (scripts/pstack-window.mjs, tmux work.2 while mode=pstack-dossier) renders it;
  * fields are edited here via CLI. Separate from sandbox project-intake.
  *
  *   node scripts/pstack-dossier.mjs new <slug> [--title "…"] [--goal "…"] [--playbook <label>]
@@ -31,6 +31,7 @@ import {
 import { dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { setCurrentProject as syncProjectPointers, ensureProjectDirs } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const POLICY_PATH = join(ROOT, "config", "pstack-dossier-policy.json");
@@ -159,6 +160,17 @@ function currentSlug() {
 function setCurrent(slug) {
   mkdirSync(dirname(CURRENT), { recursive: true });
   writeFileSync(CURRENT, `${slug}\n`, "utf8");
+  // Projects are sealed rooms — keep .project-current + dirs in lockstep.
+  try {
+    syncProjectPointers(slug);
+  } catch {
+    writeFileSync(join(ROOT, "sessions", ".project-current"), `${slug}\n`, "utf8");
+    try {
+      ensureProjectDirs(slug);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 function resolveSlug(given) {
@@ -379,7 +391,7 @@ function usage() {
 
 SoT: sessions/pstack/<slug>/dossier.json
 Policy: config/pstack-dossier-policy.json
-Pane: scripts/pstack-pane.sh (tmux work.2 while mode=pstack-dossier)
+Window: scripts/pstack-window.mjs (tmux work.2 while mode=pstack-dossier)
 `);
 }
 

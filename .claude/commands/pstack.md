@@ -19,15 +19,19 @@ Load and follow **pstack** now:
    ```
 5. Record units / ledger via `gotchibot pstack unit|ledger|status`.
 
-**Dossier pane** (tmux work.2, mode=pstack-dossier):
+**Dossier window** (tmux work.2, mode=pstack-dossier — Details top + gotchi grid bottom):
 
 ```bash
-./scripts/orchestrator-layout.sh enter-pstack-dossier   # wizard pane replaces avatar
+./scripts/orchestrator-layout.sh enter-pstack-dossier   # details/grid window replaces avatar
 ./scripts/gotchibot pstack dossier new <slug> --goal "…"  # seed SoT dossier.json
 ./scripts/gotchibot pstack dossier set <slug> <field> <value>  # edit via CLI
 ./scripts/gotchibot pstack dossier ready <slug>          # exit 0 when complete
 ./scripts/orchestrator-layout.sh leave-pstack-dossier   # restore avatar
 ```
+
+The window is `scripts/pstack-window.mjs watch` (dossier fields + selected unit
+top, 2xN collateral-colored gotchi grid bottom; roster refreshes every 15s,
+wheel scrolls). `scripts/pstack-pane.sh` is retired as the primary UI.
 
 SoT: `sessions/pstack/<slug>/dossier.json` (policy `config/pstack-dossier-policy.json`).
 Separate from sandbox project-intake.

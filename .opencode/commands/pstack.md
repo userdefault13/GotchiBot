@@ -17,7 +17,7 @@ briefs, drain, judgment — **no product-code edits**. Heroes run role-tagged br
 | `/pstack status [slug]` | `./scripts/gotchibot pstack status $ARGUMENTS` |
 | `/pstack roles` | `./scripts/gotchibot pstack roles` |
 | `/pstack list` | `./scripts/gotchibot pstack list` |
-| `/pstack dossier` | `./scripts/orchestrator-layout.sh enter-pstack-dossier` — wizard pane (work.2) |
+| `/pstack dossier` | `./scripts/orchestrator-layout.sh enter-pstack-dossier` — details/grid window (work.2) |
 | `/pstack dossier leave` | `./scripts/orchestrator-layout.sh leave-pstack-dossier` — restore avatar |
 
 Bookkeeping (never spawns):
@@ -38,15 +38,19 @@ For a real goal (not status/roles/list):
    ```
 5. Record units / ledger with `gotchibot pstack unit|ledger|status`.
 
-**Dossier pane** — chief SoT per program slug:
+**Dossier window** — chief SoT per program slug (Details top + gotchi grid bottom):
 
 ```bash
-./scripts/orchestrator-layout.sh enter-pstack-dossier   # wizard pane replaces avatar (work.2)
+./scripts/orchestrator-layout.sh enter-pstack-dossier   # details/grid window replaces avatar (work.2)
 ./scripts/gotchibot pstack dossier new <slug> --goal "…"  # seed sessions/pstack/<slug>/dossier.json
 ./scripts/gotchibot pstack dossier set <slug> <field> <value>  # edit fields via CLI
 ./scripts/gotchibot pstack dossier ready <slug>          # exit 0 when required fields complete
 ./scripts/orchestrator-layout.sh leave-pstack-dossier   # restore avatar
 ```
+
+Window = `scripts/pstack-window.mjs watch` (dossier fields + selected unit top,
+2xN collateral-colored gotchi grid bottom; roster refresh 15s; wheel scrolls).
+`scripts/pstack-pane.sh` is retired as the primary UI.
 
 SoT: `sessions/pstack/<slug>/dossier.json` · policy `config/pstack-dossier-policy.json`.
 Separate from sandbox project-intake.

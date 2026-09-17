@@ -38,6 +38,9 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot focus <n|id>          pin avatar + SUB chat focus
   gotchibot cockpit               mint / avatar / Settings (/cockpit)
   gotchibot kanban [--json] [--watch]   clawbot seats + tasks board (/kanban)
+  gotchibot project-kanban …            sealed project + desk mini task boards
+  gotchibot project-tickets …           agent request/claim/submit tickets (PKM owns lifecycle)
+  gotchibot project-mailbox …           per-desk local mailboxes (inbox+sent) under project AgentMail
   gotchibot meet start|open|invite|status|say|morning|colabo|end   meeting room (/meet)
   gotchibot model-policy [show|pick|candidates|enforce]  working-models-only policy
   gotchibot tui-policy [show|enforce|apply]  Tab cycles in OpenCode TUI (no tmux steal)
@@ -128,9 +131,18 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot moltbook watch [--json] [--env-file <path>]  Moltbook watch desk — one cycle (queue only, no posting)
   gotchibot moltbook schedule status|install|uninstall|run-now  Moltbook 15-min watch LaunchAgent (run on the iMac)
   gotchibot moltbook reply [--run|--show] [--json]  draft replies for queued Moltbook items (dry-run default; drafts only, never posts)
+  gotchibot link-cube intake|design|confirm|summon|resummon|bind|status
+                                  Prof. Link-Cube NPC (not mintable): summon (portal) or resummon
+                                  an existing cAavegotchi — intake → design → confirm → wire
+                                  role/playbook/SOUL/IDENTITY + fleet sync. Never auto-mints;
+                                  confirm needs --yes / GOTCHIBOT_AUTO_APPROVE=1 (/link-cube).
+                                  Aliases: hatch→summon, rehatch→resummon. Never mint the professor.
+                                  Marketplace: gotchibot templates apply <id> --hero <hero> [--yes]
   gotchibot model [pick|list|resolve] [--json] [--probe]  pick a free, listed model
   gotchibot aseprite …                Aseprite batch export/init (see skill aseprite-tool)
   gotchibot pdf check|info|search|read-pages|tables|chunks|render  PDF via PyMuPDF
+  gotchibot templates list|show|pack|install|apply|cdn   bot-template marketplace (Prof. Link-Cube)
+                                  # cdn deploy|status → templates.aarcadeghst.com via home tunnel
   gotchibot tts on|off|status|test|speed|warm|stop-daemon  voice (MeloTTS EN-AU / edge-tts / say)
 EOF
   exit 2
@@ -476,6 +488,18 @@ cmd_kanban() {
   exec node "$ROOT/scripts/gotchi-kanban.mjs" "$@"
 }
 
+cmd_project_kanban() {
+  exec node "$ROOT/scripts/project-kanban.mjs" "$@"
+}
+
+cmd_project_tickets() {
+  exec node "$ROOT/scripts/project-tickets.mjs" "$@"
+}
+
+cmd_project_mailbox() {
+  exec node "$ROOT/scripts/project-mailbox.mjs" "$@"
+}
+
 cmd_cockpit() {
   if command -v abra >/dev/null 2>&1; then
     exec abra run gotchibot -- node "$ROOT/scripts/agent-focus.mjs" cockpit "$@"
@@ -594,6 +618,9 @@ case "$cmd" in
   focus) cmd_focus "$@" ;;
   cockpit|onboarding) cmd_cockpit "$@" ;;
   kanban) cmd_kanban "$@" ;;
+  project-kanban|proj-kanban) cmd_project_kanban "$@" ;;
+  project-tickets|proj-tickets|tickets) cmd_project_tickets "$@" ;;
+  project-mailbox|proj-mailbox|mailbox) cmd_project_mailbox "$@" ;;
   meet) cmd_meet "$@" ;;
   model-policy|models-policy)
     exec node "$ROOT/scripts/model-policy.mjs" "$@"
@@ -814,6 +841,14 @@ case "$cmd" in
   trader)
     if [ "${1:-}" = "schedule" ]; then shift; exec node "$ROOT/scripts/trader-schedule.mjs" "$@"; fi
     exec node "$ROOT/scripts/gotchi-trader-desk.mjs" "$@" ;;
+  link-cube|summon|hatch|resummon|rehatch)
+    # prof.link-cube: intake → design → confirm → summon(portal) OR resummon(existing)
+    # → wire role/playbook/SOUL/IDENTITY + fleet sync. Never auto-mints.
+    # Top-level summon|hatch|resummon|rehatch inject the subcommand as argv[0].
+    case "$cmd" in
+      summon|hatch|resummon|rehatch) set -- "$cmd" "$@" ;;
+    esac
+    exec node "$ROOT/scripts/prof-link-cube.mjs" "$@" ;;
   moltbook)
     case "${1:-}" in
       schedule) shift; exec node "$ROOT/scripts/moltbook-schedule.mjs" "$@" ;;
@@ -821,6 +856,9 @@ case "$cmd" in
       *) exec node "$ROOT/scripts/moltbook-watch.mjs" "$@" ;;
     esac ;;
   model) abra_or_node "$ROOT/scripts/model-auto.mjs" "$@" ;;
+  templates)
+    exec node "$ROOT/scripts/template-pack.mjs" "$@"
+    ;;
   sidebar) exec "$ROOT/scripts/orchestrator-layout.sh" sidebar ;;
   files-max|explorer) exec "$ROOT/scripts/orchestrator-layout.sh" files-max ;;
   avatar-max) exec "$ROOT/scripts/orchestrator-layout.sh" avatar-max ;;

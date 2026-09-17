@@ -1,0 +1,28 @@
+{
+  "id": "social-media-manager",
+  "roleId": "social-media-manager",
+  "version": "1.0.0",
+  "title": "Social Media Manager",
+  "summary": "Calendar, voice, channel strategy and drafts for web + social — channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.",
+  "skills": [
+    "browser-tool"
+  ],
+  "skillsExternal": [
+    "mcp-snapshot"
+  ],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "social",
+    "content"
+  ],
+  "downloadPath": "packs/social-media-manager",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md"
+  ]
+}

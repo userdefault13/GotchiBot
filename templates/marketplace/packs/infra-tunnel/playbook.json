@@ -1,0 +1,13 @@
+{
+  "title": "Cloudflare tunnel / public subgraph",
+  "summary": "Own Cloudflare tunnel health and public subgraph endpoints. Cartridge Cloudflare 502 awareness. Subset of home infra.",
+  "skills": [
+    "infra-recover",
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/gotchibot tunnel status",
+  "autonomy": "Owns tunnel/public path only: `./scripts/gotchibot tunnel status|restart`, subgraph.aarcadeghst.com health, cartridge Cloudflare 502 (do not invent healthy cartridge; GOTCHIBOT_GATE_ALLOW_CACHED=1 is temporary). Disruptive restart only after confirm. Does not own Docker watcher, Hub, Tailscale, mesh, or bridge.",
+  "standingDuties": [
+    "infra-tunnel"
+  ]
+}

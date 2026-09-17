@@ -1,6 +1,6 @@
 {
   "name": "@userdefault/gotchibot",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "GotchiBot — Aavegotchi agent orchestrator (OpenClaw / OpenCode; macOS, Linux, Windows/WSL)",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
@@ -10,6 +10,9 @@
   "homepage": "https://www.aarcadeghst.com",
   "bugs": {
     "url": "https://github.com/userdefault13/GotchiBot/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=18"

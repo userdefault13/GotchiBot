@@ -1,0 +1,26 @@
+{
+  "id": "fe-marketing",
+  "roleId": "fe-marketing",
+  "version": "1.0.0",
+  "title": "FE Marketing",
+  "summary": "Landing pages, conversion UX, brand web polish and campaign microsites — FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.",
+  "skills": [
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "web",
+    "design"
+  ],
+  "downloadPath": "packs/fe-marketing",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md"
+  ]
+}

@@ -61,4 +61,5 @@ OpenClaw and OpenCode are different TUIs (pi-tui vs OpenCode's). The legacy patc
 | Action | Shortcut |
 |--------|----------|
 | Back to orchestrator | **Ctrl+O** in chat pane, or **Ctrl+b o** anywhere |
-| Slash | `/orch` `/list` `/switch` `/cockpit` `/details` (after build) |
+| Switch to open meeting | **Ctrl+U** in OpenCode chat (existing meeting only); tmux **Ctrl+b m** or **Option+M** / **F8** |
+| Slash | `/orch` `/list` `/switch` `/cockpit` `/meet` `/details` (after build) |

@@ -1,0 +1,30 @@
+{
+  "id": "marketing-agency",
+  "roleId": "marketing-agency",
+  "version": "1.0.0",
+  "title": "Marketing Agency",
+  "summary": "Research & analyze market trends, then staff web, social, merch and brand-design children — Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.",
+  "skills": [
+    "browser-tool",
+    "market-news-feed",
+    "pymupdf"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "marketing",
+    "agency"
+  ],
+  "downloadPath": "packs/marketing-agency",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/market-news-feed/SKILL.md",
+    "skills/pymupdf/SKILL.md"
+  ]
+}

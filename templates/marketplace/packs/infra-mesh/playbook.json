@@ -1,0 +1,13 @@
+{
+  "title": "Agent mesh / remote Hub",
+  "summary": "Own GotchiBot cross-machine agent mesh and remote Hub ops (status, ping, remote-setup, remote run/push/serve, topology). On path fail, defer to Tailscale / infra-tailscale first.",
+  "skills": [
+    "gotchibot-mesh",
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/gotchibot mesh",
+  "autonomy": "Owns GotchiBot mesh + remote Hub ops: mesh / mesh --live / mesh ping, remote-status, remote-setup, remote --, remote-push (ask first), remote-serve (ask first), topology status. Prefer MCP gotchibot-mesh when Desk exposes it. On reachability fail run Tailscale checks or hand to infra-tailscale before blaming OpenClaw or cartridge. Does not own Docker, tunnel, Hub gateway, or Claude bridge.",
+  "standingDuties": [
+    "infra-mesh"
+  ]
+}

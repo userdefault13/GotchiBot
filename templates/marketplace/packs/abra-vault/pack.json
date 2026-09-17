@@ -1,0 +1,31 @@
+{
+  "id": "abra-vault",
+  "roleId": "abra-vault",
+  "version": "1.0.0",
+  "title": "Abracadabra Vault",
+  "summary": "Secrets desk: passwords, API keys, wallets, SSH keys via abracadabra (abra). Promote the vault — names in chat, values never. Touch ID / scoped ABRA_KEY; Desk host abra denied for agents.",
+  "skills": [
+    "abra-vault",
+    "browser-tool"
+  ],
+  "skillsExternal": [
+    "abra",
+    "abracadabra"
+  ],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "secrets",
+    "vault"
+  ],
+  "downloadPath": "packs/abra-vault",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/abra-vault/SKILL.md",
+    "skills/browser-tool/SKILL.md"
+  ]
+}

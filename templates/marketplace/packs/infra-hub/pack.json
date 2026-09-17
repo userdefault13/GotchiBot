@@ -1,0 +1,31 @@
+{
+  "id": "infra-hub",
+  "roleId": "infra-hub",
+  "version": "1.0.0",
+  "title": "Hub / OpenClaw gateway",
+  "summary": "Own Hub OpenClaw gateway health: status, restart-gateway, doctor, roster. Subset of home infra.",
+  "skills": [
+    "hub-sop",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [
+    "infra-hub"
+  ],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "infra",
+    "hub"
+  ],
+  "downloadPath": "packs/infra-hub",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/hub-sop/SKILL.md",
+    "standing-duties/infra-hub.md"
+  ]
+}

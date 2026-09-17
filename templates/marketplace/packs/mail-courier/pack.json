@@ -1,0 +1,33 @@
+{
+  "id": "mail-courier",
+  "roleId": "mail-courier",
+  "version": "1.0.0",
+  "title": "Mail Courier",
+  "summary": "Own one AgentMail inbox per GotchiBot project: accept outbound from agents, send via AgentMail (abra AGENT_MAIL_API_KEY), monitor inbox/outbox, relay replies, track owed agent responses, remind after 24h, keep the orchestrator informed.",
+  "skills": [
+    "agentmail",
+    "abra-vault",
+    "project-mailbox"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "mail",
+    "courier",
+    "inbox",
+    "email",
+    "agentmail"
+  ],
+  "downloadPath": "packs/mail-courier",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/abra-vault/SKILL.md",
+    "skills/agentmail/SKILL.md",
+    "skills/project-mailbox/SKILL.md"
+  ]
+}

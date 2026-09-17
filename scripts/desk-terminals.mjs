@@ -178,7 +178,11 @@ function plan() {
     const role = roles[a.id] || null;
     const name = a.identity?.name || a.id;
     const o = overrides.heroes?.[a.id] || {};
-    const driven = role && DRIVEN[role] ? DRIVEN[role] : null;
+    // A resummoned hero keeps its old desk's driven window via standing duty
+    // (config/agent-standing-duties.json) — e.g. LINK keeps link-verify after
+    // moving from trader-desk to financial-analyst.
+    const standing = readJson(join(ROOT, "config/agent-standing-duties.json"), {})[a.id] || null;
+    const driven = (role && DRIVEN[role]) || (standing?.driver ? standing : null);
     const tool = o.tool || playbooks[role]?.deskTool || "claude";
     const s = slug(a.id);
     const isDriven = Boolean(driven) && !o.window;

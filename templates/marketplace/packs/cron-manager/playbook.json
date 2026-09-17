@@ -1,0 +1,14 @@
+{
+  "title": "Cron Manager",
+  "summary": "Fleet cron desk: schedule/pause/topup/delete wakes for any GotchiBot agent via ai-cron-site (cron402 x402 USDC on Base). Local launchd is fallback only.",
+  "skills": [
+    "cron-manager",
+    "browser-tool"
+  ],
+  "skillsExternal": [
+    "mcp-cron402"
+  ],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "autonomy": "Owns schedule coordination for the swarm. Primary backend is ai-cron-site / cron402 MCP: always cron402_guide → check_wallet → preview_schedule → Julius confirm → create_cron once → topup_cron as needed. list/get/pause/resume/delete for ops. Never double-charge; never localhost webhooks; always return jobId. Maps desk needs (moltbook, infra, trader, comms, custom HTTPS) to cron402 or documents local schedule status commands as truth. Does not steal LINK/YFI/WBTC product desks — only their wakers. Secrets via abra project ai-cron-site only.",
+  "scheduleCmd": "./scripts/gotchibot moltbook schedule status"
+}

@@ -29,6 +29,7 @@ import {
 } from "./onboarding-lib.mjs";
 import { loadMeta, saveMeta } from "./identity.mjs";
 import { runLayout, tmuxSessionName as layoutSession } from "./tmux-layout.mjs";
+import { withStatusBar, Progress } from "./progress-bar.mjs";
 
 function tmuxSessionName() {
   return layoutSession();
@@ -75,6 +76,114 @@ function enterPstackDossierLayout() {
   runLayout("enter-pstack-dossier");
   console.log("\n  ✓ pstack dossier pane open (work.2).");
   console.log("    Leave with: ./scripts/orchestrator-layout.sh leave-pstack-dossier");
+}
+
+/** Current project slug (sessions/.pstack-dossier-current · synced to .project-current). */
+function currentProjectSlug() {
+  const r = spawnSync(process.execPath, [`${ROOT}/scripts/project-context.mjs`, "current"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  const slug = String(r.stdout || "")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .pop();
+  return slug || null;
+}
+
+function listProjectSlugs() {
+  const r = spawnSync(process.execPath, [`${ROOT}/scripts/pstack-dossier.mjs`, "list", "--json"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  if (r.status !== 0) return [];
+  try {
+    const j = JSON.parse(String(r.stdout || "{}"));
+    if (Array.isArray(j)) return j.map((x) => (typeof x === "string" ? x : x.slug)).filter(Boolean);
+    if (Array.isArray(j.dossiers)) {
+      return j.dossiers.map((x) => (typeof x === "string" ? x : x.slug)).filter(Boolean);
+    }
+    if (Array.isArray(j.programs)) return j.programs.map((x) => x.slug || x).filter(Boolean);
+    if (Array.isArray(j.slugs)) return j.slugs.filter(Boolean);
+  } catch {}
+  // Fallback: parse human list lines
+  const human = spawnSync(process.execPath, [`${ROOT}/scripts/pstack-dossier.mjs`, "list"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  return String(human.stdout || "")
+    .split("\n")
+    .map((line) => {
+      const m = line.match(/^\*?[✓!]?\s*([a-z0-9][a-z0-9._-]{0,63})\s*·/i);
+      return m ? m[1] : null;
+    })
+    .filter(Boolean);
+}
+
+function setCurrentProject(slug) {
+  const r = spawnSync(process.execPath, [`${ROOT}/scripts/project-context.mjs`, "set", slug], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (r.status !== 0) {
+    console.log(`  ✗ could not set project: ${String(r.stderr || r.stdout || "").trim() || `exit ${r.status}`}`);
+    return false;
+  }
+  return true;
+}
+
+async function selectProjectMenu() {
+  title("Select project");
+  console.log("  Projects are sealed rooms — bots, meetings, and notes stay inside.\n");
+  const current = currentProjectSlug();
+  if (current) console.log(`  current  ${current}\n`);
+
+  const slugs = listProjectSlugs();
+  const options = [
+    ...slugs.map((slug) => ({
+      key: `proj:${slug}`,
+      label: slug === current ? `${slug}  (current)` : slug,
+    })),
+    { key: "new", label: "Create new project…" },
+    { key: "back", label: "Back to cockpit" },
+  ];
+  const pick = await choose("Which project?", options);
+  if (!pick || pick.key === "back") return;
+
+  if (pick.key === "new") {
+    const raw = (await rl.question("  New project slug (a-z0-9._-): ")).trim();
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(raw)) {
+      console.log("  ✗ invalid slug");
+      await pause();
+      return;
+    }
+    const titleText = (await rl.question("  Title (optional): ")).trim();
+    const goal = (await rl.question("  Goal (optional): ")).trim();
+    const args = [`${ROOT}/scripts/pstack-dossier.mjs`, "new", raw];
+    if (titleText) args.push("--title", titleText);
+    if (goal) args.push("--goal", goal);
+    const created = spawnSync(process.execPath, args, { cwd: ROOT, encoding: "utf8" });
+    if (created.status !== 0) {
+      console.log(`  ✗ ${String(created.stderr || created.stdout || "").trim() || `exit ${created.status}`}`);
+      await pause();
+      return;
+    }
+    console.log(String(created.stdout || "").trim() || `  ✓ created ${raw}`);
+    setCurrentProject(raw);
+    console.log(`  ✓ project → ${raw}`);
+    await pause();
+    return;
+  }
+
+  if (pick.key.startsWith("proj:")) {
+    const slug = pick.key.slice("proj:".length);
+    if (setCurrentProject(slug)) {
+      console.log(`\n  ✓ project → ${slug}`);
+    }
+    await pause();
+  }
 }
 
 const rl = readline.createInterface({ input, output });
@@ -310,6 +419,78 @@ async function confirmOwnedImport(g) {
   }
 }
 
+function alreadyBoundTokenIds(cartridgeHeroes) {
+  const ids = new Set();
+  for (const h of cartridgeHeroes || []) {
+    if (h?.sourceTokenId != null) ids.add(String(h.sourceTokenId));
+    const m = String(h?.id || "").match(/^owned-(\d+)$/);
+    if (m) ids.add(m[1]);
+  }
+  return ids;
+}
+
+/** Confirm + bind every wallet gotchi not already on the cartridge (free). */
+async function mintAllWalletGotchis(wallet, cartridgeId, allGotchis, cartridgeHeroes = []) {
+  const bound = alreadyBoundTokenIds(cartridgeHeroes);
+  const pending = (allGotchis || []).filter((g) => {
+    const id = String(g.gotchiId ?? g.id ?? "");
+    return id && !bound.has(id);
+  });
+  const skipped = (allGotchis || []).length - pending.length;
+
+  clear();
+  title("Mint all wallet gotchis");
+  console.log(`  wallet gotchis   ${(allGotchis || []).length}`);
+  console.log(`  already on cart  ${skipped}`);
+  console.log(`  to mint / bind   ${pending.length}  (free — no SIM fee)\n`);
+  if (!pending.length) {
+    console.log("  Nothing left to mint — every wallet gotchi is already a cAavegotchi.");
+    await pause();
+    return { kind: "mint-all", bound: [], skipped, failed: [] };
+  }
+  console.log("    1) Mint / bind all pending");
+  console.log("    2) Go back");
+  for (;;) {
+    const ans = (await rl.question("\n  Choose [1-2]: ")).trim().toLowerCase();
+    if (ans === "2" || ans === "b" || ans === "back") return null;
+    if (ans === "1" || ans === "a" || ans === "all" || ans === "m" || ans === "mint") break;
+    console.log("  pick 1 (mint all) or 2 (go back)");
+  }
+
+  const ok = [];
+  const failed = [];
+  console.log("");
+  const bar = new Progress();
+  const total = pending.length;
+  bar.set(0, `minting 0/${total}`);
+  for (let i = 0; i < total; i++) {
+    const g = pending[i];
+    const tokenId = String(g.gotchiId ?? g.id);
+    const name = g.name ? ` "${g.name}"` : "";
+    const stepLabel = `[${i + 1}/${total}] #${tokenId}${name}`;
+    const nextPct = Math.round(((i + 1) / total) * 100);
+    try {
+      const heroId = await bar.pulse(
+        `Binding ${stepLabel}…`,
+        () => apiOp("bind-owned", tokenId, g),
+        { nextPct },
+      );
+      bar.set(nextPct, `minted ${i + 1}/${total}`);
+      process.stderr.write(`\n  ✓ ${stepLabel} → ${heroId}\n`);
+      ok.push({ tokenId, heroId });
+    } catch (e) {
+      const msg = String(e?.message || e).slice(0, 120);
+      bar.set(nextPct, `minted ${i + 1}/${total} (${failed.length + 1} failed)`);
+      process.stderr.write(`\n  ✗ ${stepLabel} — ${msg}\n`);
+      failed.push({ tokenId, error: msg });
+    }
+  }
+  bar.done(`bound ${ok.length}/${total} · skipped ${skipped} · failed ${failed.length}`);
+  await syncFleetQuiet();
+  await pause();
+  return { kind: "mint-all", bound: ok, skipped, failed };
+}
+
 /** Pick existing cAavegotchi on cartridge and/or import an on-chain gotchi. */
 async function pickHeroOrImportGotchi(wallet, cartridgeId, allGotchis, cartridgeHeroes = []) {
   let view = allGotchis.length > 0 ? "onchain" : "cartridge";
@@ -318,29 +499,53 @@ async function pickHeroOrImportGotchi(wallet, cartridgeId, allGotchis, cartridge
   let searchMode = false;
   let searchList = null;
 
+  /** Hide wallet gotchis already bound as owned-<id> / sourceTokenId. */
+  const pendingOnChain = () => {
+    const bound = alreadyBoundTokenIds(cartridge);
+    return (allGotchis || []).filter((g) => {
+      const id = String(g.gotchiId ?? g.id ?? "");
+      return id && !bound.has(id);
+    });
+  };
+
   const activeList = () => {
     if (searchMode && searchList) return searchList;
-    return view === "cartridge" ? cartridge : allGotchis;
+    return view === "cartridge" ? cartridge : pendingOnChain();
   };
 
   for (;;) {
+    const onChainPending = pendingOnChain();
+    const alreadyBoundCount = Math.max(0, (allGotchis || []).length - onChainPending.length);
+    if (view === "onchain" && !searchMode && (allGotchis || []).length > 0 && onChainPending.length === 0) {
+      view = "cartridge";
+      page = 0;
+    }
     const items = activeList();
     const totalPages = Math.max(1, Math.ceil(items.length / GOTCHI_PAGE_SIZE));
     if (page >= totalPages) page = totalPages - 1;
-    const start = page * GOTCHI_PAGE_SIZE;
-    const slice = items.slice(start, start + GOTCHI_PAGE_SIZE);
+    if (page < 0) page = 0;
+    const startIdx = page * GOTCHI_PAGE_SIZE;
+    const slice = items.slice(startIdx, startIdx + GOTCHI_PAGE_SIZE);
+    const showPager = !searchMode && items.length > GOTCHI_PAGE_SIZE;
 
     clear();
     title(view === "cartridge" ? "Cartridge cAavegotchis" : "On-chain gotchis");
     if (searchMode) {
       console.log(`  Search results — ${items.length} match(es)\n`);
+    } else if (view === "cartridge") {
+      console.log(
+        `  ${cartridge.length} cAavegotchi(s) on cartridge` +
+          `${showPager ? ` · page ${page + 1}/${totalPages} · ${GOTCHI_PAGE_SIZE}/page` : ""}\n`,
+      );
+      if (showPager) renderGotchiPageTabs(page, totalPages);
+      console.log("");
     } else {
-      const headline =
-        view === "cartridge"
-          ? `${cartridge.length} cAavegotchi(s) minted on this cartridge`
-          : `${allGotchis.length} gotchi(s) in wallet`;
-      console.log(`  ${headline}${totalPages > 1 ? ` · page ${page + 1}/${totalPages}` : ""}\n`);
-      if (totalPages > 1) renderGotchiPageTabs(page, totalPages);
+      console.log(
+        `  ${onChainPending.length} unbound in wallet` +
+          `${alreadyBoundCount ? ` · ${alreadyBoundCount} already owned (hidden)` : ""}` +
+          `${showPager ? ` · page ${page + 1}/${totalPages} · ${GOTCHI_PAGE_SIZE}/page` : ""}\n`,
+      );
+      if (showPager) renderGotchiPageTabs(page, totalPages);
       console.log("");
     }
 
@@ -348,7 +553,9 @@ async function pickHeroOrImportGotchi(wallet, cartridgeId, allGotchis, cartridge
       console.log(
         view === "cartridge"
           ? "  (none yet — mint one or switch to on-chain import)"
-          : "  (none in wallet — switch to cartridge or mint)",
+          : alreadyBoundCount > 0
+            ? "  (all wallet gotchis already on cartridge — switch to [c] or mint new)"
+            : "  (none in wallet — switch to cartridge or mint)",
       );
       console.log("");
     }
@@ -360,7 +567,7 @@ async function pickHeroOrImportGotchi(wallet, cartridgeId, allGotchis, cartridge
     });
 
     console.log("");
-    if (!searchMode && totalPages > 1) {
+    if (showPager) {
       if (page > 0) console.log("    [p] Previous page");
       if (page < totalPages - 1) console.log("    [n] Next page");
       console.log("    [tN] Jump to page tab (e.g. t2)");
@@ -369,15 +576,18 @@ async function pickHeroOrImportGotchi(wallet, cartridgeId, allGotchis, cartridge
       if (view === "onchain") {
         console.log(`    [c] Switch to cartridge cAavegotchis (${cartridge.length})`);
       } else {
-        console.log(`    [o] Switch to on-chain wallet (${allGotchis.length})`);
+        console.log(`    [o] Switch to on-chain wallet (${onChainPending.length} unbound)`);
       }
     }
     console.log("    [s] Search by gotchi ID or cAavegotchi id");
     console.log("    [m] Mint new cAavegotchi ($5)");
+    if (view === "onchain" && !searchMode && onChainPending.length > 0) {
+      console.log(`    [a] Mint all wallet gotchis (${onChainPending.length} pending · free)`);
+    }
     if (searchMode) console.log("    [b] Back to full list");
     console.log("    [q] Quit");
 
-    const ans = (await rl.question("\n  Pick [number / c / o / m / n / p / s / q]: ")).trim().toLowerCase();
+    const ans = (await rl.question("\n  Pick [number / c / o / m / a / n / p / s / q]: ")).trim().toLowerCase();
 
     if (ans === "q" || ans === "quit") quitToTerminal();
 
@@ -387,6 +597,13 @@ async function pickHeroOrImportGotchi(wallet, cartridgeId, allGotchis, cartridge
         intro: "  Mint a new cAavegotchi for $5.",
       });
       return { kind: "mint", heroId };
+    }
+
+    if ((ans === "a" || ans === "all") && view === "onchain" && !searchMode) {
+      const result = await mintAllWalletGotchis(wallet, cartridgeId, allGotchis, cartridge);
+      if (!result) continue;
+      cartridge = (await fetchCartridgeHeroes(cartridgeId)) || cartridge;
+      return result;
     }
 
     if (ans === "c" && view === "onchain" && !searchMode) {
@@ -413,18 +630,18 @@ async function pickHeroOrImportGotchi(wallet, cartridgeId, allGotchis, cartridge
       continue;
     }
 
-    if (ans === "n" && !searchMode && page < totalPages - 1) {
+    if (ans === "n" && showPager && page < totalPages - 1) {
       page++;
       continue;
     }
 
-    if (ans === "p" && !searchMode && page > 0) {
+    if (ans === "p" && showPager && page > 0) {
       page--;
       continue;
     }
 
     const tabMatch = /^t(\d+)$/.exec(ans);
-    if (!searchMode && tabMatch && totalPages > 1) {
+    if (showPager && tabMatch) {
       const tab = Number(tabMatch[1]);
       if (tab >= 1 && tab <= totalPages) {
         page = tab - 1;
@@ -466,10 +683,16 @@ async function pickHeroOrImportGotchi(wallet, cartridgeId, allGotchis, cartridge
       }
       if (/^\d+$/.test(id)) {
         const found =
+          onChainPending.find((g) => String(g.gotchiId) === id) ??
           allGotchis.find((g) => String(g.gotchiId) === id) ??
           (await fetchWalletGotchiById(wallet, id));
         if (!found) {
           console.log(`  #${id} not found in wallet or cartridge`);
+          await pause();
+          continue;
+        }
+        if (alreadyBoundTokenIds(cartridge).has(String(found.gotchiId ?? found.id ?? id))) {
+          console.log(`  #${id} already on cartridge as owned-${id} — switch to [c] to select it`);
           await pause();
           continue;
         }
@@ -544,10 +767,9 @@ async function resolveHeroes(wallet, cartridgeId) {
   }
 
   console.log("\n  No cAavegotchis on cartridge yet.");
-  console.log("  Loading gotchis from subgraph…");
   let onChain = [];
   try {
-    onChain = await fetchWalletGotchis(wallet);
+    onChain = await withStatusBar("Loading gotchis from subgraph…", () => fetchWalletGotchis(wallet));
   } catch (e) {
     console.log(`  Subgraph: ${e.message || e}`);
   }
@@ -575,6 +797,10 @@ async function resolveHeroes(wallet, cartridgeId) {
       return heroes.length ? heroes : [pick.hero];
     }
     if (pick.kind === "mint") {
+      heroes = await fetchCartridgeHeroes(cartridgeId);
+      return heroes;
+    }
+    if (pick.kind === "mint-all") {
       heroes = await fetchCartridgeHeroes(cartridgeId);
       return heroes;
     }
@@ -867,21 +1093,32 @@ async function exportAgentRosterCsv() {
 }
 
 async function importOrChooseGotchi(wallet, cartridgeId) {
-  console.log("\n  Loading on-chain gotchis…");
   let onChain = [];
   try {
-    onChain = await fetchWalletGotchis(wallet);
+    onChain = await withStatusBar("Loading on-chain gotchis…", () => fetchWalletGotchis(wallet));
   } catch (e) {
     console.log(`  ${e.message || e}`);
   }
-  const cartridgeHeroes = (await fetchCartridgeHeroes(cartridgeId)) || [];
-  const pick = await pickHeroOrImportGotchi(wallet, cartridgeId, onChain, cartridgeHeroes);
+  let cartridgeHeroes = [];
+  try {
+    cartridgeHeroes = await withStatusBar("Loading cartridge cAavegotchis…", () =>
+      fetchCartridgeHeroes(cartridgeId),
+    );
+  } catch (e) {
+    console.log(`  ${e.message || e}`);
+    cartridgeHeroes = [];
+  }
+  const pick = await pickHeroOrImportGotchi(wallet, cartridgeId, onChain, cartridgeHeroes || []);
   if (!pick) return;
   if (pick.kind === "cartridge") {
     console.log(`\n  ✓ selected cAavegotchi ${pick.hero.id}`);
   } else if (pick.kind === "mint") {
     console.log(`\n  ✓ minted ${pick.heroId}`);
     await syncFleetQuiet();
+  } else if (pick.kind === "mint-all") {
+    console.log(
+      `\n  ✓ mint-all done — bound ${pick.bound.length}, skipped ${pick.skipped}, failed ${pick.failed.length}`,
+    );
   } else {
     console.log(`\n  Binding owned gotchi #${pick.gotchi.gotchiId} (free)…`);
     const heroId = await apiOp("bind-owned", pick.gotchi.gotchiId, pick.gotchi);
@@ -1071,15 +1308,18 @@ async function mainMenu(wallet, cartridgeId) {
     const ob = loadOnboarding();
     const orch = ob.orchestratorHeroId ?? "(none)";
 
+    const project = currentProjectSlug();
     title("GotchiBot cockpit");
     console.log(`  wallet      ${wallet.slice(0, 6)}…${wallet.slice(-4)}`);
     console.log(`  cartridge   ${cartridgeId}`);
     console.log(`  roster      ${heroes.length} cAavegotchi(s)`);
     console.log(`  orchestrator ${orch}`);
+    console.log(`  project     ${project || "(none — select a project)"}`);
     hr();
 
     const pick = await choose("What next?", [
-      { key: "launch", label: "Return to chat (orchestrator)" },
+      { key: "launch", label: project ? `Return to project (${project})` : "Return to project" },
+      { key: "select-project", label: "Select new project" },
       { key: "meet", label: "Start meeting / morning recap" },
       { key: "hub", label: "Hub status (iMac OpenClaw · tunnel · Docker)" },
       { key: "hub-infra", label: "Hub infra (Docker container table)" },
@@ -1101,8 +1341,11 @@ async function mainMenu(wallet, cartridgeId) {
       saveOnboarding({ complete: true, orchestratorHeroId: heroId, wallet, cartridgeId });
       clear();
       console.log(readWelcomeArt(10));
+      const proj = currentProjectSlug();
       console.log(`\n  ✓ Orchestrator ready — ${heroId}`);
-      console.log("  Launching OpenCode gotchi mode…");
+      if (proj) console.log(`  ✓ Project — ${proj}`);
+      else console.log("  · No project selected — pick one from cockpit anytime.");
+      console.log("  Returning to the project desk…");
       console.log("  Talk in natural language to spin up sub-agents.");
       console.log("  Start an empty prompt with ! to run a shell command yourself — its output lands in chat.\n");
       const saying = quirkyOpenclawSaying();
@@ -1120,6 +1363,11 @@ async function mainMenu(wallet, cartridgeId) {
       const chatPane = `${ROOT}/scripts/chat-pane.sh`;
       spawnSync(chatPane, [], { cwd: ROOT, stdio: "inherit", env: { ...process.env, GOTCHIBOT_SKIP_ONBOARDING: "1" } });
       process.exit(0);
+    }
+
+    if (pick.key === "select-project") {
+      await selectProjectMenu();
+      continue;
     }
 
     if (pick.key === "meet") {
@@ -1161,7 +1409,11 @@ async function mainMenu(wallet, cartridgeId) {
     }
 
     if (pick.key === "pstack") {
+      // Open dossier window on work.2, then leave cockpit into the project desk
+      // (iMessage-style left pane) — same handoff as "Return to project" when
+      // inside chat-pane.sh.
       enterPstackDossierLayout();
+      if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") return;
       await pause();
       continue;
     }

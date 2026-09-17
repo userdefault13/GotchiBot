@@ -66,6 +66,7 @@ export class CustomEditor extends Editor {
   onCtrlG?: () => void;
   onCtrlL?: () => void;
   onCtrlO?: () => void;
+  onCtrlU?: () => void;
   onCtrlP?: () => void;
   onCtrlT?: () => void;
   onCtrlY?: () => void;
@@ -123,6 +124,10 @@ export class CustomEditor extends Editor {
     }
     if (matchesKey(data, Key.ctrl("o")) && this.onCtrlO) {
       this.onCtrlO();
+      return;
+    }
+    if (matchesKey(data, Key.ctrl("u")) && this.onCtrlU) {
+      this.onCtrlU();
       return;
     }
     if (matchesKey(data, Key.ctrl("p")) && this.onCtrlP) {

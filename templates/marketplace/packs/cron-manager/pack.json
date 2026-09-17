@@ -1,0 +1,31 @@
+{
+  "id": "cron-manager",
+  "roleId": "cron-manager",
+  "version": "1.0.0",
+  "title": "Cron Manager",
+  "summary": "Fleet cron desk: schedule/pause/topup/delete wakes for any GotchiBot agent via ai-cron-site (cron402 x402 USDC on Base). Local launchd is fallback only.",
+  "skills": [
+    "cron-manager",
+    "browser-tool"
+  ],
+  "skillsExternal": [
+    "mcp-cron402"
+  ],
+  "standingDuties": [],
+  "cronHints": [
+    "Schedule truth: `./scripts/gotchibot moltbook schedule status` is the only source of truth for whether the desk's waker is loaded.",
+    "cron402: webhook crons live in Gotchi-Trader config/cron402-jobs.json; status via `npm run cron402 -- status` / mcp-cron402. Never invent a cron402 job a status command does not confirm."
+  ],
+  "tags": [
+    "cron",
+    "scheduler"
+  ],
+  "downloadPath": "packs/cron-manager",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/cron-manager/SKILL.md"
+  ]
+}

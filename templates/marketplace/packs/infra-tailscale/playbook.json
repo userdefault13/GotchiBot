@@ -1,0 +1,12 @@
+{
+  "title": "Tailscale path",
+  "summary": "Own the Tailscale tailnet path to the always-on Hub: peers online, MagicDNS / 100.x. Never invent LAN IPs. Subset of home infra.",
+  "skills": [
+    "browser-tool"
+  ],
+  "reportCmd": "tailscale status",
+  "autonomy": "Owns Tailscale path only: `tailscale status`, online peers, MagicDNS / 100.x. Never invent a peer or LAN IP not listed. Mesh/remote failures often start here — report path truth; GotchiBot agent mesh and remote SSH ops belong to infra-mesh.",
+  "standingDuties": [
+    "infra-tailscale"
+  ]
+}

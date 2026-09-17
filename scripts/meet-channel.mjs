@@ -17,9 +17,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin as input, stdout as output } from "node:process";
 import { isMainModule } from "./is-main.mjs";
+import { resolveMeetingsRoot } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const MEETINGS = `${ROOT}/sessions/meetings`;
+function meetingsRoot() {
+  return resolveMeetingsRoot().root;
+}
 const PENDING = `${ROOT}/sessions/.meet-pending.json`;
 const SCROLL_FILE = `${ROOT}/sessions/.meet-channel-scroll`;
 const STAMP = `${ROOT}/sessions/.meet-channel.stamp`;
@@ -58,16 +61,16 @@ function readJson(path, fallback = null) {
 }
 
 export function loadCurrentMeeting() {
-  if (!existsSync(`${MEETINGS}/.current`)) return null;
-  const id = String(readFileSync(`${MEETINGS}/.current`, "utf8")).trim();
+  if (!existsSync(`${meetingsRoot()}/.current`)) return null;
+  const id = String(readFileSync(`${meetingsRoot()}/.current`, "utf8")).trim();
   if (!id) return null;
-  const m = readJson(`${MEETINGS}/${id}/meeting.json`, null);
+  const m = readJson(`${meetingsRoot()}/${id}/meeting.json`, null);
   if (!m || m.status !== "open") return null;
   return m;
 }
 
 export function readTranscript(id) {
-  const path = `${MEETINGS}/${id}/transcript.jsonl`;
+  const path = `${meetingsRoot()}/${id}/transcript.jsonl`;
   try {
     return readFileSync(path, "utf8")
       .split("\n")
@@ -567,14 +570,14 @@ export async function runMeetChannelLive() {
   function contentKey(cols) {
     const meeting = loadCurrentMeeting();
     const id = meeting?.id || "";
-    const tr = id ? `${MEETINGS}/${id}/transcript.jsonl` : "";
+    const tr = id ? `${meetingsRoot()}/${id}/transcript.jsonl` : "";
     return [
       cols,
       id,
       mtime(tr),
-      mtime(id ? `${MEETINGS}/${id}/meeting.json` : ""),
+      mtime(id ? `${meetingsRoot()}/${id}/meeting.json` : ""),
       mtime(PENDING),
-      mtime(`${MEETINGS}/.current`),
+      mtime(`${meetingsRoot()}/.current`),
     ].join("|");
   }
 
@@ -698,7 +701,7 @@ export async function runMeetChannelLive() {
   // Watch scroll + stamp + pending — quiet scroll.sh only touches scroll file.
   const watchTargets = [
     `${ROOT}/sessions`,
-    MEETINGS,
+    meetingsRoot(),
   ];
   for (const dir of watchTargets) {
     try {

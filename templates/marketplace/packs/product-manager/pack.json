@@ -1,0 +1,31 @@
+{
+  "id": "product-manager",
+  "roleId": "product-manager",
+  "version": "1.0.0",
+  "title": "Product Manager",
+  "summary": "Own product discovery → roadmap → specs → ship coordination for AarcadeGh-t / GotchiBot product surfaces (features, games, haunts, FE/BE workstreams). PM craft — briefs and routes; never DIY engineering.",
+  "skills": [
+    "browser-tool",
+    "pymupdf",
+    "market-news-feed"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "product",
+    "pm",
+    "roadmap"
+  ],
+  "downloadPath": "packs/product-manager",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/market-news-feed/SKILL.md",
+    "skills/pymupdf/SKILL.md"
+  ]
+}

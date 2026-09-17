@@ -104,14 +104,14 @@ meet_gallery_correct() {
   [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *meet-room* ]] && [[ "$c2" == *meet-channel* ]]
 }
 
-# pstack dossier wizard: sidebar | chat | dossier pane (work.2 replaces avatar).
+# pstack dossier wizard: sidebar | chat | dossier window (work.2 replaces avatar).
 pstack_dossier_correct() {
   layout_ready || return 1
   local c0 c1 c2
   c0="$(pane_start_cmd 0)"
   c1="$(pane_start_cmd 1)"
   c2="$(pane_start_cmd 2)"
-  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *pstack-pane* ]]
+  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *pstack-window* ]]
 }
 
 rebuild_panes() {
@@ -479,19 +479,20 @@ leave_meet_gallery() {
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
 }
 
-# pstack dossier wizard: work.2 (avatar) → pstack-pane.sh; chat stays in work.1.
+# pstack dossier window: work.2 (avatar) → pstack-window.mjs (details + gotchi grid);
+# chat stays in work.1. pstack-pane.sh (text dump) is retired as primary UI.
 build_pstack_dossier_tiles() {
   collapse_to_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
   collapse_sidebar
   tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
 
-  # Dossier pane on the right — unmark avatar so wheel scrolls the wizard text.
+  # Dossier window on the right — unmark avatar so wheel scrolls the TUI.
   tmux set-option -p -t "$sess:work.2" -u @gotchibot-avatar 2>/dev/null || true
   local c2
   c2="$(pane_start_cmd 2)"
-  if [[ "$c2" != *pstack-pane* ]]; then
-    tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/pstack-pane.sh watch" 2>/dev/null || true
+  if [[ "$c2" != *pstack-window* ]]; then
+    tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/pstack-window.mjs watch" 2>/dev/null || true
   fi
   tmux set-option -p -t "$sess:work.2" @gotchibot-pstack-dossier 1 2>/dev/null || true
   tmux set-option -t "$sess:work.2" pane-border-format ' pstack · dossier ' 2>/dev/null || true
@@ -890,6 +891,12 @@ install_agent_keys() {
   tmux bind-key -T gotchi-chat F3 run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T prefix o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T root M-o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
+  # Meet gallery (existing meeting only) — F8 / prefix m / Option+M / Option+U
+  # Do NOT bind -n C-m: terminals send C-m for Enter.
+  tmux bind-key -T gotchi-chat F8 run-shell "cd \"$ROOT\" && ./scripts/gotchi-meet.mjs open" 2>/dev/null || true
+  tmux bind-key -T prefix m run-shell "cd \"$ROOT\" && ./scripts/gotchi-meet.mjs open" 2>/dev/null || true
+  tmux bind-key -T root M-m run-shell "cd \"$ROOT\" && ./scripts/gotchi-meet.mjs open" 2>/dev/null || true
+  tmux bind-key -T root M-u run-shell "cd \"$ROOT\" && ./scripts/gotchi-meet.mjs open" 2>/dev/null || true
   # Prefix / fn-key toggles (Ctrl+b f/a/b)
   tmux bind-key -T gotchi-chat F4 run-shell "$layout_run files-max" 2>/dev/null || true
   tmux bind-key f run-shell "$layout_run files-max" 2>/dev/null || true

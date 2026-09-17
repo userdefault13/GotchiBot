@@ -13,11 +13,13 @@ context it costs, who triggers it — and whether it can be ignored.
 | **CURSOR.md** + rules | eager | Who you are, hard limits, where the layer lives |
 | **Skills** | lazy · model-invoked | Passoff / mesh / meet / contexter / hub / bridge |
 | **Subagents** | isolated | `meet-scribe`, `script-doctor`, `gotchibot-proxy` — long transcripts stay out of this window |
-| **Slash commands** | user-invoked | `/passoff` `/meet` `/mesh` `/doctor` `/minutes` `/contexter` `/pstack` `/goal` `/add-dir` — never when the model decides |
+| **Slash commands** | user-invoked | `/passoff` `/meet` `/mesh` `/doctor` `/minutes` `/contexter` `/pstack` `/goal` `/add-dir` `/link-cube` — never when the model decides |
 
-pstack dossier pane: `enter-pstack-dossier` swaps tmux work.2 for the wizard
-(`scripts/pstack-pane.sh`); SoT is `sessions/pstack/<slug>/dossier.json`, edited
-via `gotchibot pstack dossier set`; `leave-pstack-dossier` restores the avatar.
+pstack dossier window: `enter-pstack-dossier` swaps tmux work.2 for the
+details/grid TUI (`scripts/pstack-window.mjs` — dossier fields + selected unit
+top, 2xN collateral-colored gotchi grid bottom); SoT is
+`sessions/pstack/<slug>/dossier.json`, edited via `gotchibot pstack dossier set`;
+`leave-pstack-dossier` restores the avatar.
 | **Hooks** | guarantee | Policy the model cannot talk past |
 | **MCP** | tools | `gotchibot-*` + stack catalog — same as OpenCode desk |
 

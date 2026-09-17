@@ -1,0 +1,13 @@
+{
+  "title": "Desk→Hub Claude bridge",
+  "summary": "Own Desk→Hub Claude bridge: ensure/check, VS Code open, claude pane init, short claude-ask. Stay on big-pickle — never /model @claudemode.",
+  "skills": [
+    "hub-sop",
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/gotchibot bridge-ensure --json",
+  "autonomy": "Owns Desk→Hub Claude bridge only: bridge-ensure, hub bridge-check, vscode-open, claude-pane-init, claude-ask. Stay on big-pickle; never /model @claudemode. Does not own OpenClaw gateway roster/restart (infra-hub), Docker, tunnel, Tailscale, or mesh.",
+  "standingDuties": [
+    "infra-bridge"
+  ]
+}

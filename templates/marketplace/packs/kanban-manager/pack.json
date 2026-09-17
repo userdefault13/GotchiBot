@@ -1,0 +1,31 @@
+{
+  "id": "kanban-manager",
+  "roleId": "kanban-manager",
+  "version": "1.1.0",
+  "title": "Project Kanban Manager",
+  "summary": "Own the sealed project's main task kanban and every desk's mini headless board: show/add/move cards, sync desk minis into the main board, pull assigned cards onto desks. Owns the project ticket lifecycle (accept/rework/close/digest) for agent request/claim/submit work.",
+  "skills": [
+    "project-kanban",
+    "project-tickets"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "kanban",
+    "project",
+    "boards",
+    "tasks",
+    "tickets"
+  ],
+  "downloadPath": "packs/kanban-manager",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/project-kanban/SKILL.md",
+    "skills/project-tickets/SKILL.md"
+  ]
+}

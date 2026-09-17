@@ -1,0 +1,33 @@
+{
+  "id": "financial-analyst",
+  "roleId": "financial-analyst",
+  "version": "1.0.0",
+  "title": "Financial Analyst",
+  "summary": "Institutional-grade research analyst: regime/news, IC memos, PDF filings, relative-value and risk framing. Analysis only — no execution, no posting.",
+  "skills": [
+    "market-news-feed",
+    "browser-tool",
+    "pymupdf"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [
+    "trader-monitor"
+  ],
+  "cronHints": [
+    "Schedule truth: `./scripts/gotchibot trader schedule status` is the only source of truth for whether the desk's waker is loaded."
+  ],
+  "tags": [
+    "analysis",
+    "news"
+  ],
+  "downloadPath": "packs/financial-analyst",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/market-news-feed/SKILL.md",
+    "skills/pymupdf/SKILL.md",
+    "standing-duties/trader-monitor.md"
+  ]
+}

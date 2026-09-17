@@ -1,0 +1,31 @@
+{
+  "id": "infra-docker",
+  "roleId": "infra-docker",
+  "version": "1.0.0",
+  "title": "Docker / watched stack",
+  "summary": "Own Docker watched containers and the infra watcher/verifier loop. Paper recover on DEGRADED. Subset of home infra for operators who only run the container stack.",
+  "skills": [
+    "infra-recover",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [
+    "infra-docker"
+  ],
+  "cronHints": [
+    "Schedule truth: `./scripts/gotchibot infra schedule status` is the only source of truth for whether the desk's waker is loaded."
+  ],
+  "tags": [
+    "infra",
+    "docker"
+  ],
+  "downloadPath": "packs/infra-docker",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/infra-recover/SKILL.md",
+    "standing-duties/infra-docker.md"
+  ]
+}

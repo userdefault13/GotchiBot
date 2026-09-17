@@ -1,0 +1,31 @@
+{
+  "id": "infra-mesh",
+  "roleId": "infra-mesh",
+  "version": "1.0.0",
+  "title": "Agent mesh / remote Hub",
+  "summary": "Own GotchiBot cross-machine agent mesh and remote Hub ops (status, ping, remote-setup, remote run/push/serve, topology). On path fail, defer to Tailscale / infra-tailscale first.",
+  "skills": [
+    "gotchibot-mesh",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [
+    "infra-mesh"
+  ],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "infra",
+    "mesh"
+  ],
+  "downloadPath": "packs/infra-mesh",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/gotchibot-mesh/SKILL.md",
+    "standing-duties/infra-mesh.md"
+  ]
+}

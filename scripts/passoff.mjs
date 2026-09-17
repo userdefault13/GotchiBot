@@ -41,11 +41,27 @@ import {
   gatewayReachable,
   chatViaOpenClaw,
 } from "./openclaw-fleet.mjs";
+import {
+  resolvePassoffRoot,
+  currentProjectSlug,
+  requireProjectSlug,
+  rosterHas,
+  projectNotesDir,
+} from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
-const PACKETS = `${SESSIONS}/passoff`;
-const LATEST_MD = `${SESSIONS}/PASSOFF.md`;
+function packetsDir() {
+  return resolvePassoffRoot().root;
+}
+function latestPassoffMd() {
+  const slug = currentProjectSlug();
+  if (slug) {
+    const notes = projectNotesDir(slug);
+    return `${notes}/PASSOFF.md`;
+  }
+  return `${SESSIONS}/PASSOFF.md`;
+}
 const FOCUS = `${SESSIONS}/.focus.json`;
 const ANCHOR = `${SESSIONS}/.thread-anchor.json`;
 const FOCUS_LIST = `${SESSIONS}/.focus-list.json`;
@@ -281,7 +297,7 @@ export function buildPacket({ from, to, note = "", next = "", task = "" }) {
     anchor,
     anchorStale,
     meeting: captureMeeting(),
-    project: readText(`${SESSIONS}/.project-current`).trim() || null,
+    project: currentProjectSlug() || readText(`${SESSIONS}/.project-current`).trim() || null,
     handoff: existsSync(`${SESSIONS}/HANDOFF.md`) ? "sessions/HANDOFF.md" : null,
   };
 }
@@ -430,27 +446,27 @@ export function packetBrief(p) {
 /* ── store ──────────────────────────────────────────────────────────────── */
 
 function packetPath(id) {
-  return `${PACKETS}/${id}.json`;
+  return `${packetsDir()}/${id}.json`;
 }
 
 function savePacket(p, { latest = true } = {}) {
-  mkdirSync(PACKETS, { recursive: true });
+  mkdirSync(packetsDir(), { recursive: true });
   writeFileSync(packetPath(p.id), `${JSON.stringify(p, null, 2)}\n`);
-  if (latest) writeFileSync(LATEST_MD, packetMarkdown(p));
+  if (latest) writeFileSync(latestPassoffMd(), packetMarkdown(p));
   return p;
 }
 
 export function listPackets({ to = null, all = false } = {}) {
   let names = [];
   try {
-    names = readdirSync(PACKETS).filter((n) => n.endsWith(".json"));
+    names = readdirSync(packetsDir()).filter((n) => n.endsWith(".json"));
   } catch {
     return [];
   }
   return names
     .sort()
     .reverse()
-    .map((n) => readJson(`${PACKETS}/${n}`, null))
+    .map((n) => readJson(`${packetsDir()}/${n}`, null))
     .filter(Boolean)
     .filter((p) => (all ? true : p.status === "pending"))
     .filter((p) => (to ? p.to?.id === to : true));
@@ -566,17 +582,30 @@ async function cmdCapture(args) {
     return;
   }
   console.log(packetMarkdown(p));
-  console.log(`saved: sessions/passoff/${p.id}.json · sessions/PASSOFF.md`);
+  console.log(`saved: ${packetsDir()}/${p.id}.json · ${latestPassoffMd()}`);
   console.log(`send it: ./scripts/passoff.mjs send <to> --from ${from.id}`);
 }
 
 async function cmdSend(args) {
   const target = args._[0] || args.to;
   if (!target) throw new Error('usage: passoff send <to> [--from …] [--note "…"] [--next "…"]');
+  const project = requireProjectSlug();
   const from = await resolveFrom(args.from);
   const to = await resolveInviteTarget(target);
   if (to.id === from.id) {
     throw new Error(`passoff needs two different gotchis — ${from.id} cannot hand off to itself`);
+  }
+  if (!rosterHas(from.id, project)) {
+    throw new Error(
+      `${from.id} is not on project ${project}'s closed roster.\n` +
+        `  add: ./scripts/project-context.mjs roster-add ${from.id}`,
+    );
+  }
+  if (!rosterHas(to.id, project)) {
+    throw new Error(
+      `${to.id} is not on project ${project}'s closed roster.\n` +
+        `  add: ./scripts/project-context.mjs roster-add ${to.id}`,
+    );
   }
 
   const p = buildPacket({

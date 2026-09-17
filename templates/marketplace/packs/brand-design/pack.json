@@ -1,0 +1,31 @@
+{
+  "id": "brand-design",
+  "roleId": "brand-design",
+  "version": "1.0.0",
+  "title": "Brand Design",
+  "summary": "Own brand kits / design-system deliverables for clients and partners: logo lockups, color/type tokens, social templates, pitch decks, one-sheets, leave-behinds, merch art-ready exports.",
+  "skills": [
+    "browser-tool",
+    "aseprite-tool"
+  ],
+  "skillsExternal": [
+    "mcp-pixellab"
+  ],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "design",
+    "brand",
+    "kits"
+  ],
+  "downloadPath": "packs/brand-design",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/aseprite-tool/SKILL.md",
+    "skills/browser-tool/SKILL.md"
+  ]
+}

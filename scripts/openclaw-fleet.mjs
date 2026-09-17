@@ -191,10 +191,15 @@ function renderTemplate(file, vars) {
   );
 }
 
-function heroSkillNames({ playbook, isOrchestrator }) {
+function loadStandingDuties() {
+  return readJsonFile(`${ROOT}/config/agent-standing-duties.json`, {}) || {};
+}
+
+function heroSkillNames({ playbook, isOrchestrator, standing }) {
   const fromRole = Array.isArray(playbook?.skills) ? playbook.skills : [];
+  const fromStanding = Array.isArray(standing?.skills) ? standing.skills : [];
   const base = isOrchestrator ? ORCH_SKILLS : ["browser-tool"];
-  return [...new Set([...fromRole, ...base, ...COMMON_SKILLS])];
+  return [...new Set([...fromRole, ...fromStanding, ...base, ...COMMON_SKILLS])];
 }
 
 /** Relative symlink, idempotent; an existing real dir/file is left alone. */
@@ -252,7 +257,11 @@ export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orch
     playbook = loadPlaybooks().orchestrator || null;
   }
   const role = roleId || "worker";
-  const skills = heroSkillNames({ playbook, isOrchestrator });
+  // Per-hero standing duty (config/agent-standing-duties.json) rides on top of
+  // the role: extra skills + a rendered AGENTS.md section. Lets a hero keep an
+  // old desk (e.g. trader monitor) after a rehatch to a new role.
+  const standing = loadStandingDuties()[id] || null;
+  const skills = heroSkillNames({ playbook, isOrchestrator, standing });
   const agentsTemplate = existsSync(`${TEMPLATE_DIR}/AGENTS.${role}.md`)
     ? `AGENTS.${role}.md`
     : "AGENTS.worker.md";
@@ -274,6 +283,9 @@ export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orch
     WATCH_CMD: playbook?.watchCmd || "",
     VERIFY_CMD: playbook?.verifyCmd || "",
     VERIFY_WINDOW: playbook?.verifyWindow || "",
+    STANDING_DUTY: standing?.markdown
+      ? `## ${standing.label || "Standing duty"}\n\n${standing.markdown}`
+      : "",
   };
   vars.COMMON = renderTemplate("AGENTS.common.md", vars).trim();
 

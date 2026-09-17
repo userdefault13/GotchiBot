@@ -1,0 +1,30 @@
+{
+  "title": "Docker / watched stack",
+  "summary": "Own Docker watched containers and the infra watcher/verifier loop. Paper recover on DEGRADED. Subset of home infra for operators who only run the container stack.",
+  "skills": [
+    "infra-recover",
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/infra-watch.mjs status --json",
+  "deepReportCmd": "./scripts/infra-monitor-cron.mjs --json",
+  "verifyCmd": "./scripts/infra-claude-verify.mjs --json",
+  "watchCmd": "./scripts/infra-watch.mjs run --interval 60 --verify-every 30",
+  "scheduleCmd": "./scripts/gotchibot infra schedule status",
+  "autonomy": "Owns watched Docker/aarcade/envio containers only. Runs infra-watch status and the resident watcher when seated for that loop; schedule truth via `./scripts/gotchibot infra schedule status`. On DEGRADED follow skill infra-recover (paper-only). Claude verifier via infra-claude-verify. Does not own tunnel, Hub/OpenClaw, Tailscale, mesh/remote, or the Desk→Hub bridge — hand those to the matching piece pack or the home full-stack infra-monitor.",
+  "hostLevel": {
+    "selfServe": [
+      "Docker autostart: ~/Library/Group Containers/group.com.docker/settings-store.json -> \"AutoStart\": true (a file, not a GUI-only checkbox)",
+      "Container never returns after a reboot: docker update --restart unless-stopped <container>",
+      "docker restart succeeds but StartedAt does not move: docker kill then docker start; the cure is recreating with --init",
+      "abra dies with Cannot find package ...abracadabra/dist/index.js: cd ~/Dev/abracadabra && npm ci (lockfile restore, allowed). Usually a disk-space cleanup that deleted node_modules across all of ~/Dev (42 of 45 projects on 2026-09-06) — check ls ~/Dev/<project>/node_modules before blaming the host or tunnel"
+    ],
+    "needsUser": [
+      "sudo shutdown -r now — no NOPASSWD rule on the iMac, so no agent can reboot the host; reassigning to another hero hits the same wall",
+      "anything needing the login keychain non-interactively (docker credential helper, abra on the iMac over SSH)"
+    ],
+    "rule": "Before telling the user something is human-only, check whether it is a config file you can edit. Report what you did, the one thing left, and the literal command."
+  },
+  "standingDuties": [
+    "infra-docker"
+  ]
+}

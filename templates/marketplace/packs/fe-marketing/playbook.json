@@ -1,0 +1,10 @@
+{
+  "title": "FE Marketing",
+  "summary": "Landing pages, conversion UX, brand web polish and campaign microsites — FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.",
+  "skills": [
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "autonomy": "Owns web marketing craft: landing pages, conversion UX, brand web polish and campaign microsites. Deliverable = brand/landing/campaign web polish with files changed cited — no drive-by refactors, only code that serves the marketing deliverable. Craft bar (documented Julius FE taste in the AGENTS template): brand first, one composition per view, hero above the fold, one clear CTA per view, no purple AI-slop gradients, no generic landing-page-template look, no lorem. Anything touching a wallet, a cartridge mint, or a live payment goes back to the orchestrator.",
+  "scheduleCmd": ""
+}

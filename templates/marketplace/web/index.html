@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GotchiBot template marketplace — Prof. Link-Cube</title>
+<style>
+  :root {
+    --ag-bg: #1a0a2e;
+    --ag-bg-pattern-color: #ffffff;
+    --ag-bg-pattern-opacity: 0.1;
+    --panel: rgba(26, 20, 45, 0.88);
+    --border: rgba(255, 255, 255, 0.12);
+    --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.62);
+    --accent: #fa34f3;
+    --code-bg: rgba(10, 6, 22, 0.85);
+  }
+  * { box-sizing: border-box; }
+  html {
+    background-color: var(--ag-bg);
+    min-height: 100%;
+  }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    position: relative;
+    background-color: var(--ag-bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  /* Aarcade ghost overlay — same mask tile as aarcadeghst.com */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--ag-bg-pattern-color);
+    -webkit-mask-image: url("./bg.svg");
+    mask-image: url("./bg.svg");
+    -webkit-mask-repeat: repeat;
+    mask-repeat: repeat;
+    -webkit-mask-size: 307px 326px;
+    mask-size: 307px 326px;
+    opacity: var(--ag-bg-pattern-opacity);
+    z-index: 0;
+    pointer-events: none;
+  }
+  .shell {
+    position: relative;
+    z-index: 1;
+  }
+  header {
+    padding: 40px 24px 20px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  header h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: 0.02em; }
+  header p { margin: 0; color: var(--muted); }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 8px 24px 60px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    backdrop-filter: blur(6px);
+  }
+  .card h2 { margin: 0; font-size: 17px; }
+  .card .id { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .card .summary { color: var(--muted); font-size: 13.5px; flex: 1; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 12px;
+  }
+  .cmd {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    white-space: nowrap;
+    overflow-x: auto;
+    color: var(--text);
+  }
+  .cmd .prompt { color: var(--muted); }
+  details { margin-top: 2px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .urlform { display: flex; gap: 8px; margin-top: 6px; }
+  .urlform input {
+    flex: 1;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 7px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+  }
+  .urlform button {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  footer { max-width: 960px; margin: 0 auto; padding: 0 24px 40px; color: var(--muted); font-size: 13px; }
+  footer code { color: rgba(255, 255, 255, 0.85); }
+  #status { color: var(--muted); font-size: 13px; padding: 8px 24px 0; max-width: 960px; margin: 0 auto; }
+</style>
+</head>
+<body>
+<div class="shell">
+<header>
+  <h1>GotchiBot template marketplace</h1>
+  <p>Full-desk packs by <strong>Prof. Link-Cube</strong> — playbook + AGENTS template + vendored skills + standing-duty stubs + cron hints.</p>
+</header>
+<div id="status">Loading catalog…</div>
+<main id="cards"></main>
+<footer>
+  Packs ship in-repo under <code>templates/marketplace/packs/</code> for v1. The intended CDN path is
+  <code>https://templates.aarcadeghst.com/packs/&lt;id&gt;/</code> — URL install fetches
+  <code>pack.json</code> plus the sibling files listed in its <code>files[]</code>.
+</footer>
+</div>
+
+<script id="catalog-fallback" type="application/json">
+<!--CATALOG_START-->
+{"version":1,"baseUrl":"https://templates.aarcadeghst.com","packs":[{"id":"abra-vault","roleId":"abra-vault","title":"Abracadabra Vault","summary":"Secrets desk: passwords, API keys, wallets, SSH keys via abracadabra (abra). Promote the vault — names in chat, values never. Touch ID / scoped ABRA_KEY; Desk host abra denied for agents.","version":"1.0.0","path":"packs/abra-vault","tags":["secrets","vault"],"skills":["abra-vault","browser-tool"],"skillsExternal":["abra","abracadabra"]},{"id":"accountant","roleId":"accountant","title":"Accountant","summary":"Own the merch ops ledger: vendor quotes, POs, AP/AR, invoices — sourced amounts, aging clarity. Tracks and reconciles; never spends or invents balances.","version":"1.0.0","path":"packs/accountant","tags":["finance","ap","ar"],"skills":["browser-tool","pymupdf"]},{"id":"brand-design","roleId":"brand-design","title":"Brand Design","summary":"Own brand kits / design-system deliverables for clients and partners: logo lockups, color/type tokens, social templates, pitch decks, one-sheets, leave-behinds, merch art-ready exports.","version":"1.0.0","path":"packs/brand-design","tags":["design","brand","kits"],"skills":["browser-tool","aseprite-tool"],"skillsExternal":["mcp-pixellab"]},{"id":"cron-manager","roleId":"cron-manager","title":"Cron Manager","summary":"Fleet cron desk: schedule/pause/topup/delete wakes for any GotchiBot agent via ai-cron-site (cron402 x402 USDC on Base). Local launchd is fallback only.","version":"1.0.0","path":"packs/cron-manager","tags":["cron","scheduler"],"skills":["cron-manager","browser-tool"],"skillsExternal":["mcp-cron402"]},{"id":"fe-marketing","roleId":"fe-marketing","title":"FE Marketing","summary":"Landing pages, conversion UX, brand web polish and campaign microsites — FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.","version":"1.0.0","path":"packs/fe-marketing","tags":["web","design"],"skills":["browser-tool"]},{"id":"financial-analyst","roleId":"financial-analyst","title":"Financial Analyst","summary":"Institutional-grade research analyst: regime/news, IC memos, PDF filings, relative-value and risk framing. Analysis only — no execution, no posting.","version":"1.0.0","path":"packs/financial-analyst","tags":["analysis","news"],"skills":["market-news-feed","browser-tool","pymupdf"]},{"id":"infra-bridge","roleId":"infra-bridge","title":"Desk→Hub Claude bridge","summary":"Own Desk→Hub Claude bridge: ensure/check, VS Code open, claude pane init, short claude-ask. Stay on big-pickle — never /model @claudemode.","version":"1.0.0","path":"packs/infra-bridge","tags":["infra","bridge"],"skills":["hub-sop","browser-tool"]},{"id":"infra-docker","roleId":"infra-docker","title":"Docker / watched stack","summary":"Own Docker watched containers and the infra watcher/verifier loop. Paper recover on DEGRADED. Subset of home infra for operators who only run the container stack.","version":"1.0.0","path":"packs/infra-docker","tags":["infra","docker"],"skills":["infra-recover","browser-tool"]},{"id":"infra-hub","roleId":"infra-hub","title":"Hub / OpenClaw gateway","summary":"Own Hub OpenClaw gateway health: status, restart-gateway, doctor, roster. Subset of home infra.","version":"1.0.0","path":"packs/infra-hub","tags":["infra","hub"],"skills":["hub-sop","browser-tool"]},{"id":"infra-mesh","roleId":"infra-mesh","title":"Agent mesh / remote Hub","summary":"Own GotchiBot cross-machine agent mesh and remote Hub ops (status, ping, remote-setup, remote run/push/serve, topology). On path fail, defer to Tailscale / infra-tailscale first.","version":"1.0.0","path":"packs/infra-mesh","tags":["infra","mesh"],"skills":["gotchibot-mesh","browser-tool"]},{"id":"infra-monitor","roleId":"infra-monitor","title":"Home infra (full stack)","summary":"Own the complete GotchiBot home stack: Docker watched set, Cloudflare tunnel/public subgraph, Hub/OpenClaw, Tailscale path, agent mesh/remote, and Desk→Hub Claude bridge. Watch, probe, recover paper-only. Public operators who run a subset install the piece packs: infra-docker, infra-tunnel, infra-hub, infra-tailscale, infra-mesh, infra-bridge.","version":"1.0.0","path":"packs/infra-monitor","tags":["infra","ops","home"],"skills":["infra-recover","hub-sop","gotchibot-mesh","browser-tool"]},{"id":"infra-tailscale","roleId":"infra-tailscale","title":"Tailscale path","summary":"Own the Tailscale tailnet path to the always-on Hub: peers online, MagicDNS / 100.x. Never invent LAN IPs. Subset of home infra.","version":"1.0.0","path":"packs/infra-tailscale","tags":["infra","tailscale"],"skills":["browser-tool"]},{"id":"infra-tunnel","roleId":"infra-tunnel","title":"Cloudflare tunnel / public subgraph","summary":"Own Cloudflare tunnel health and public subgraph endpoints. Cartridge Cloudflare 502 awareness. Subset of home infra.","version":"1.0.0","path":"packs/infra-tunnel","tags":["infra","tunnel"],"skills":["infra-recover","browser-tool"]},{"id":"kanban-manager","roleId":"kanban-manager","title":"Project Kanban Manager","summary":"Own the sealed project's main task kanban and every desk's mini headless board: show/add/move cards, sync desk minis into the main board, pull assigned cards onto desks.","version":"1.0.0","path":"packs/kanban-manager","tags":["kanban","project","boards","tasks"],"skills":["project-kanban"]},{"id":"mail-courier","roleId":"mail-courier","title":"Mail Courier","summary":"Own one AgentMail inbox per GotchiBot project: accept outbound from agents, send via AgentMail (abra AGENT_MAIL_API_KEY), monitor inbox/outbox, relay replies, track owed agent responses, remind after 24h, keep the orchestrator informed.","version":"1.0.0","path":"packs/mail-courier","tags":["mail","courier","inbox","email","agentmail"],"skills":["agentmail","abra-vault"]},{"id":"marketing-agency","roleId":"marketing-agency","title":"Marketing Agency","summary":"Research & analyze market trends, then staff web, social, merch and brand-design children — Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.","version":"1.0.0","path":"packs/marketing-agency","tags":["marketing","agency"],"skills":["browser-tool","market-news-feed","pymupdf"]},{"id":"merch-desk","roleId":"merch-desk","title":"Merch Desk","summary":"Own the merch store supplier desk: research print-on-demand companies that make custom plushies and toys, rank API-capable vendors, approve-gated outreach to every shortlisted supplier, and pull brand kits / one-sheets / mocks from brand-design and product desks. Never sends without approval; never spends.","version":"1.0.0","path":"packs/merch-desk","tags":["merch","pod","plush","toys","quotes"],"skills":["browser-tool","market-news-feed","pymupdf"],"skillsExternal":["mcp-pixellab","resend"]},{"id":"product-manager","roleId":"product-manager","title":"Product Manager","summary":"Own product discovery → roadmap → specs → ship coordination for AarcadeGh-t / GotchiBot product surfaces (features, games, haunts, FE/BE workstreams). PM craft — briefs and routes; never DIY engineering.","version":"1.0.0","path":"packs/product-manager","tags":["product","pm","roadmap"],"skills":["browser-tool","pymupdf","market-news-feed"]},{"id":"social-media-manager","roleId":"social-media-manager","title":"Social Media Manager","summary":"Calendar, voice, channel strategy and drafts for web + social — channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.","version":"1.0.0","path":"packs/social-media-manager","tags":["social","content"],"skills":["browser-tool"],"skillsExternal":["mcp-snapshot"]}]}
+<!--CATALOG_END-->
+</script>
+<script>
+  const statusEl = document.getElementById("status");
+  const cardsEl = document.getElementById("cards");
+
+  function render(catalog) {
+    statusEl.textContent = `${catalog.packs.length} pack(s) — baseUrl ${catalog.baseUrl}`;
+    cardsEl.innerHTML = "";
+    for (const p of catalog.packs) {
+      const card = document.createElement("article");
+      card.className = "card";
+
+      const h = document.createElement("h2");
+      h.textContent = p.title;
+      card.appendChild(h);
+
+      const id = document.createElement("div");
+      id.className = "id";
+      id.textContent = `${p.id} · v${p.version}`;
+      card.appendChild(id);
+
+      const sum = document.createElement("div");
+      sum.className = "summary";
+      sum.textContent = p.summary || "";
+      card.appendChild(sum);
+
+      const tags = document.createElement("div");
+      tags.className = "tags";
+      for (const t of p.tags || []) {
+        const el = document.createElement("span");
+        el.className = "tag";
+        el.textContent = t;
+        tags.appendChild(el);
+      }
+      if ((p.skillsExternal || []).length) {
+        const el = document.createElement("span");
+        el.className = "tag";
+        el.textContent = "external: " + p.skillsExternal.join(", ");
+        tags.appendChild(el);
+      }
+      card.appendChild(tags);
+
+      const cmd = document.createElement("div");
+      cmd.className = "cmd";
+      cmd.innerHTML = `<span class="prompt">$</span> gotchibot templates install ${p.id}`;
+      card.appendChild(cmd);
+
+      const det = document.createElement("details");
+      const sum2 = document.createElement("summary");
+      sum2.textContent = "URL install";
+      det.appendChild(sum2);
+      const form = document.createElement("div");
+      form.className = "urlform";
+      const input = document.createElement("input");
+      input.value = `${catalog.baseUrl}/packs/${p.id}/`;
+      input.spellcheck = false;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "Copy";
+      btn.addEventListener("click", () => {
+        navigator.clipboard.writeText(`gotchibot templates install ${input.value}`).then(() => {
+          btn.textContent = "Copied";
+          setTimeout(() => (btn.textContent = "Copy"), 1200);
+        });
+      });
+      form.appendChild(input);
+      form.appendChild(btn);
+      det.appendChild(form);
+      card.appendChild(det);
+
+      cardsEl.appendChild(card);
+    }
+  }
+
+  function renderFallback() {
+    const raw = document.getElementById("catalog-fallback").textContent
+      .replace(/<!--CATALOG_START-->|<!--CATALOG_END-->/g, "")
+      .trim();
+    if (!raw || raw === "__CATALOG_JSON__") {
+      statusEl.textContent = "No catalog embedded — run `gotchibot templates pack <roleId>` to seed, or serve this folder over HTTP so ../catalog.json can be fetched.";
+      return;
+    }
+    try {
+      render(JSON.parse(raw));
+    } catch {
+      statusEl.textContent = "Embedded catalog is invalid JSON.";
+    }
+  }
+
+  fetch("../catalog.json", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
+    .then(render)
+    .catch(renderFallback);
+</script>
+</body>
+</html>

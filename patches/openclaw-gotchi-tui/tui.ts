@@ -1835,6 +1835,38 @@ async function runTuiUnlocked(opts: RunTuiOptions): Promise<TuiResult> {
     );
     tui.requestRender();
   };
+  editor.onCtrlU = () => {
+    // Switch to existing meet gallery (no start). Mirrors OpenCode ctrl+u.
+    const root =
+      process.env.GOTCHIBOT_ROOT?.trim() ||
+      (process.cwd().includes("GotchiBot") ? process.cwd() : null);
+    if (!root) {
+      chatLog.addSystem("GotchiBot workspace not found — cannot open meeting");
+      tui.requestRender();
+      return;
+    }
+    const child = spawn(process.execPath, [`${root}/scripts/gotchi-meet.mjs`, "open"], {
+      cwd: root,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    child.stdout?.on("data", (c) => {
+      out += String(c);
+    });
+    child.stderr?.on("data", (c) => {
+      out += String(c);
+    });
+    child.on("close", (code) => {
+      const line = out.trim().split("\n").filter(Boolean).pop();
+      chatLog.addSystem(
+        code === 0
+          ? line || "meet room open"
+          : line || "no open meeting — start one: gotchibot meet start",
+      );
+      tui.requestRender();
+    });
+  };
   editor.onCtrlL = () => {
     void openModelSelector();
   };

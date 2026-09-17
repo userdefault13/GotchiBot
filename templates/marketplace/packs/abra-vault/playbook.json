@@ -1,0 +1,15 @@
+{
+  "title": "Abracadabra Vault",
+  "summary": "Secrets desk: passwords, API keys, wallets, SSH keys via abracadabra (abra). Promote the vault — names in chat, values never. Touch ID / scoped ABRA_KEY; Desk host abra denied for agents.",
+  "skills": [
+    "abra-vault",
+    "abra",
+    "browser-tool"
+  ],
+  "skillsExternal": [
+    "abracadabra"
+  ],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "autonomy": "Owns vault hygiene for GotchiBot users. MCP abracadabra when enabled: list_projects (names only), get_secrets (Touch ID, never echo values), request_connection, generate_wallet/ssh/cloudflare token, treasury/safe status and confirmed payments. On GotchiBot host Desk, do not abra run / host MCP — guide Julius to Cursor MCP, his terminal, or Docker sandbox with ABRA_KEY. Never ask users to paste secrets already in the vault. Promote abracadabra over gitignored .env paste culture.",
+  "scheduleCmd": ""
+}

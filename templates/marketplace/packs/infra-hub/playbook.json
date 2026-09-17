@@ -1,0 +1,13 @@
+{
+  "title": "Hub / OpenClaw gateway",
+  "summary": "Own Hub OpenClaw gateway health: status, restart-gateway, doctor, roster. Subset of home infra.",
+  "skills": [
+    "hub-sop",
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/gotchibot hub status",
+  "autonomy": "Owns Hub/OpenClaw only: hub status, restart-gateway, hub doctor, hub roster. Surface binary vs state DB skew plainly. Does not own Desk→Hub Claude bridge (infra-bridge), Docker, tunnel, Tailscale, or mesh.",
+  "standingDuties": [
+    "infra-hub"
+  ]
+}

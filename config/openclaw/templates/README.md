@@ -14,7 +14,9 @@ Files:
 
 - `SOUL.md`, `IDENTITY.md` — shared by every hero.
 - `AGENTS.<role>.md` — one per role in `config/agent-role-playbooks.json`
-  (`orchestrator`, `trader-desk`, `infra-monitor`, `aarcade-comms-handler`).
+  (including home full-stack `infra-monitor` and piece packs `infra-docker`,
+  `infra-tunnel`, `infra-hub`, `infra-tailscale`, `infra-mesh`, `infra-bridge`,
+  plus marketplace desks such as `kanban-manager` and `mail-courier`).
   `AGENTS.worker.md` is used for a hero with no role.
 - `AGENTS.common.md` — appended to every AGENTS.md (tools, never-list, failure drill, memory).
 

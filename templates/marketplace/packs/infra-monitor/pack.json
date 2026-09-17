@@ -1,0 +1,47 @@
+{
+  "id": "infra-monitor",
+  "roleId": "infra-monitor",
+  "version": "1.0.0",
+  "title": "Home infra (full stack)",
+  "summary": "Own the complete GotchiBot home stack: Docker watched set, Cloudflare tunnel/public subgraph, Hub/OpenClaw, Tailscale path, agent mesh/remote, and Desk→Hub Claude bridge. Watch, probe, recover paper-only. Public operators who run a subset install the piece packs: infra-docker, infra-tunnel, infra-hub, infra-tailscale, infra-mesh, infra-bridge.",
+  "skills": [
+    "infra-recover",
+    "hub-sop",
+    "gotchibot-mesh",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [
+    "infra-docker",
+    "infra-tunnel",
+    "infra-hub",
+    "infra-tailscale",
+    "infra-mesh",
+    "infra-bridge"
+  ],
+  "cronHints": [
+    "Schedule truth: `./scripts/gotchibot infra schedule status` is the only source of truth for whether the desk's waker is loaded.",
+    "launchd: iMac LaunchAgents are installed per-desk (`gotchibot <desk> schedule install`); `schedule status` confirms load + last run."
+  ],
+  "tags": [
+    "infra",
+    "ops",
+    "home"
+  ],
+  "downloadPath": "packs/infra-monitor",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/gotchibot-mesh/SKILL.md",
+    "skills/hub-sop/SKILL.md",
+    "skills/infra-recover/SKILL.md",
+    "standing-duties/infra-bridge.md",
+    "standing-duties/infra-docker.md",
+    "standing-duties/infra-hub.md",
+    "standing-duties/infra-mesh.md",
+    "standing-duties/infra-tailscale.md",
+    "standing-duties/infra-tunnel.md"
+  ]
+}

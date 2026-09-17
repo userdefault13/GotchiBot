@@ -1,0 +1,31 @@
+{
+  "id": "infra-tunnel",
+  "roleId": "infra-tunnel",
+  "version": "1.0.0",
+  "title": "Cloudflare tunnel / public subgraph",
+  "summary": "Own Cloudflare tunnel health and public subgraph endpoints. Cartridge Cloudflare 502 awareness. Subset of home infra.",
+  "skills": [
+    "infra-recover",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [
+    "infra-tunnel"
+  ],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "infra",
+    "tunnel"
+  ],
+  "downloadPath": "packs/infra-tunnel",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/infra-recover/SKILL.md",
+    "standing-duties/infra-tunnel.md"
+  ]
+}

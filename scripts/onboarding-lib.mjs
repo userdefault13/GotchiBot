@@ -681,9 +681,16 @@ export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = n
   });
   if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
   const c = r.data.cartridge ?? r.data;
-  const hero = c.cAavegotchi ?? (c.cAavegotchis ?? []).find((h) => String(h.sourceTokenId) === tokenId)
-    ?? (c.cAavegotchis ?? []).find((h) => h.id === `owned-${tokenId}`)
-    ?? (c.cAavegotchis ?? []).slice(-1)[0];
+  const list = Array.isArray(c.cAavegotchis) ? c.cAavegotchis : [];
+  // Prefer the hero for this token — never the active/orch cAavegotchi
+  // (bind leaves active as owned-954, which made mint-all report every id as 954).
+  const hero =
+    list.find((h) => String(h?.sourceTokenId ?? "") === tokenId) ??
+    list.find((h) => h?.id === `owned-${tokenId}`) ??
+    (c.cAavegotchi && String(c.cAavegotchi?.sourceTokenId ?? "") === tokenId
+      ? c.cAavegotchi
+      : null) ??
+    (c.cAavegotchi?.id === `owned-${tokenId}` ? c.cAavegotchi : null);
   const heroId = hero?.id ?? `owned-${tokenId}`;
   persistHeroCollateral(heroId, {
     collateral: spirit || hero?.collateral,

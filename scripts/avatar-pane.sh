@@ -607,7 +607,8 @@ resolve_thumb_collateral() {
   printf '%s\t%s\n' "${spirit:-}" "${haunt:-}"
 }
 
-# Roster thumbnail — same AarcadeGh-t collateral JSON path as orchestrator art.
+# Roster / "other cAavegotchis" tile — large thumb, doubled collateral, eyes plain.
+# (iMessage meet bubbles use --thumb and stay plain regular eyes.)
 thumb_art() {
   local collateral="${1:-}" id="${2:-}" haunt="${3:-}"
   local art="" resolved spirit
@@ -626,15 +627,16 @@ thumb_art() {
     fi
   fi
   if command -v node >/dev/null && [ -f "$ROOT/scripts/gotchi-art.mjs" ]; then
-    if [ -n "$collateral" ]; then
-      if [ -n "$haunt" ]; then
-        art="$(node "$ROOT/scripts/gotchi-art.mjs" --thumb --collateral "$collateral" --haunt "$haunt" --color 2>/dev/null)" || art=""
-      else
-        art="$(node "$ROOT/scripts/gotchi-art.mjs" --thumb --collateral "$collateral" --color 2>/dev/null)" || art=""
-      fi
+    # Prefer --hero so cartridge traits (eyeColor / eyeShape) load with the glyph.
+    if [ -n "$id" ]; then
+      art="$(node "$ROOT/scripts/gotchi-art.mjs" --roster --hero "$id" --color 2>/dev/null)" || art=""
     fi
-    if [ -z "$art" ] && [ -n "$id" ]; then
-      art="$(node "$ROOT/scripts/gotchi-art.mjs" --thumb --hero "$id" --color 2>/dev/null)" || art=""
+    if [ -z "$art" ] && [ -n "$collateral" ]; then
+      if [ -n "$haunt" ]; then
+        art="$(node "$ROOT/scripts/gotchi-art.mjs" --roster --collateral "$collateral" --haunt "$haunt" --color 2>/dev/null)" || art=""
+      else
+        art="$(node "$ROOT/scripts/gotchi-art.mjs" --roster --collateral "$collateral" --color 2>/dev/null)" || art=""
+      fi
     fi
   fi
   if [ -z "$art" ] && [ -f "$ASCII_THUMB" ]; then
@@ -948,7 +950,7 @@ warm_other_cells() {
   local i v
   dbg "warm: $WARM_N tiles @ ${WARM_W}x${WARM_H}"
   for ((i = 0; i < WARM_N; i++)); do
-    memo_call v "cell|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|$WARM_W|$WARM_H" \
+    memo_call v "r|cell|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|$WARM_W|$WARM_H" \
       cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}"
   done
   WARM_DONE=1
@@ -1098,17 +1100,18 @@ render_body() {
   mid=""
   right=""
   if [ "$i" -lt "$n_ids" ]; then
-    k1="cell|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|$cell_w|$cell_h"
+    # r| = roster traits on large thumb; bump if roster tile art format changes
+    k1="r|cell|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|$cell_w|$cell_h"
     memo_call left "$k1" \
       cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}"
   fi
   if [ $((i + 1)) -lt "$n_ids" ]; then
-    k2="cell|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|$cell_w|$cell_h"
+    k2="r|cell|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|$cell_w|$cell_h"
     memo_call mid "$k2" \
       cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}"
   fi
   if [ $((i + 2)) -lt "$n_ids" ]; then
-    k3="cell|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|$cell_w|$cell_h"
+    k3="r|cell|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|$cell_w|$cell_h"
     memo_call right "$k3" \
       cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}"
   fi

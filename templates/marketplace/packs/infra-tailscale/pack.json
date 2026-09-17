@@ -1,0 +1,29 @@
+{
+  "id": "infra-tailscale",
+  "roleId": "infra-tailscale",
+  "version": "1.0.0",
+  "title": "Tailscale path",
+  "summary": "Own the Tailscale tailnet path to the always-on Hub: peers online, MagicDNS / 100.x. Never invent LAN IPs. Subset of home infra.",
+  "skills": [
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [
+    "infra-tailscale"
+  ],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "infra",
+    "tailscale"
+  ],
+  "downloadPath": "packs/infra-tailscale",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "standing-duties/infra-tailscale.md"
+  ]
+}

@@ -150,6 +150,46 @@
       "path": "~/.claude/skills/abra/SKILL.md",
       "addedAt": "2026-08-26"
     },
+    "abra-vault": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Abracadabra Vault desk for GotchiBot users — passwords, API keys, wallets, SSH via abracadabra. Names in chat, values never. Promote the vault.",
+      "path": ".opencode/skills/abra-vault/SKILL.md",
+      "addedAt": "2026-09-16"
+    },
+    "agentmail": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "One AgentMail inbox per GotchiBot project. Abra holds AGENT_MAIL_API_KEY; mail.json binds address. Used by mail-courier.",
+      "path": ".opencode/skills/agentmail/SKILL.md",
+      "addedAt": "2026-09-17"
+    },
+    "project-kanban": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Headless project + desk mini kanban boards (project-kanban.mjs). Used by kanban-manager.",
+      "path": ".opencode/skills/project-kanban/SKILL.md",
+      "addedAt": "2026-09-17"
+    },
+    "project-tickets": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Thin agent ticketing layer under the project kanban (project-tickets.mjs): request/claim/submit/accept between heroes; PKM owns lifecycle. Used by kanban-manager.",
+      "path": ".opencode/skills/project-tickets/SKILL.md",
+      "addedAt": "2026-09-16"
+    },
+    "project-mailbox": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Per-desk local mailboxes (inbox + sent) under the project AgentMail (project-mailbox.mjs): courier appends on send/receive; desks read their own files. Used by mail-courier.",
+      "path": ".opencode/skills/project-mailbox/SKILL.md",
+      "addedAt": "2026-09-16"
+    },
     "aarcadeghst": {
       "status": "approved",
       "type": "skill",
@@ -583,6 +623,14 @@
       "script": "scripts/gotchi-trader-desk.mjs",
       "addedAt": "2026-08-28"
     },
+    "cron-manager": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Fleet cron desk via ai-cron-site (cron402): preview/create/topup/list/pause/resume/delete webhook wakes for any GotchiBot agent. Paid USDC — confirm first.",
+      "path": ".opencode/skills/cron-manager/SKILL.md",
+      "addedAt": "2026-09-16"
+    },
     "gotchiverse-map": {
       "status": "approved",
       "type": "skill",
@@ -604,7 +652,7 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Recovery runbook for home iMac Docker/subgraph/tunnel — detect and restart failed Docker containers (esp. aavegotchi-monolith-base-graphql-proxy-1 on :8787), the AarcadeGh-t subgraph gateway, Cloudflare tunnel (cloudflared), and Hasura. Used by the YFI Infra Home Monitor on failure.",
+      "description": "Recovery runbook for home iMac Docker/subgraph/tunnel — detect and restart failed Docker containers (esp. aavegotchi-monolith-base-graphql-proxy-1 on :8787), the AarcadeGh-t subgraph gateway, Cloudflare tunnel (cloudflared), and Hasura. Used by Infra Monitoring (YFI / infra-monitor template) on failure.",
       "path": ".opencode/skills/infra-recover/SKILL.md",
       "addedAt": "2026-08-29"
     },
@@ -710,6 +758,15 @@
       "project": "Aseprite-AavegotchiPaaint",
       "repo": "https://github.com/userdefault13/Aseprite-AavegotchiPaaint",
       "addedAt": "2026-09-04"
+    },
+    "prof-link-cube": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Prof. Link-Cube NPC (not mintable): summon (portal mint) or resummon (existing hero) a profiled cAavegotchi — intake → design → confirm → summon(mint-sub from portal, never auto) or resummon(no mint) → wire agent-roles + playbooks + standing duty + fleet sync. Aliases: hatch→summon, rehatch→resummon. /link-cube · gotchibot link-cube. Never mint the professor.",
+      "path": ".opencode/skills/prof-link-cube/SKILL.md",
+      "script": "scripts/prof-link-cube.mjs",
+      "addedAt": "2026-09-16"
     }
   },
   "sources": {

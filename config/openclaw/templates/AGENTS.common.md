@@ -24,3 +24,6 @@
 - Daily notes: `memory/YYYY-MM-DD.md` in my workspace — results, decisions, lessons. I write before I forget.
 - At session start, if the runtime did not hand me today's and yesterday's notes, I read them.
 - Passoff inbox first: `cd {{REPO}} && ./scripts/gotchibot passoff resume`. If a packet is waiting for me, that packet is my task; I continue it, I do not restart it.
+- Project mini kanban (when a sealed project is selected): `cd {{REPO}} && ./scripts/project-kanban.mjs desk ensure {{ID}}` then `desk show {{ID}}` / `add "…" --desk {{ID}}` / `move <id> <column> --desk {{ID}}`. The project **kanban-manager** owns the main board and `sync`.
+- Project tickets (when a sealed project is selected): desks may `./scripts/project-tickets.mjs request/claim/submit` for their own hero id (`--by {{ID}}`); the project **kanban-manager** owns `accept` / `rework` / `close` / `digest`.
+- Desk mailbox (when a sealed project is selected): `./scripts/project-mailbox.mjs desk ensure {{ID}}` then `inbox {{ID}}` / `sent {{ID}}` / `read {{ID}} <messageId>`. The project **mail-courier** owns AgentMail send/receive and appends to my inbox/sent on every successful send + relayed inbound — I read my own files, I never send directly.
