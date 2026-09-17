@@ -22,6 +22,10 @@ Drive meetings only through the CLI. Do not invent agents or turns.
 `edit <ts|last> "text"` rewrites Julius's own user-role turn in place (stamps
 `editedAt`, keeps the original `ts`) — it never re-says and never wakes agents.
 
+In the meet · room prompter: `/cockpit` (or `/menu`) leaves the UI back to the
+cockpit; `/chat` / `^C` leave to OpenCode chat; `/start` · `/end` toggle recording
+only; `/help` lists slash commands. The room stays open either way.
+
 ## Quota
 
 `say` and `colabo` **wake real agents and spend quota**. Run them when Julius

@@ -452,6 +452,10 @@ refresh_meet_gallery() {
 }
 
 leave_meet_gallery() {
+  local to_cockpit=0
+  if [ "${1:-}" = "cockpit" ]; then
+    to_cockpit=1
+  fi
   if [ "$(layout_mode)" != "meet-gallery" ]; then
     return 0
   fi
@@ -476,7 +480,11 @@ leave_meet_gallery() {
   save_layout
   signal_panes
   install_avatar_mouse 2>/dev/null || true
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  if [ "$to_cockpit" -eq 1 ]; then
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  else
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  fi
 }
 
 # pstack dossier window: work.2 (avatar) → pstack-window.mjs (details + gotchi grid);
@@ -1052,6 +1060,9 @@ case "$cmd" in
   leave-meet-gallery)
     leave_meet_gallery
     ;;
+  leave-meet-cockpit)
+    leave_meet_gallery cockpit
+    ;;
   enter-pstack-dossier|pstack-dossier)
     enter_pstack_dossier
     ;;
@@ -1081,7 +1092,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|enter-pstack-dossier|refresh-pstack-dossier|leave-pstack-dossier|require-three|fit|install-mouse]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|refresh-pstack-dossier|leave-pstack-dossier|require-three|fit|install-mouse]" >&2
     exit 2
     ;;
 esac

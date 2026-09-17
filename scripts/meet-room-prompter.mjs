@@ -100,6 +100,33 @@ function matchingMentions(query) {
   );
 }
 
+/** Slash cmds shown in the live `/` menu (Tab cycles / completes). */
+const SLASH_COMMANDS = [
+  { tag: "/cockpit", hint: "fleet menu", needsArg: false },
+  { tag: "/chat", hint: "back to chat", needsArg: false },
+  { tag: "/edit", hint: "edit last msg", needsArg: true },
+  { tag: "/start", hint: "start recording", needsArg: true },
+  { tag: "/end", hint: "stop recording", needsArg: false },
+  { tag: "/help", hint: "list commands", needsArg: false },
+  { tag: "/prev", hint: "prev seat page", needsArg: false },
+  { tag: "/next", hint: "next seat page", needsArg: false },
+  { tag: "/colabo", hint: "round-robin", needsArg: true },
+  { tag: "/menu", hint: "alias /cockpit", needsArg: false },
+  { tag: "/leave", hint: "alias /chat", needsArg: false },
+];
+
+/** Active when the whole buffer is a slash stub: `/` or `/coc…`. */
+function activeSlashQuery(buffer) {
+  const m = String(buffer || "").match(/^\/([A-Za-z0-9_-]*)$/);
+  return m ? m[1].toLowerCase() : null;
+}
+
+function matchingSlashCmds(query) {
+  if (query == null) return [];
+  if (!query) return SLASH_COMMANDS;
+  return SLASH_COMMANDS.filter((c) => c.tag.slice(1).toLowerCase().startsWith(query));
+}
+
 function pokeChannel() {
   const now = `${new Date().toISOString()}\n`;
   try {
@@ -409,7 +436,7 @@ function handleCtrlC() {
 }
 
 function requestLeave(kind) {
-  const mode = kind === "chat" ? "chat" : "end";
+  const mode = kind === "cockpit" ? "cockpit" : kind === "chat" ? "chat" : "end";
   try {
     writeFileSync(LEAVE, `${mode}\n`);
   } catch {
@@ -427,6 +454,10 @@ function endMeeting() {
 
 function backToChat() {
   requestLeave("chat");
+}
+
+function backToCockpit() {
+  requestLeave("cockpit");
 }
 
 function pagePrev() {
@@ -567,7 +598,7 @@ function drawInputPanel(top, cols) {
   } else {
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
-      `${T.panel}${T.muted} · ←→ page · /edit · /start · /end · ^C leave${T.reset}`;
+      `${T.panel}${T.muted} · ←→ page · /edit · /cockpit · /start · /end · /help${T.reset}`;
   }
   writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols, visLen(footerCore)), cols));
 
@@ -658,20 +689,97 @@ class Prompter {
     return true;
   }
 
+  completeSlash() {
+    const q = activeSlashQuery(this.buffer);
+    if (q == null) return false;
+    const matches = matchingSlashCmds(q);
+    if (!matches.length) return false;
+    this.menuIdx = this.menuIdx % matches.length;
+    const pick = matches[this.menuIdx];
+    this.menuIdx += 1;
+    this.buffer = pick.needsArg ? `${pick.tag} ` : pick.tag;
+    this.cursor = this.buffer.length;
+    return true;
+  }
+
+  /** Tab: slash menu first, then @mentions. */
+  completeMenu() {
+    if (this.completeSlash()) return true;
+    return this.completeMention();
+  }
+
+  /** ↑/↓ while a slash/@ menu is open: cycle highlight only. */
+  cycleMenu(delta) {
+    const sq = activeSlashQuery(this.buffer);
+    const slash = sq != null ? matchingSlashCmds(sq) : [];
+    if (slash.length) {
+      const n = slash.length;
+      this.menuIdx = ((this.menuIdx + delta) % n + n) % n;
+      return true;
+    }
+    const mq = activeMentionQuery(this.buffer);
+    const mentions = mq != null ? matchingMentions(mq) : [];
+    if (mentions.length) {
+      const n = mentions.length;
+      this.menuIdx = ((this.menuIdx + delta) % n + n) % n;
+      return true;
+    }
+    return false;
+  }
+
   submit() {
+    // Enter on a slash stub: accept the highlighted menu pick first.
+    const sq = activeSlashQuery(this.buffer);
+    if (sq != null) {
+      const matches = matchingSlashCmds(sq);
+      if (matches.length) {
+        const pick = matches[this.menuIdx % matches.length];
+        if (pick.needsArg) {
+          this.buffer = `${pick.tag} `;
+          this.cursor = this.buffer.length;
+          return "redraw";
+        }
+        this.buffer = pick.tag;
+        this.cursor = this.buffer.length;
+      } else if (this.buffer.trim() === "/" || sq) {
+        // No match — show help instead of saying.
+        this.clear();
+        sendError =
+          "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · !cmd · ^C leave";
+        return "redraw";
+      }
+    }
     const line = this.buffer.trim();
     this.clear();
     if (!line) {
       if (editTargetTs) editTargetTs = null; // empty submit cancels edit
       return "noop";
     }
-    if (line === "/end" || line === "/quit" || line === "/leave") {
+    if (line === "/start" || line.startsWith("/start ")) {
       editTargetTs = null;
-      return "end";
+      const topic = line.replace(/^\/start\s*/i, "").trim();
+      runMeetHelper(topic ? ["start", topic] : ["start"]);
+      return "redraw";
     }
-    if (line === "/chat" || line === "/opencode" || line === "/desk") {
+    if (line === "/end") {
+      // Stop recording only — stay in the room UI.
+      editTargetTs = null;
+      runMeetHelper(["end"]);
+      return "redraw";
+    }
+    if (line === "/quit" || line === "/leave" || line === "/chat" || line === "/opencode" || line === "/desk") {
       editTargetTs = null;
       return "chat";
+    }
+    if (line === "/cockpit" || line === "/menu") {
+      editTargetTs = null;
+      return "cockpit";
+    }
+    if (line === "/help" || line === "/?") {
+      editTargetTs = null;
+      sendError =
+        "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · !cmd · ^C leave";
+      return "redraw";
     }
     if (line === "/edit") {
       if (loadEditTarget(null)) return "redraw";
@@ -721,6 +829,17 @@ class Prompter {
       }
       return "redraw";
     }
+    // Never post slash text as a room message — unmatched /cmds used to
+    // fall through to say ("Gotchi · send failed" / wake the chair).
+    if (line === "/" || line.startsWith("/")) {
+      editTargetTs = null;
+      const cmd = line.split(/\s+/)[0];
+      sendError =
+        line === "/" || line === "/?"
+          ? "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · !cmd · ^C leave"
+          : `unknown ${cmd} · /help`;
+      return "redraw";
+    }
     this.history.push(line);
     if (this.history.length > 100) this.history.shift();
     if (editTargetTs) {
@@ -762,13 +881,31 @@ function drawBody() {
   stdout.write(`\x1b[H${galleryLines.map((l) => `${l}\x1b[K`).join("\n")}\n\x1b[J`);
 
   const top = rows - PROMPT_PANEL_ROWS + 1;
-  const q = activeMentionQuery(editor.buffer);
-  const matches = q != null ? matchingMentions(q) : [];
+  const slashQ = activeSlashQuery(editor.buffer);
+  const slashMatches = slashQ != null ? matchingSlashCmds(slashQ) : [];
+  const mentionQ = slashQ == null ? activeMentionQuery(editor.buffer) : null;
+  const mentionMatches = mentionQ != null ? matchingMentions(mentionQ) : [];
 
-  if (matches.length && q != null) {
-    const menu = matches
+  if (slashMatches.length && slashQ != null) {
+    const n = slashMatches.length;
+    const menu = slashMatches
+      .slice(0, 8)
+      .map((c, i) => {
+        const on = i === editor.menuIdx % n;
+        const tag = `${on ? T.menu : T.mention}${c.tag}${T.reset}`;
+        const hint = on ? `${T.muted} ${c.hint}${T.reset}` : "";
+        return `${tag}${hint}`;
+      })
+      .join(`${T.muted} · ${T.reset}`);
+    writeAt(
+      Math.max(1, mentionRow),
+      1,
+      padPanelLine(`${T.accentBar}${T.panel} ${menu}`, cols),
+    );
+  } else if (mentionMatches.length && mentionQ != null) {
+    const menu = mentionMatches
       .slice(0, 6)
-      .map((m, i) => `${i === editor.menuIdx % matches.length ? T.menu : T.mention}${m.tag}${T.reset}`)
+      .map((m, i) => `${i === editor.menuIdx % mentionMatches.length ? T.menu : T.mention}${m.tag}${T.reset}`)
       .join(`${T.muted}  ${T.reset}`);
     writeAt(
       Math.max(1, mentionRow),
@@ -912,7 +1049,7 @@ function handleKey(chunk) {
       editor.backspace();
       return "redraw";
     case "\t":
-      if (editor.completeMention()) return "redraw";
+      if (editor.completeMenu()) return "redraw";
       return "noop";
     case "\x03":
       return handleCtrlC();
@@ -953,12 +1090,14 @@ function handleEsc(seq) {
     return "redraw";
   }
   if (seq === "\x1b[A") {
+    if (editor.cycleMenu(-1)) return "redraw";
     // ↑ on an empty buffer: pull the last user line into edit mode.
     if (!editor.buffer && !editTargetTs && loadEditTarget(null)) return "redraw";
     editor.historyUp();
     return "redraw";
   }
   if (seq === "\x1b[B") {
+    if (editor.cycleMenu(1)) return "redraw";
     editor.historyDown();
     return "redraw";
   }
@@ -1050,6 +1189,10 @@ function main() {
           backToChat();
           return;
         }
+        if (action === "cockpit") {
+          backToCockpit();
+          return;
+        }
         if (action === "redraw") draw();
       }
       return;
@@ -1070,6 +1213,10 @@ function main() {
       }
       if (action === "chat") {
         backToChat();
+        return;
+      }
+      if (action === "cockpit") {
+        backToCockpit();
         return;
       }
       if (action === "redraw") draw();
