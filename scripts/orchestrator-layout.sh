@@ -97,6 +97,9 @@ layout_correct() {
 
 meet_gallery_correct() {
   layout_ready || return 1
+  # Exactly three panes: Files | Meet · room | # meet. A collapsed 2-pane
+  # desk with channel on work.1 used to pass soft checks and stay broken.
+  [ "$(pane_count)" -eq 3 ] || return 1
   local c0 c1 c2
   c0="$(pane_start_cmd 0)"
   c1="$(pane_start_cmd 1)"
@@ -365,6 +368,15 @@ build_meet_gallery_tiles() {
   [ "$channel_w" -lt 44 ] && channel_w=44
   [ "$channel_w" -gt 72 ] && channel_w=72
 
+  # If the room pane died and channel slid onto work.1 (2-pane desk), put a
+  # room stub back on .1 before splitting — otherwise we end up with two
+  # channel panes and LAYOUT_ONLY would refuse to fix .1.
+  local c1_pre
+  c1_pre="$(pane_start_cmd 1)"
+  if [ "$(pane_count)" -lt 3 ] && [[ "$c1_pre" == *meet-channel* ]]; then
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh" 2>/dev/null || true
+  fi
+
   if [ "$(pane_count)" -lt 3 ]; then
     tmux split-window -h -t "$sess:work.1" -l "$channel_w" \
       "cd \"$ROOT\" && exec ./scripts/meet-channel-pane.sh" 2>/dev/null || true
@@ -379,20 +391,20 @@ build_meet_gallery_tiles() {
     tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/meet-channel-pane.sh" 2>/dev/null || true
   fi
   tmux set-option -p -t "$sess:work.2" @gotchibot-meet-channel 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" -u @gotchibot-meet-room 2>/dev/null || true
   tmux set-option -t "$sess:work.2" pane-border-format ' # meet ' 2>/dev/null || true
 
   local c1
   c1="$(pane_start_cmd 1)"
   if [[ "$c1" != *meet-room* ]]; then
-    if [ "${GOTCHIBOT_MEET_LAYOUT_ONLY:-}" = "1" ]; then
-      # Prompter refresh — never respawn the live meet-room pane.
-      :
-    else
-      tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh" 2>/dev/null || true
-    fi
+    # GOTCHIBOT_MEET_LAYOUT_ONLY=1 skips a healthy room respawn (keeps the live
+    # prompter). It must NEVER skip when work.1 is wrong — that was the
+    # channel-on-.1 collapse.
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh" 2>/dev/null || true
   fi
   tmux set-option -p -t "$sess:work.1" @gotchibot-meet-room 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-channel 2>/dev/null || true
   tmux set-option -t "$sess:work.1" pane-border-format ' Meet · room ' 2>/dev/null || true
   # Drop overflow tiles beyond room + channel.
   while [ "$(pane_count)" -gt 3 ]; do
@@ -403,6 +415,17 @@ build_meet_gallery_tiles() {
   date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/sessions/.meet-room.stamp" 2>/dev/null || true
   date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/sessions/.meet-channel.stamp" 2>/dev/null || true
   install_meet_gallery_mouse 2>/dev/null || true
+
+  # Last line of defense: if we still aren't Files|room|channel, force room+channel.
+  if ! meet_gallery_correct; then
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh" 2>/dev/null || true
+    tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/meet-channel-pane.sh" 2>/dev/null || true
+    tmux set-option -p -t "$sess:work.1" @gotchibot-meet-room 1 2>/dev/null || true
+    tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-channel 2>/dev/null || true
+    tmux set-option -p -t "$sess:work.2" @gotchibot-meet-channel 1 2>/dev/null || true
+    tmux set-option -p -t "$sess:work.2" -u @gotchibot-meet-room 2>/dev/null || true
+    apply_meet_gallery_sizes
+  fi
 }
 
 apply_meet_gallery_sizes() {
