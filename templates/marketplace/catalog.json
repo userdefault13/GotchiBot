@@ -77,6 +77,26 @@
       ]
     },
     {
+      "id": "auditor",
+      "roleId": "auditor",
+      "title": "Auditor",
+      "summary": "Independent audit/attestation for the current GotchiBot/Aarcade tree: evidence-backed findings, control checks, fix reviews. Does not implement production fixes.",
+      "version": "1.0.0",
+      "path": "packs/auditor",
+      "tags": [
+        "audit",
+        "attestation",
+        "controls",
+        "review",
+        "evidence"
+      ],
+      "skills": [
+        "browser-tool",
+        "pymupdf",
+        "pstack"
+      ]
+    },
+    {
       "id": "brand-design",
       "roleId": "brand-design",
       "title": "Brand Design",
@@ -133,6 +153,44 @@
       ]
     },
     {
+      "id": "data-ai-cron-site",
+      "roleId": "data-ai-cron-site",
+      "title": "Data ai-cron-site",
+      "summary": "ai-cron-site / cron402 data layer for patch dossier: schedules, success/fail history, result logging.",
+      "version": "1.0.0",
+      "path": "packs/data-ai-cron-site",
+      "tags": [
+        "marketplace"
+      ],
+      "skills": [
+        "data-ai-cron-site",
+        "cron-manager",
+        "pstack",
+        "browser-tool"
+      ],
+      "skillsExternal": [
+        "mcp-cron402"
+      ]
+    },
+    {
+      "id": "dossier-ai-cron-site",
+      "roleId": "dossier-ai-cron-site",
+      "title": "Dossier AI-Cron Site (pane UI)",
+      "summary": "Owns the GotchiBot pstack dossier pane UI for ai-cron-site: render agents registered on ai-cron-site, each agent's cron schedule, success/fail run history, and logged results. Partner data-ai-cron-site owns fetch/persist/log-result; this role owns render + pane UX only.",
+      "version": "1.0.0",
+      "path": "packs/dossier-ai-cron-site",
+      "tags": [
+        "cron",
+        "dossier",
+        "ui",
+        "ai-cron-site"
+      ],
+      "skills": [
+        "dossier-ai-cron-site",
+        "browser-tool"
+      ]
+    },
+    {
       "id": "fe-marketing",
       "roleId": "fe-marketing",
       "title": "FE Marketing",
@@ -163,6 +221,25 @@
         "market-news-feed",
         "browser-tool",
         "pymupdf"
+      ]
+    },
+    {
+      "id": "game-art-director",
+      "roleId": "game-art-director",
+      "title": "Game Art Director",
+      "summary": "Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels — the user owns image gen.",
+      "version": "1.0.0",
+      "path": "packs/game-art-director",
+      "tags": [
+        "art",
+        "direction",
+        "style-guide",
+        "prompts",
+        "audit"
+      ],
+      "skills": [
+        "browser-tool",
+        "aseprite-tool"
       ]
     },
     {
@@ -370,6 +447,26 @@
         "browser-tool",
         "pymupdf",
         "market-news-feed"
+      ]
+    },
+    {
+      "id": "security-engineer",
+      "roleId": "security-engineer",
+      "title": "Security Engineer",
+      "summary": "Find and fix real vulns in the current GotchiBot/Aarcade tree: threat notes, hardening, secret hygiene, approve-gate checks. Implements fixes; auditor attests.",
+      "version": "1.0.0",
+      "path": "packs/security-engineer",
+      "tags": [
+        "security",
+        "hardening",
+        "vuln",
+        "secrets",
+        "gates"
+      ],
+      "skills": [
+        "browser-tool",
+        "pstack",
+        "abra-vault"
       ]
     },
     {

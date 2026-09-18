@@ -210,6 +210,8 @@ function cmdNew(slug, flags) {
     host: "host",
     report: "report",
     notes: "notes",
+    coverImage: "coverImage",
+    pmHero: "pmHero",
   };
   for (const [flag, field] of Object.entries(map)) {
     if (typeof flags[flag] === "string" && flags[flag] !== "") {
@@ -381,7 +383,7 @@ function usage() {
   pstack-dossier new <slug> [--title "…"] [--goal "…"] [--playbook <label>] [--scope "…"]
       [--context "…"] [--acceptance "…"] [--verify "…"] [--forbidden "…"] [--done "…"]
       [--timebox "…"] [--units "…"] [--principles "…"] [--approaches "…"] [--host auto]
-      [--report "…"] [--notes "…"] [--force]
+[--report "…"] [--notes "…"] [--coverImage "…"] [--pmHero "…"] [--force]
   pstack-dossier show [<slug>] [--json]
   pstack-dossier set <slug> <field> <value…>
   pstack-dossier ready <slug> [--json]

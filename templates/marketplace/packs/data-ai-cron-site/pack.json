@@ -1,0 +1,34 @@
+{
+  "id": "data-ai-cron-site",
+  "roleId": "data-ai-cron-site",
+  "version": "1.0.0",
+  "title": "Data ai-cron-site",
+  "summary": "ai-cron-site / cron402 data layer for patch dossier: schedules, success/fail history, result logging.",
+  "skills": [
+    "data-ai-cron-site",
+    "cron-manager",
+    "pstack",
+    "browser-tool"
+  ],
+  "skillsExternal": [
+    "mcp-cron402"
+  ],
+  "standingDuties": [],
+  "cronHints": [
+    "Schedule truth: `./scripts/pstack-dossier-cron.mjs fetch --json` is the only source of truth for whether the desk's waker is loaded.",
+    "cron402: webhook crons live in Gotchi-Trader config/cron402-jobs.json; status via `npm run cron402 -- status` / mcp-cron402. Never invent a cron402 job a status command does not confirm."
+  ],
+  "tags": [
+    "marketplace"
+  ],
+  "downloadPath": "packs/data-ai-cron-site",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/cron-manager/SKILL.md",
+    "skills/data-ai-cron-site/SKILL.md",
+    "skills/pstack/SKILL.md"
+  ]
+}

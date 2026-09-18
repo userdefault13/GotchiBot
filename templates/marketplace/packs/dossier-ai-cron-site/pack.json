@@ -1,0 +1,30 @@
+{
+  "id": "dossier-ai-cron-site",
+  "roleId": "dossier-ai-cron-site",
+  "version": "1.0.0",
+  "title": "Dossier AI-Cron Site (pane UI)",
+  "summary": "Owns the GotchiBot pstack dossier pane UI for ai-cron-site: render agents registered on ai-cron-site, each agent's cron schedule, success/fail run history, and logged results. Partner data-ai-cron-site owns fetch/persist/log-result; this role owns render + pane UX only.",
+  "skills": [
+    "dossier-ai-cron-site",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "cron402: webhook crons live in Gotchi-Trader config/cron402-jobs.json; status via `npm run cron402 -- status` / mcp-cron402. Never invent a cron402 job a status command does not confirm."
+  ],
+  "tags": [
+    "cron",
+    "dossier",
+    "ui",
+    "ai-cron-site"
+  ],
+  "downloadPath": "packs/dossier-ai-cron-site",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/dossier-ai-cron-site/SKILL.md"
+  ]
+}

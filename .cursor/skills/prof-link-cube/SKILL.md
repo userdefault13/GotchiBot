@@ -1,11 +1,16 @@
 ---
 name: prof-link-cube
 description: >-
-  Hatch (mint) or rehatch (existing hero) a profiled cAavegotchi: intake prefs →
-  design playbook+SOUL+IDENTITY+title → Julius confirms → hatch (mint-sub, never
-  auto) or rehatch (no mint) → wire agent-roles + playbooks + standing duty +
-  fleet sync. Load for /link-cube, /hatch, "spin up a financial analyst", or
-  re-profiling an existing hero onto a new role while keeping a standing duty.
+  Prof. Link-Cube factory NPC: design/author profiled cAavegotchi playbooks,
+  SOULs, IDENTITYs, and template packs. All design/authoring/pack work MUST go
+  through a work tool — skill cursor-cli → ./scripts/cursor-cli.mjs run "…"
+  (default), skill codex-cli → ./scripts/codex-cli.mjs run "…" when UserDefault
+  says codex, skill gotchibot-bridge → node ./scripts/claudemode-ask.mjs "…" for
+  hard reasoning — never DIY playbook/SOUL/IDENTITY edits on the chat model.
+  Flow: intake → design → confirm → summon (mint-sub, never auto) or resummon
+  (no mint) → bind → wire roles/playbooks/standing duty + fleet sync. Aliases:
+  hatch→summon, rehatch→resummon. /link-cube · gotchibot link-cube. Never mint
+  the professor; never steal LINK/YFI/WBTC desks.
 license: MIT
 compatibility: opencode
 metadata:
@@ -13,65 +18,56 @@ metadata:
   workflow: onboarding
 ---
 
-# prof.link-cube
+# Prof. Link-Cube
 
-**Hatch or rehatch a profiled gotchi.** One flow, two endings:
+Factory NPC (`prof-link-cube`) — **not mintable**, **not a fleet hero seat**.
+Identity files: `config/npc/prof-link-cube/{AGENTS,SOUL,IDENTITY}.md`.
 
-```
-intake → design → confirm → hatch(mint) OR rehatch(existing) → wire role/playbook/SOUL/IDENTITY + fleet sync
-```
+## Work tools (hard rule)
 
-## When to load
+| Tool | Invoke |
+|---|---|
+| Cursor (default) | skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` |
+| Codex | skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when UserDefault says codex / Codex |
+| Claude (Hub) | skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` for hard reasoning |
 
-- Julius says: `/link-cube`, `/hatch`, "spin up a financial analyst", "make LINK
-  a financial analyst", "hatch a new gotchi for this job".
-- A named collateral is involved and the hero does not exist yet (hatch path).
+Never DIY playbook / SOUL / IDENTITY / pack edits on the chat model (big-pickle /
+Nemotron / Hy3). Talk and status stay on the chat model. Never `/model` to Cursor or Claude.
 
 ## Flow
 
-1. **intake** — `./scripts/gotchibot link-cube intake --job "financial analyst" --non-coding --voice "…" --anti-jobs "a; b" --collateral link --mode rehatch --hero starter-link-h1-1`
-   (or `--mode hatch` for a new hero; flags or interactive).
-2. **design** — `./scripts/gotchibot link-cube design [--dry-run]` prints the
-   playbook + SOUL + IDENTITY + title. **Never writes target configs.**
-3. **confirm** — `./scripts/gotchibot link-cube confirm [--yes]` applies:
-   agent-roles.json, agent-role-playbooks.json, agent-standing-duties.json, then
-   `openclaw-fleet.mjs sync` re-renders the workspace files. Refuses without
-   `--yes` / `GOTCHIBOT_AUTO_APPROVE=1` / interactive y.
-4a. **hatch** — `./scripts/gotchibot link-cube hatch --confirmed` prints the
-    mint-sub plan only. **This CLI never auto-mints.** The actual mint goes
-    through the `/spawn` overlay (cartridge sim :8791, `mint-sub <spiritId>`,
-    $5 sim). After the hero exists: `link-cube bind --hero <id> --role <role> --yes`.
-4b. **rehatch** — `./scripts/gotchibot link-cube rehatch --hero <id> --role <role> [--standing-duty <key>] [--yes]`
-    rewires an existing hero, no mint, no wallet writes.
-
-## Standing duties (config/agent-standing-duties.json)
-
-A per-hero standing duty rides on top of the role: extra skills + a rendered
-AGENTS.md section + a driven desk window. Keys today: `trader-monitor`
-(Gotchi-Trader paper desk — skills, reportCmd/cycleCmd/scheduleCmd, decision
-table, risk rules, live gate, schedule truth). Rehatching LINK to
-financial-analyst keeps `trader-monitor` so the trader desk never drops.
-
-## Safety (hard)
-
-- design never writes; confirm needs approval; hatch never auto-mints; rehatch/bind never mint.
-- No installs, no secrets, no Blockscout, no token-id hunting.
-- Never steal YFI/WBTC standing desks; LINK's trader desk is a standing duty, not a free seat.
-
-## Bot-template marketplace
-
-Browse/install full-desk packs (role + playbook + AGENTS + vendored skills + standing-duty + cron hints):
-
 ```
+intake → design → confirm → summon(mint-sub, never auto) OR resummon(existing, no mint)
+  → bind → wire agent-roles + playbooks + standing duty + fleet sync
+```
+
+Aliases: `hatch` → `summon`, `rehatch` → `resummon`. Slash: `/link-cube`.
+
+1. **intake** — `./scripts/gotchibot link-cube intake --job "…" …`
+2. **design** — `./scripts/gotchibot link-cube design [--dry-run]` (prints only; never writes targets). Hand real file work to a work tool (`cursor-cli` default).
+3. **confirm** — `./scripts/gotchibot link-cube confirm [--yes]` applies roles/playbooks/standing duties + fleet sync.
+4a. **summon** (`hatch`) — `./scripts/gotchibot link-cube summon --confirmed` (or hatch). Prints mint-sub plan only — **never auto-mints**. Mint via spawn overlay; then `link-cube bind --hero <id> --role <role> --yes`.
+4b. **resummon** (`rehatch`) — `./scripts/gotchibot link-cube resummon --hero <id> --role <role> …` — rewires existing hero, no mint.
+
+Status: `./scripts/gotchibot link-cube status`.
+
+## Template packs
+
+```bash
 ./scripts/gotchibot templates list
 ./scripts/gotchibot templates show <id>
 ./scripts/gotchibot templates install <id|path|url> [--yes]
 ./scripts/gotchibot templates apply <id> --hero <hero> [--yes] [--standing-duty <key>]
 ```
 
-`templates apply` installs if needed, then runs:
-`link-cube resummon --role <roleId> --keep-playbook --hero <hero> [--yes]`.
+Underlying CLI: `./scripts/template-pack.mjs`. Pack authoring edits go through a work tool (`cursor-cli` default).
 
-Catalog: `templates/marketplace/catalog.json`. Web browse page: `templates/marketplace/web/index.html` (publish under aarcadeghst.com/gotchibot-templates).
+Known packs UserDefault often asks for: `game-art-director`, `security-engineer`, `auditor`, `dossier-ai-cron-site`, `data-ai-cron-site` — apply with `gotchibot templates apply <id> --hero <available> --yes`.
 
-Product name is **Prof. Link-Cube** / `link-cube` / `prof-link-cube` — **never Eggbot**.
+## Safety (hard)
+
+- Never mint the professor. No second fleet seat for Prof.
+- Never steal LINK / YFI / WBTC standing desks.
+- design never writes; confirm needs approval; summon never auto-mints; resummon/bind never mint.
+- No installs, no secrets, no Blockscout, no token-id hunting.
+- Address the human as **UserDefault** only.

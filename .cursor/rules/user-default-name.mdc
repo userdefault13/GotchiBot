@@ -1,0 +1,16 @@
+---
+description: Address the human as UserDefault — never use their real name in speech
+alwaysApply: true
+---
+
+# Address the human as UserDefault
+
+In any reply, meeting turn, transcript, voice line, or UI-facing copy:
+
+- Call the human **UserDefault** (or "you").
+- Do **not** use their legal/real name (including first name alone).
+- Do not invent nicknames that are that real name.
+
+Internal docs and code comments may still say the real name where history requires it; **spoken / chat address to the human does not.**
+
+Meeting seats already use id `userdefault` / label UserDefault — keep that.

@@ -464,10 +464,19 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Load whenever coding, debugging, writing patches, or investigating a repo. Bot stays on Hy3 Free (opencode/hy3-free) or Nemotron 3 for talk/route/task. Hard logic/code goes through ./scripts/cursor-cli.mjs → cursor-agent. Do not switch OpenCode's model to Cursor.",
+      "description": "Mandatory for ALL agent work: edits, debug, patches, investigation, desk deliverables, wake units. Bot stays on big-pickle/Nemotron/Hy3 for talk/route/spawn only. Work goes through ./scripts/cursor-cli.mjs → cursor-agent. Do not DIY on the chat model. Do not switch OpenCode's model to Cursor.",
       "path": ".opencode/skills/cursor-cli/SKILL.md",
       "script": "scripts/cursor-cli.mjs",
       "addedAt": "2026-08-26"
+    },
+    "codex-cli": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Alternate coding agent: when UserDefault says codex / Codex, work goes through ./scripts/codex-cli.mjs run → codex exec (non-interactive). Mirror of cursor-cli; never DIY on the chat model. cursor-cli stays the default coding tool.",
+      "path": ".opencode/skills/codex-cli/SKILL.md",
+      "script": "scripts/codex-cli.mjs",
+      "addedAt": "2026-09-17"
     },
     "gotchibot-orchestrator": {
       "status": "approved",
@@ -507,7 +516,7 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Stay on big-pickle; ask Hub VS Code Claude via claudemode-ask/bridge, then react to the reply.",
+      "description": "Claude is a MANDATORY work tool for hard logic (not a model switch): stay on big-pickle; ask Hub VS Code Claude via claudemode-ask / claude-submit, then react to the reply. Never /model @claudemode.",
       "path": ".opencode/skills/gotchibot-bridge/SKILL.md",
       "script": "scripts/claudemode-ask.mjs",
       "addedAt": "2026-09-02"
@@ -715,6 +724,16 @@
       "script": "scripts/passoff.mjs",
       "addedAt": "2026-09-04"
     },
+    "desk-wake": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Common desk-wake for every seated hero: launchd wakes (com.gotchibot.desk-wake.<hero>) run one bounded cycle of the role's autonomy, then report to orch via bot inbox. gotchibot wake list|status|run|install|uninstall. Defer desks (trader/infra/moltbook/comms) keep their dedicated schedule CLIs; no paid cron402 without Julius.",
+      "path": ".opencode/skills/desk-wake/SKILL.md",
+      "script": "scripts/desk-wake.mjs",
+      "config": "config/desk-wakes.json",
+      "addedAt": "2026-09-17"
+    },
     "thread-continuity": {
       "status": "approved",
       "type": "skill",
@@ -763,10 +782,18 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Prof. Link-Cube NPC (not mintable): summon (portal mint) or resummon (existing hero) a profiled cAavegotchi — intake → design → confirm → summon(mint-sub from portal, never auto) or resummon(no mint) → wire agent-roles + playbooks + standing duty + fleet sync. Aliases: hatch→summon, rehatch→resummon. /link-cube · gotchibot link-cube. Never mint the professor.",
+      "description": "Prof. Link-Cube NPC (not mintable): summon (portal mint) or resummon (existing hero) a profiled cAavegotchi — intake → design → confirm → summon(mint-sub from portal, never auto) or resummon(no mint) → wire agent-roles + playbooks + standing duty + fleet sync. Aliases: hatch→summon, rehatch→resummon. /link-cube · gotchibot link-cube. Never mint the professor. Design/authoring/pack work must go through cursor-cli (./scripts/cursor-cli.mjs run); never DIY playbook/SOUL/IDENTITY edits on the chat model.",
       "path": ".opencode/skills/prof-link-cube/SKILL.md",
       "script": "scripts/prof-link-cube.mjs",
       "addedAt": "2026-09-16"
+    },
+    "data-ai-cron-site": {
+      "status": "approved",
+      "type": "skill",
+      "source": "gotchibot",
+      "description": "Patch-dossier data layer for ai-cron-site/cron402: fetch schedules, success/fail history, result logs into pstack dossier. No second cron store; never invent history. Partner dossier-ai-cron-site owns pane UI.",
+      "path": ".opencode/skills/data-ai-cron-site/SKILL.md",
+      "addedAt": "2026-09-18"
     }
   },
   "sources": {

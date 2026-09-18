@@ -1,0 +1,128 @@
+{
+  "defaults": {
+    "intervalSec": 3600,
+    "mode": "chat"
+  },
+  "roles": {
+    "trader-desk": {
+      "enabled": false,
+      "mode": "defer",
+      "scheduleCmd": "./scripts/gotchibot trader schedule status",
+      "note": "LINK's trader desk has its own launchd waker (com.gotchibot.trader-cycle, every 1800 s). Desk-wake only reports status; it never claims that schedule."
+    },
+    "financial-analyst": {
+      "enabled": false,
+      "mode": "defer",
+      "scheduleCmd": "./scripts/gotchibot trader schedule status",
+      "note": "Owns the trader desk \u2014 dedicated waker already exists."
+    },
+    "infra-monitor": {
+      "enabled": false,
+      "mode": "defer",
+      "scheduleCmd": "./scripts/gotchibot infra schedule status",
+      "note": "YFI's 15-min supervisor (com.gotchibot.infra-watch) is the only waker."
+    },
+    "infra-docker": {
+      "enabled": false,
+      "mode": "defer",
+      "scheduleCmd": "./scripts/gotchibot infra schedule status",
+      "note": "Shares the infra supervisor."
+    },
+    "moltbook-watch": {
+      "enabled": false,
+      "mode": "defer",
+      "scheduleCmd": "./scripts/gotchibot moltbook schedule status",
+      "note": "cron402 every 15 min; launchd com.gotchibot.moltbook-watch is fallback only."
+    },
+    "aarcade-comms-handler": {
+      "enabled": false,
+      "mode": "defer",
+      "scheduleCmd": "./scripts/gotchibot comms schedule status",
+      "note": "Daily 23:50 America/Los_Angeles via iMac crontab."
+    },
+    "merch-desk": {
+      "enabled": true,
+      "intervalSec": 3600,
+      "mode": "chat",
+      "prompt": "Desk wake (merch-desk). One bounded cycle: refresh the POD plushie + toy supplier shortlist (skill browser-tool research; score API capability, MOQ, samples, regions, pricing signals; keep the living shortlist under the agreed path). Draft outreach only \u2014 never send, never spend. Report via `./scripts/gotchibot inbox send --to orch --from {{HERO}} --kind report --subject \"merch wake\" --body \"shortlist refreshed; N vendors scored\"`.",
+      "note": "Julius's pilot desk for desk-wake."
+    },
+    "art-director": {
+      "enabled": true,
+      "intervalSec": 7200,
+      "mode": "chat",
+      "prompt": "Desk wake (art-director). One bounded cycle: check passoff inbox + link-cube status for pending art/brand-kit briefs; make progress on one deliverable (files under the agreed path, cited). Never post, spend, or mint."
+    },
+    "customer-support": {
+      "enabled": true,
+      "intervalSec": 3600,
+      "mode": "chat",
+      "prompt": "Desk wake (customer-support). One bounded cycle: triage the support queue + desk mailbox, draft replies for open conversations, escalate blockers to orch. Never post marketing, never spend, never auto-refund."
+    },
+    "product-manager": {
+      "enabled": true,
+      "intervalSec": 7200,
+      "mode": "chat",
+      "prompt": "Desk wake (product-manager). One bounded cycle: review backlog/roadmap, advance one PRD or intake item, check passoff inbox for briefs. Never merge/ship/post/spend."
+    },
+    "fe-marketing": {
+      "enabled": true,
+      "intervalSec": 7200,
+      "mode": "chat",
+      "prompt": "Desk wake (fe-marketing). One bounded cycle: advance one landing/campaign deliverable (files cited). Never touch wallets, mints, or payments."
+    },
+    "marketing-agency": {
+      "enabled": true,
+      "intervalSec": 7200,
+      "mode": "chat",
+      "prompt": "Desk wake (marketing-agency). One bounded cycle: refresh one market-trend brief or route one campaign brief to a seated child. Never post publicly."
+    },
+    "social-media-manager": {
+      "enabled": true,
+      "intervalSec": 7200,
+      "mode": "chat",
+      "prompt": "Desk wake (social-media-manager). One bounded cycle: review the content calendar, draft one channel-native post \u2014 approve-gated, never publish. Never invent metrics."
+    },
+    "mail-courier": {
+      "enabled": true,
+      "intervalSec": 3600,
+      "mode": "chat",
+      "prompt": "Desk wake (mail-courier). One bounded cycle: sweep the project AgentMail inbox, relay replies, remind stale needs_agent_reply threads, inform orch. Never spend."
+    },
+    "accountant": {
+      "enabled": true,
+      "intervalSec": 7200,
+      "mode": "chat",
+      "prompt": "Desk wake (accountant). One bounded cycle: reconcile one quote/PO/invoice in the ledger, flag mismatches, prep AP/AR summary. Never send money."
+    },
+    "cron-manager": {
+      "enabled": false,
+      "mode": "defer",
+      "note": "Coordinates wakes via skill desk-wake / cron402; does not self-wake on a timer"
+    },
+    "abra-vault": {
+      "enabled": true,
+      "intervalSec": 7200,
+      "mode": "chat",
+      "prompt": "Desk wake (abra-vault). One bounded cycle: vault hygiene \u2014 pending requests, key scopes, promote abracadabra. Never print secret values."
+    },
+    "market-news": {
+      "enabled": true,
+      "intervalSec": 3600,
+      "mode": "chat",
+      "prompt": "Desk wake (market-news). One bounded cycle: pull the news regime, write a short digest under the agreed path with sources; dead feed \u2192 unknown."
+    },
+    "market-research": {
+      "enabled": true,
+      "intervalSec": 3600,
+      "mode": "chat",
+      "prompt": "Desk wake (market-research). One bounded cycle: advance one research memo (bottom line \u2192 evidence \u2192 drivers \u2192 risks \u2192 confidence) under the agreed path."
+    },
+    "game-art-director": {
+      "enabled": true,
+      "intervalSec": 7200,
+      "mode": "chat",
+      "prompt": "Desk wake (game-art-director). One bounded cycle: re-read style guide + spec + shot list; advance one deliverable (guide, palette, prompt sheet, spec, audit, or sheet op) under the agreed path, cited. Weekly review/ref sweep stay off unless UserDefault enabled them. Never invent colours or frame counts. Never post, spend, or mint."
+    }
+  }
+}

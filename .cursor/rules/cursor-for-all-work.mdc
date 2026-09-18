@@ -1,0 +1,39 @@
+---
+description: All agents must run real work through a work tool (Cursor CLI default, Codex CLI alternate, Hub Claude for hard logic) — never DIY on the chat model
+alwaysApply: true
+---
+
+# Work tools (hard rule)
+
+Every GotchiBot agent (orchestrator, OpenClaw heroes, OpenCode dispatch sessions)
+does **real work** through a work tool.
+
+## Mandatory
+
+- Edits, patches, debug, investigation, desk deliverables, wake-cycle units →
+  skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` (**default**)
+- When UserDefault says **codex** / **Codex** → skill `codex-cli` →
+  `./scripts/codex-cli.mjs run "…"` (`codex exec`, alternate coding agent)
+- Hard reasoning, `@claudemode`, contested judgment → skill `gotchibot-bridge` →
+  `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`
+  — **never** `/model @claudemode`
+- Workers: desk-terminals open → run → close when the turn should be watched;
+  headless run is fine otherwise
+- Spawn briefs must tell workers to use a work tool for the work
+
+## Chat model only
+
+Talk, status, roster, one-line answers, routing, spawn, summarize, relay Claude
+verbatim — stay on big-pickle / Nemotron / Hy3.
+
+## Forbidden
+
+- DIY product or desk work in the OpenCode/OpenClaw turn and call it done
+- `/model` to Cursor or adding a Cursor provider
+- `/model` to Claude / `@claudemode`
+- Skipping Cursor because the host is iMac (both hosts have `cursor-agent`)
+
+Full skills: `.opencode/skills/cursor-cli/SKILL.md`,
+`.opencode/skills/codex-cli/SKILL.md`,
+`.opencode/skills/gotchibot-bridge/SKILL.md`. Fleet text:
+`config/openclaw/templates/AGENTS.common.md`.

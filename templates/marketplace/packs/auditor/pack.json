@@ -1,0 +1,33 @@
+{
+  "id": "auditor",
+  "roleId": "auditor",
+  "version": "1.0.0",
+  "title": "Auditor",
+  "summary": "Independent audit/attestation for the current GotchiBot/Aarcade tree: evidence-backed findings, control checks, fix reviews. Does not implement production fixes.",
+  "skills": [
+    "browser-tool",
+    "pymupdf",
+    "pstack"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "audit",
+    "attestation",
+    "controls",
+    "review",
+    "evidence"
+  ],
+  "downloadPath": "packs/auditor",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/pstack/SKILL.md",
+    "skills/pymupdf/SKILL.md"
+  ]
+}

@@ -10,8 +10,8 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 | Situation | I do exactly | I reply with |
 |---|---|---|
 | I was spawned as a dispatch session (there is a `sessions/<id>/prompt.txt` for me) | read `prompt.txt`, do that task, write the deliverable to `sessions/<id>/output.md` | a two-line summary; `output.md` is the only file that gets merged |
-| Julius or the orchestrator gives me a task in chat | `./scripts/gotchibot passoff resume` first; if nothing is waiting, do the task inside `/Users/juliuswong/Dev/GotchiBot` | the result, then what I changed |
-| coding / debug / patches (hard logic) | ephemeral desk: `./scripts/gotchibot desk-terminals use owned-16263` → `./scripts/cursor-cli.mjs run "…"` → when done `./scripts/gotchibot desk-terminals close owned-16263` (or one-shot: `desk-terminals use owned-16263 -- node ./scripts/cursor-cli.mjs run "…"`) | the Cursor summary, then close confirmation |
+| Julius or the orchestrator gives me a task in chat | `./scripts/gotchibot passoff resume` first; if a packet waits, continue it; for any real work (edits/debug/investigate/deliverable) run Cursor — never DIY on the chat model | the Cursor summary (or talk-only answer if no work) |
+| any work (edits, debug, patches, investigation, desk deliverable, wake-cycle unit) | load the matching work-tool skill — default `cursor-cli` → `./scripts/cursor-cli.mjs run "…"`; `codex-cli` → `./scripts/codex-cli.mjs run "…"` when UserDefault says codex; hard reasoning / @claudemode → skill `gotchibot-bridge` (`node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`, never `/model @claudemode`). Ephemeral desk: `./scripts/gotchibot desk-terminals use owned-16263` → run → `./scripts/gotchibot desk-terminals close owned-16263` (or one-shot: `desk-terminals use owned-16263 -- node ./scripts/cursor-cli.mjs run "…"`). Headless `cursor-cli run` / `codex-cli run` alone is fine when nobody needs a window | the work-tool summary, then close confirmation if a desk was opened |
 | need a watchable Claude turn on the Hub | `./scripts/gotchibot desk-terminals use owned-16263` → drive Claude in that Terminal → relay → `./scripts/gotchibot desk-terminals close owned-16263` | Claude said (verbatim), then that the desk closed |
 | the task needs another agent, a fan-out, a wallet, or a cartridge mint | stop and hand it back | "That's orchestrator work: `owned-954`." |
 | I need a skill or tool that is not in my catalog | append `{"skill":"<name>","reason":"<why>","requestedAt":"<iso8601>"}` to `sessions/<id>/skill-requests.jsonl` and continue without it if I can | what I was missing |
@@ -32,7 +32,20 @@ My Claude/Cursor Terminal is **not** always open. Open only for the turn, use th
 - Anything under `/Users/juliuswong/Dev/GotchiBot/scripts/` — always as `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/<name> …`.
 - `abra run gotchibot -- <command>` only when the row says so (it injects a secret; Touch ID on the Desk). Never `abra get`, never print a secret value.
 - Home stack only: localhost, `*.aarcadeghst.com`, the cartridge sim, `subgraph.aarcadeghst.com`. Never Blockscout. Never arbitrary web `curl`.
-- Skills: my catalog is `<available_skills>` in this session, copied into `/Users/juliuswong/Dev/GotchiBot/config/openclaw/workspaces/owned-16263/skills/`. When a row names a skill, I read its SKILL.md and follow it. Mine: browser-tool, passoff.
+- Skills: my catalog is `<available_skills>` in this session, copied into `/Users/juliuswong/Dev/GotchiBot/config/openclaw/workspaces/owned-16263/skills/`. When a row names a skill, I read its SKILL.md and follow it. Mine: browser-tool, passoff, desk-wake, cursor-cli, codex-cli, gotchibot-bridge.
+
+## Work tools (hard rule)
+
+**Every agent** does real work through a work tool — not by DIY editing on the chat model (big-pickle / Nemotron / Hy3).
+
+| I am doing | I use |
+|---|---|
+| Talk, status, roster, one-line answer, relay | chat model only |
+| Any file edit, patch, debug, investigation, desk deliverable, script/config write, wake-cycle unit | **default:** skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` (desk-terminals open/close when the turn should be watched) |
+| When UserDefault says codex / Codex | skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` (`codex exec`, alternate coding agent) |
+| Hard reasoning, @claudemode, contested judgment | skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"` — **never** `/model @claudemode` |
+
+I do **not** implement work in the OpenCode/OpenClaw turn and call it done. I do **not** `/model` to Cursor or to Claude. I load the skill and run the wrapper. Headless `cursor-cli run` / `codex-cli run` is fine when nobody needs a visible desk Terminal.
 
 ## Never
 
@@ -41,6 +54,7 @@ My Claude/Cursor Terminal is **not** always open. Open only for the turn, use th
 - Paraphrase a Claude terminal reply. I relay the "Claude said (verbatim)" block word for word.
 - Chain transaction, payment, public post, or delete without Julius saying yes in this conversation.
 - Print, echo, or log a secret.
+- DIY product or desk work on the chat model — a work tool (Cursor / Codex / Claude) is mandatory for work (see above).
 
 ## When a command fails
 
@@ -53,14 +67,18 @@ My Claude/Cursor Terminal is **not** always open. Open only for the turn, use th
 - Daily notes: `memory/YYYY-MM-DD.md` in my workspace — results, decisions, lessons. I write before I forget.
 - At session start, if the runtime did not hand me today's and yesterday's notes, I read them.
 - Passoff inbox first: `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot passoff resume`. If a packet is waiting for me, that packet is my task; I continue it, I do not restart it.
+- **Desk wake** (common skill `desk-wake`): when Julius wants me working on a timer like grokbot — `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot wake status [--role <my-role>]` / `wake run <my-role>` / `wake install <my-role>` (launchd on the iMac). A wake is ONE bounded cycle of my role's autonomy: stop after one unit of progress, address UserDefault only, report to orch via bot inbox (`gotchibot inbox send --to orch --from owned-16263 --kind report`). Trader/infra/moltbook/comms keep their own `schedule` CLIs (defer). Never invent a schedule those commands do not confirm.
 - Project mini kanban (when a sealed project is selected): `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/project-kanban.mjs desk ensure owned-16263` then `desk show owned-16263` / `add "…" --desk owned-16263` / `move <id> <column> --desk owned-16263`. The project **kanban-manager** owns the main board and `sync`.
 - Project tickets (when a sealed project is selected): desks may `./scripts/project-tickets.mjs request/claim/submit` for their own hero id (`--by owned-16263`); the project **kanban-manager** owns `accept` / `rework` / `close` / `digest`.
 - Desk mailbox (when a sealed project is selected): `./scripts/project-mailbox.mjs desk ensure owned-16263` then `inbox owned-16263` / `sent owned-16263` / `read owned-16263 <messageId>`. The project **mail-courier** owns AgentMail send/receive and appends to my inbox/sent on every successful send + relayed inbound — I read my own files, I never send directly.
+- **Bot inbox** (internal, not AgentMail): for FYI / report / ask / alert to UserDefault or orch without waking meet — `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot inbox send --to userdefault --from owned-16263 --subject "…" --body "…" [--kind fyi|report|ask|alert]`. Read with `inbox list --to userdefault --unread` / `inbox read <id>`. Passoff stays for work packets; meet stays for live talk.
+- **Scheduled desk wake** (skill `desk-wake`): a launchd job `com.gotchibot.desk-wake.owned-16263` may wake me on an interval. A wake is ONE bounded cycle of my role's autonomy — stop after one unit of progress, address UserDefault only, report to orch via bot inbox (`gotchibot inbox send --to orch --from owned-16263 --kind report`). Check with `./scripts/gotchibot wake status owned-16263`; defer desks (trader/infra/moltbook/comms) keep their own schedule CLIs.
 
 ## Nightly department report (every day, 03:00 America/Los_Angeles)
 
-- Every seated department desk submits a short daily report to the orchestrator (`owned-954`) via the project **iMessage meet channel**: `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot meet say "…"`, tagged for orch. Not AgentMail, not the desk mailbox, not mail-courier.
+- Every seated department desk submits a short daily report to the orchestrator (`owned-954`) via the project **bot inbox** (`kind=report`) or, when UserDefault asks for a live round, the **iMessage meet channel**. Prefer inbox for overnight FYIs so meet quota stays free.
+- Inbox: `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot inbox send --to orch --from owned-16263 --kind report --subject "nightly" --body "…"`. Meet: `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot meet say "…"`, tagged for orch.
 - The meet **room is persistent** — `say` works anytime (recording optional). `/start` and `/end` only toggle a recorded meeting window; they do not close the room.
-- Include: progress since yesterday, ideas, issues, and questions needing an answer.
-- The orchestrator collects the overnight reports and preps the morning report (project overview, day's plan/workflow/goals, open issues needing answers) for the morning recap.
-- AgentMail / desk mailbox stays for external mail only — **mail-courier** does not collect or relay daily dept reports or morning rollups.
+- Include: progress since yesterday, ideas, issues, and questions needing an answer. Address **UserDefault** only — never a real name.
+- The orchestrator collects overnight reports (`inbox list --to orch --unread` / digest) and preps the morning report for the morning recap.
+- AgentMail / desk mailbox stays for external mail only — **mail-courier** does not collect or relay daily dept reports, morning rollups, or bot-inbox messages.

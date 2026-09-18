@@ -45,6 +45,7 @@ Then passoff / brief that hero with the **game name**, URLs, and ticket/kanban f
 gotchibot templates apply fe-marketing --hero <available> --yes
 gotchibot templates apply brand-design --hero <available> --yes
 gotchibot templates apply art-director --hero <available> --yes
+gotchibot templates apply game-art-director --hero <available> --yes
 gotchibot templates apply customer-support --hero <available> --yes
 gotchibot templates apply market-news --hero <available> --yes
 gotchibot templates apply market-research --hero <available> --yes

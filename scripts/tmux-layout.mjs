@@ -39,6 +39,8 @@ const ALLOWED = new Set([
   "pstack-dossier",
   "refresh-pstack-dossier",
   "leave-pstack-dossier",
+  "enter-cockpit",
+  "boot-cockpit",
   "require-three",
 ]);
 

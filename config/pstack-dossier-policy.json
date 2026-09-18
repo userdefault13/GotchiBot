@@ -118,6 +118,20 @@
       "prompt": "Chief notes (freeform)?",
       "required": false,
       "default": ""
+    },
+    {
+      "id": "coverImage",
+      "prompt": "Cover image path (relative to sessions/pstack/<slug>/ or repo root)?",
+      "required": false,
+      "default": "",
+      "hint": "e.g. assets/cover.png — rendered in the DOSSIER portrait slot via chafa when present; falls back to the unit gotchi ASCII"
+    },
+    {
+      "id": "pmHero",
+      "prompt": "PM cAavegotchi id (hero assigned as project PM)?",
+      "required": false,
+      "default": "",
+      "hint": "e.g. starter-dai-h1-1 — shown in the DOSSIER header when set; never minted here"
     }
   ]
 }

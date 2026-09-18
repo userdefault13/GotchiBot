@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./meet-channel.mjs";
 import { isProfLinkCubeId } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
+import { resolveMeetingsRoot } from "./project-context.mjs";
 import {
   ROOT,
   SESSIONS,
@@ -55,11 +56,18 @@ import {
   clearMeetStatus,
 } from "./meet-status.mjs";
 
-const MEETINGS = `${SESSIONS}/meetings`;
-const CURRENT = `${MEETINGS}/.current`;
+/** Project-scoped when a pstack project is selected; else sessions/meetings. */
+function meetingsRoot() {
+  return resolveMeetingsRoot().root;
+}
+function currentMeetingPointer() {
+  return `${meetingsRoot()}/.current`;
+}
+function meetAgentStatePath() {
+  return `${meetingsRoot()}/.mention-agents.json`;
+}
 const LIST_CACHE = `${SESSIONS}/.focus-list.json`;
 const MEET_AGENTS_DIR = `${ROOT}/.opencode/agents`;
-const MEET_AGENT_STATE = `${MEETINGS}/.mention-agents.json`;
 const MEET_AGENT_MARKER = "gotchibot-meet-agent";
 const RESERVED_AGENT_NAMES = new Set([
   "gotchi",
@@ -79,7 +87,7 @@ const TURN_TIMEOUT_S = 90;
 const CHAIR_TIMEOUT_S = 60;
 
 function ensureMeetings() {
-  mkdirSync(MEETINGS, { recursive: true });
+  mkdirSync(meetingsRoot(), { recursive: true });
 }
 
 function readJson(path, fallback = null) {
@@ -101,7 +109,8 @@ function loadRoleForHero(heroId) {
   if (!id) return { roleId: null, playbook: null };
   const roles = readJson(`${ROOT}/config/agent-roles.json`, {}) || {};
   const playbooks = readJson(`${ROOT}/config/agent-role-playbooks.json`, {}) || {};
-  const roleId = roles[id] || null;
+  // Prof. Link-Cube is an NPC (not in agent-roles / cartridge) — resolve playbook by id.
+  const roleId = roles[id] || (isProfLinkCubeId(id) && playbooks[id] ? id : null);
   if (!roleId) return { roleId: null, playbook: null };
   return { roleId, playbook: playbooks[roleId] || null };
 }
@@ -352,7 +361,7 @@ function agentSlugFor(p, used) {
 }
 
 function clearMeetMentionAgents() {
-  const state = readJson(MEET_AGENT_STATE, null);
+  const state = readJson(meetAgentStatePath(), null);
   const files = Array.isArray(state?.files) ? state.files : [];
   for (const file of files) {
     const base = String(file || "").replace(/^.*\//, "");
@@ -370,7 +379,7 @@ function clearMeetMentionAgents() {
     }
   }
   try {
-    unlinkSync(MEET_AGENT_STATE);
+    unlinkSync(meetAgentStatePath());
   } catch {
     /* ok */
   }
@@ -404,7 +413,7 @@ function syncMeetMentionAgents(meeting) {
     writeFileSync(`${MEET_AGENTS_DIR}/${file}`, body);
     files.push(file);
   }
-  writeJson(MEET_AGENT_STATE, {
+  writeJson(meetAgentStatePath(), {
     meetingId: meeting.id,
     files,
     updatedAt: new Date().toISOString(),
@@ -413,20 +422,16 @@ function syncMeetMentionAgents(meeting) {
 }
 
 function userParticipant() {
-  let name = "Julius";
+  let name = "UserDefault";
   try {
     const md = readFileSync(`${ROOT}/USER.md`, "utf8");
-    const call = md.match(/\*\*What to call them:\*\*\s*(.+)/i);
-    if (call) name = call[1].trim().split(/\s+/)[0];
-    else {
-      const nm = md.match(/\*\*Name:\*\*\s*(.+)/i);
-      if (nm) name = nm[1].trim().split(/\s+/)[0];
-    }
+    const call = md.match(/\*\*What to call them:\*\*\s*([^\n(]+)/i);
+    if (call) name = call[1].trim().split(/\s+/)[0] || "UserDefault";
   } catch {
     /* default */
   }
-  const id = name.toLowerCase() || "user";
-  return { id, role: "user", name };
+  // Meeting seat id stays stable; display name is always UserDefault (or USER.md call-name).
+  return { id: "userdefault", role: "user", name };
 }
 
 function displayNameFor(hero) {
@@ -438,7 +443,7 @@ function displayNameFor(hero) {
 }
 
 function meetingDir(id) {
-  return `${MEETINGS}/${id}`;
+  return `${meetingsRoot()}/${id}`;
 }
 
 function meetingPath(id) {
@@ -451,7 +456,7 @@ function transcriptPath(id) {
 
 export function currentMeetingId() {
   try {
-    const raw = readFileSync(CURRENT, "utf8").trim();
+    const raw = readFileSync(currentMeetingPointer(), "utf8").trim();
     return raw || null;
   } catch {
     return null;
@@ -469,7 +474,7 @@ export function loadCurrentMeeting() {
   const m = loadMeeting(id);
   if (!m || m.status !== "open") {
     try {
-      unlinkSync(CURRENT);
+      unlinkSync(currentMeetingPointer());
     } catch {}
     return null;
   }
@@ -494,12 +499,12 @@ function saveMeeting(meeting) {
 
 function setCurrent(id) {
   ensureMeetings();
-  writeFileSync(CURRENT, `${id}\n`);
+  writeFileSync(currentMeetingPointer(), `${id}\n`);
 }
 
 function clearCurrent() {
   try {
-    unlinkSync(CURRENT);
+    unlinkSync(currentMeetingPointer());
   } catch {}
 }
 
@@ -902,10 +907,41 @@ function extractReplyText(result) {
 
 function mentionsFromText(text) {
   const out = [];
-  const re = /@([A-Za-z0-9_-]+)/g;
+  // Allow dots in tags so @Prof.Link-Cube from the autocomplete menu counts.
+  const re = /@([A-Za-z0-9][A-Za-z0-9._-]*)/g;
   let m;
-  while ((m = re.exec(String(text || "")))) out.push(m[1]);
+  while ((m = re.exec(String(text || "")))) {
+    const tok = m[1].replace(/\.+$/, ""); // trim trailing dots
+    if (tok && !out.includes(tok)) out.push(tok);
+  }
   return out;
+}
+
+/** Orch chair aliases — never confuse with Prof. Link-Cube / other agents. */
+function isChairAlias(token) {
+  const t = String(token || "")
+    .trim()
+    .replace(/^@/, "")
+    .toLowerCase()
+    .replace(/[._-]+/g, "");
+  return (
+    t === "gotchi" ||
+    t === "orch" ||
+    t === "orchestrator" ||
+    t === "chair" ||
+    t === "owned954" ||
+    t === "954"
+  );
+}
+
+function chairParticipant(meeting) {
+  if (!meeting) return null;
+  const parts = (meeting.participants || []).filter((p) => p.role !== "user");
+  return (
+    parts.find((p) => p.id === meeting.chairId) ||
+    parts.find((p) => p.role === "chair") ||
+    null
+  );
 }
 
 function matchParticipant(meeting, token) {
@@ -914,24 +950,42 @@ function matchParticipant(meeting, token) {
     .replace(/^@/, "")
     .toLowerCase();
   if (!t) return null;
-  const parts = meeting.participants.filter((p) => p.role !== "user");
-  const exact = parts.find(
-    (p) =>
-      p.id.toLowerCase() === t ||
-      String(p.name || "").toLowerCase() === t,
-  );
+  // @Gotchi / @orch / @chair → orchestrator chair only (never Prof / NPC).
+  if (isChairAlias(t)) return chairParticipant(meeting);
+  const norm = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "");
+  const tNorm = norm(t);
+  const parts = (meeting.participants || []).filter((p) => p.role !== "user");
+  const exact = parts.find((p) => {
+    const id = String(p.id || "").toLowerCase();
+    const name = String(p.name || "").toLowerCase();
+    return (
+      id === t ||
+      name === t ||
+      norm(id) === tNorm ||
+      norm(name) === tNorm
+    );
+  });
   if (exact) return exact;
   const hits = parts.filter((p) => {
+    // Never fuzzy-match the chair aliases onto anyone else.
+    if (isProfLinkCubeId(p.id) && isChairAlias(t)) return false;
     const hay = `${p.id} ${p.name || ""}`.toLowerCase();
-    return hay.includes(t);
+    return hay.includes(t) || norm(hay).includes(tNorm);
   });
   return hits.length === 1 ? hits[0] : null;
 }
 
-/** Bare names/ids in text (no @). Longest token first so starter-link-h1-1 beats link. */
+/**
+ * Bare names only for direct address ("Gotchi, …" / "Prof …" at the start of
+ * a clause). Mid-sentence mentions like "call prof. link-cube" or "worker gotchi"
+ * must NOT steal the turn from the chair — those are instructions *about* them.
+ */
 function bareNameMentions(meeting, text) {
-  const raw = String(text || "");
-  if (!raw.trim()) return [];
+  const raw = String(text || "").trim();
+  if (!raw) return [];
   const parts = (meeting.participants || []).filter((p) => p.role !== "user");
   const cands = [];
   for (const p of parts) {
@@ -945,7 +999,11 @@ function bareNameMentions(meeting, text) {
   for (const c of cands) {
     if (out.includes(c.id)) continue;
     const esc = c.tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`(^|[^A-Za-z0-9_-])${esc}(?=$|[^A-Za-z0-9_-])`, "i");
+    // Start of message, or after .!? / newline, optional @, then name + ,/: or EOS.
+    const re = new RegExp(
+      `(?:^|[.!?]\\s+|\\n)\\s*@?${esc}(?:\\s*[,:]|\\s+|$)`,
+      "i",
+    );
     if (re.test(raw)) out.push(c.id);
     if (out.length >= 2) break;
   }
@@ -967,14 +1025,27 @@ function everyoneSpeakers(meeting) {
   return [...(chair ? [chair] : []), ...rest].map((p) => p.id);
 }
 
+/**
+ * Who the user addressed. @mentions win; bare names only for direct address.
+ * Chair aliases always resolve to meeting.chairId.
+ */
 function resolveMentionedSpeakers(meeting, userText) {
   const mentioned = [];
   for (const tok of mentionsFromText(userText)) {
+    if (/^(everyone|all|channel|here)$/i.test(tok)) continue;
     const hit = matchParticipant(meeting, tok);
     if (hit && hit.role !== "user" && !mentioned.includes(hit.id)) mentioned.push(hit.id);
   }
-  for (const id of bareNameMentions(meeting, userText)) {
-    if (!mentioned.includes(id)) mentioned.push(id);
+  // Only consult bare names when there was no @mention at all.
+  if (!mentioned.length) {
+    for (const id of bareNameMentions(meeting, userText)) {
+      if (!mentioned.includes(id)) mentioned.push(id);
+    }
+  }
+  // If the chair was addressed (via @Gotchi etc.), they lead — keep them first.
+  const chair = chairParticipant(meeting);
+  if (chair && mentioned.includes(chair.id) && mentioned[0] !== chair.id) {
+    return [chair.id, ...mentioned.filter((id) => id !== chair.id)].slice(0, 2);
   }
   return mentioned.slice(0, 2);
 }
@@ -1268,13 +1339,23 @@ async function chairPickSpeakers(meeting, userText) {
     };
   }
 
-  // Morning meeting: deterministic orch chair + next/@mentions — not LLM roulette.
+  // Explicit @mentions (and direct-address bare names) win for EVERY meeting
+  // kind — never let the LLM reroute @Gotchi to Prof. Link-Cube.
+  const named = resolveMentionedSpeakers(meeting, userText);
+  if (named.length) {
+    return {
+      speakers: named,
+      note: "named @mention(s)",
+      fallback: false,
+    };
+  }
+
+  // Morning meeting: deterministic orch chair + next — not LLM roulette.
   // Agents also via /colabo or morning collect/present.
   if (meeting.kind === "morning-recap") {
     const speakers = morningDefaultSpeakers(meeting, userText);
     let note = "morning: orchestrator chair leads";
-    if (resolveMentionedSpeakers(meeting, userText).length) note = "morning: named agent(s)";
-    else if (isNextSpeakerIntent(userText)) note = "morning: next agent after chair cue";
+    if (isNextSpeakerIntent(userText)) note = "morning: next agent after chair cue";
     else if (isGreetingOrAck(userText)) note = "morning: orchestrator chair greets";
     return { speakers, note, fallback: false };
   }
@@ -1290,11 +1371,13 @@ async function chairPickSpeakers(meeting, userText) {
     "Return ONLY JSON: {\"speakers\": [\"id\", ...], \"note\": \"optional short reason\"}",
     "speakers: 0, 1, or 2 participant ids. Never the user.",
     "For greetings / thanks / ack: speakers must be the chair id only (you).",
-    "Prefer @mentions in the user text (e.g. @LINK → that hero's id).",
+    "Prefer @mentions in the user text (e.g. @LINK → that hero's id, @Gotchi → chair id).",
     "Do not pick a random agent when the user addressed the room generally — pick the chair.",
+    "If the user talks ABOUT an agent in the third person (call X, ask X, assign via X), pick the chair — they are instructing you, not pinging X.",
+    "Prof. Link-Cube is never the chair. Chair id is the orchestrator below.",
     `Meeting: ${meeting.id}`,
     `Topic: ${meeting.topic}`,
-    `Chair id (orchestrator): ${meeting.chairId}`,
+    `Chair id (orchestrator / @Gotchi): ${meeting.chairId}`,
     "Participants (eligible speakers):",
     roster || "(none)",
     "",
@@ -1330,6 +1413,42 @@ async function chairPickSpeakers(meeting, userText) {
   };
 }
 
+/** Compact NPC digest for Prof. Link-Cube meet turns (factory CLIs + Cursor rule). */
+function profLinkCubeMeetDigest() {
+  const dir = join(ROOT, "config/npc/prof-link-cube");
+  const readCap = (name, maxLines = 12) => {
+    const path = join(dir, name);
+    try {
+      const raw = readFileSync(path, "utf8");
+      return raw.split("\n").slice(0, maxLines).join("\n").trim();
+    } catch {
+      return `(missing ${name})`;
+    }
+  };
+  let agents = "";
+  try {
+    agents = readFileSync(join(dir, "AGENTS.md"), "utf8").trim();
+  } catch {
+    agents = "(missing AGENTS.md)";
+  }
+  const soul = readCap("SOUL.md", 12);
+  const identity = readCap("IDENTITY.md", 12);
+  let digest = [
+    "--- factory NPC digest (prof-link-cube) ---",
+    agents,
+    "",
+    "--- SOUL (excerpt) ---",
+    soul,
+    "",
+    "--- IDENTITY (excerpt) ---",
+    identity,
+    "--- end digest ---",
+  ].join("\n");
+  const CAP = 4000;
+  if (digest.length > CAP) digest = `${digest.slice(0, CAP)}\n…(truncated)`;
+  return digest;
+}
+
 async function agentReply(meeting, speakerId) {
   const p = meeting.participants.find((x) => x.id === speakerId);
   const turns = readTranscript(meeting.id);
@@ -1346,13 +1465,21 @@ async function agentReply(meeting, speakerId) {
         "The latest user line is addressed to @everyone: each gotchi answers it directly, one after another. Give your own answer for your own desk — do not summarize or speak for the others.",
       ]
     : [];
+  const profLines = isProfLinkCubeId(speakerId)
+    ? [
+        profLinkCubeMeetDigest(),
+        "Factory CLIs: ./scripts/gotchibot link-cube (intake/design/confirm/summon/resummon/bind/status) and ./scripts/template-pack.mjs / gotchibot templates. After this turn / for real work (playbook/SOUL/IDENTITY/pack edits), run a work tool — ./scripts/cursor-cli.mjs run \"…\" (default), ./scripts/codex-cli.mjs run \"…\" when UserDefault says codex, or node ./scripts/claudemode-ask.mjs \"…\" for hard reasoning — never DIY edits on the chat model.",
+      ]
+    : [];
   const prompt = [
     "You are in a GotchiBot meeting. Reply in 3–8 sentences as this gotchi. Don't chair unless you are the chair. Don't repeat others.",
+    "Address the human as UserDefault only — never use any other personal name.",
     ...everyoneCue,
     `Your id: ${speakerId}`,
     `Your name: ${p?.name || speakerId}`,
     `Your meeting role: ${p?.role || "agent"}`,
     ...jobLines,
+    ...profLines,
     `Topic: ${meeting.topic}`,
     `Participants: ${(meeting.participants || []).map((x) => `${x.name || x.id} (${x.role})`).join(", ")}`,
     "",

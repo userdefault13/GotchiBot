@@ -1,0 +1,12 @@
+{
+  "title": "Dossier AI-Cron Site (pane UI)",
+  "summary": "Owns the GotchiBot pstack dossier pane UI for ai-cron-site: render agents registered on ai-cron-site, each agent's cron schedule, success/fail run history, and logged results. Partner data-ai-cron-site owns fetch/persist/log-result; this role owns render + pane UX only.",
+  "skills": [
+    "dossier-ai-cron-site",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "reportCmd": "./scripts/gotchibot pstack dossier show --json",
+  "autonomy": "One job: extend the existing pstack dossier pane (scripts/pstack-window.mjs / pstack-dossier) to show real ai-cron-site agents, schedules, success/fail history, and logged results. Work only in ~/dev/GotchiBot on Mac.lan — never cloud, never clone elsewhere. Do not invent cron data or parallel dossier UIs. Read existing patch/pstack-dossier + cron402/ai-cron-site surfaces first. Data contract with data-ai-cron-site: agentId/name, schedule (cron + human label), lastRuns[{id,startedAt,finishedAt,status:success|fail,logSnippet|logPath}], status idle|running|ok|error — lock to real shapes before hardcoding. Align naming with dossier-ai-cron-site. Anti-jobs: no wallet/mint/spend, no unrelated refactors, no fake history, no cloud agents. Prove with a real local check; report files changed + how to verify.",
+  "scheduleCmd": ""
+}

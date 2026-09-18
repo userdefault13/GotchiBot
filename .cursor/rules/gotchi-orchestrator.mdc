@@ -98,16 +98,23 @@ LINK/YFI/WBTC). VERIFY the real artifact before reporting done. Cancel:
 
 1. **Delegate-first**: for real work, run `scripts/delegate-pick.mjs` and assign
    to an available local/remote agent before implementing yourself.
-2. **Tailscale remote**: when pick/`--host auto` chooses iMac, spawn via
+2. **Work tools (hard rule)**: spawn briefs and workers must run edits/debug/
+   investigation/deliverables via a work tool — `./scripts/cursor-cli.mjs run "…"`
+   (skill `cursor-cli`, default), `./scripts/codex-cli.mjs run "…"` (skill
+   `codex-cli`, when UserDefault says codex), or `node ./scripts/claudemode-ask.mjs "…"`
+   (skill `gotchibot-bridge`, hard reasoning — never `/model @claudemode`). Do not
+   DIY on big-pickle/Nemotron/Hy3. Talk/route/status only stay on the chat model.
+   See `.cursor/rules/cursor-for-all-work.mdc`.
+3. **Tailscale remote**: when pick/`--host auto` chooses iMac, spawn via
    `scripts/gotchi-orchestrate.mjs spawn --host imac` (or `remote-spawn.mjs`).
    Do not run local dispatch and call it remote.
-3. **SUB escalate**: if focus is SUB and the user sends an orchestrator task,
+4. **SUB escalate**: if focus is SUB and the user sends an orchestrator task,
    run `scripts/agent-focus.mjs chat "…"`. On `escalated: true`, continue as
    gotchi/ORCH with that prompt (delegate-first).
-4. Secrets: never request raw values. If a sub-agent needs a credential, tell
+5. Secrets: never request raw values. If a sub-agent needs a credential, tell
    the user to fetch it through abracadabra (`abra run gotchibot -- ...`).
-5. Never edit files under `sessions/` except reading outputs and state.
-6. Report progress concisely: what spawned, what's running, what merged.
-7. If `scripts/opencode-dispatch.sh list` or remote list shows stuck `running`
+6. Never edit files under `sessions/` except reading outputs and state.
+7. Report progress concisely: what spawned, what's running, what merged.
+8. If `scripts/opencode-dispatch.sh list` or remote list shows stuck `running`
    sessions older than 30 minutes, flag them to the user instead of killing
    them silently.

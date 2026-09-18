@@ -26,6 +26,13 @@ if [ "$meet" = "1" ] || [ "$channel" = "1" ]; then
   exit 0
 fi
 
+# Pstack dossier center pane — root so app mouse/keys reach pstack-window.
+pstack="$(tmux display -p "#{@gotchibot-pstack-dossier}" 2>/dev/null || echo "")"
+if [ "$pstack" = "1" ]; then
+  tmux switch-client -T root 2>/dev/null || true
+  exit 0
+fi
+
 if [ "$chat" = "1" ]; then
   tmux switch-client -T gotchi-chat 2>/dev/null || true
   exit 0
@@ -38,7 +45,9 @@ fi
 
 case "$idx" in
   1)
-    if [ "$mode" = "files-max" ] || [ "$mode" = "avatar-max" ]; then
+    if [ "$mode" = "pstack-dossier" ]; then
+      tmux switch-client -T root 2>/dev/null || true
+    elif [ "$mode" = "files-max" ] || [ "$mode" = "avatar-max" ]; then
       tmux switch-client -T gotchi-files 2>/dev/null || true
     else
       tmux switch-client -T gotchi-chat 2>/dev/null || true

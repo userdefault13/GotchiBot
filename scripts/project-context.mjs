@@ -150,6 +150,7 @@ export function ensureProjectDirs(slug = currentProjectSlug()) {
   mkdirSync(join(root, "notes"), { recursive: true });
   mkdirSync(join(root, "desks"), { recursive: true });
   mkdirSync(join(root, "tickets"), { recursive: true });
+  mkdirSync(join(root, "inbox"), { recursive: true });
   const rp = rosterPath(slug);
   if (!existsSync(rp)) {
     writeFileSync(
@@ -282,6 +283,23 @@ export function resolvePassoffRoot() {
     return { root: projectPassoffDir(slug), project: slug, scoped: true };
   }
   return { root: join(SESSIONS, "passoff"), project: null, scoped: false };
+}
+
+/** Internal bot inbox (not AgentMail). Project-scoped when a project is selected. */
+export function projectInboxDir(slug = currentProjectSlug()) {
+  const root = projectRoot(slug);
+  return root ? join(root, "inbox") : null;
+}
+
+export function resolveInboxRoot() {
+  const slug = currentProjectSlug();
+  if (slug) {
+    ensureProjectDirs(slug);
+    return { root: projectInboxDir(slug), project: slug, scoped: true };
+  }
+  const fallback = join(SESSIONS, "inbox");
+  mkdirSync(fallback, { recursive: true });
+  return { root: fallback, project: null, scoped: false };
 }
 
 function usage() {

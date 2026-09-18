@@ -177,15 +177,25 @@ show_cockpit() {
 ensure_desk_after_cockpit() {
   [ -n "${TMUX:-}" ] || return 0
   local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
-  local count c1 c2
+  local count c1 c2 mode
   count="$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')"
   c1="$(tmux display -p -t "$sess:work.1" '#{pane_start_command}' 2>/dev/null || true)"
   c2="$(tmux display -p -t "$sess:work.2" '#{pane_start_command}' 2>/dev/null || true)"
+  mode="$(tr -d '[:space:]' < "$ROOT/sessions/.layout-mode" 2>/dev/null || echo normal)"
   if [ "${count:-0}" -eq 3 ] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *avatar-pane* ]]; then
     return 0
   fi
   # Meet gallery is a valid 3-pane state — do not force desk refresh over it.
   if [ "${count:-0}" -eq 3 ] && [[ "$c1" == *meet-room* ]] && [[ "$c2" == *meet-channel* ]]; then
+    return 0
+  fi
+  # Cockpit → Pstack mounts pstack-window on work.1 (center) and keeps the
+  # avatar on work.2. Do NOT refresh (refresh peels dossier back to cockpit
+  # via boot_cockpit_desk).
+  if [ "${count:-0}" -eq 3 ] && [[ "$c1" == *pstack-window* ]] && [[ "$c2" == *avatar-pane* ]]; then
+    return 0
+  fi
+  if [ "$mode" = "pstack-dossier" ]; then
     return 0
   fi
   tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" refresh"
@@ -197,6 +207,12 @@ if [ "${GOTCHIBOT_COCKPIT:-}" = "1" ]; then
   progress_end
   show_cockpit
   export GOTCHIBOT_SKIP_COCKPIT=1
+fi
+
+# Cockpit → Pstack: work.1 was respawned as the dossier TUI (pstack-window.mjs).
+# Never launch OpenCode over it — exit cleanly; the pane already runs the dossier.
+if [ "$(tr -d '[:space:]' < "$ROOT/sessions/.layout-mode" 2>/dev/null || echo normal)" = "pstack-dossier" ]; then
+  quit_to_terminal
 fi
 
 show_meet() {

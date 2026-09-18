@@ -1,0 +1,31 @@
+{
+  "id": "game-art-director",
+  "roleId": "game-art-director",
+  "version": "1.0.0",
+  "title": "Game Art Director",
+  "summary": "Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels — the user owns image gen.",
+  "skills": [
+    "browser-tool",
+    "aseprite-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "art",
+    "direction",
+    "style-guide",
+    "prompts",
+    "audit"
+  ],
+  "downloadPath": "packs/game-art-director",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/aseprite-tool/SKILL.md",
+    "skills/browser-tool/SKILL.md"
+  ]
+}

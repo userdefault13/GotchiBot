@@ -32,6 +32,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot project [show|new|set|ready]  unsupervised project intake (/project modal)
   gotchibot gotchi-mode [status|env|model|ensure] [--json]  OpenCode TUI → iMac orchestrator session
   gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
+  gotchibot codex run|resume|status  Codex CLI (alternate coding agent)
   gotchibot list                  session table
   gotchibot agents [--json]       cAavegotchis + MBP/iMac sessions (/list)
   gotchibot switch [n|id]         list agents, or switch avatar+direct chat (/switch)
@@ -41,6 +42,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot project-kanban …            sealed project + desk mini task boards
   gotchibot project-tickets …           agent request/claim/submit tickets (PKM owns lifecycle)
   gotchibot project-mailbox …           per-desk local mailboxes (inbox+sent) under project AgentMail
+  gotchibot inbox send|list|read|archive|digest|unread|tui   internal bot mail (not AgentMail)
   gotchibot meet start|open|invite|status|say|morning|colabo|end   persistent room (/meet); start/end = record
   gotchibot model-policy [show|pick|candidates|enforce]  working-models-only policy
   gotchibot tui-policy [show|enforce|apply]  Tab cycles in OpenCode TUI (no tmux steal)
@@ -78,10 +80,13 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot passoff send <to> [--from …] [--note "…"] [--next "…"] [--dry-run]
                                   hand live work to another gotchi (packet + message)
   gotchibot passoff list|show|accept|resume|drop  the receiving side (/passoff)
+  gotchibot wake status|list|run|install|uninstall [hero|role|--all] [--role <id>] [--json]
+                                  common desk-wake (skill desk-wake; launchd on iMac;
+                                  defer desks keep their own schedule CLIs)
   gotchibot pstack init|status|list|roles|brief|unit|ledger|decision
                                   pstack chief program store (skill: pstack; never spawns)
   gotchibot pstack dossier new|show|set|ready|list|fields|current
-                                  pstack dossier SoT per program slug (wizard pane: work.2)
+                                  pstack dossier SoT per program slug (wizard pane: work.1 center)
   gotchibot ralph start|status|cancel|list|bump
                                   ralph-loop store (skill: ralph; never spawns; hooks drive iterations)
   gotchibot add-dir <path>|list|remove <path>|clear
@@ -242,10 +247,10 @@ cmd_tmux() {
   # Bare name for attach/layout targets — set-option rejects -t =name on tmux 3.7c.
   if tmux has-session -t "=$sess_name" 2>/dev/null; then
     progress_pulse "GotchiBot · refreshing desk…" 8
-    "$layout" leave-meet-gallery 2>/dev/null || true
-    if ! "$layout" refresh; then
-      progress_fail "GotchiBot · layout refresh failed"
-      echo "orchestrator layout refresh failed — try: tmux kill-session -t '=$sess_name' && ./scripts/gotchibot tmux" >&2
+    # Always reattach into normal desk + cockpit (peels meet / pstack / max modes).
+    if ! "$layout" enter-cockpit; then
+      progress_fail "GotchiBot · cockpit boot failed"
+      echo "orchestrator enter-cockpit failed — try: tmux kill-session -t '=$sess_name' && ./scripts/gotchibot tmux" >&2
       exit 1
     fi
     progress_pulse "GotchiBot · attaching…" 12
@@ -356,6 +361,10 @@ cmd_multitask() {
 
 cmd_cursor() {
   exec node "$ROOT/scripts/cursor-cli.mjs" "$@"
+}
+
+cmd_codex() {
+  exec node "$ROOT/scripts/codex-cli.mjs" "$@"
 }
 
 cmd_gotchi_mode() {
@@ -500,6 +509,10 @@ cmd_project_mailbox() {
   exec node "$ROOT/scripts/project-mailbox.mjs" "$@"
 }
 
+cmd_inbox() {
+  exec node "$ROOT/scripts/bot-inbox.mjs" "$@"
+}
+
 cmd_cockpit() {
   if command -v abra >/dev/null 2>&1; then
     exec abra run gotchibot -- node "$ROOT/scripts/agent-focus.mjs" cockpit "$@"
@@ -621,6 +634,7 @@ case "$cmd" in
   project-kanban|proj-kanban) cmd_project_kanban "$@" ;;
   project-tickets|proj-tickets|tickets) cmd_project_tickets "$@" ;;
   project-mailbox|proj-mailbox|mailbox) cmd_project_mailbox "$@" ;;
+  inbox|bot-inbox) cmd_inbox "$@" ;;
   meet) cmd_meet "$@" ;;
   model-policy|models-policy)
     exec node "$ROOT/scripts/model-policy.mjs" "$@"
@@ -686,6 +700,7 @@ case "$cmd" in
   roster) cmd_roster "$@" ;;
   handoff) cmd_handoff "$@" ;;
   passoff) exec node "$ROOT/scripts/passoff.mjs" "$@" ;;
+  wake|desk-wake) exec node "$ROOT/scripts/desk-wake.mjs" "$@" ;;
   pstack)
     if [ "${1:-}" = "dossier" ]; then
       shift
@@ -707,6 +722,7 @@ case "$cmd" in
   mode) cmd_mode "$@" ;;
   gotchi-mode) cmd_gotchi_mode "$@" ;;
   cursor) cmd_cursor "$@" ;;
+  codex) cmd_codex "$@" ;;
   checkpoint) cmd_checkpoint "$@" ;;
   reset) cmd_reset "$@" ;;
   onboarding) exec node "$ROOT/scripts/onboarding-gate.mjs" ;;

@@ -65,17 +65,27 @@ Your session dir contains:
    fan-out completion.
 4. Stay inside this repo's working tree unless the prompt says otherwise
    (or `/work` when spawned with `--sandbox`).
-5. **Thread continuity** — on follow-ups that continue the last edit ("parent",
+5. **Work tools (hard rule)** — any file edit, patch, debug, investigation, or
+   desk deliverable goes through a work tool — skill `cursor-cli` →
+   `./scripts/cursor-cli.mjs run "…"` (default), skill `codex-cli` →
+   `./scripts/codex-cli.mjs run "…"` when UserDefault says codex, skill
+   `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or
+   `./scripts/gotchibot claude-submit "…"` for hard reasoning / @claudemode.
+   Do **not** DIY on big-pickle / Nemotron / Hy3. Talk/route/status/one-line
+   answers stay on the chat model. Do not `/model` to Cursor or Claude; do not
+   add a Cursor provider. Desk-terminals open/close when the turn should be
+   watched; headless `cursor-cli run` / `codex-cli run` is fine otherwise.
+6. **Thread continuity** — on follow-ups that continue the last edit ("parent",
    "tighter", "same element"), load skill `thread-continuity`
    (`.opencode/skills/thread-continuity/SKILL.md`): reuse last files/selectors
    before any full-tree search. Cross-session: `sessions/HANDOFF.md`,
    `aarcadeghst-changes` / `changes.json`, or `cursor-cli.mjs resume`.
-6. **Passoff inbox** — before you plan a fresh job, run
+7. **Passoff inbox** — before you plan a fresh job, run
    `./scripts/gotchibot passoff resume`. If another gotchi handed you work, that
    packet is your task: continue it, do not restart it, do not redo what its
    "Done so far" lists. Handing your own work on? `passoff send <hero> --note
    "what's done" --next "what's left"` (skill `passoff`).
-7. **Sandbox spawn** (`--sandbox`): hero must be `available`. Never auto-mint.
+8. **Sandbox spawn** (`--sandbox`): hero must be `available`. Never auto-mint.
    Never steal LINK/YFI/WBTC standing desks. Promote with
    `./scripts/gotchibot sandbox promote <id> <dest>`.
 
@@ -124,11 +134,11 @@ they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
 | Tier | Model | Use |
 |---|---|---|
 | default | `opencode/big-pickle` (`--model nim`; free Zen) | talk, route, spawn, summarize |
-| task | Nemotron Lightning / Ultra free (`opencode/nemotron-*`) | also fine for tasking; `/model heavy` = Ultra free |
-| hard logic | `./scripts/cursor-cli.mjs` → `cursor-agent` | coding / debug / patches (Cursor Pro+ on **MBP or iMac**) |
-| escalation | `deepseek/deepseek-v4-pro` | paid OpenCode fallback (needs DEEPSEEK_API_KEY) |
-| fallback | `ollama/qwen2.5:3b` | offline/private |
-| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | default model alias for spawned sub-agents; resolves via `config/models.auto.json` `subagentPrefer` + **model-policy** (`config/model-policy.json`); see `skills/delegate-model` + `skills/model-policy` |
+| task | Nemotron Lightning / Ultra free (`opencode/nemotron-*`) | talk/route/task only; `/model heavy` = Ultra free |
+| **all work** | `./scripts/cursor-cli.mjs` → `cursor-agent` (default) · `./scripts/codex-cli.mjs` → `codex exec` (when UserDefault says codex) · `gotchibot-bridge` → Hub Claude (hard logic) | edits, debug, patches, investigation, desk deliverables — mandatory, not optional |
+| escalation | `deepseek/deepseek-v4-pro` | paid OpenCode fallback (needs DEEPSEEK_API_KEY); still prefer cursor-cli for work when available |
+| fallback | `ollama/qwen2.5:3b` | offline/private talk only |
+| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | spawn chat/route model; the worker then runs a **work tool** (cursor-cli default) for the actual work |
 
 
 NVIDIA_API_KEY flows through abracadabra (`abra run gotchibot -- ...`); opencode
@@ -195,7 +205,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 ## Models
 
 - Bot task / routing / talk: `opencode/big-pickle` (`nim`, default free Zen). Lightning/Ultra free remain available. `/model heavy` → `opencode/nemotron-3-ultra-free`. Do not switch OpenCode to a Cursor provider.
-- Hard coding / debugging / investigation: `./scripts/cursor-cli.mjs run "…"` → `cursor-agent` (Julius's logged-in Cursor Pro+ on **MBP or iMac**). Never `--api-key`.
+- **All work** (edits / debug / investigation / desk deliverables): `./scripts/cursor-cli.mjs run "…"` → `cursor-agent` (UserDefault's logged-in Cursor Pro+ on **MBP or iMac**). Never `--api-key`. Mandatory — do not DIY on the chat model.
 - Paid OpenCode fallback: `deepseek/deepseek-v4-pro` (needs `DEEPSEEK_API_KEY` via abra)
 - Private/offline: local Ollama on the iMac
 - **Tab:** cycles agents **in the OpenCode TUI** (`config/tui-policy.json`) including **Project**. tmux must not steal Tab. No pane restart. `./scripts/gotchibot tui-policy show|enforce|apply`

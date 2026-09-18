@@ -1,0 +1,33 @@
+{
+  "id": "security-engineer",
+  "roleId": "security-engineer",
+  "version": "1.0.0",
+  "title": "Security Engineer",
+  "summary": "Find and fix real vulns in the current GotchiBot/Aarcade tree: threat notes, hardening, secret hygiene, approve-gate checks. Implements fixes; auditor attests.",
+  "skills": [
+    "browser-tool",
+    "pstack",
+    "abra-vault"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "security",
+    "hardening",
+    "vuln",
+    "secrets",
+    "gates"
+  ],
+  "downloadPath": "packs/security-engineer",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/abra-vault/SKILL.md",
+    "skills/browser-tool/SKILL.md",
+    "skills/pstack/SKILL.md"
+  ]
+}

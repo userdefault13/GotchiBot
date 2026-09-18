@@ -310,8 +310,9 @@ handle_esc() {
       acc="${acc}${REPLY}"
     done
     case "$acc" in
-      A|*A|D|*D) page_prev; return 0 ;;
-      B|*B|C|*C) page_next; return 0 ;;
+      # ← / → page the roster (not ↑/↓ — those stay unused here)
+      D|*D) page_prev; return 0 ;;
+      C|*C) page_next; return 0 ;;
       H|*H) page_home; return 0 ;;
       F|*F) page_end; return 0 ;;
       1~|7~) page_home; return 0 ;;
@@ -324,8 +325,8 @@ handle_esc() {
       return 1
     fi
     case "$REPLY" in
-      A|D) page_prev; return 0 ;;
-      B|C) page_next; return 0 ;;
+      D) page_prev; return 0 ;;
+      C) page_next; return 0 ;;
       H) page_home; return 0 ;;
       F) page_end; return 0 ;;
     esac
@@ -338,8 +339,9 @@ handle_esc() {
 handle_key() {
   local key="$1"
   case "$key" in
-    j|l|']') page_next; return 0 ;;
-    k|h|'[') page_prev; return 0 ;;
+    # h/l aliases for ←/→; keep [ ]
+    l|']') page_next; return 0 ;;
+    h|'[') page_prev; return 0 ;;
     g) page_home; return 0 ;;
     G) page_end; return 0 ;;
     $'\033') handle_esc; return $? ;;
@@ -1123,7 +1125,7 @@ render_body() {
     [ "$row" -ge "$pane_h" ] && break
   done < <(printf '%s\n' "$pair")
 
-  # Button row under the 3-col row: [ ◀ prev ]  n / N  [ next ▶ ]
+  # Button row under the 3-col row: [ ← ]  n / N  [ → ]
   if [ "$row" -lt "$pane_h" ]; then
     put_line "$row" ""
     row=$((row + 1))
@@ -1135,17 +1137,17 @@ render_body() {
   local dim=$'\033[38;5;240m' lit=$'\033[38;5;213m' num=$'\033[38;5;245m' rst=$'\033[0m'
   local prev_s next_s mid_s vis_s pad ctrl
   if [ "$PAGE" -le 0 ]; then
-    prev_s="${dim}[ ◀ prev ]${rst}"
+    prev_s="${dim}[ ← ]${rst}"
   else
-    prev_s="${lit}[ ◀ prev ]${rst}"
+    prev_s="${lit}[ ← ]${rst}"
   fi
   if [ "$PAGE" -ge $((NPAGES - 1)) ]; then
-    next_s="${dim}[ next ▶ ]${rst}"
+    next_s="${dim}[ → ]${rst}"
   else
-    next_s="${lit}[ next ▶ ]${rst}"
+    next_s="${lit}[ → ]${rst}"
   fi
   mid_s="$(printf '%s%d / %d%s' "$num" "$((PAGE + 1))" "$NPAGES" "$rst")"
-  vis_s="$(printf '[ ◀ prev ]     %d / %d     [ next ▶ ]' "$((PAGE + 1))" "$NPAGES")"
+  vis_s="$(printf '[ ← ]     %d / %d     [ → ]' "$((PAGE + 1))" "$NPAGES")"
   pad=$(( (cols - ${#vis_s}) / 2 ))
   [ "$pad" -lt 0 ] && pad=0
   ctrl="$(printf '%*s' "$pad" '')${prev_s}     ${mid_s}     ${next_s}"
@@ -1247,6 +1249,19 @@ case "${1:-watch}" in
     apply_page_click "${2:-0}" "${3:-0}" tmux || true
     sb_click_wake "${4:-}"
     ;;
+  sb-wheel)
+    # tmux WheelUp/Down on avatar → page gotchi roster (vertical scroll).
+    mkdir -p "$SESSIONS"
+    case "${2:-}" in
+      up|prev|-1) page_prev ;;
+      down|next|1) page_next ;;
+      *)
+        echo "usage: avatar-pane.sh sb-wheel up|down [pid]" >&2
+        exit 2
+        ;;
+    esac
+    sb_click_wake "${3:-}"
+    ;;
   watch)
     trap 'watch_leave' EXIT
     trap on_usr1 USR1
@@ -1293,7 +1308,7 @@ case "${1:-watch}" in
     done
     ;;
   *)
-    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|sb-click <x> <y> [pid]]" >&2
+    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|sb-click <x> <y> [pid]|sb-wheel up|down [pid]]" >&2
     exit 2
     ;;
 esac

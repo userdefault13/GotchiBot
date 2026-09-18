@@ -15,7 +15,8 @@
   ],
   "standingDuties": [],
   "cronHints": [
-    "No schedule declared in the playbook — this desk is wake-on-demand only."
+    "Desk-wake (common skill): launchd com.gotchibot.desk-wake.<hero> every 3600 s via `./scripts/gotchibot wake install merch-desk` (iMac). One bounded cycle per wake: refresh POD plushie/toy shortlist, draft outreach only, report to orch via bot inbox.",
+    "Status: `./scripts/gotchibot wake status merch-desk`; one-off: `./scripts/gotchibot wake run merch-desk`."
   ],
   "tags": [
     "merch",

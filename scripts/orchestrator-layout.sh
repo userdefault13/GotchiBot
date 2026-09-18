@@ -107,14 +107,14 @@ meet_gallery_correct() {
   [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *meet-room* ]] && [[ "$c2" == *meet-channel* ]]
 }
 
-# pstack dossier wizard: sidebar | chat | dossier window (work.2 replaces avatar).
+# pstack dossier: sidebar | pstack-window (center) | avatar (right).
 pstack_dossier_correct() {
   layout_ready || return 1
   local c0 c1 c2
   c0="$(pane_start_cmd 0)"
   c1="$(pane_start_cmd 1)"
   c2="$(pane_start_cmd 2)"
-  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *pstack-window* ]]
+  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *pstack-window* ]] && [[ "$c2" == *avatar-pane* ]]
 }
 
 rebuild_panes() {
@@ -209,14 +209,19 @@ install_meet_gallery_mouse() {
   tmux set-option -p -t "$sess:work.2" @gotchibot-meet-channel 1 2>/dev/null || true
 }
 
-# Chat/files/cockpit keep default (OpenCode mouse / send-keys -M).
+# Chat/files/cockpit/pstack keep default (OpenCode / app mouse / send-keys -M).
 # NEVER send-keys -t #{pane_id} — that format is empty and errors in the status bar.
 # Match avatar ONLY via @gotchibot-avatar=1 (never pane_index).
 install_avatar_mouse() {
-  local av_if='#{==:#{@gotchibot-avatar},1}'
-  local click="$ROOT/scripts/avatar-pane.sh sb-click #{mouse_x} #{mouse_y} #{pane_pid}"
+  # Avatar: wheel / ← / → page gotchi roster. Else OpenCode / pstack get native keys.
+  # Keep commands free of nested single-quotes — tmux if-shell "run-shell '…'" breaks them.
+  local ru="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel up #{pane_pid}"
+  local rd="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel down #{pane_pid}"
+  local rc="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-click #{mouse_x} #{mouse_y} #{pane_pid}"
   local def_wheel='if-shell -F "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"'
   local def_drag='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
+  local av_if='#{==:#{@gotchibot-avatar},1}'
+  local focus_hook="$ROOT/scripts/tmux-chat-focus-hook.sh"
 
   tmux set-option -g mouse on 2>/dev/null || true
   tmux set-option -t "$sess" mouse on 2>/dev/null || true
@@ -226,33 +231,40 @@ install_avatar_mouse() {
   tmux unbind-key -n WheelDownPane 2>/dev/null || true
   tmux unbind-key -n MouseDown1Pane 2>/dev/null || true
   tmux unbind-key -n MouseDrag1Pane 2>/dev/null || true
-  tmux unbind-key -T gotchi-avatar WheelUp 2>/dev/null || true
-  tmux unbind-key -T gotchi-avatar WheelDown 2>/dev/null || true
-  tmux unbind-key -T gotchi-avatar WheelUpPane 2>/dev/null || true
-  tmux unbind-key -T gotchi-avatar WheelDownPane 2>/dev/null || true
+  # CRITICAL: do NOT bind -n Left/Right globally. The old "pass CSI via send-keys
+  # Escape [D" path broke arrows in chat/pstack whenever focus left the avatar.
+  tmux unbind-key -n Left 2>/dev/null || true
+  tmux unbind-key -n Right 2>/dev/null || true
+  tmux unbind-key -T gotchi-avatar Left 2>/dev/null || true
+  tmux unbind-key -T gotchi-avatar Right 2>/dev/null || true
 
-  # Avatar: ignore wheel (no sb-wheel, no send-keys). Else OpenCode/default.
-  # Invert so the avatar branch has no command at all (empty if-shell is invalid).
   tmux bind-key -n WheelUpPane \
-    if-shell -F "#{!=:#{@gotchibot-avatar},1}" "$def_wheel" 2>/dev/null || true
+    if-shell -F "$av_if" "run-shell \"$ru\"" \
+    "$def_wheel" 2>/dev/null || true
   tmux bind-key -n WheelDownPane \
-    if-shell -F "#{!=:#{@gotchibot-avatar},1}" "$def_wheel" 2>/dev/null || true
+    if-shell -F "$av_if" "run-shell \"$rd\"" \
+    "$def_wheel" 2>/dev/null || true
 
-  # Click prev/next hitboxes. Never copy-mode the avatar pane.
+  # Click: focus avatar, switch key-table, then page hitbox. ←/→ only work while
+  # the gotchi-avatar table is active (other panes keep native arrows).
   tmux bind-key -n MouseDown1Pane \
-    if-shell -F "$av_if" "run-shell '$click'" \
+    if-shell -F "$av_if" "select-pane -t = ; run-shell \"GOTCHIBOT_TMUX_SESSION=$sess_name $focus_hook\" ; run-shell \"$rc\"" \
     'select-pane -t = ; send-keys -M' 2>/dev/null || true
   tmux bind-key -n MouseDrag1Pane \
     if-shell -F "#{!=:#{@gotchibot-avatar},1}" "$def_drag" 2>/dev/null || true
+
+  # ← / → ONLY in gotchi-avatar key-table (focus hook). Never root -n.
+  tmux bind-key -T gotchi-avatar Left "run-shell \"$ru\"" 2>/dev/null || true
+  tmux bind-key -T gotchi-avatar Right "run-shell \"$rd\"" 2>/dev/null || true
 }
 
 start_pane_commands() {
   require_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || \
     tmux send-keys -t "$sess:work.0" C-c Enter "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" Enter
-  # Desk boot lands in the cockpit menu when onboarding is complete (chat-pane.sh default).
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 exec ./scripts/chat-pane.sh" 2>/dev/null || \
-    tmux send-keys -t "$sess:work.1" C-c Enter "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 exec ./scripts/chat-pane.sh" Enter
+  # Desk boot always opens the cockpit menu (GOTCHIBOT_COCKPIT=1 → show_cockpit in chat-pane).
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || \
+    tmux send-keys -t "$sess:work.1" C-c Enter "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" Enter
   tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || \
@@ -361,7 +373,7 @@ build_meet_gallery_tiles() {
   collapse_to_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
   collapse_sidebar
-  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
 
   local channel_w
   channel_w=$(( $(window_width) * 42 / 100 ))
@@ -392,7 +404,7 @@ build_meet_gallery_tiles() {
   fi
   tmux set-option -p -t "$sess:work.2" @gotchibot-meet-channel 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.2" -u @gotchibot-meet-room 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' # meet ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }# meet ' 2>/dev/null || true
 
   local c1
   c1="$(pane_start_cmd 1)"
@@ -405,7 +417,7 @@ build_meet_gallery_tiles() {
   tmux set-option -p -t "$sess:work.1" @gotchibot-meet-room 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-channel 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' Meet · room ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Meet · room ' 2>/dev/null || true
   # Drop overflow tiles beyond room + channel.
   while [ "$(pane_count)" -gt 3 ]; do
     tmux kill-pane -t "$sess:work.3" 2>/dev/null || break
@@ -476,7 +488,7 @@ refresh_meet_gallery() {
 
 leave_meet_gallery() {
   local to_cockpit=0
-  if [ "${1:-}" = "cockpit" ]; then
+  if [ "${1:-}" = "cockpit" ] || [ "${GOTCHIBOT_BOOT_COCKPIT:-}" = "1" ]; then
     to_cockpit=1
   fi
   if [ "$(layout_mode)" != "meet-gallery" ]; then
@@ -494,67 +506,74 @@ leave_meet_gallery() {
   mark_avatar_pane
   collapse_sidebar
   apply_pane_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
   signal_panes
   install_avatar_mouse 2>/dev/null || true
-  if [ "$to_cockpit" -eq 1 ]; then
-    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
-  else
-    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  # boot_cockpit_desk does the single final chat respawn when GOTCHIBOT_BOOT_COCKPIT=1.
+  if [ "${GOTCHIBOT_BOOT_COCKPIT:-}" != "1" ]; then
+    if [ "$to_cockpit" -eq 1 ]; then
+      tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+    else
+      tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+    fi
   fi
 }
 
-# pstack dossier window: work.2 (avatar) → pstack-window.mjs (details + gotchi grid);
-# chat stays in work.1. pstack-pane.sh (text dump) is retired as primary UI.
+# pstack dossier: sidebar | pstack-window (center, replaces chat) | avatar (right).
+# Julius's screenshot: CURRENT STATUS should occupy the center pane; avatar stays on the right.
 build_pstack_dossier_tiles() {
   collapse_to_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
   collapse_sidebar
-  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
 
-  # Dossier window on the right — unmark avatar so wheel scrolls the TUI.
-  tmux set-option -p -t "$sess:work.2" -u @gotchibot-avatar 2>/dev/null || true
-  local c2
-  c2="$(pane_start_cmd 2)"
-  if [[ "$c2" != *pstack-window* ]]; then
-    tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/pstack-window.mjs watch" 2>/dev/null || true
-  fi
-  tmux set-option -p -t "$sess:work.2" @gotchibot-pstack-dossier 1 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' pstack · dossier ' 2>/dev/null || true
-
-  # Chat stays the live OpenCode pane (wizard edits happen via CLI in chat).
+  # Center pane = pstack-window (dossier replaces chat). Unmark chat so the
+  # pane is not treated as the OpenCode chat pane.
   local c1
   c1="$(pane_start_cmd 1)"
-  if [[ "$c1" != *chat-pane* ]]; then
-    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  if [[ "$c1" != *pstack-window* ]]; then
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/pstack-window.mjs watch" 2>/dev/null || true
   fi
-  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" @gotchibot-pstack-dossier 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }pstack · dossier ' 2>/dev/null || true
+
+  # Right pane = avatar (kept, like a normal desk).
+  local c2
+  c2="$(pane_start_cmd 2)"
+  if [[ "$c2" != *avatar-pane* ]]; then
+    tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+  fi
+  tmux set-option -p -t "$sess:work.2" -u @gotchibot-pstack-dossier 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  mark_avatar_pane
 
   while [ "$(pane_count)" -gt 3 ]; do
     tmux kill-pane -t "$sess:work.3" 2>/dev/null || break
   done
   apply_pstack_dossier_sizes
   date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/sessions/.pstack-dossier.stamp" 2>/dev/null || true
+  # Reinstall avatar wheel/click after enter (mark work.2 + page binds).
+  install_avatar_mouse 2>/dev/null || true
 }
 
 apply_pstack_dossier_sizes() {
   local win_w dossier_w
   win_w="$(window_width)"
   collapse_sidebar
-  dossier_w=$(( win_w * 42 / 100 ))
+  # Center pstack window is wide; avatar stays at min_avatar on the right.
+  dossier_w=$(( win_w - sidebar_collapsed - min_avatar - 2 ))
   [ "$dossier_w" -lt 44 ] && dossier_w=44
-  [ "$dossier_w" -gt 72 ] && dossier_w=72
   tmux resize-pane -t "$sess:work.0" -x "$sidebar_collapsed" 2>/dev/null || true
-  tmux resize-pane -t "$sess:work.2" -x "$dossier_w" 2>/dev/null || true
-  tmux resize-pane -t "$sess:work.1" -x "$((win_w - sidebar_collapsed - dossier_w - 2))" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.2" -x "$min_avatar" 2>/dev/null || true
+  tmux resize-pane -t "$sess:work.1" -x "$dossier_w" 2>/dev/null || true
 }
 
 enter_pstack_dossier() {
@@ -583,11 +602,16 @@ refresh_pstack_dossier() {
   else
     apply_pstack_dossier_sizes
   fi
+  install_avatar_mouse 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
 }
 
 leave_pstack_dossier() {
+  local to_cockpit=0
+  if [ "${1:-}" = "cockpit" ] || [ "${GOTCHIBOT_BOOT_COCKPIT:-}" = "1" ]; then
+    to_cockpit=1
+  fi
   if [ "$(layout_mode)" != "pstack-dossier" ]; then
     return 0
   fi
@@ -602,11 +626,64 @@ leave_pstack_dossier() {
   mark_avatar_pane
   collapse_sidebar
   apply_pane_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-pstack-dossier 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" -u @gotchibot-pstack-dossier 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  save_layout
+  signal_panes
+  install_avatar_mouse 2>/dev/null || true
+  # Always return to cockpit when leaving pstack (policy). Skip when boot_cockpit_desk
+  # will do the single final chat respawn (GOTCHIBOT_BOOT_COCKPIT=1).
+  if [ "${GOTCHIBOT_BOOT_COCKPIT:-}" != "1" ]; then
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  fi
+}
+
+# Desk start / reattach: peel special modes and always land in cockpit.
+# Mid-session zooms (files-max toggle, agent switches) keep SKIP_COCKPIT via restore_normal_layout.
+boot_cockpit_desk() {
+  session_exists || return 1
+  apply_window_policy
+
+  local mode
+  mode="$(layout_mode)"
+  case "$mode" in
+    meet-gallery)
+      # Layout restore only — we do the single chat respawn below.
+      GOTCHIBOT_BOOT_COCKPIT=1 leave_meet_gallery
+      ;;
+    pstack-dossier)
+      GOTCHIBOT_BOOT_COCKPIT=1 leave_pstack_dossier
+      ;;
+    files-max|avatar-max|chat-max)
+      set_layout_mode normal
+      collapse_to_three_panes || true
+      tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+      tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+      mark_avatar_pane
+      ;;
+  esac
+
+  set_layout_mode normal
+  require_three_panes || return 1
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+  mark_avatar_pane
+  # Single final chat respawn — always cockpit on desk boot / reattach.
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" -u @gotchibot-pstack-dossier 2>/dev/null || true
+  collapse_sidebar
+  apply_pane_sizes
+  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
   signal_panes
@@ -628,9 +705,9 @@ enter_files_max() {
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   apply_files_max_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' Files · full ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files · full ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   set_layout_mode files-max
   tmux select-pane -t "$sess:work.0"
   save_layout
@@ -652,9 +729,9 @@ enter_avatar_max() {
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   apply_avatar_max_sizes
-  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar · full ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar · full ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
   set_layout_mode avatar-max
   tmux select-pane -t "$sess:work.2"
   save_layout
@@ -671,9 +748,9 @@ enter_chat_max() {
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh"
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   apply_chat_max_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi · full ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi · full ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   set_layout_mode chat-max
   tmux select-pane -t "$sess:work.1"
   save_layout
@@ -713,7 +790,7 @@ restore_avatar_pane() {
   set_layout_mode normal
   tmux resize-pane -t "$sess:work.2" -x "$min_avatar" 2>/dev/null || true
   tmux resize-pane -t "$sess:work.0" -x "$sidebar_collapsed" 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
   signal_panes
@@ -744,9 +821,9 @@ restore_normal_layout() {
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   collapse_sidebar
   apply_pane_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   set_layout_mode normal
   tmux select-pane -t "$sess:work.1"
   save_layout
@@ -912,9 +989,11 @@ install_agent_keys() {
   if [ "$(layout_mode)" = "meet-gallery" ]; then
     install_meet_gallery_mouse 2>/dev/null || true
   elif [ "$(layout_mode)" = "pstack-dossier" ]; then
-    # Wizard pane keeps default wheel/scroll — never mark it as avatar.
-    tmux set-option -p -t "$sess:work.2" -u @gotchibot-avatar 2>/dev/null || true
-    tmux set-option -p -t "$sess:work.2" @gotchibot-pstack-dossier 1 2>/dev/null || true
+    # Center pane (work.1) is the dossier TUI — keep default wheel/scroll, never chat/avatar.
+    tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
+    tmux set-option -p -t "$sess:work.1" @gotchibot-pstack-dossier 1 2>/dev/null || true
+    # Right pane stays the avatar (normal desk behavior).
+    install_avatar_mouse
   else
     install_avatar_mouse
   fi
@@ -946,8 +1025,7 @@ install_agent_keys() {
 
 install_ui_theme() {
   # Mouse ON so prev/next on the unfocused avatar pane are clickable.
-  # Wheel over avatar is a no-op (no copy-mode, no send-keys);
-  # chat/files keep default (OpenCode / send-keys -M).
+  # Wheel over avatar pages roster; chat/files keep default (OpenCode / send-keys -M).
   tmux set-option -g mouse on 2>/dev/null || true
   tmux set-option -t "$sess" mouse on 2>/dev/null || true
   tmux set-option -t "$sess" set-clipboard on 2>/dev/null || true
@@ -959,12 +1037,15 @@ install_ui_theme() {
   tmux set-option -g terminal-overrides ",tmux-256color:Tc" 2>/dev/null || true
   tmux set-option -g terminal-overrides ",xterm-256color:Tc" 2>/dev/null || true
   install_agent_keys
+  # Active pane: bright gotchi-pink border + ● label. Inactive: dim charcoal.
+  # Users complained they couldn't tell focus — make the contrast obvious.
+  tmux set-option -t "$sess" pane-border-status top 2>/dev/null || true
   tmux set-option -t "$sess" pane-border-lines heavy 2>/dev/null || true
-  tmux set-option -t "$sess" pane-border-style 'fg=colour53' 2>/dev/null || true
-  tmux set-option -t "$sess" pane-active-border-style 'fg=colour213' 2>/dev/null || true
-  tmux set-option -t "$sess:work.0" pane-border-format ' Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' Gotchi ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' Avatar ' 2>/dev/null || true
+  tmux set-option -t "$sess" pane-border-style 'fg=colour238,bg=default' 2>/dev/null || true
+  tmux set-option -t "$sess" pane-active-border-style 'fg=colour213,bg=default,bold' 2>/dev/null || true
+  # tmux 3.3+: colour and/or arrows on the active edge
+  tmux set-option -t "$sess" pane-border-indicators both 2>/dev/null || true
+  apply_pane_border_labels
   tmux set-option -t "$sess" status-style 'bg=colour53,fg=colour255' 2>/dev/null || true
   tmux set-option -t "$sess" status-left-length 14 2>/dev/null || true
   tmux set-option -t "$sess" status-right-length 480 2>/dev/null || true
@@ -972,6 +1053,37 @@ install_ui_theme() {
   tmux set-option -t "$sess" status-left '#[fg=white,bold] GotchiBot ' 2>/dev/null || true
   tmux set-option -t "$sess" status-right "#[fg=colour252]#($status_bar) #[fg=colour238]|#[default] #[fg=colour250]#S " 2>/dev/null || true
   apply_window_policy
+}
+
+# Mode-aware titles; active pane gets a ● so focus is obvious at a glance.
+apply_pane_border_labels() {
+  local mode label0 label1 label2
+  mode="$(layout_mode)"
+  label0=' Files '
+  label1=' Gotchi '
+  label2=' Avatar '
+  case "$mode" in
+    meet-gallery)
+      label1=' Meet · room '
+      label2=' # meet '
+      ;;
+    pstack-dossier)
+      label1=' pstack · dossier '
+      ;;
+    files-max)
+      label0=' Files · full '
+      ;;
+    avatar-max)
+      label2=' Avatar · full '
+      ;;
+    chat-max)
+      label1=' Gotchi · full '
+      ;;
+  esac
+  # #{?pane_active,…} is evaluated per pane by tmux.
+  tmux set-option -t "$sess:work.0" pane-border-format " #{?pane_active,●, }${label0}" 2>/dev/null || true
+  tmux set-option -t "$sess:work.1" pane-border-format " #{?pane_active,●, }${label1}" 2>/dev/null || true
+  tmux set-option -t "$sess:work.2" pane-border-format " #{?pane_active,●, }${label2}" 2>/dev/null || true
 }
 
 install_resize_hook() {
@@ -1033,12 +1145,8 @@ case "$cmd" in
     fit_quiet
     ;;
   refresh)
-    if [ "$(layout_mode)" = "meet-gallery" ]; then
-      leave_meet_gallery
-      exit 0
-    fi
-    if [ "$(layout_mode)" = "pstack-dossier" ]; then
-      leave_pstack_dossier
+    if [ "$(layout_mode)" = "meet-gallery" ] || [ "$(layout_mode)" = "pstack-dossier" ]; then
+      boot_cockpit_desk
       exit 0
     fi
     disable_resize_hook
@@ -1095,6 +1203,12 @@ case "$cmd" in
   leave-pstack-dossier)
     leave_pstack_dossier
     ;;
+  leave-pstack-cockpit)
+    leave_pstack_dossier cockpit
+    ;;
+  enter-cockpit|boot-cockpit)
+    boot_cockpit_desk
+    ;;
   require-three)
     # Invoked via run-shell from a side pane so rebuild is not aborted mid-flight.
     rebuild_panes || exit 1
@@ -1109,13 +1223,18 @@ case "$cmd" in
     if [ "$(layout_mode)" = "meet-gallery" ]; then
       tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
       tmux set-option -p -t "$sess:work.1" @gotchibot-meet-room 1 2>/dev/null || true
+    elif [ "$(layout_mode)" = "pstack-dossier" ]; then
+      # work.1 is the dossier TUI, not chat.
+      tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
+      tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
+      tmux set-option -p -t "$sess:work.1" @gotchibot-pstack-dossier 1 2>/dev/null || true
     else
       tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
       tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
     fi
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|refresh-pstack-dossier|leave-pstack-dossier|require-three|fit|install-mouse]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|enter-cockpit|boot-cockpit|require-three|fit|install-mouse]" >&2
     exit 2
     ;;
 esac

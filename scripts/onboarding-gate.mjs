@@ -67,14 +67,14 @@ function leaveMeetGalleryLayout() {
   meetGalleryLayout("leave-meet-gallery");
 }
 
-/** Switch tmux to pstack dossier layout — chat stays in work.1, dossier replaces avatar (work.2). */
+/** Switch tmux to pstack dossier layout — pstack-window replaces chat (work.1), avatar stays on right (work.2). */
 function enterPstackDossierLayout() {
   if (!tmuxSessionName()) {
     console.log("\n  ✗ attach tmux first: ./scripts/gotchibot tmux\n");
     return;
   }
   runLayout("enter-pstack-dossier");
-  console.log("\n  ✓ pstack dossier pane open (work.2).");
+  console.log("\n  ✓ pstack dossier pane open (work.1).");
   console.log("    Leave with: ./scripts/orchestrator-layout.sh leave-pstack-dossier");
 }
 
@@ -957,6 +957,37 @@ async function settingsMenu() {
 }
 
 
+async function viewBotInbox() {
+  clear();
+  title("Bot inbox");
+  console.log("  Internal mail — iMessage thread (not AgentMail). Address UserDefault only.");
+  console.log("  j/k select · Enter read · a archive · u unread · t filter · q back\n");
+  try {
+    rl.pause();
+  } catch {}
+  let r;
+  try {
+    r = spawnSync(process.execPath, [`${ROOT}/scripts/bot-inbox-tui.mjs`], {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: process.env,
+    });
+  } finally {
+    try {
+      rl.resume();
+    } catch {}
+  }
+  if (r?.status !== 0 && r?.status != null) {
+    clear();
+    title("Bot inbox");
+    console.log("  TUI unavailable — unread dump:\n");
+    const dump = runAbraNode("scripts/bot-inbox.mjs", ["unread", "--to", "userdefault"]);
+    if (dump.stdout) process.stdout.write(dump.stdout);
+    if (dump.stderr) process.stderr.write(dump.stderr);
+    await pause();
+  }
+}
+
 async function viewKanban() {
   clear();
   title("Kanban");
@@ -1325,6 +1356,7 @@ async function mainMenu(wallet, cartridgeId) {
       { key: "hub-infra", label: "Hub infra (Docker container table)" },
       { key: "roster", label: "View agent roster (MBP + iMac · status)" },
       { key: "kanban", label: "Kanban (agents · tasks · seats)" },
+      { key: "inbox", label: "Bot inbox (internal mail · FYI / reports)" },
       { key: "pstack", label: "Pstack (dossier pane · program store)" },
       { key: "export-roster", label: "Export agent roster to CSV" },
       { key: "settings", label: "Settings (voice, read speed, mouse, replay)" },
@@ -1405,6 +1437,11 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "kanban") {
       await viewKanban();
+      continue;
+    }
+
+    if (pick.key === "inbox") {
+      await viewBotInbox();
       continue;
     }
 

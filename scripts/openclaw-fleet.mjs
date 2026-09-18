@@ -81,7 +81,7 @@ const ORCH_SKILLS = [
   "ralph",
 ];
 /** Skills every hero gets, orchestrator or not. */
-const COMMON_SKILLS = ["passoff"];
+const COMMON_SKILLS = ["passoff", "desk-wake", "cursor-cli", "codex-cli", "gotchibot-bridge"];
 /** OpenClaw truncates a bootstrap file past this many chars (its default). */
 const BOOTSTRAP_MAX_CHARS = 20_000;
 const BOOTSTRAP_TOTAL_MAX_CHARS = 60_000;

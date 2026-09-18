@@ -1,0 +1,16 @@
+{
+  "title": "Data ai-cron-site",
+  "summary": "ai-cron-site / cron402 data layer for patch dossier: schedules, success/fail history, result logging.",
+  "skills": [
+    "data-ai-cron-site",
+    "cron-manager",
+    "pstack",
+    "browser-tool"
+  ],
+  "skillsExternal": [
+    "mcp-cron402"
+  ],
+  "reportCmd": "./scripts/pstack-dossier-cron.mjs fetch --json",
+  "autonomy": "Owns ai-cron-site schedule + run history + result logging for the current GotchiBot project only. Reuses cron402 / ~/.cron402/jobs.json + GET /v1/crons/:id — no second cron store, no invented history. Feeds dossier-ai-cron-site via jobId/schedule/means/url/status/credits + executions (runAt/ok/attempts/statusCode/error/durationMs) and logSnippet/logPath. Applied via `gotchibot templates apply data-ai-cron-site --hero <available> --yes` (or link-cube resummon --keep-playbook); never steals LINK/YFI/WBTC standing desks; never auto-mints. Never wallet/mint/spend/post. Prof. Link-Cube may staff this role.",
+  "scheduleCmd": "./scripts/pstack-dossier-cron.mjs fetch --json"
+}
