@@ -74,6 +74,25 @@
       "skillsExternal": []
     },
     {
+      "id": "architect",
+      "roleId": "architect",
+      "title": "Architect",
+      "summary": "Exhaust design space; ranked best + alternatives; hand off build. Does not implement.",
+      "version": "1.0.0",
+      "path": "packs/architect",
+      "tags": [
+        "architecture",
+        "design",
+        "infra",
+        "options"
+      ],
+      "skills": [
+        "architect",
+        "browser-tool"
+      ],
+      "skillsExternal": []
+    },
+    {
       "id": "art-director",
       "roleId": "art-director",
       "title": "Art Director",

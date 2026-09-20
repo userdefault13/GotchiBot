@@ -1,0 +1,30 @@
+{
+  "id": "architect",
+  "roleId": "architect",
+  "version": "1.0.0",
+  "title": "Architect",
+  "summary": "Exhaust design space; ranked best + alternatives; phased plan + rollback; hand off build. Does not implement.",
+  "skills": [
+    "architect",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule \u2014 wake-on-demand architecture desk."
+  ],
+  "tags": [
+    "architecture",
+    "design",
+    "infra",
+    "options"
+  ],
+  "downloadPath": "packs/architect",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/architect/SKILL.md",
+    "skills/browser-tool/SKILL.md"
+  ]
+}

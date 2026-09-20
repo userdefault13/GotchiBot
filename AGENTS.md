@@ -65,8 +65,9 @@ Your session dir contains:
    fan-out completion.
 4. Stay inside this repo's working tree unless the prompt says otherwise
    (or `/work` when spawned with `--sandbox`).
-5. **Jev (TypeSafe System One)** — closed-set decisions via `./scripts/gotchibot jev` / skill `jev` (pack `jev`). Not a chat model and not a work tool for edits. Key: abra `general` / `JEV_DEV_API_KEY` (names only).
-6. **Work tools (hard rule)** — any file edit, patch, debug, investigation, or
+5. **Architect** — design-space / options matrix via skill `architect` (pack `architect`, Grok Bot `architect`). Exhaust options, hand off build; do not DIY implement.
+6. **Jev (TypeSafe System One)** — closed-set decisions via `./scripts/gotchibot jev` / skill `jev` (pack `jev`). Not a chat model and not a work tool for edits. Key: abra `general` / `JEV_DEV_API_KEY` (names only).
+7. **Work tools (hard rule)** — any file edit, patch, debug, investigation, or
    desk deliverable goes through a work tool only — **Claude**, **Cursor**, or
    **Codex**. Through **2026-10-05 inclusive**, prefer **Claude first**, then
    Cursor, then Codex. After that date, pick among the three by fit unless
@@ -81,17 +82,17 @@ Your session dir contains:
    answers stay on the chat model. Do not `/model` to Cursor or Claude; do not
    add a Cursor provider. Desk-terminals open/close when the turn should be
    watched; headless work-tool runs are fine otherwise.
-7. **Thread continuity** — on follow-ups that continue the last edit ("parent",
+8. **Thread continuity** — on follow-ups that continue the last edit ("parent",
    "tighter", "same element"), load skill `thread-continuity`
    (`.opencode/skills/thread-continuity/SKILL.md`): reuse last files/selectors
    before any full-tree search. Cross-session: `sessions/HANDOFF.md`,
    `aarcadeghst-changes` / `changes.json`, or `cursor-cli.mjs resume`.
-8. **Passoff inbox** — before you plan a fresh job, run
+9. **Passoff inbox** — before you plan a fresh job, run
    `./scripts/gotchibot passoff resume`. If another gotchi handed you work, that
    packet is your task: continue it, do not restart it, do not redo what its
    "Done so far" lists. Handing your own work on? `passoff send <hero> --note
    "what's done" --next "what's left"` (skill `passoff`).
-9. **Sandbox spawn** (`--sandbox`): hero must be `available`. Never auto-mint.
+10. **Sandbox spawn** (`--sandbox`): hero must be `available`. Never auto-mint.
    Never steal LINK/YFI/WBTC standing desks. Promote with
    `./scripts/gotchibot sandbox promote <id> <dest>`.
 

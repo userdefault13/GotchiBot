@@ -62,6 +62,18 @@ CoS: `gotchibot graph` (sessions/graph state) + fleet skill `agent-graph`.
 Orch owns product routing. Central owns makers. Bend crew owns LAWS/PROOF.
 Do not cross-steal lanes without Julius saying so.
 
+## architect
+
+| | |
+|---|---|
+| **Grok Bot** | `architect` — general systems/software architecture for any Julius project |
+| **Desk pack** | `templates/marketplace/packs/architect` — `gotchibot templates apply architect --hero <available> --yes` |
+| **Playbook** | Pack skill `architect` (mirrors fleet skill `architect`) |
+| **Anti-jobs** | No silent build; no one-option plans; hand off to CoS/crews |
+
+Route architecture asks here **before** locking a plan or spawning headcount.
+After the matrix, CoS routes build work — architect does not DIY.
+
 ## Adding a crew
 
 1. Define chief + workers with one-jobs and anti-jobs.
