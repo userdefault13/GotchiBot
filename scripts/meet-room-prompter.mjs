@@ -19,6 +19,17 @@ import {
 } from "./meet-room.mjs";
 import { setMeetStatus } from "./meet-status.mjs";
 import { warmThumbs, readTranscript, loadCurrentMeeting } from "./meet-channel.mjs";
+import {
+  stripPardonPrefix,
+  isPardonTrigger,
+  isContinueTrigger,
+  writePardonRequest,
+  clearPardonRequest,
+  readPardonRound,
+  writePardonStack,
+  hasPardonStack,
+  stackFromRound,
+} from "./lib/meet-pardon.mjs"; // pardon-me-v1
 import { runLayout } from "./tmux-layout.mjs";
 import { isMainModule } from "./is-main.mjs";
 
@@ -111,6 +122,8 @@ const SLASH_COMMANDS = [
   { tag: "/prev", hint: "prev seat page", needsArg: false },
   { tag: "/next", hint: "next seat page", needsArg: false },
   { tag: "/colabo", hint: "round-robin", needsArg: true },
+  { tag: "/pardon", hint: "interrupt round", needsArg: true },
+  { tag: "/continue", hint: "resume parked", needsArg: false },
   { tag: "/menu", hint: "alias /cockpit", needsArg: false },
   { tag: "/leave", hint: "alias /chat", needsArg: false },
 ];
@@ -323,6 +336,134 @@ function stopSendTimer() {
   if (sendTimer) clearInterval(sendTimer);
   sendTimer = null;
   sendDots = 1;
+}
+
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function currentMeetId() {
+  try {
+    return String(readFileSync(`${ROOT}/sessions/meetings/.current`, "utf8")).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Cooperative pause then run gotchi-meet pardon (side turn). //pardon-me-v1 */
+async function runPardonInterrupt(rawLine) {
+  const mid = currentMeetId();
+  const question = stripPardonPrefix(rawLine) || String(rawLine || "").trim();
+  if (!question) {
+    sendError = "pardon needs a question";
+    draw();
+    return;
+  }
+
+  if (sendBusy || activeChild) {
+    if (mid) {
+      writePardonRequest(mid, { question, raw: rawLine });
+    }
+    // Grace for cooperative pause (finish current speaker, write stack, exit).
+    const graceMs = Number(process.env.GOTCHIBOT_PARDON_GRACE_MS || 12000);
+    const started = Date.now();
+    while ((sendBusy || activeChild) && Date.now() - started < graceMs) {
+      await sleep(200);
+      if (mid && hasPardonStack(mid) && !activeChild) break;
+    }
+    if (activeChild) {
+      try {
+        activeChild.kill("SIGTERM");
+      } catch {
+        /* ok */
+      }
+      // Recover stack from in-flight round if sayTurn died mid-speaker.
+      if (mid && !hasPardonStack(mid)) {
+        const stack = stackFromRound(readPardonRound(mid), { reason: "sigterm" });
+        if (stack?.remainingSpeakerIds?.length) writePardonStack(mid, stack);
+      }
+      await sleep(400);
+      activeChild = null;
+      sendBusy = false;
+      clearPending();
+      stopSendTimer();
+    }
+    if (mid) clearPardonRequest(mid);
+  }
+
+  // Side turn — chair or @mentions only.
+  sendBusy = true;
+  sendError = null;
+  startSendTimer();
+  draw();
+  const child = spawn(
+    process.execPath,
+    [`${ROOT}/scripts/gotchi-meet.mjs`, "pardon", question],
+    {
+      cwd: ROOT,
+      stdio: "ignore",
+      env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1" },
+    },
+  );
+  activeChild = child;
+  child.on("error", () => {
+    if (activeChild === child) activeChild = null;
+    sendBusy = false;
+    stopSendTimer();
+    sendError = "pardon failed";
+    pokeChannel();
+    draw();
+  });
+  child.on("close", (code) => {
+    if (activeChild === child) activeChild = null;
+    sendBusy = false;
+    stopSendTimer();
+    pokeChannel();
+    if (code !== 0) sendError = "pardon failed";
+    else if (mid && hasPardonStack(mid)) sendError = "paused · /continue";
+    draw();
+  });
+}
+
+function runContinueParked() {
+  const mid = currentMeetId();
+  if (!mid || !hasPardonStack(mid)) {
+    sendError = "no parked round";
+    draw();
+    return;
+  }
+  if (sendBusy) return;
+  sendBusy = true;
+  sendError = null;
+  startSendTimer();
+  draw();
+  const child = spawn(
+    process.execPath,
+    [`${ROOT}/scripts/gotchi-meet.mjs`, "continue"],
+    {
+      cwd: ROOT,
+      stdio: "ignore",
+      env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1" },
+    },
+  );
+  activeChild = child;
+  child.on("error", () => {
+    if (activeChild === child) activeChild = null;
+    sendBusy = false;
+    stopSendTimer();
+    sendError = "continue failed";
+    pokeChannel();
+    draw();
+  });
+  child.on("close", (code) => {
+    if (activeChild === child) activeChild = null;
+    sendBusy = false;
+    stopSendTimer();
+    pokeChannel();
+    if (code !== 0) sendError = "continue failed";
+    draw();
+  });
 }
 
 function sayToRoom(msg) {
@@ -745,7 +886,7 @@ class Prompter {
         // No match — show help instead of saying.
         this.clear();
         sendError =
-          "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · !cmd · ^C leave";
+          "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
         return "redraw";
       }
     }
@@ -778,7 +919,7 @@ class Prompter {
     if (line === "/help" || line === "/?") {
       editTargetTs = null;
       sendError =
-        "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · !cmd · ^C leave";
+        "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
       return "redraw";
     }
     if (line === "/edit") {
@@ -829,6 +970,18 @@ class Prompter {
       }
       return "redraw";
     }
+    if (isPardonTrigger(line) || line.toLowerCase().startsWith("/pardon")) {
+      editTargetTs = null;
+      this.history.push(line);
+      if (this.history.length > 100) this.history.shift();
+      void runPardonInterrupt(line);
+      return "redraw";
+    }
+    if (isContinueTrigger(line) || line === "/resume") {
+      editTargetTs = null;
+      runContinueParked();
+      return "redraw";
+    }
     // Never post slash text as a room message — unmatched /cmds used to
     // fall through to say ("Gotchi · send failed" / wake the chair).
     if (line === "/" || line.startsWith("/")) {
@@ -836,7 +989,7 @@ class Prompter {
       const cmd = line.split(/\s+/)[0];
       sendError =
         line === "/" || line === "/?"
-          ? "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · !cmd · ^C leave"
+          ? "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave"
           : `unknown ${cmd} · /help`;
       return "redraw";
     }

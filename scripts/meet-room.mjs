@@ -219,7 +219,7 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
   if (includeHint) {
     lines.push("");
     lines.push(
-      `${C.hint}← → /prev /next page seats · @LINK · @everyone — transcript in # meet →${C.reset}`,
+      `${C.hint}← → /prev /next · @LINK · @everyone · pardon me, … · /continue — # meet →${C.reset}`,
     );
   }
 

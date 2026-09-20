@@ -52,6 +52,24 @@ import {
   loadPolicy,
 } from "./model-policy.mjs";
 import {
+  stripPardonPrefix,
+  isPardonTrigger,
+  writePardonRequest,
+  readPardonRequest,
+  clearPardonRequest,
+  writePardonRound,
+  readPardonRound,
+  clearPardonRound,
+  writePardonStack,
+  readPardonStack,
+  clearPardonStack,
+  hasPardonStack,
+  stackFromRound,
+  PARDON_PAUSE_MARKER,
+  PARDON_CONTINUE_MARKER,
+  PARDON_HELP,
+} from "./lib/meet-pardon.mjs"; // pardon-me-v1
+import {
   setMeetStatuses,
   clearMeetStatus,
 } from "./meet-status.mjs";
@@ -1708,17 +1726,29 @@ export async function editTurn(turnKey, newText) {
   return editTranscriptTurn(meeting.id, turnKey, newText);
 }
 
-export async function sayTurn(userText) {
+export async function sayTurn(userText, opts = {}) {
   const text = String(userText || "").trim();
   if (!text) throw new Error('usage: gotchi-meet.mjs say "user message"');
   const meeting = requireOpenMeeting();
+  const resume = Boolean(opts.resume);
+  const forcedSpeakers = Array.isArray(opts.speakers) ? opts.speakers.filter(Boolean) : null;
+  const skipUserAppend = Boolean(opts.skipUserAppend);
   const user = meeting.participants.find((p) => p.role === "user") || userParticipant();
   const printed = [];
 
-  printed.push(
-    appendTranscript(meeting.id, { speaker: user.id, role: "user", text }),
-  );
-  pokeMeetChannel();
+  // New direction clears any parked round (unless /continue or a pardon side-turn).
+  const keepStack = Boolean(opts.keepStack) || resume;
+  if (!keepStack) {
+    clearPardonStack(meeting.id);
+    clearPardonRequest(meeting.id);
+  }
+
+  if (!skipUserAppend) {
+    printed.push(
+      appendTranscript(meeting.id, { speaker: user.id, role: "user", text }),
+    );
+    pokeMeetChannel();
+  }
 
   // Gallery status: chair thinks while picking; speakers flip to responding.
   try {
@@ -1732,10 +1762,60 @@ export async function sayTurn(userText) {
 
   let pick;
   try {
-    pick = await chairPickSpeakers(meeting, text);
+    if (forcedSpeakers) {
+      pick = {
+        speakers: forcedSpeakers,
+        note: opts.pickNote || (resume ? "continue parked round" : "forced speakers"),
+        fallback: false,
+      };
+    } else {
+      pick = await chairPickSpeakers(meeting, text);
+    }
     const speakerTurns = [];
     const spokenThisTurn = new Set();
-    for (const sid of pick.speakers || []) {
+    const allSpeakers = [...(pick.speakers || [])];
+
+    writePardonRound(meeting.id, {
+      originalUserText: resume
+        ? String(opts.originalUserText || text)
+        : text,
+      speakers: allSpeakers,
+      spokenIds: [],
+      pickNote: pick.note || null,
+      meetingId: meeting.id,
+    });
+
+    let paused = false;
+    for (let i = 0; i < allSpeakers.length; i++) {
+      // Cooperative pause: do not start remaining speakers.
+      const req = readPardonRequest(meeting.id);
+      if (req) {
+        const stack = stackFromRound(readPardonRound(meeting.id), { reason: "pardon" });
+        if (stack && stack.remainingSpeakerIds.length) {
+          writePardonStack(meeting.id, {
+            ...stack,
+            originalUserText: stack.originalUserText || text,
+            pardonQuestion: req.question || req.raw || "",
+          });
+          printed.push(
+            appendTranscript(meeting.id, {
+              speaker: meeting.chairId,
+              role: "system",
+              text: PARDON_PAUSE_MARKER,
+            }),
+          );
+          pokeMeetChannel();
+          if (process.env.GOTCHIBOT_MEET_QUIET !== "1") {
+            console.log(PARDON_PAUSE_MARKER);
+            console.log(`parked ${stack.remainingSpeakerIds.length} speaker(s) — /continue after pardon`);
+          }
+        }
+        clearPardonRequest(meeting.id);
+        paused = true;
+        break;
+      }
+
+      const sid = allSpeakers[i];
       try {
         setMeetStatuses(
           {
@@ -1758,39 +1838,44 @@ export async function sayTurn(userText) {
       printed.push(row);
       spokenThisTurn.add(sid);
 
+      const round = readPardonRound(meeting.id) || {};
+      writePardonRound(meeting.id, {
+        ...round,
+        originalUserText: round.originalUserText || text,
+        speakers: allSpeakers,
+        spokenIds: [...spokenThisTurn],
+        pickNote: pick.note || null,
+        meetingId: meeting.id,
+      });
+
       // Safety: chair-only cue like "WBTC, you're up" → activate that agent too.
       if (
+        !resume &&
         sid === meeting.chairId &&
-        (pick.speakers || []).length === 1 &&
-        sid === (pick.speakers || [])[0]
+        allSpeakers.length === 1 &&
+        sid === allSpeakers[0]
       ) {
         const cued = agentCuedInChairText(meeting, reply.text);
         if (cued && !spokenThisTurn.has(cued)) {
-          try {
-            setMeetStatuses(
-              { [meeting.chairId]: "idle", [cued]: "responding" },
-              { meetingId: meeting.id, resetOthers: true },
-            );
-          } catch {
-            /* ok */
-          }
-          const cp = meeting.participants.find((x) => x.id === cued);
-          const creply = await agentReply(meeting, cued);
-          const crow = appendTranscript(meeting.id, {
-            speaker: cued,
-            role: cp?.role || "agent",
-            text: creply.text,
+          allSpeakers.push(cued);
+          const round2 = readPardonRound(meeting.id) || {};
+          writePardonRound(meeting.id, {
+            ...round2,
+            speakers: [...allSpeakers],
+            spokenIds: [...spokenThisTurn],
           });
-          speakerTurns.push(crow);
-          printed.push(crow);
-          spokenThisTurn.add(cued);
           pick = {
             ...pick,
-            speakers: [...(pick.speakers || []), cued],
+            speakers: [...allSpeakers],
             note: `${pick.note || "chair"} + cued ${cued}`,
           };
         }
       }
+    }
+
+    if (!paused) {
+      clearPardonRound(meeting.id);
+      if (resume) clearPardonStack(meeting.id);
     }
 
     meeting.updatedAt = new Date().toISOString();
@@ -1801,7 +1886,13 @@ export async function sayTurn(userText) {
     if (!(pick.speakers || []).length) {
       console.log("(chair: no speakers this turn)");
     }
-    return { meeting, pick, turns: printed, speakerTurns };
+    return {
+      meeting,
+      pick,
+      turns: printed,
+      speakerTurns,
+      status: paused ? "paused" : "ok",
+    };
   } finally {
     try {
       clearMeetStatus({ poke: true });
@@ -1810,6 +1901,120 @@ export async function sayTurn(userText) {
     }
   }
 }
+
+// pardon-me-v1 sayTurn
+
+// pardon-me-v1
+export async function pardonTurn(rawText) {
+  const meeting = requireOpenMeeting();
+  const raw = String(rawText || "").trim();
+  const question = stripPardonPrefix(raw) || raw;
+  if (!question) {
+    throw new Error('usage: gotchi-meet.mjs pardon "question"  (or: pardon me, … / /pardon …)');
+  }
+
+  // Speakers: explicit @mentions if present; else chair only (not everyone).
+  const mentioned = resolveMentionedSpeakers(meeting, question).filter((id) => {
+    const tok = String(id || "").toLowerCase();
+    return tok !== "everyone" && tok !== "all" && tok !== "room";
+  });
+  const speakers = mentioned.length
+    ? mentioned
+    : meeting.chairId
+      ? [meeting.chairId]
+      : [];
+  if (!speakers.length) {
+    throw new Error("pardon: no chair/speakers available");
+  }
+
+  const user = meeting.participants.find((p) => p.role === "user") || userParticipant();
+  appendTranscript(meeting.id, {
+    speaker: user.id,
+    role: "user",
+    text: question,
+  });
+  pokeMeetChannel();
+
+  const result = await sayTurn(question, {
+    speakers,
+    skipUserAppend: true,
+    keepStack: true, // preserve parked multi-speaker round
+    pickNote: mentioned.length ? "pardon @mention" : "pardon → chair",
+  });
+
+  if (process.env.GOTCHIBOT_MEET_QUIET !== "1") {
+    console.log(PARDON_HELP);
+    if (hasPardonStack(meeting.id)) {
+      const st = readPardonStack(meeting.id);
+      console.log(
+        `parked: ${st.remainingSpeakerIds.length} remaining — /continue to resume`,
+      );
+    }
+  } else {
+    // Quiet mode (prompter): still leave a transcript breadcrumb for the channel UI.
+    appendTranscript(meeting.id, {
+      speaker: meeting.chairId,
+      role: "system",
+      text: PARDON_HELP,
+    });
+    pokeMeetChannel();
+  }
+  return result;
+}
+
+export async function continueParkedRound() {
+  const meeting = requireOpenMeeting();
+  const stack = readPardonStack(meeting.id);
+  if (!stack || !(stack.remainingSpeakerIds || []).length) {
+    const msg =
+      "No parked round to /continue. Start a multi-speaker turn, then pardon me mid-round.";
+    if (process.env.GOTCHIBOT_MEET_QUIET !== "1") console.error(msg);
+    else {
+      try {
+        const user = meeting.participants.find((p) => p.role === "user") || userParticipant();
+        appendTranscript(meeting.id, { speaker: user.id, role: "system", text: msg });
+        pokeMeetChannel();
+      } catch {
+        /* ok */
+      }
+    }
+    return { ok: false, reason: "no-stack", meeting };
+  }
+
+  appendTranscript(meeting.id, {
+    speaker: meeting.chairId,
+    role: "system",
+    text: PARDON_CONTINUE_MARKER,
+  });
+  pokeMeetChannel();
+  if (process.env.GOTCHIBOT_MEET_QUIET !== "1") {
+    console.log(PARDON_CONTINUE_MARKER);
+  }
+
+  const remaining = [...stack.remainingSpeakerIds];
+  clearPardonStack(meeting.id);
+  clearPardonRequest(meeting.id);
+
+  // Colabo parks agent ids outside sayTurn's speaker loop — resume that runner.
+  if (stack.kind === "colabo") {
+    const { resumeColabo } = await import("./colabo.mjs");
+    const result = await resumeColabo({
+      ...stack,
+      remainingSpeakerIds: remaining,
+    });
+    return { ok: true, kind: "colabo", ...result };
+  }
+
+  const result = await sayTurn(stack.originalUserText || "(continued)", {
+    resume: true,
+    speakers: remaining,
+    skipUserAppend: true,
+    originalUserText: stack.originalUserText || "",
+    pickNote: "continue parked round",
+  });
+  return { ok: true, ...result };
+}
+
 
 function firstLine(text) {
   return String(text || "")
@@ -2109,6 +2314,18 @@ async function main() {
     return;
   }
 
+  if (cmd === "pardon" || cmd === "pardon-me" || cmd === "pardon_me") {
+    await pardonTurn(rest.join(" ").trim());
+    return;
+  }
+
+  if (cmd === "continue" || cmd === "resume") {
+    const r = await continueParkedRound();
+    if (!r.ok) process.exitCode = 2;
+    return;
+  }
+
+
   if (cmd === "edit") {
     const key = rest[0];
     const text = rest.slice(1).join(" ").trim();
@@ -2162,6 +2379,34 @@ async function main() {
   usage();
   process.exit(2);
 }
+
+// pardon-me-v1 SIGTERM — park remaining speakers if a round was in flight
+function installPardonSignalHandlers() {
+  const park = () => {
+    try {
+      const id = currentMeetingId();
+      if (!id) return;
+      if (readPardonStack(id)?.remainingSpeakerIds?.length) return;
+      const round = readPardonRound(id);
+      const stack = stackFromRound(round, { reason: "signal" });
+      if (stack && stack.remainingSpeakerIds.length) {
+        writePardonStack(id, stack);
+        clearPardonRequest(id);
+      }
+    } catch {
+      /* ok */
+    }
+  };
+  process.on("SIGTERM", () => {
+    park();
+    process.exit(143);
+  });
+  process.on("SIGINT", () => {
+    park();
+    process.exit(130);
+  });
+}
+installPardonSignalHandlers(); // SIGTERM //pardon-me-v1
 
 if (process.argv[1] && process.argv[1].endsWith("gotchi-meet.mjs")) {
   main().catch((e) => {

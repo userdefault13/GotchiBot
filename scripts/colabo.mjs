@@ -93,11 +93,22 @@ async function runAgent(agentId, message, timeoutS) {
   return { ok: false, text: `(colabo failed: ${r.reason || "models-exhausted"})`, via: "none" };
 }
 
-export async function colabo(prompt, { timeoutS = 90 } = {}) {
-  const text = String(prompt || "").trim();
+export async function colabo(prompt, { timeoutS = 90, resumeFrom = null } = {}) {
+  const text = String(
+    (resumeFrom && resumeFrom.originalUserText) || prompt || "",
+  ).trim();
   if (!text) throw new Error('usage: colabo.mjs "prompt"');
 
   const m = await meetMod();
+  const {
+    writePardonStack,
+    readPardonRequest,
+    clearPardonRequest,
+    clearPardonStack,
+    hasPardonStack,
+    PARDON_PAUSE_MARKER,
+  } = await import("./lib/meet-pardon.mjs");
+
   const meeting = (await m.ensureRoom?.()) || m.loadCurrentMeeting();
   if (!meeting) throw new Error("no open room — run: gotchibot meet open");
 
@@ -106,24 +117,127 @@ export async function colabo(prompt, { timeoutS = 90 } = {}) {
     await m.inviteAllParticipants();
   }
   const meeting2 = m.loadCurrentMeeting();
-  const list = agentIds(meeting2);
+  const mid = meeting2.id;
+  let list = agentIds(meeting2);
   if (!list.length) throw new Error("no agent participants");
 
-  await m.sayTurn(`[colabo] Julius asks everyone:\n\n${text}`);
-
-  const replies = [];
-  // Sequential to keep transcript readable (parallel would race transcript locks)
-  for (const id of list) {
-    const r = await runAgent(id, text, timeoutS);
-    replies.push({ id, ...r });
-    await m.sayTurn(`[colabo · ${id}]\n\n${(r.text || "").slice(0, 2500)}`);
+  const spokenIds = Array.isArray(resumeFrom?.spokenIds)
+    ? [...resumeFrom.spokenIds]
+    : [];
+  if (resumeFrom?.remainingSpeakerIds?.length) {
+    list = [...resumeFrom.remainingSpeakerIds];
+  } else {
+    // Fresh colabo clears any leftover park from a prior round.
+    clearPardonStack(mid);
+    clearPardonRequest(mid);
+    await m.sayTurn(`[colabo] Julius asks everyone:\n\n${text}`, {
+      keepStack: true,
+    });
   }
 
-  await m.sayTurn(
-    `[colabo] Done — ${replies.filter((x) => x.ok).length}/${replies.length} agents replied.`,
-  );
+  const replies = [];
+  let paused = false;
 
-  return { meetingId: meeting2.id, prompt: text, replies };
+  const parkRemaining = (remaining, reason) => {
+    if (!remaining.length) return;
+    writePardonStack(mid, {
+      kind: "colabo",
+      originalUserText: text,
+      remainingSpeakerIds: remaining,
+      spokenIds,
+      speakers: [...spokenIds, ...remaining],
+      pickNote: "colabo",
+      reason: reason || "pardon",
+      timeoutS,
+    });
+  };
+
+  // If prompter SIGTERMs us mid-agent, park whoever is left (best-effort).
+  const onSignal = () => {
+    const idx = spokenIds.length;
+    // remaining ≈ list slice from current — approximate via replies length
+    const done = new Set(spokenIds);
+    const remaining = list.filter((id) => !done.has(id));
+    parkRemaining(remaining, "signal");
+  };
+  process.once("SIGTERM", onSignal);
+  process.once("SIGINT", onSignal);
+
+  try {
+    // Sequential to keep transcript readable (parallel would race transcript locks)
+    for (let i = 0; i < list.length; i++) {
+      const id = list[i];
+      // Cooperative pause: honor pardon.request between agents.
+      const req = readPardonRequest(mid);
+      if (req) {
+        const remaining = list.slice(i);
+        parkRemaining(remaining, "pardon");
+        clearPardonRequest(mid);
+        // Room note only — do not wake the chair LLM for the pause marker.
+        try {
+          const { appendFileSync, mkdirSync, writeFileSync } = await import("node:fs");
+          const { join } = await import("node:path");
+          const dir = join(ROOT, "sessions/meetings", mid);
+          mkdirSync(dir, { recursive: true });
+          appendFileSync(
+            join(dir, "transcript.jsonl"),
+            JSON.stringify({
+              ts: new Date().toISOString(),
+              speaker: meeting2.chairId || "system",
+              role: "system",
+              text: PARDON_PAUSE_MARKER,
+            }) + "\n",
+          );
+          writeFileSync(
+            join(ROOT, "sessions/.meet-channel.stamp"),
+            new Date().toISOString() + "\n",
+          );
+        } catch {
+          /* room note best-effort */
+        }
+        paused = true;
+        break;
+      }
+
+      const r = await runAgent(id, text, timeoutS);
+      replies.push({ id, ...r });
+      spokenIds.push(id);
+      await m.sayTurn(`[colabo · ${id}]\n\n${(r.text || "").slice(0, 2500)}`, {
+        keepStack: true,
+      });
+    }
+
+    if (!paused) {
+      clearPardonStack(mid);
+      clearPardonRequest(mid);
+      await m.sayTurn(
+        `[colabo] Done — ${replies.filter((x) => x.ok).length}/${list.length} agents replied.`,
+        { keepStack: true },
+      );
+    }
+  } finally {
+    process.off("SIGTERM", onSignal);
+    process.off("SIGINT", onSignal);
+  }
+
+  return {
+    meetingId: mid,
+    prompt: text,
+    replies,
+    paused,
+    parked: paused ? hasPardonStack(mid) : false,
+  };
+}
+
+/** Resume a parked colabo round (/continue). */
+export async function resumeColabo(stack) {
+  if (!stack || stack.kind !== "colabo") {
+    throw new Error("resumeColabo: not a colabo stack");
+  }
+  return colabo(stack.originalUserText || "", {
+    timeoutS: Number(stack.timeoutS) || 90,
+    resumeFrom: stack,
+  });
 }
 
 function usage() {
