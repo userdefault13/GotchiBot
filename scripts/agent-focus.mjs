@@ -800,19 +800,63 @@ async function cmdCockpit() {
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-async function cmdMeet() {
-  if (process.env.TMUX) {
-    console.log("Opening GotchiBot meeting room (Zoom gallery)…");
-    respawnChatPane({ GOTCHIBOT_MEET: "1" });
-    return;
-  }
-  console.log("Opening GotchiBot meeting room…");
-  const r = spawnSync(process.execPath, [`${ROOT}/scripts/onboarding-gate.mjs`, "--meet"], {
+function ensureTmuxSession(sessName) {
+  const sess = String(sessName || process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot").replace(/^=/, "");
+  const has = spawnSync("tmux", ["has-session", "-t", `=${sess}`], { stdio: "ignore" });
+  if (has.status === 0) return sess;
+  spawnSync("tmux", ["new-session", "-d", "-s", sess, "-n", "work"], { stdio: "ignore" });
+  const layout = `${ROOT}/scripts/orchestrator-layout.sh`;
+  spawnSync(layout, ["ensure"], {
     cwd: ROOT,
-    stdio: "inherit",
-    env: process.env,
+    stdio: "ignore",
+    env: { ...process.env, GOTCHIBOT_TMUX_SESSION: sess, GOTCHIBOT_LAYOUT_SAFE: "1" },
   });
-  if (r.status !== 0) process.exit(r.status ?? 1);
+  return sess;
+}
+
+async function cmdMeet() {
+  // Always open the interactive meeting menu in gotchibot:work.1 (Resume/End or Start).
+  // Do not depend on the caller having TMUX set — /meet from OpenCode TUI plugin is detached.
+  // Do NOT enter-chat-max — it can respawn chat after us and wipe GOTCHIBOT_MEET.
+  const sess = ensureTmuxSession(process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot");
+  process.env.GOTCHIBOT_TMUX_SESSION = sess;
+  // Only rebuild a broken desk. require-three → rebuild_panes respawns chat WITHOUT MEET.
+  const paneCount = spawnSync(
+    "tmux",
+    ["list-panes", "-t", `${sess}:work`, "-F", "#{pane_index}"],
+    { encoding: "utf8" },
+  );
+  const n = String(paneCount.stdout || "")
+    .trim()
+    .split("\n")
+    .filter(Boolean).length;
+  if (n < 3) runLayout("require-three");
+  console.log("Opening GotchiBot meeting menu…");
+  const envParts = [
+    'GOTCHIBOT_MEET="1"',
+    'GOTCHIBOT_SKIP_ONBOARDING="1"',
+    'GOTCHIBOT_SKIP_COCKPIT="1"',
+  ].join(" ");
+  const r = spawnSync(
+    "tmux",
+    [
+      "respawn-pane",
+      "-t",
+      `${sess}:work.1`,
+      "-k",
+      `cd "${ROOT}" && ${envParts} exec ./scripts/chat-pane.sh`,
+    ],
+    { stdio: "ignore" },
+  );
+  if (r.status !== 0) {
+    console.log("tmux respawn failed — opening meeting menu here…");
+    const gate = spawnSync(process.execPath, [`${ROOT}/scripts/onboarding-gate.mjs`, "--meet"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: { ...process.env, GOTCHIBOT_IN_CHAT_PANE: "1" },
+    });
+    if (gate.status !== 0 && gate.status !== 4) process.exit(gate.status ?? 1);
+  }
 }
 
 async function cmdOrch({ respawn = false } = {}) {

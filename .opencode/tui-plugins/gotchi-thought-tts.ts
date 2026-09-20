@@ -358,35 +358,23 @@ const tui: TuiPlugin = async (api) => {
         },
         {
           name: "gotchi.meet",
-          title: "Switch to open meeting",
+          title: "Meeting menu",
           category: "Gotchi",
           namespace: "palette",
           slashName: "meet",
-          // Ctrl+U: rejoin existing meet gallery (not start).
+          // Instant meeting menu (same path as agent-focus meet). Ctrl+U also.
           // Ctrl+M is Enter in most terminals — do not bind it.
           keybind: "ctrl+u",
           run: () => {
-            const open = spawnSync(
-              process.execPath,
-              [join(rootDir, "scripts", "gotchi-meet.mjs"), "open"],
-              { cwd: rootDir, env: process.env, encoding: "utf8" },
-            )
-            if (open.status === 0) {
-              log(rootDir, "meet", { via: "ctrl+u|slash", action: "open-existing" })
-              try {
-                api.ui.toast({ message: "Switched to meeting…", variant: "info" })
-              } catch {}
-              return
-            }
-            const err = String(open.stderr || open.stdout || "").trim()
-            log(rootDir, "meet", { via: "ctrl+u|slash", action: "no-open", err: err.slice(0, 200) })
+            spawn("node", [join(rootDir, "scripts", "agent-focus.mjs"), "meet"], {
+              cwd: rootDir,
+              env: process.env,
+              detached: true,
+              stdio: "ignore",
+            }).unref()
+            log(rootDir, "meet", { via: "ctrl+u|slash", action: "menu" })
             try {
-              api.ui.toast({
-                message: err.includes("no open meeting")
-                  ? "No open meeting — start one from cockpit /meet"
-                  : err.slice(0, 120) || "No open meeting",
-                variant: "warning",
-              })
+              api.ui.toast({ message: "Opening meeting menu…", variant: "info" })
             } catch {}
           },
         },

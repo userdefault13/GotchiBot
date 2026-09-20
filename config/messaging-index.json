@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "title": "GotchiBot messaging index",
+  "summary": "Hard policy: agent\u2194agent = bot-inbox. External mail inbound+outbound = mail-courier only.",
+  "channels": [
+    {
+      "id": "bot-inbox",
+      "kind": "internal",
+      "owner": "every desk (send/read); orch digests",
+      "useFor": [
+        "ALL durable agent\u2194agent messages",
+        "FYI / report / ask / alert",
+        "UserDefault / orch notify",
+        "PKM lifecycle notifies",
+        "nightly dept reports"
+      ],
+      "notFor": [
+        "external email",
+        "work handoff packets (use passoff)",
+        "live talk"
+      ],
+      "cli": {
+        "send": "./scripts/gotchibot inbox send --to <userdefault|orch|hero|role> --from <hero> --subject \"\u2026\" --body \"\u2026\" [--kind fyi|report|ask|alert]",
+        "list": "./scripts/gotchibot inbox list --to <addr> [--unread]",
+        "read": "./scripts/gotchibot inbox read <id>",
+        "digest": "./scripts/gotchibot inbox digest"
+      },
+      "store": "sessions/pstack/<slug>/inbox/inbox.json (project) or sessions/inbox/",
+      "aliases": [
+        "userdefault",
+        "orch",
+        "kanban-manager|pkm",
+        "mail-courier|courier"
+      ]
+    },
+    {
+      "id": "passoff",
+      "kind": "internal-work",
+      "owner": "sender desk \u2192 receiver desk",
+      "useFor": [
+        "work packets with Done/Next",
+        "continue a job across desks",
+        "hand outbound mail payload TO mail-courier"
+      ],
+      "notFor": [
+        "FYI chatter",
+        "external SMTP",
+        "live meet"
+      ],
+      "cli": {
+        "resume": "./scripts/gotchibot passoff resume",
+        "send": "./scripts/gotchibot passoff send --to <hero> --from <hero> \u2026"
+      },
+      "store": "passoff packets (see passoff skill)"
+    },
+    {
+      "id": "meet",
+      "kind": "live",
+      "owner": "orch + desks on iMessage meet channel",
+      "useFor": [
+        "live talk",
+        "optional recorded morning round"
+      ],
+      "notFor": [
+        "durable FYI (use bot-inbox)",
+        "external email"
+      ],
+      "cli": {
+        "say": "./scripts/gotchibot meet say \"\u2026\"",
+        "status": "./scripts/gotchibot meet status"
+      },
+      "note": "Room is persistent. /start /end only toggle recording."
+    },
+    {
+      "id": "agentmail",
+      "kind": "external",
+      "owner": "mail-courier only (owned-8461 when seated)",
+      "useFor": [
+        "ALL external email outbound",
+        "ALL external email inbound"
+      ],
+      "notFor": [
+        "agent\u2194agent",
+        "UserDefault notify without external to:",
+        "dept nightlies",
+        "bot FYI"
+      ],
+      "cli": {
+        "binding": "node ./scripts/project-context.mjs mail show",
+        "deskMirror": "node ./scripts/project-mailbox.mjs inbox|sent <hero>",
+        "ensure": "node ./scripts/project-mailbox.mjs desk ensure <hero>",
+        "digest": "node ./scripts/project-mailbox.mjs digest",
+        "handoff": "passoff outbound {to,subject,body,fromAgent} \u2192 mail-courier"
+      },
+      "store": {
+        "binding": "sessions/pstack/<slug>/mail.json",
+        "ledger": "sessions/pstack/<slug>/mail-courier-ledger.json",
+        "deskMirror": "sessions/pstack/<slug>/desks/<heroId>/mailbox/{inbox,sent}.json"
+      },
+      "secrets": "abra project gotchibot AGENT_MAIL_API_KEY only \u2014 never in chat",
+      "policy": "Desks MUST passoff outbound to mail-courier; MUST read inbound only via desk mailbox mirror / courier relay."
+    }
+  ],
+  "routingTable": [
+    {
+      "want": "message another agent (durable)",
+      "use": "bot-inbox"
+    },
+    {
+      "want": "message UserDefault / orch (durable)",
+      "use": "bot-inbox"
+    },
+    {
+      "want": "hand work / continue a job",
+      "use": "passoff"
+    },
+    {
+      "want": "send external email",
+      "use": "passoff \u2192 mail-courier (only)"
+    },
+    {
+      "want": "receive external email",
+      "use": "mail-courier receives \u2192 mirrors desk mailbox \u2192 relays owner"
+    },
+    {
+      "want": "live talk",
+      "use": "meet"
+    },
+    {
+      "want": "email UserDefault with no external address",
+      "use": "bot-inbox --to userdefault (refuse AgentMail)"
+    }
+  ],
+  "policy": {
+    "agentToAgent": "bot-inbox",
+    "externalMailIn": "mail-courier",
+    "externalMailOut": "passoff \u2192 mail-courier \u2192 AgentMail",
+    "anti": [
+      "Desks never AgentMail directly",
+      "Desks never hold AGENT_MAIL_API_KEY",
+      "No AgentMail for bot-to-bot or UserDefault-without-external-to",
+      "No meet for durable agent-to-agent records"
+    ]
+  }
+}

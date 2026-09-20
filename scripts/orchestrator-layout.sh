@@ -491,7 +491,12 @@ leave_meet_gallery() {
   if [ "${1:-}" = "cockpit" ] || [ "${GOTCHIBOT_BOOT_COCKPIT:-}" = "1" ]; then
     to_cockpit=1
   fi
-  if [ "$(layout_mode)" != "meet-gallery" ]; then
+  # Always repair the desk. Old early-return when mode!=meet-gallery left a blank
+  # center pane after /chat (mode already flipped, meet-room pane still dying).
+  local c1
+  c1="$(pane_start_cmd 1 2>/dev/null || true)"
+  if [ "$(layout_mode)" != "meet-gallery" ] && [[ "$c1" == *chat-pane* ]] && [[ "$c1" != *GOTCHIBOT_COCKPIT=1* ]]; then
+    # Already on OpenCode chat — nothing to do.
     return 0
   fi
   # Mark normal before respawns so resize hooks don't re-enter meet-gallery.
@@ -509,7 +514,10 @@ leave_meet_gallery() {
   tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
   tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-channel 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" -u @gotchibot-meet-channel 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" -u @gotchibot-meet-room 2>/dev/null || true
   tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
@@ -642,6 +650,27 @@ leave_pstack_dossier() {
   if [ "${GOTCHIBOT_BOOT_COCKPIT:-}" != "1" ]; then
     tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
   fi
+}
+
+
+# Leave dossier → normal chat (user desk, no cockpit menu).
+leave_pstack_user() {
+  GOTCHIBOT_BOOT_COCKPIT=1 leave_pstack_dossier
+  set_layout_mode normal
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+}
+
+# Leave dossier → orch focus + chat (no cockpit menu).
+leave_pstack_orch() {
+  GOTCHIBOT_BOOT_COCKPIT=1 leave_pstack_dossier
+  set_layout_mode normal
+  # Pin orch focus before chat lands.
+  (cd "$ROOT" && node ./scripts/agent-focus.mjs orch >/dev/null 2>&1) || true
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
 }
 
 # Desk start / reattach: peel special modes and always land in cockpit.
@@ -1001,6 +1030,15 @@ install_agent_keys() {
   tmux bind-key -T gotchi-chat F3 run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T prefix o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T root M-o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
+  # One Ctrl+C → quit whole desk (back to terminal). Session-scoped so other tmux
+  # sessions still get a normal interrupt. Intercepts before OpenCode sees C-c.
+  local quit_sh="$ROOT/scripts/desk-quit.sh"
+  chmod +x "$quit_sh" 2>/dev/null || true
+  local quit_run="GOTCHIBOT_TMUX_SESSION='$sess_name' '$quit_sh'"
+  tmux bind-key -n C-c if-shell -F "#{==:#{session_name},$sess_name}" "run-shell \"$quit_run\"" "send-keys C-c" 2>/dev/null || true
+  for _qt in root gotchi-chat gotchi-files gotchi-avatar; do
+    tmux bind-key -T "$_qt" C-c if-shell -F "#{==:#{session_name},$sess_name}" "run-shell \"$quit_run\"" "send-keys C-c" 2>/dev/null || true
+  done
   # Meet gallery (existing meeting only) — F8 / prefix m / Option+M / Option+U
   # Do NOT bind -n C-m: terminals send C-m for Enter.
   tmux bind-key -T gotchi-chat F8 run-shell "cd \"$ROOT\" && ./scripts/gotchi-meet.mjs open" 2>/dev/null || true
@@ -1206,6 +1244,12 @@ case "$cmd" in
   leave-pstack-cockpit)
     leave_pstack_dossier cockpit
     ;;
+  leave-pstack-user)
+    leave_pstack_user
+    ;;
+  leave-pstack-orch)
+    leave_pstack_orch
+    ;;
   enter-cockpit|boot-cockpit)
     boot_cockpit_desk
     ;;
@@ -1234,7 +1278,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|enter-cockpit|boot-cockpit|require-three|fit|install-mouse]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|require-three|fit|install-mouse]" >&2
     exit 2
     ;;
 esac

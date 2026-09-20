@@ -43,6 +43,7 @@ import {
   pullMainOntoDesk,
   saveBoard,
 } from "./project-kanban.mjs";
+import { recordPkmEvent } from "./pkm-record.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -273,6 +274,24 @@ function parseFlags(argv) {
   return out;
 }
 
+
+function notifyPkm(event, ticket, by, note = "") {
+  try {
+    recordPkmEvent({
+      event,
+      from: by || ticket.from,
+      title: ticket.title,
+      to: ticket.to,
+      ticket: ticket.id,
+      card: ticket.cardId || null,
+      note: note || "",
+      passoff: ticket.passoffId || null,
+    });
+  } catch (e) {
+    console.error(`[pkm-record] warn: ${e.message || e}`);
+  }
+}
+
 async function main() {
   const raw = process.argv.slice(2);
   if (!raw.length) usage();
@@ -313,6 +332,7 @@ async function main() {
       ticket.cardId = card.id;
     }
     saveTicket(ticket, slug);
+    notifyPkm("delegated", ticket, flags.from, "ticket request opened");
     const cardPart = ticket.cardId ? `  card ${ticket.cardId} [todo]` : "  no card";
     console.log(`ticket ${ticket.id}  open → ${ticket.to}${cardPart}  ${ticket.title}`);
     return;
@@ -346,6 +366,7 @@ async function main() {
     moveLinkedCard(slug, t, CARD_COLUMN.submitted);
     saveTicket(t, slug);
     console.log(`ticket ${t.id}  submitted by ${flags.by} → review`);
+    notifyPkm("submitted", t, flags.by, flags.note || "submitted for review");
     return;
   }
 
@@ -358,6 +379,7 @@ async function main() {
     pushHistory(t, flags.by, "accept", flags.note || "");
     moveLinkedCard(slug, t, CARD_COLUMN.accepted);
     saveTicket(t, slug);
+    notifyPkm("reviewed", t, flags.by, flags.note || "accepted");
     console.log(`ticket ${t.id}  accepted by ${flags.by} → done`);
     return;
   }
@@ -371,6 +393,7 @@ async function main() {
     pushHistory(t, flags.by, "rework", flags.note);
     moveLinkedCard(slug, t, CARD_COLUMN.rework);
     saveTicket(t, slug);
+    notifyPkm("reviewed", t, flags.by, flags.note || "rework");
     console.log(`ticket ${t.id}  rework by ${flags.by} → todo  (${flags.note})`);
     return;
   }

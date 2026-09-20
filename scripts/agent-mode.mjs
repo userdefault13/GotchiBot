@@ -20,9 +20,11 @@ const ALIAS = {
   "sub-agent": "sandbox",
   subagent: "sandbox",
   project: "sandbox", // /project is a modal, not a Tab agent
+  wisp: "gotchi", // Wisp is /model wisp/gotchi, not a Tab agent
 };
 const MODES = new Set(["gotchi", "sandbox", "verse", "plan", "build", "ask"]);
 const CYCLE = ["gotchi", "sandbox", "verse", "plan", "build", "ask"];
+// wisp is a /model (provider wisp), not a Tab agent — see scripts/wisp-proxy.mjs
 
 function load() {
   try {
@@ -56,6 +58,71 @@ function paneLabel(agent) {
   }
 }
 
+const SESSION_MAP = `${ROOT}/sessions/.opencode-agent-sessions.json`;
+const OPENCODE_DB = `${process.env.HOME}/.local/share/opencode/opencode.db`;
+
+function loadSessionMap() {
+  try {
+    return JSON.parse(readFileSync(SESSION_MAP, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveSessionMap(map) {
+  mkdirSync(dirname(SESSION_MAP), { recursive: true });
+  writeFileSync(SESSION_MAP, `${JSON.stringify(map, null, 2)}\n`);
+}
+
+/** Remember the newest OpenCode session for an agent in the GotchiBot project. */
+function isProjectSessionTitle(title) {
+  const t = String(title || "");
+  return /^gotchibot:s/i.test(t) || /^GotchiBot\b/.test(t);
+}
+
+function rememberAgentSession(agent) {
+  if (!agent || !existsSync(OPENCODE_DB)) return null;
+  try {
+    const safe = String(agent).replace(/[^a-z0-9_-]/gi, "");
+    // Gotchi "current project" = gotchibot:s… / GotchiBot… titles only.
+    // OpenCode Tab can rewrite a Wisp Greeting session's agent to gotchi in-place —
+    // never treat that as the project chat.
+    const sql =
+      safe === "gotchi"
+        ? `SELECT id, title FROM session WHERE directory LIKE '%/GotchiBot%' AND time_archived IS NULL AND (title LIKE 'gotchibot:s%' OR title LIKE 'GotchiBot%') AND IFNULL(agent,'') != 'wisp' ORDER BY time_updated DESC LIMIT 1;`
+        : `SELECT id, title FROM session WHERE directory LIKE '%/GotchiBot%' AND agent='${safe}' AND time_archived IS NULL ORDER BY time_updated DESC LIMIT 1;`;
+    const q = spawnSync(
+      "sqlite3",
+      ["-separator", "\t", OPENCODE_DB, sql],
+      { encoding: "utf8" },
+    );
+    const line = (q.stdout || "").trim();
+    if (!line) return null;
+    const [id, ...titleParts] = line.split("\t");
+    const title = titleParts.join("\t");
+    if (!id.startsWith("ses_")) return null;
+    if (safe === "gotchi" && !isProjectSessionTitle(title)) return null;
+    const map = loadSessionMap();
+    // Keep an existing project pin if DB has nothing better (don't clobber).
+    if (safe === "gotchi" && map.project?.sessionId?.startsWith("ses_") && !isProjectSessionTitle(title)) {
+      return map.project.sessionId;
+    }
+    map[agent] = { sessionId: id, title: title || null, updatedAt: new Date().toISOString() };
+    if (agent === "gotchi") map.project = map[agent];
+    saveSessionMap(map);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+function pinnedSessionFor(agent) {
+  const map = loadSessionMap();
+  const hit = map[agent] || (agent === "gotchi" ? map.project : null);
+  const id = hit?.sessionId || "";
+  return id.startsWith("ses_") ? id : "";
+}
+
 function restartChatPane(agent) {
   const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
   try {
@@ -66,17 +133,42 @@ function restartChatPane(agent) {
   } catch {
     /* ok */
   }
+  // Snapshot the mode we're leaving so switch-back can restore its project chat.
+  const leaving = load();
+  if (leaving && leaving !== agent) rememberAgentSession(leaving);
+  rememberAgentSession(agent);
+
   const label = paneLabel(agent);
   spawnSync("tmux", ["set-option", "-t", `${sess}:work.1`, "pane-border-format", label], {
     stdio: "ignore",
   });
-  const hasTmux = spawnSync("tmux", ["has-session", "-t", sess], { stdio: "ignore" }).status === 0;
+  const hasTmux = spawnSync("tmux", ["has-session", "-t", `=${sess}`], { stdio: "ignore" }).status === 0;
   if (!hasTmux) {
     return { restarted: false, reason: "no-tmux" };
   }
-  // Pin agent explicitly. Non-gotchi forces local OpenCode (no OpenClaw relay env).
-  const localGuard =
-    agent === "gotchi" ? "" : " GOTCHIBOT_GOTCHI_BACKEND=local GOTCHIBOT_OPENCODE_CONTINUE=0";
+
+  // Gotchi mode = current project chat only. Never --continue (that resumes whatever
+  // OpenCode touched last, often a Wisp Greeting Tab-rewritten to agent=gotchi).
+  let pinned = pinnedSessionFor(agent);
+  if (agent === "gotchi" && !pinned) {
+    pinned = rememberAgentSession("gotchi") || "";
+  }
+  const envParts = [
+    "GOTCHIBOT_SKIP_ONBOARDING=1",
+    "GOTCHIBOT_SKIP_COCKPIT=1",
+    `GOTCHIBOT_OPENCODE_AGENT=${agent}`,
+  ];
+  if (agent !== "gotchi") {
+    envParts.push("GOTCHIBOT_GOTCHI_BACKEND=local");
+  }
+  if (pinned) {
+    envParts.push(`GOTCHIBOT_OPENCODE_SESSION=${pinned}`);
+    envParts.push("GOTCHIBOT_OPENCODE_CONTINUE=0");
+  } else {
+    // Side mode with no history, or gotchi with no project session yet → fresh.
+    envParts.push("GOTCHIBOT_OPENCODE_CONTINUE=0");
+  }
+
   const r = spawnSync(
     "tmux",
     [
@@ -84,11 +176,16 @@ function restartChatPane(agent) {
       "-t",
       `${sess}:work.1`,
       "-k",
-      `cd "${ROOT}" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 GOTCHIBOT_OPENCODE_CONTINUE=0 GOTCHIBOT_OPENCODE_AGENT=${agent}${localGuard} exec ./scripts/chat-pane.sh`,
+      `cd "${ROOT}" && ${envParts.join(" ")} exec ./scripts/chat-pane.sh`,
     ],
     { stdio: "ignore" },
   );
-  return { restarted: r.status === 0, reason: r.status === 0 ? "ok" : "respawn-failed" };
+  return {
+    restarted: r.status === 0,
+    reason: r.status === 0 ? "ok" : "respawn-failed",
+    sessionId: pinned || null,
+    continue: !pinned && agent === "gotchi",
+  };
 }
 
 const cmd = process.argv[2];
@@ -130,7 +227,11 @@ if (cmd === "set") {
   const agent = ALIAS[raw] || raw;
   if (!agent || !MODES.has(agent)) {
     console.error(`usage: agent-mode.mjs set gotchi|sandbox|verse|plan|build|ask [--restart]`);
+    if (raw === "wisp") console.error("hint: Wisp is a model — /model wisp/gotchi (start: gotchibot wisp-proxy)");
     process.exit(2);
+  }
+  if (raw === "wisp") {
+    console.error("note: wisp is not a Tab agent; staying on gotchi. Use /model wisp/gotchi");
   }
   save(agent);
   let restart = { restarted: false };

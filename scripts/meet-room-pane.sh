@@ -32,20 +32,20 @@ while true; do
   fi
   case "$intent" in
     end)
-      # Legacy: prompter used to leave+end. Now /end stays in-room; treat as leave UI only.
-      # Recording stop is handled inside the prompter via gotchi-meet end.
+      # Leave UI → OpenCode. Meeting recording already stopped by prompter if /end.
+      # Exit this pane loop — leave-meet-gallery respawns work.1 as chat-pane.
       restore_orch_desk leave-meet-gallery
-      sleep 8
+      exit 0
       ;;
     chat)
       # Leave room UI → OpenCode chat + avatar; room stays open for /meet say / open.
       restore_orch_desk leave-meet-gallery
-      sleep 8
+      exit 0
       ;;
     cockpit)
       # Leave room UI → cockpit menu (same room stays open).
       restore_orch_desk leave-meet-cockpit
-      sleep 8
+      exit 0
       ;;
     *)
       sleep 0.3

@@ -92,7 +92,56 @@ I do **not** implement work in the OpenCode/OpenClaw turn and call it done. I do
 - Project tickets (when a sealed project is selected): desks may `./scripts/project-tickets.mjs request/claim/submit` for their own hero id (`--by owned-5402`); the project **kanban-manager** owns `accept` / `rework` / `close` / `digest`.
 - Desk mailbox (when a sealed project is selected): `./scripts/project-mailbox.mjs desk ensure owned-5402` then `inbox owned-5402` / `sent owned-5402` / `read owned-5402 <messageId>`. The project **mail-courier** owns AgentMail send/receive and appends to my inbox/sent on every successful send + relayed inbound — I read my own files, I never send directly.
 - **Bot inbox** (internal, not AgentMail): for FYI / report / ask / alert to UserDefault or orch without waking meet — `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot inbox send --to userdefault --from owned-5402 --subject "…" --body "…" [--kind fyi|report|ask|alert]`. Read with `inbox list --to userdefault --unread` / `inbox read <id>`. Passoff stays for work packets; meet stays for live talk.
+- **Notify UserDefault** (routing rule): when UserDefault says "email me" / "ping me" / "notify me" / "message me when ready" with **no external address given** → `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot inbox send --to userdefault --from owned-5402 --subject "…" --body "…"`. Do **not** open AgentMail — there is no personal email for UserDefault. Desk mailbox ≠ department email.
 - **Scheduled desk wake** (skill `desk-wake`): a launchd job `com.gotchibot.desk-wake.owned-5402` may wake me on an interval. A wake is ONE bounded cycle of my role's autonomy — stop after one unit of progress, address UserDefault only, report to orch via bot inbox (`gotchibot inbox send --to orch --from owned-5402 --kind report`). Check with `./scripts/gotchibot wake status owned-5402`; defer desks (trader/infra/moltbook/comms) keep their own schedule CLIs.
+
+
+## Delegate via Prof → worker
+
+When my desk needs capacity (coding, research, multi-step edits I should not DIY alone):
+
+1. Ask **Prof. Link-Cube** to seat a **worker** on an **available** hero (never steal LINK/YFI/WBTC desks; never auto-mint):
+   `./scripts/gotchibot templates apply worker --hero <available> --yes`
+   (or `link-cube resummon --hero <available> --role worker --yes`)
+2. Hand the job via spawn / passoff / project-tickets `request` — not by becoming orch.
+3. Record the delegation for PKM (see rule below).
+
+Do **not** silently DIY large delegated work on the chat model. Prefer a Prof-seated worker + work tools.
+
+## Rule — PKM record on delegate / submit / review
+
+**Any** work that is **delegated**, **submitted**, or **reviewed** must notify **kanban-manager** so they can record and manage it:
+
+```bash
+cd /Users/juliuswong/Dev/GotchiBot && node ./scripts/pkm-record.mjs --event delegated|submitted|reviewed \
+  --from owned-5402 --title "…" [--to <hero|worker>] [--ticket <id>] [--card <id>] [--note "…"] [--passoff <id>] [--session <id>]
+```
+
+- `delegated` — I asked Prof for a worker, opened a ticket request, or passoff'd work out
+- `submitted` — hand-in for review (ticket submit / output.md ready)
+- `reviewed` — accept or rework (note which)
+
+`project-tickets.mjs` request/submit/accept/rework already call this. Manual/passoff/Prof-seat paths must call it too.
+Inbox goes to role `kanban-manager` (alias `pkm`); if unseated, falls back to orch. Address UserDefault only in bodies — never a real name.
+
+
+## Messaging policy (hard)
+
+**Agent ↔ agent = bot-inbox.** Durable messages between desks (FYI / report / ask / alert) go through `gotchibot inbox send --to <hero|role> --from owned-5402 …`. Do **not** invent side channels, do **not** use AgentMail for bot-to-bot, do **not** use meet for durable handoffs.
+
+**External mail in + out = mail-courier only.** Any outbound email to an external address is a **passoff** to **mail-courier** with `{to, subject, body, fromAgent: owned-5402}`. Any inbound external mail is received by mail-courier, mirrored into my desk mailbox, and relayed — I never call AgentMail myself and I never hold `AGENT_MAIL_API_KEY`.
+
+| Intent | Channel |
+|---|---|
+| Agent → agent (durable) | **bot-inbox** |
+| Agent → UserDefault / orch (durable) | **bot-inbox** |
+| Work packet / continue job | **passoff** |
+| Outbound external email | **passoff → mail-courier** |
+| Inbound external email | **mail-courier → desk mailbox + relay** |
+| Live talk | **meet** |
+
+Index: `./scripts/gotchibot messaging --text`. Rule: `config/rules/messaging-channels.md`.
+
 
 ## Nightly department report (every day, 03:00 America/Los_Angeles)
 

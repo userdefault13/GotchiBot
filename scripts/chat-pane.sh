@@ -29,6 +29,19 @@ export PATH="${HOME}/.openclaw/bin:${PATH}"
 [ -f "$ROOT/scripts/openclaw-gateway-env.sh" ] && source "$ROOT/scripts/openclaw-gateway-env.sh"
 # Subscription mode: this strips any API-key override for opencode-go (opt-in: GOTCHIBOT_OPENCODE_GO_APIKEY=1).
 node "$ROOT/scripts/sync-opencode-go-provider.mjs" >/dev/null 2>&1 || true
+mkdir -p "$ROOT/sessions"
+# Model priority:
+#   1) sessions/.chat-model (live /model via gotchi-model-sync — survives pane respawn)
+#   2) GOTCHIBOT_OPENCODE_MODEL already in env (.gotchi-model.env via gateway-env, or caller)
+#   3) model-auto pick / fallback
+# .chat-model must beat .gotchi-model.env: pin file is often stale default (big-pickle).
+if [ -f "$ROOT/sessions/.chat-model" ]; then
+  _chat_model="$(tr -d '[:space:]' < "$ROOT/sessions/.chat-model" || true)"
+  if [ -n "$_chat_model" ]; then
+    export GOTCHIBOT_OPENCODE_MODEL="$_chat_model"
+  fi
+  unset _chat_model
+fi
 if [ -z "${GOTCHIBOT_OPENCODE_MODEL:-}" ]; then
   MODEL="$(node "$ROOT/scripts/model-auto.mjs" pick 2>/dev/null || echo opencode-go/kimi-k3)"
   export GOTCHIBOT_OPENCODE_MODEL="$MODEL"
@@ -40,7 +53,6 @@ if command -v node >/dev/null 2>&1; then
   eval "$(node "$ROOT/scripts/model-go-guard.mjs" env "$MODEL" 2>/dev/null)" || true
   MODEL="${GOTCHIBOT_OPENCODE_MODEL:-$MODEL}"
 fi
-mkdir -p "$ROOT/sessions"
 # Cockpit Settings → sessions/.tui-prefs.json (do not override explicit env).
 if [ -f "$ROOT/sessions/.tui-prefs.json" ] && command -v node >/dev/null; then
   eval "$(node -e "
@@ -51,6 +63,7 @@ if [ -f "$ROOT/sessions/.tui-prefs.json" ] && command -v node >/dev/null; then
       console.log('export GOTCHIBOT_OPENCODE_REPLAY=' + (s.replay ? '1' : '0'));
   " 2>/dev/null || true)"
 fi
+# Tentative persist; rewritten after gotchi-mode final MODEL resolution below.
 printf "%s\n" "$MODEL" > "$ROOT/sessions/.chat-model"
 MODE_FILE="$ROOT/sessions/.agent-mode.json"
 if [ -n "${GOTCHIBOT_OPENCODE_AGENT:-}" ]; then
@@ -74,6 +87,29 @@ cd "$ROOT"
 # shellcheck source=scripts/progress-bar.sh
 source "$ROOT/scripts/progress-bar.sh"
 PROGRESS_FG=$'\033[38;5;213m'
+# Wisp (Gotchi Closet) — load key for remote MCP without printing it.
+if [ -z "${WISP_API_KEY:-}" ] && [ -f "$ROOT/sessions/.wisp.env" ]; then
+  # shellcheck disable=SC1091
+  set -a
+  # shellcheck source=/dev/null
+  . "$ROOT/sessions/.wisp.env"
+  set +a
+fi
+
+
+# Wisp is a /model (provider wisp → :45682), not a Tab agent — keep proxy warm for /model wisp/gotchi.
+ensure_wisp_proxy() {
+  if curl -sf --max-time 1 "http://127.0.0.1:${GOTCHIBOT_WISP_PORT:-45682}/health" >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ -f "$ROOT/scripts/wisp-proxy.mjs" ] && command -v node >/dev/null 2>&1; then
+    mkdir -p "$ROOT/sessions"
+    nohup node "$ROOT/scripts/wisp-proxy.mjs" >>"$ROOT/sessions/.wisp-proxy.log" 2>&1 &
+    disown 2>/dev/null || true
+  fi
+}
+ensure_wisp_proxy
+
 # Sync persisted TTS preference into the chat pane environment.
 if [ -f "$ROOT/sessions/.tts.json" ] && command -v node >/dev/null; then
   eval "$(node -e "
@@ -235,6 +271,8 @@ show_meet() {
 if [ "${GOTCHIBOT_MEET:-}" = "1" ]; then
   progress_end
   show_meet
+  # Back from menu (exit 0) → OpenCode, never re-open cockpit/Cartridge.
+  export GOTCHIBOT_SKIP_COCKPIT=1
 fi
 
 # Welcome / sign-in gate until onboarding is complete.
@@ -361,16 +399,61 @@ else
   esac
 fi
 
+# Final model used for -m — keep pins in sync so respawns relaunch with it.
+export GOTCHIBOT_OPENCODE_MODEL="$MODEL"
+printf '%s\n' "$MODEL" > "$ROOT/sessions/.chat-model"
+printf 'export GOTCHIBOT_OPENCODE_MODEL=%q
+' "$MODEL" > "$ROOT/sessions/.gotchi-model.env"
+
 args=(--agent "$AGENT" -m "$MODEL")
-# Resume last OpenCode session (`opencode --continue`). Fresh: GOTCHIBOT_OPENCODE_CONTINUE=0
-# Pin a session: GOTCHIBOT_OPENCODE_SESSION=<id>
-# Non-gotchi: fresh session so build/ask/plan do not resume a gotchi transcript.
+# Resume / pin OpenCode sessions.
+# Gotchi mode = current PROJECT chat only (gotchibot:s… / GotchiBot…). Never --continue
+# onto whatever OpenCode touched last (often a Wisp Greeting Tab-rewritten to agent=gotchi).
+# Pin file: sessions/.opencode-agent-sessions.json (written by agent-mode.mjs).
+resolve_project_session() {
+  local pin_file="$ROOT/sessions/.opencode-agent-sessions.json"
+  local db="${HOME}/.local/share/opencode/opencode.db"
+  local id=""
+  if [ -f "$pin_file" ] && command -v node >/dev/null 2>&1; then
+    id="$(node -e "
+      try {
+        const m=require(process.argv[1]);
+        const id=(m.project&&m.project.sessionId)||(m.gotchi&&m.gotchi.sessionId)||'';
+        if(/^ses_/.test(id)) process.stdout.write(id);
+      } catch {}
+    " "$pin_file" 2>/dev/null || true)"
+  fi
+  if [ -z "$id" ] && [ -f "$db" ] && command -v sqlite3 >/dev/null 2>&1; then
+    id="$(sqlite3 "$db" "SELECT id FROM session WHERE directory LIKE '%/GotchiBot%' AND time_archived IS NULL AND (title LIKE 'gotchibot:s%' OR title LIKE 'GotchiBot%') AND IFNULL(agent,'') != 'wisp' ORDER BY time_updated DESC LIMIT 1;" 2>/dev/null || true)"
+  fi
+  printf '%s' "$id"
+}
+
 if [ -n "${GOTCHIBOT_OPENCODE_SESSION:-}" ]; then
   args+=(--session "$GOTCHIBOT_OPENCODE_SESSION")
-elif [ "$AGENT" != "gotchi" ]; then
+elif [ "$AGENT" = "gotchi" ]; then
+  _proj="$(resolve_project_session)"
+  if [ -n "$_proj" ]; then
+    args+=(--session "$_proj")
+    # Keep pin fresh for the next switch-back.
+    if command -v node >/dev/null 2>&1; then
+      node -e "
+        const fs=require('fs');
+        const p=process.argv[1], id=process.argv[2];
+        let m={}; try{m=JSON.parse(fs.readFileSync(p,'utf8'))}catch{}
+        const row={sessionId:id, updatedAt:new Date().toISOString()};
+        m.gotchi=row; m.project=row;
+        fs.mkdirSync(require('path').dirname(p),{recursive:true});
+        fs.writeFileSync(p, JSON.stringify(m,null,2)+'\n');
+      " "$ROOT/sessions/.opencode-agent-sessions.json" "$_proj" 2>/dev/null || true
+    fi
+  else
+    # No project session yet — start fresh gotchi, do not inherit Wisp Greeting.
+    :
+  fi
+else
+  # ask/plan/build/verse/sandbox: fresh transcript
   :
-elif [ "${GOTCHIBOT_OPENCODE_CONTINUE:-1}" = "1" ]; then
-  args+=(--continue)
 fi
 # Replay keeps prior turns visible + scrollable in mini mode (do not pass --no-replay).
 if [ "$REPLAY" != "1" ]; then
@@ -387,6 +470,8 @@ if [ -n "${TMUX:-}" ]; then
     ask) border=" Ask " ;;
     plan) border=" Plan " ;;
     build) border=" Build " ;;
+    verse) border=" Verse " ;;
+    sandbox) border=" Sandbox " ;;
     *) border=" Gotchi " ;;
   esac
   if [ "$AGENT" = "gotchi" ] && [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ]; then
@@ -400,19 +485,57 @@ fi
 # Without this, NIM models fail with "Missing Authentication header".
 # If abra fails (keychain / no GUI), fall through to bare opencode — never
 # kill the tmux session before the TUI has actually started.
-if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ] \
-  && [ "${GOTCHIBOT_SKIP_ABRA:-}" != "1" ] \
-  && command -v abra >/dev/null 2>&1; then
+#
+# Wisp (and other free-Zen-only modes) do not need vault keys. Skipping abra
+# avoids the Touch ID / "unlocking keys…" stall on pane respawn.
+skip_abra=0
+if [ "${GOTCHIBOT_SKIP_ABRA:-}" = "1" ]; then
+  skip_abra=1
+elif [ -n "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ]; then
+  skip_abra=1
+fi
+
+if [ "$skip_abra" != "1" ] && command -v abra >/dev/null 2>&1; then
   progress_pulse "GotchiCode · unlocking keys…" 8
   progress_end
   printf '  GotchiCode · unlocking keys…\n' >&2
-  if abra run gotchibot -- opencode "${args[@]}" "$ROOT"; then
-    quit_to_terminal
+  # Unlock with a bounded probe ONLY — never put perl alarm around the live OpenCode TUI.
+  # (alarm+exec on `abra … opencode` SIGALRM-killed the desk ~25s after boot / first reply.)
+  mkdir -p "$ROOT/sessions"
+  abra_unlocked=0
+  # Probe must prove secrets inject — `abra … true` can succeed with an empty vault.
+  _abra_probe() {
+    abra run gotchibot -- /usr/bin/printenv 2>/dev/null | \
+      grep -E '^(NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=' | \
+      grep -q .
+  }
+  if command -v perl >/dev/null 2>&1; then
+    if perl -e 'alarm shift; exec @ARGV' "${GOTCHIBOT_ABRA_TIMEOUT:-25}" \
+      bash -c 'abra run gotchibot -- /usr/bin/printenv 2>/dev/null | grep -E "^(NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=" | grep -q .'; then
+      abra_unlocked=1
+    fi
+  elif _abra_probe; then
+    abra_unlocked=1
   fi
-  echo "gotchibot: abra inject failed — launching opencode without vault keys" >&2
+  if [ "$abra_unlocked" = "1" ]; then
+    # No alarm: interactive TUI must own the process for the whole session.
+    # Keep stdout/stderr on the TTY — OpenCode Ink needs them.
+    if abra run gotchibot -- opencode "${args[@]}" "$ROOT"; then
+      quit_to_terminal
+    fi
+  fi
+  echo "gotchibot: abra inject failed or timed out — launching opencode without vault keys" >&2
+  # Timed-out abra often leaves alt-screen / mouse / half UTF-8 progress glyphs.
+  progress_end 2>/dev/null || true
+  stty sane 2>/dev/null || true
+  printf '\033c\033[0m\033[?25h\033[?1000l\033[?1006l\033[2J\033[H\033[3J' 2>/dev/null || clear 2>/dev/null || true
 fi
 
+# Fallback bare opencode (abra did not hand off). Wipe first so progress glyphs cannot smear.
+progress_end 2>/dev/null || true
+printf '\r\033[K' >&2
 progress_pulse "GotchiCode · starting…" 12
 progress_end
+printf '\033[2J\033[H\033[3J' 2>/dev/null || true
 opencode "${args[@]}" "$ROOT" || true
 quit_to_terminal

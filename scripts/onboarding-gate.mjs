@@ -36,9 +36,18 @@ function tmuxSessionName() {
 }
 
 function meetGalleryLayout(cmd) {
-  const background = cmd === "leave-meet-gallery";
-  const target = background ? "work.0" : undefined;
-  runLayout(cmd, { background, target, inheritStdio: cmd === "enter-meet-gallery" });
+  // enter/refresh/leave all may respawn work.1 — must run detached on work.0.
+  // Running enter-meet-gallery with inheritStdio on work.1 was the Files-only crash:
+  // layout respawned the center pane and aborted mid-flight.
+  const killsCenter =
+    cmd === "leave-meet-gallery" ||
+    cmd === "enter-meet-gallery" ||
+    cmd === "refresh-meet-gallery";
+  runLayout(cmd, {
+    background: killsCenter,
+    target: killsCenter ? "work.0" : undefined,
+    inheritStdio: false,
+  });
 }
 
 function enterMeetGalleryLayout() {
@@ -1552,7 +1561,7 @@ async function runCockpit() {
   }
 }
 
-/** /meet — start/invite then return so chat-pane.sh opens meet room (not OpenCode). */
+/** /meet — interactive meeting menu (Resume/End or Start), then meet room via exit 4. */
 async function runMeet() {
   try {
     clearStaleSessionPin();
@@ -1560,24 +1569,27 @@ async function runMeet() {
     if (!wallet) {
       wallet = await connectWalletMenu();
     }
-    const cartridgeId = await ensureCartridge(wallet);
-    const heroes = await loadCartridgeHeroesQuiet(cartridgeId);
-    await ensureOrchestratorHero(heroes);
-    const opened = await startMeetingMenu(heroes);
-    if (!opened) return;
-    if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") {
-      openMeetRoomFromPane();
+    // Skip Cartridge splash — jump straight to the meeting menu.
+    let heroes = [];
+    try {
+      const meta = loadMeta();
+      const cartridgeId = meta?.cartridgeId || (await ensureCartridge(wallet));
+      heroes = (await loadCartridgeHeroesQuiet(cartridgeId)) || [];
+      await ensureOrchestratorHero(heroes);
+    } catch (e) {
+      console.log(`  ⚠ roster load: ${e.message || e}`);
     }
-    rl.close();
-    const chatPane = `${ROOT}/scripts/chat-pane.sh`;
-    spawnSync(chatPane, [], {
-      cwd: ROOT,
-      stdio: "inherit",
-      env: { ...process.env, GOTCHIBOT_SKIP_ONBOARDING: "1", GOTCHIBOT_SKIP_COCKPIT: "1", GOTCHIBOT_MEET: "1" },
-    });
-    process.exit(0);
+    const opened = await startMeetingMenu(heroes);
+    if (!opened) {
+      // Back / quit → chat-pane falls through to OpenCode
+      process.exit(0);
+    }
+    // Resume or newly started → meet gallery (same as cockpit exit 4)
+    openMeetRoomFromPane();
   } finally {
-    rl.close();
+    try {
+      rl.close();
+    } catch {}
   }
 }
 

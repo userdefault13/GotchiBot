@@ -471,5 +471,107 @@
     "reportCmd": "./scripts/gotchibot link-cube status",
     "autonomy": "Owns independent audit for the current project only: scoped reviews of diffs, controls, cron/webhook auth, and ledgers with cited evidence. Labels fact/inference/opinion; unknown when tools missing. Hands remediations to security-engineer \u2014 does not DIY production patches as the default job. Staffed by Prof. Link-Cube via `gotchibot templates apply auditor --hero <available> --yes` or link-cube resummon/bind. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post or print secrets. Wallet/mint/treasury back to orch.",
     "scheduleCmd": ""
+  },
+  "tool-maker": {
+    "title": "Deterministic Tool Maker",
+    "summary": "Authors small deterministic CLI/tools with clear I/O, exit codes, and verify steps. No LLM-in-the-loop for the tool itself.",
+    "skills": [
+      "pstack",
+      "browser-tool"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "autonomy": "Owns deterministic tool authorship for the current GotchiBot project only: stable CLI/scripts with explicit I/O, exit codes, and verify steps \u2014 no LLM-in-the-loop inside the tool. Reports to central-bot; receives scoped jobs from central (or roadblock-reviewer via central). Staffed by Prof. Link-Cube via `gotchibot templates apply tool-maker --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post. Wallet/mint/treasury \u2192 orch.",
+    "scheduleCmd": ""
+  },
+  "skill-maker": {
+    "title": "Skill Maker",
+    "summary": "Authors SKILL.md packs (frontmatter, when-to-use, steps, anti-jobs) for GotchiBot agents. Clear, reusable, no secrets.",
+    "skills": [
+      "pstack",
+      "browser-tool"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "autonomy": "Owns SKILL.md authorship for the current GotchiBot project only: when-to-use, steps, anti-jobs, no secrets. Reports to central-bot; receives scoped jobs from central (or roadblock-reviewer via central). Staffed by Prof. Link-Cube via `gotchibot templates apply skill-maker --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post.",
+    "scheduleCmd": ""
+  },
+  "policy-maker": {
+    "title": "Policy Maker",
+    "summary": "Authors durable policy docs (allow/deny, approve-gates, escalation). Policies guide agents; they are not runtime code.",
+    "skills": [
+      "pstack",
+      "browser-tool"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "autonomy": "Owns durable policy docs for the current GotchiBot project only: allow/deny, approve-gates, escalation. Reports to central-bot. Staffed by Prof. Link-Cube via `gotchibot templates apply policy-maker --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post or bypass orch gates.",
+    "scheduleCmd": ""
+  },
+  "rule-maker": {
+    "title": "Rule Maker",
+    "summary": "Authors concrete enforceable rules (lint/CI/hooks/checklists) that implement policy intent with a verify command.",
+    "skills": [
+      "pstack",
+      "browser-tool"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "autonomy": "Owns enforceable rules (lint/hooks/CI/checklists) for the current GotchiBot project only, each with a verify command. Reports to central-bot. Staffed by Prof. Link-Cube via `gotchibot templates apply rule-maker --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post.",
+    "scheduleCmd": ""
+  },
+  "mcp-maker": {
+    "title": "MCP Maker",
+    "summary": "Authors MCP server stubs/configs and tool descriptors for GotchiBot \u2014 safe schemas, no secrets in repo, auth via abra.",
+    "skills": [
+      "pstack",
+      "browser-tool",
+      "abra-vault"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "autonomy": "Owns MCP/connector authorship for the current GotchiBot project only: schemas, stubs, config; secrets via abra only. Reports to central-bot. Staffed by Prof. Link-Cube via `gotchibot templates apply mcp-maker --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post or commit secrets.",
+    "scheduleCmd": ""
+  },
+  "central-bot": {
+    "title": "Central Bot (Maker Desk)",
+    "summary": "Manages the maker fleet (tool/skill/policy/rule/mcp). Routes jobs, asks Prof. Link-Cube to seat makers or roadblock-reviewer, decides path for repeated roadblocks.",
+    "skills": [
+      "pstack",
+      "browser-tool",
+      "prof-link-cube"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "autonomy": "Manages the maker fleet (tool-maker, skill-maker, policy-maker, rule-maker, mcp-maker) for the current GotchiBot project only. Routes jobs; on repeated roadblocks receives packets from roadblock-reviewer and decides path \u2192 correct maker. Asks Prof. Link-Cube to seat makers or roadblock-reviewer via `gotchibot templates apply <id> --hero <available> --yes` \u2014 never auto-mints, never steals LINK/YFI/WBTC desks. Does not DIY maker deliverables by default. Never spend/post. Wallet/mint/treasury \u2192 orch. Staffed by Prof. Link-Cube via `gotchibot templates apply central-bot --hero <available> --yes`.",
+    "scheduleCmd": ""
+  },
+  "roadblock-reviewer": {
+    "title": "Roadblock Reviewer",
+    "summary": "Reviews sessions for repeated roadblocks that already have a working solution; IDs them; passes packets to central-bot for path decision.",
+    "skills": [
+      "pstack",
+      "browser-tool"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "autonomy": "Reviews sessions for repeated roadblocks that already have a working cited solution; IDs them; passes packets to central-bot (central decides path \u2192 maker). Does not DIY maker work. Staffed when central asks Prof. Link-Cube: `gotchibot templates apply roadblock-reviewer --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post.",
+    "scheduleCmd": ""
+  },
+  "worker": {
+    "title": "Worker",
+    "summary": "Prof-seated worker desks request. Deep lanes: dispatch I/O (sessions/<id>), skill-requests.jsonl helper, ephemeral desk-terminals use/close.",
+    "skills": [
+      "cursor-cli",
+      "codex-cli",
+      "gotchibot-bridge",
+      "desk-wake",
+      "passoff",
+      "pstack"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "node ./scripts/worker-index.mjs --text",
+    "autonomy": "Generic worker seated by Prof. Link-Cube when desks/central/orch need capacity: `gotchibot templates apply worker --hero <available> --yes` (or resummon/bind --role worker). Reads config/worker-index.json for the tool catalog. Does real work only through work tools (cursor-cli default; codex when said; gotchibot-bridge for hard reasoning). Dispatch sessions write sessions/<id>/output.md. Passoff resume before restarting. Missing skills \u2192 skill-requests.jsonl. Never steals LINK/YFI/WBTC desks; never auto-mints; never DIY on chat model; never spend/post/print secrets. Fan-out/wallet/mint \u2192 orch. Seating peers \u2192 Prof. Deep lanes: `node ./scripts/worker-index.mjs --lane dispatch-io|skill-requests|desk-terminals --json`; append skill gaps via `node ./scripts/worker-skill-request.mjs`.",
+    "scheduleCmd": ""
   }
 }

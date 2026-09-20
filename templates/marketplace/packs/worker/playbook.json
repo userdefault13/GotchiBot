@@ -1,0 +1,16 @@
+{
+  "title": "Worker",
+  "summary": "Prof-seated worker desks request. Deep lanes: dispatch I/O (sessions/<id>), skill-requests.jsonl helper, ephemeral desk-terminals use/close.",
+  "skills": [
+    "cursor-cli",
+    "codex-cli",
+    "gotchibot-bridge",
+    "desk-wake",
+    "passoff",
+    "pstack"
+  ],
+  "skillsExternal": [],
+  "reportCmd": "node ./scripts/worker-index.mjs --text",
+  "autonomy": "Generic worker seated by Prof. Link-Cube when desks/central/orch need capacity: `gotchibot templates apply worker --hero <available> --yes` (or resummon/bind --role worker). Reads config/worker-index.json for the tool catalog. Does real work only through work tools (cursor-cli default; codex when said; gotchibot-bridge for hard reasoning). Dispatch sessions write sessions/<id>/output.md. Passoff resume before restarting. Missing skills → skill-requests.jsonl. Never steals LINK/YFI/WBTC desks; never auto-mints; never DIY on chat model; never spend/post/print secrets. Fan-out/wallet/mint → orch. Seating peers → Prof. Deep lanes: `node ./scripts/worker-index.mjs --lane dispatch-io|skill-requests|desk-terminals --json`; append skill gaps via `node ./scripts/worker-skill-request.mjs`.",
+  "scheduleCmd": ""
+}

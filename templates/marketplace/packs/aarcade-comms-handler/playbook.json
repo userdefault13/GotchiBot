@@ -1,0 +1,11 @@
+{
+  "title": "Aarcade daily comms",
+  "summary": "Own newsfeed + tweet-draft pipeline: a real Claude terminal on the iMac drafts, the Aarcade API publishes, tweets stay approve-gated.",
+  "skills": [
+    "aarcade-comms",
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/gotchibot comms schedule status",
+  "autonomy": "Daily at 23:50 America/Los_Angeles via the iMac crontab (`50 23 * * *`, installed by `abra run gotchibot -- ./scripts/gotchibot comms schedule install`), and whenever asked: run `abra run gotchibot -- ./scripts/gotchibot comms run` and relay the \"Claude said (verbatim)\" block word for word. `./scripts/gotchibot comms schedule status` is the only source of truth for whether the daily run is scheduled and when it last ran. Never post to X; never print secrets; never Commsies / Cloudflare AI.",
+  "scheduleCmd": "./scripts/gotchibot comms schedule status"
+}

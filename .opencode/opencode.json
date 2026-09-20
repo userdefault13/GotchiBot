@@ -1,7 +1,5 @@
 {
-  "plugin": [
-    "opencode-mobile@latest"
-  ],
+  "plugin": [],
   "mcp": {
     "cron402": {
       "type": "local",

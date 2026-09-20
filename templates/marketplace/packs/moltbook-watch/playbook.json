@@ -1,0 +1,12 @@
+{
+  "title": "Moltbook watch desk",
+  "summary": "15-min radar for Moltbook replies-to-us and api-key / secrets / user-pain topics. Queue only — no posting.",
+  "skills": [
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/gotchibot moltbook schedule status",
+  "cycleCmd": "./scripts/gotchibot moltbook watch --json",
+  "verifyWindow": "gotchibot:starter-dai-h1-1-desk",
+  "autonomy": "Primary waker is cron402 POST https://aagent.userdefault.dev/cron/moltbook-watch every 15 minutes (UTC */15). Local launchd com.gotchibot.moltbook-watch is fallback only. Each cycle runs scripts/moltbook-watch.mjs (watch+queue only; never posts). Findings land in sessions/moltbook-watch/queue.json. ./scripts/gotchibot moltbook schedule status reports local launchd; cron402 status lives in Gotchi-Trader config/cron402-jobs.json + `npm run cron402 -- status`. Never invent a schedule those commands do not confirm.",
+  "scheduleCmd": "./scripts/gotchibot moltbook schedule status"
+}

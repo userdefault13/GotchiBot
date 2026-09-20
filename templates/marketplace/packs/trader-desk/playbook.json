@@ -1,0 +1,15 @@
+{
+  "title": "Trader desk",
+  "summary": "Own Gotchi-Trader paper desk health, cycle decisions and PnL reporting.",
+  "skills": [
+    "gotchi-trader-monitor",
+    "gotchi-trader-improve",
+    "market-news-feed",
+    "browser-tool"
+  ],
+  "reportCmd": "./scripts/gotchi-trader-desk.mjs status",
+  "cycleCmd": "./scripts/trader-cycle.mjs --json",
+  "verifyWindow": "gotchibot:link-verify",
+  "autonomy": "Runs one full cycle whenever woken: desk health, meta-model and strategy signals, news regime, decisions clipped by explicit risk rules, then verification by a persistent interactive Claude session in a terminal visible on the desktop (PASS/CONCERN/FAIL). The ONLY waker that exists is the launchd job installed on the iMac by `./scripts/gotchibot trader schedule install` (every 1800 s); `./scripts/gotchibot trader schedule status` reports whether it is loaded and when the last cycle ran, and nobody claims a schedule that command does not confirm. cron402 via scripts/trader-webhook.mjs (:8792) is the intended future waker and is not wired (no ingress, no job). Paper desk: real execution requires TRADER_LIVE=1 plus a PASS verdict plus no risk breach, and no order router is wired, so the live branch refuses to fake a fill. Risk rules: min score 0.6, min cross-strategy breadth 0.5, 5000 USDC per position, 15000 USDC per cycle, sizes halved in risk-off, and no ETH/BTC adds while the desk concentration warning is live.",
+  "scheduleCmd": "./scripts/gotchibot trader schedule status"
+}

@@ -26,7 +26,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./meet-channel.mjs";
-import { isProfLinkCubeId } from "./gotchi-art.mjs";
+import { isProfLinkCubeId, PROF_LINK_CUBE_ID } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
 import { resolveMeetingsRoot } from "./project-context.mjs";
 import {
@@ -290,15 +290,19 @@ function meetGalleryLayout(cmd) {
     return;
   }
   if (cmd === "enter-meet-gallery" || cmd === "refresh-meet-gallery") {
+    // Always background on work.0 — sync inherit on work.1 causes Files-only crash.
     const layoutOnly =
-      cmd === "refresh-meet-gallery" ? 'GOTCHIBOT_MEET_LAYOUT_ONLY=1 ' : "";
+      cmd === "refresh-meet-gallery" ? "GOTCHIBOT_MEET_LAYOUT_ONLY=1 " : "";
     spawnSync(
       "tmux",
       [
         "run-shell",
-        `cd "${ROOT}" && GOTCHIBOT_LAYOUT_SAFE=1 ${layoutOnly}GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" ${cmd}`,
+        "-b",
+        "-t",
+        `${sess}:work.0`,
+        `sleep 0.1; cd "${ROOT}" && GOTCHIBOT_LAYOUT_SAFE=1 ${layoutOnly}GOTCHIBOT_TMUX_SESSION="${sess}" "${script}" ${cmd}`,
       ],
-      { cwd: ROOT, stdio: cmd === "enter-meet-gallery" ? "inherit" : "ignore", env },
+      { cwd: ROOT, stdio: "ignore", env },
     );
     return;
   }
@@ -488,7 +492,19 @@ function requireOpenMeeting() {
       'no open meeting — start one: ./scripts/gotchi-meet.mjs start "topic"',
     );
   }
-  return m;
+  const before = (m.participants || []).some((p) => isProfLinkCubeId(p.id));
+  ensureProfInMeeting(m);
+  const after = (m.participants || []).some((p) => isProfLinkCubeId(p.id));
+  if (!before && after) {
+    saveMeeting(m);
+    try {
+      syncMeetMentionAgents(m);
+      pokeMeetRoomGallery();
+    } catch {
+      /* ignore */
+    }
+  }
+  return loadCurrentMeeting() || m;
 }
 
 function saveMeeting(meeting) {
@@ -657,6 +673,18 @@ async function loadInviteRoster({ refresh = false } = {}) {
       /* offline cartridge */
     }
   }
+  // Factory NPC — always invite-able / listed for meetings.
+  if (!seen.has(PROF_LINK_CUBE_ID)) {
+    push({
+      kind: "npc",
+      host: "npc",
+      id: PROF_LINK_CUBE_ID,
+      hero: PROF_LINK_CUBE_ID,
+      name: "Prof. Link-Cube",
+      status: "available",
+    });
+  }
+
   return entries;
 }
 
@@ -666,6 +694,9 @@ function heroFromEntry(e) {
     throw new Error(
       `${e.id} is not a cAavegotchi (session with no hero) — invite an OpenClaw / cartridge id`,
     );
+  }
+  if (e.kind === "npc" || isProfLinkCubeId(id)) {
+    return profHero();
   }
   const map = loadAgentMap();
   const mapped = map?.agents?.[id] || Object.values(map?.agents || {}).find((m) => m.heroId === id);
@@ -682,6 +713,11 @@ function heroFromEntry(e) {
 export async function resolveInviteTarget(query, { refresh = false } = {}) {
   const q = String(query || "").trim().replace(/^@/, "");
   if (!q) throw new Error("invite needs <n|id|name> — same roster as /switch");
+
+  // Prof. Link-Cube is an NPC — not on cartridge / OpenClaw roster.
+  if (isProfLinkCubeId(q) || /^(prof|professor|link-?cube|prof\.?link-?cube)$/i.test(q)) {
+    return profHero();
+  }
 
   let entries = await loadInviteRoster({ refresh: refresh || /^\d+$/.test(q) });
   if (!entries.length) {
@@ -741,6 +777,33 @@ function chairHero() {
   };
 }
 
+
+function profHero() {
+  return {
+    id: PROF_LINK_CUBE_ID,
+    name: "Prof. Link-Cube",
+    collateral: null,
+    bindType: null,
+    isOrchestrator: false,
+    kind: "npc",
+  };
+}
+
+/** Always seat Prof. Link-Cube beside the chair (factory NPC, not on cartridge roster). */
+function ensureProfInMeeting(meeting) {
+  if (!meeting) return meeting;
+  if ((meeting.participants || []).some((p) => isProfLinkCubeId(p.id))) return meeting;
+  const p = {
+    id: PROF_LINK_CUBE_ID,
+    role: "agent",
+    name: "Prof. Link-Cube",
+    kind: "npc",
+  };
+  meeting.participants = insertBesideChair(meeting.participants || [], p, meeting.chairId);
+  meeting.updatedAt = new Date().toISOString();
+  return meeting;
+}
+
 export async function startMeeting(topic = "Untitled meeting", opts = {}) {
   const kind = opts.kind === "morning-recap" ? "morning-recap" : "meeting";
   const open = loadCurrentMeeting();
@@ -774,6 +837,7 @@ export async function startMeeting(topic = "Untitled meeting", opts = {}) {
       },
     ],
   };
+  ensureProfInMeeting(meeting);
   saveMeeting(meeting);
   setCurrent(id);
   syncMeetMentionAgents(meeting);
@@ -812,9 +876,11 @@ export async function inviteParticipant(query) {
   meeting.updatedAt = new Date().toISOString();
   saveMeeting(meeting);
   syncMeetMentionAgents(loadMeeting(meeting.id) || meeting);
-  pokeMeetRoomGallery();
-  pokeAvatar();
-  if (readLayoutMode() === "meet-gallery") refreshMeetGallery();
+  if (process.env.GOTCHIBOT_MEET_INVITE_QUIET !== "1") {
+    pokeMeetRoomGallery();
+    pokeAvatar();
+    if (readLayoutMode() === "meet-gallery") refreshMeetGallery();
+  }
   return { meeting, participant: p };
 }
 
@@ -845,21 +911,39 @@ export async function inviteAllParticipants() {
   const skipped = [];
   const errors = [];
 
-  for (const id of ids) {
-    try {
-      const r = await inviteParticipant(id);
-      invited.push(r.participant);
-    } catch (e) {
-      const msg = String(e?.message || e);
-      if (/already/i.test(msg)) skipped.push(id);
-      else errors.push({ id, error: msg });
+  const prevQuiet = process.env.GOTCHIBOT_MEET_INVITE_QUIET;
+  process.env.GOTCHIBOT_MEET_INVITE_QUIET = "1";
+  try {
+    for (const id of ids) {
+      try {
+        const r = await inviteParticipant(id);
+        invited.push(r.participant);
+      } catch (e) {
+        const msg = String(e?.message || e);
+        if (/already/i.test(msg)) skipped.push(id);
+        else errors.push({ id, error: msg });
+      }
     }
+  } finally {
+    if (prevQuiet === undefined) delete process.env.GOTCHIBOT_MEET_INVITE_QUIET;
+    else process.env.GOTCHIBOT_MEET_INVITE_QUIET = prevQuiet;
   }
 
   meeting = loadCurrentMeeting() || requireOpenMeeting();
   syncMeetMentionAgents(meeting);
+  meeting = loadCurrentMeeting() || meeting;
+  if (meeting && ensureProfInMeeting(meeting)) {
+    const has = (meeting.participants || []).some((p) => isProfLinkCubeId(p.id));
+    if (has) {
+      saveMeeting(meeting);
+      syncMeetMentionAgents(meeting);
+      if (!invited.some((p) => isProfLinkCubeId(p.id))) {
+        invited.push(meeting.participants.find((p) => isProfLinkCubeId(p.id)));
+      }
+    }
+  }
   if (readLayoutMode() === "meet-gallery") refreshMeetGallery();
-  return { meeting, invited, skipped, errors };
+  return { meeting: loadCurrentMeeting() || meeting, invited, skipped, errors };
 }
 
 function extractJsonObject(text) {

@@ -38,6 +38,24 @@
           "tool_call": false
         }
       }
+    },
+    "wisp": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Wisp (Gotchi Closet soul)",
+      "options": {
+        "baseURL": "http://127.0.0.1:45682/v1",
+        "apiKey": "local"
+      },
+      "models": {
+        "gotchi": {
+          "name": "Wisp / gotchi",
+          "tool_call": false
+        },
+        "wisp": {
+          "name": "Wisp",
+          "tool_call": false
+        }
+      }
     }
   },
   "agent": {
@@ -152,6 +170,15 @@
       ],
       "enabled": true,
       "timeout": 600000
+    },
+    "wisp": {
+      "type": "remote",
+      "url": "https://api.gotchicloset.com/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer {env:WISP_API_KEY}"
+      },
+      "$comment": "Gotchi Closet Wisp \u2014 free key = MCP tools. Set WISP_API_KEY via gotchibot wisp mint or abra. Never commit keys."
     }
   },
   "permission": {

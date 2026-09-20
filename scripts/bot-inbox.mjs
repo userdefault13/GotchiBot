@@ -122,7 +122,35 @@ export function normalizeAddress(raw) {
   if (low === "orch" || low === "gotchi" || low === "chair" || low === "orchestrator") {
     return orchestratorHeroId() || "owned-954";
   }
+  // Role aliases → first seated hero with that playbook role (else leave as-is for hero ids).
+  const roleAliases = {
+    "kanban-manager": "kanban-manager",
+    pkm: "kanban-manager",
+    "project-kanban": "kanban-manager",
+    "mail-courier": "mail-courier",
+    courier: "mail-courier",
+    mailbox: "mail-courier",
+  };
+  if (roleAliases[low]) {
+    const hero = heroIdForRole(roleAliases[low]);
+    if (hero) return hero;
+    // Fall back to orch so the record is never dropped when PKM is unseated.
+    return orchestratorHeroId() || "owned-954";
+  }
   return s;
+}
+
+function heroIdForRole(roleId) {
+  try {
+    const rolesPath = join(ROOT, "config", "agent-roles.json");
+    const roles = JSON.parse(readFileSync(rolesPath, "utf8"));
+    for (const [hero, role] of Object.entries(roles || {})) {
+      if (String(role) === String(roleId)) return hero;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 function flag(args, name) {

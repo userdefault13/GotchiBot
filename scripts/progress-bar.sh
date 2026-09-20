@@ -118,16 +118,20 @@ progress_stop() {
   fi
   if _progress_running; then
     local i
-    for ((i = 0; i < 10; i++)); do
+    for ((i = 0; i < 20; i++)); do
       kill -0 "$_PROGRESS_PID" 2>/dev/null || break
       sleep 0.02
     done
     kill -TERM "$_PROGRESS_PID" 2>/dev/null || true
+    sleep 0.03
+    kill -KILL "$_PROGRESS_PID" 2>/dev/null || true
+    wait "$_PROGRESS_PID" 2>/dev/null || true
   fi
   [ -n "$_PROGRESS_LABEL_FILE" ] && rm -f "$_PROGRESS_LABEL_FILE" 2>/dev/null
   _PROGRESS_PID=""
   _PROGRESS_LABEL_FILE=""
-  printf '\r\033[K' >&2
+  # Clear hard — late painter frames / wide UTF-8 can survive one wipe.
+  printf '\r\033[K\r\033[K' >&2
   _progress_show_cursor
 }
 

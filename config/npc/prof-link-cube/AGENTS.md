@@ -90,3 +90,52 @@ When UserDefault wants the **patch dossier pane** to show ai-cron-site agents, s
 - `dossier-ai-cron-site` owns pane UI.
 - `data-ai-cron-site` owns cron402 / ai-cron-site schedule + history + result logging (mcp-cron402).
 Current GotchiBot project only — no greenfield invent, no fake cron rows.
+
+## Central Bot + Maker Fleet
+
+When UserDefault asks to staff **central** and the **maker team** (deterministic tools, skills, policies, rules, MCPs) or a **roadblock reviewer**:
+
+```bash
+./scripts/gotchibot templates apply central-bot --hero <available> --yes
+./scripts/gotchibot templates apply tool-maker --hero <available> --yes
+./scripts/gotchibot templates apply skill-maker --hero <available> --yes
+./scripts/gotchibot templates apply policy-maker --hero <available> --yes
+./scripts/gotchibot templates apply rule-maker --hero <available> --yes
+./scripts/gotchibot templates apply mcp-maker --hero <available> --yes
+./scripts/gotchibot templates apply roadblock-reviewer --hero <available> --yes
+```
+
+Or factory flow: intake → design → confirm → summon/resummon → bind with the role id above.
+
+- `central-bot` manages the makers; routes jobs; on roadblock packets decides path → correct maker; **asks Prof. Link-Cube** to seat makers or `roadblock-reviewer` (never auto-mints; never steals LINK/YFI/WBTC desks).
+- `tool-maker` — deterministic CLI/tools (no LLM-in-the-loop inside the tool).
+- `skill-maker` — SKILL.md packs (when-to-use, steps, anti-jobs).
+- `policy-maker` — allow/deny + approve-gate policies.
+- `rule-maker` — enforceable lint/hooks/CI rules with verify.
+- `mcp-maker` — MCP/connector schemas + stubs (secrets via abra only).
+- `roadblock-reviewer` — scans sessions for **repeated** roadblocks that already have a **working** cited solution; IDs them; passes packets to `central-bot` (central decides path; reviewer does not DIY maker work).
+
+Seat on available heroes only.
+
+## Worker (desk-requested)
+
+When a **desk agent**, **central-bot**, or UserDefault needs a generic **worker** (not a specialist pack), seat the worker pack. Workers are the default bind role and the unit desks request from Prof:
+
+```bash
+./scripts/gotchibot templates apply worker --hero <available> --yes
+# or resummon/bind --role worker
+```
+
+Tool catalog: `config/worker-index.json` — `node ./scripts/worker-index.mjs --text` (also `/prof` TOC lists the `worker` pack).
+
+Workers execute scoped jobs via work tools; they do not orchestrate, mint, or steal LINK/YFI/WBTC desks. Missing tools go to `sessions/<id>/skill-requests.jsonl`.
+
+## Desk delegation → worker + PKM
+
+Desks must ask Prof to seat `worker` when they need to delegate. After seating / ticketing, desks run `pkm-record` (`delegated` / `submitted` / `reviewed`) so **kanban-manager** records and manages the work (`config/rules/pkm-lifecycle.md`).
+
+## Messaging polish
+
+Desks follow `config/rules/messaging-channels.md` and `gotchibot messaging --text`. Seat/resummon `mail-courier` for external AgentMail; internal chatter stays bot-inbox. Alias `--to mail-courier|courier`.
+
+Hard messaging: agent↔agent = bot-inbox; external mail in/out = mail-courier only (`config/rules/messaging-channels.md`).

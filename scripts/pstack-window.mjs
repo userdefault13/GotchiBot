@@ -2,7 +2,7 @@
 /**
  * pstack-window — JA2-style CURRENT STATUS / merc dossier pane (tmux work.1 center).
  *
- * Layout: HEADER · OPS|DOSSIER (boxed) · TEAM · Gotchis grid · FOOTER (OVERALL %)
+ * Layout: HEADER · OPS|DOSSIER · TEAM · INBOX · AI-CRON · Gotchis · FOOTER
  * SoT: sessions/pstack/<slug>/{dossier.json,units.tsv,ledger.tsv,decisions.tsv,briefs/}
  * Slug: currentProjectSlug() — never silently fall back to another project's dossier.
  *
@@ -23,6 +23,7 @@ import readline from "node:readline";
 import { resolveHeroColors } from "./collateral-resolve.mjs";
 import { renderKanbanAscii } from "./gotchi-art.mjs";
 import { loadRoster, currentProjectSlug } from "./project-context.mjs";
+import { loadBox, listMessages } from "./bot-inbox.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PSTACK_ROOT = join(ROOT, "sessions", "pstack");
@@ -57,6 +58,10 @@ const isTty = Boolean(process.stdout.isTTY && process.stdin.isTTY);
 
 /** Last paint: 0-based screen row where Gotchis header starts; term rows. */
 let lastGridStartRow = -1;
+let lastCockpitBtn = null; // [{ key, x0, x1, y }, ...] footer nav hitboxes
+let lastDossierScroll = 0;
+let lastDossierMaxScroll = 0;
+
 let lastRows = 24;
 
 /** Honor COLUMNS/LINES env when stdout is piped (once/capture); live TTY wins. */
@@ -437,6 +442,46 @@ function boxBottom(innerW) {
   return `${c.border}└${"─".repeat(innerW)}┘${c.reset}`;
 }
 
+/** Right-edge glyph for a dossier body row (replaces the closing │). */
+function boxRowScroll(content, innerW, edge) {
+  const body = pad(String(content ?? ""), innerW);
+  return `${c.border}│${c.reset}${body}${edge}`;
+}
+
+function boxMidScroll(title, innerW, edge) {
+  const t = trunc(String(title || "").trim() || " ", Math.max(1, innerW - 3));
+  const used = 3 + visLen(t);
+  const fill = Math.max(0, innerW - used);
+  return `${c.border}├─ ${c.reset}${c.pink}${c.bold}${t}${c.reset}${c.border} ${"─".repeat(fill)}${c.reset}${edge}`;
+}
+
+/**
+ * Vertical scrollbar track for the DOSSIER pane body.
+ * trackH = visible body rows (excluding top/bottom borders).
+ * Returns one glyph string per row (already colored).
+ */
+function dossierScrollTrack(trackH, ds, maxScroll, viewH) {
+  const h = Math.max(1, trackH | 0);
+  const plain = `${c.border}│${c.reset}`;
+  if (maxScroll <= 0) {
+    return Array.from({ length: h }, () => plain);
+  }
+  const content = maxScroll + Math.max(1, viewH);
+  const thumbH = Math.max(1, Math.min(h, Math.round((viewH / content) * h) || 1));
+  const maxTop = Math.max(0, h - thumbH);
+  const thumbTop = maxScroll <= 0 ? 0 : Math.round((ds / maxScroll) * maxTop);
+  const track = `${c.dim}░${c.reset}`;
+  const thumb = `${c.gold}█${c.reset}`;
+  const out = [];
+  for (let i = 0; i < h; i++) {
+    out.push(i >= thumbTop && i < thumbTop + thumbH ? thumb : track);
+  }
+  // tip markers when not at ends
+  if (ds > 0 && out[0] === track) out[0] = `${c.pink}▲${c.reset}`;
+  if (ds < maxScroll && out[h - 1] === track) out[h - 1] = `${c.pink}▼${c.reset}`;
+  return out;
+}
+
 function briefLabel(brief) {
   const s = String(brief || "").replace(/\\/g, "/").trim();
   if (!s) return "—";
@@ -506,6 +551,7 @@ function buildOpsRows({
   leftW,
   opsInnerH,
   cronAgents = [],
+  inboxMessages = [],
 }) {
   const counts = countUnitStates(units || []);
   const staffed = (desks || []).filter((d) => d.tag === "staffed").length;
@@ -572,6 +618,31 @@ function buildOpsRows({
     for (const a of cronAgents.slice(0, 2)) {
       content.push(
         `  ${c.dim}${trunc(a.schedule || "—", 10)}${c.reset} ${trunc(a.name, Math.max(6, leftW - 16))}`,
+      );
+    }
+  }
+
+  content.push(`${c.bold}INBOX${c.reset}`);
+  const inboxMsgs = inboxMessages || [];
+  const nInbox = inboxMsgs.length;
+  const nUnread = inboxMsgs.filter((m) => !m.readAt).length;
+  const nPkm = inboxMsgs.filter((m) => isPkmNote(m)).length;
+  if (!nInbox) {
+    content.push(`  ${c.dim}(empty)${c.reset}`);
+  } else {
+    content.push(
+      kv(
+        "msgs",
+        `${c.gold}${nInbox}${c.reset}` +
+          (nUnread ? `${c.dim} · ${c.reset}${c.yellow}${nUnread} unread${c.reset}` : `${c.dim} · all read${c.reset}`) +
+          (nPkm ? `${c.dim} · ${c.reset}${c.orange}${nPkm} pkm${c.reset}` : ""),
+      ),
+    );
+    const sorted = [...inboxMsgs].sort((a, b) => String(b.ts || "").localeCompare(String(a.ts || "")));
+    for (const m of sorted.slice(0, 2)) {
+      const mark = m.readAt ? " " : `${c.yellow}•${c.reset}`;
+      content.push(
+        `  ${mark}${c.dim}${trunc(String(m.kind || "?"), 6)}${c.reset} ${trunc(String(m.subject || ""), Math.max(6, leftW - 14))}`,
       );
     }
   }
@@ -717,6 +788,392 @@ function buildAiCronRows(agents, rightW) {
 }
 
 
+
+/* ---------- bot inbox (dossier pane) ---------- */
+function loadInboxMessages(_slug) {
+  try {
+    if (typeof listMessages === "function") {
+      return listMessages({}) || [];
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const box = loadBox("inbox");
+    return Array.isArray(box?.messages) ? box.messages : [];
+  } catch {
+    return [];
+  }
+}
+
+function inboxKindColor(kind) {
+  const k = String(kind || "").toLowerCase();
+  if (k === "alert") return c.orange;
+  if (k === "ask") return c.yellow;
+  if (k === "report") return c.cyan;
+  return c.dim;
+}
+
+
+function isPkmNote(msg) {
+  const sub = String(msg?.subject || "");
+  const body = String(msg?.body || "");
+  const m1 = sub.match(/pkm:(delegated|submitted|reviewed)\b/i);
+  if (m1) return m1[1].toLowerCase();
+  const m2 = body.match(/\bevent:\s*(delegated|submitted|reviewed)\b/i);
+  if (m2) return m2[1].toLowerCase();
+  return null;
+}
+
+function buildInboxRows(messages, rightW) {
+  const rows = ["__MID_INBOX__"];
+  const msgs = Array.isArray(messages) ? messages : [];
+  if (!msgs.length) {
+    rows.push(`  ${c.dim}(inbox empty — gotchibot inbox send)${c.reset}`);
+    return rows;
+  }
+  // newest first
+  const sorted = [...msgs].sort((a, b) => String(b.ts || "").localeCompare(String(a.ts || "")));
+  const unread = sorted.filter((m) => !m.readAt).length;
+  rows.push(
+    `  ${c.dim}${msgs.length} msg${msgs.length === 1 ? "" : "s"}${c.reset}` +
+      (unread ? ` · ${c.yellow}${unread} unread${c.reset}` : ` · ${c.dim}all read${c.reset}`),
+  );
+  const max = 5;
+  for (const m of sorted.slice(0, max)) {
+    const unreadMark = m.readAt ? " " : `${c.yellow}•${c.reset}`;
+    const pkm = isPkmNote(m);
+    const kind = pkm ? c.orange : inboxKindColor(m.kind);
+    const kindLabel = pkm ? `pkm:${pkm}`.slice(0, 10) : String(m.kind || "?").slice(0, 6);
+    const from = trunc(String(m.from || "?"), 10);
+    const rawSubj = String(m.subject || m.body || "(no subject)").replace(/^pkm:(delegated|submitted|reviewed)\s*[—\-]\s*/i, "");
+    const subj = trunc(rawSubj, Math.max(8, rightW - (pkm ? 34 : 28)));
+    const when = tsShort(m.ts);
+    rows.push(
+      `  ${unreadMark}${kind}${padVis(kindLabel, 10)}${c.reset} ${c.dim}${from}${c.reset} ${subj} ${c.dim}${when}${c.reset}`,
+    );
+  }
+  if (sorted.length > max) {
+    rows.push(`  ${c.dim}(+${sorted.length - max} more)${c.reset}`);
+  }
+  return rows;
+}
+
+/** Full-width boxed panel between TEAM and Gotchis. */
+function packFullWidthPanel(title, bodyRows, cols, maxH) {
+  const innerW = Math.max(8, cols - 2);
+  const budget = Math.max(3, maxH || 8);
+  const inner = Math.max(1, budget - 2);
+  const body = (bodyRows || []).slice(0, inner);
+  while (body.length < Math.min(1, inner)) body.push("");
+  const out = [boxTop(title, innerW)];
+  for (const row of body) out.push(boxRow(row, innerW));
+  while (out.length < budget - 1) out.push(boxRow("", innerW));
+  if (out.length > budget - 1) out.length = budget - 1;
+  out.push(boxBottom(innerW));
+  return out.slice(0, budget);
+}
+
+/**
+ * INBOX section (TEAM → Gotchis): richer scope — kind, from, subject, body preview.
+ */
+function buildInboxPanelBody(messages, cols) {
+  const innerW = Math.max(20, cols - 4);
+  const rows = [];
+  const msgs = Array.isArray(messages) ? messages : [];
+  if (!msgs.length) {
+    rows.push(`  ${c.dim}(inbox empty — gotchibot inbox send)${c.reset}`);
+    rows.push(`  ${c.dim}scope${c.reset} project bot mail · PKM notes · asks/reports`);
+    return rows;
+  }
+  const sorted = [...msgs].sort((a, b) => String(b.ts || "").localeCompare(String(a.ts || "")));
+  const unread = sorted.filter((m) => !m.readAt).length;
+  const nPkm = sorted.filter((m) => isPkmNote(m)).length;
+  rows.push(
+    `  ${c.gold}${msgs.length}${c.reset} msg${msgs.length === 1 ? "" : "s"}` +
+      (unread ? ` · ${c.yellow}${unread} unread${c.reset}` : ` · ${c.dim}all read${c.reset}`) +
+      (nPkm ? ` · ${c.orange}${nPkm} pkm${c.reset}` : "") +
+      `  ${c.dim}scope: delegation / submit / review + fyi${c.reset}`,
+  );
+  const max = 6;
+  for (const m of sorted.slice(0, max)) {
+    const unreadMark = m.readAt ? " " : `${c.yellow}•${c.reset}`;
+    const pkm = isPkmNote(m);
+    const kind = pkm ? c.orange : inboxKindColor(m.kind);
+    const kindLabel = pkm ? `pkm:${pkm}` : String(m.kind || "?");
+    const from = trunc(String(m.from || "?"), 12);
+    const to = m.to ? trunc(String(m.to), 10) : "";
+    const rawSubj = String(m.subject || "(no subject)").replace(
+      /^pkm:(delegated|submitted|reviewed)\s*[—\-]\s*/i,
+      "",
+    );
+    const when = tsShort(m.ts);
+    rows.push(
+      `  ${unreadMark}${kind}${padVis(trunc(kindLabel, 12), 12)}${c.reset} ` +
+        `${c.dim}${from}${c.reset}${to ? `${c.dim}→${to}${c.reset}` : ""} ` +
+        `${trunc(rawSubj, Math.max(10, innerW - 36))} ${c.dim}${when}${c.reset}`,
+    );
+    const body = String(m.body || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (body) {
+      const preview = body.replace(/^pkm:(delegated|submitted|reviewed)\s*[—\-]\s*/i, "");
+      rows.push(`    ${c.dim}scope${c.reset} ${trunc(preview, Math.max(12, innerW - 10))}`);
+    }
+  }
+  if (sorted.length > max) {
+    rows.push(`  ${c.dim}(+${sorted.length - max} more — gotchibot inbox)${c.reset}`);
+  }
+  return rows;
+}
+
+/**
+ * AI-CRON section under INBOX: schedule, means/name, status, last run + log scope.
+ */
+function buildAiCronPanelBody(agents, cols) {
+  const innerW = Math.max(20, cols - 4);
+  const rows = [];
+  const list = Array.isArray(agents) ? agents : [];
+  if (!list.length) {
+    rows.push(`  ${c.dim}(no ai-cron-site jobs — SoT ~/.cron402/jobs.json)${c.reset}`);
+    rows.push(`  ${c.dim}scope${c.reset} scheduled agents · last runs · credits`);
+    return rows;
+  }
+  const active = list.filter((a) => String(a.status).toLowerCase() === "active").length;
+  rows.push(
+    `  ${c.gold}${list.length}${c.reset} job${list.length === 1 ? "" : "s"} · ` +
+      `${c.green}${active} active${c.reset}` +
+      `  ${c.dim}scope: cron402 SoT · schedule · lastRuns${c.reset}`,
+  );
+  const max = 5;
+  for (const a of list.slice(0, max)) {
+    const st = cronStatusColor(a.status);
+    const sched = a.schedule || "—";
+    const name = trunc(a.name || a.agentId || "—", Math.max(10, innerW - 34));
+    const idShort = trunc(a.agentId || "—", 10);
+    rows.push(
+      `  ${st}${padVis(trunc(a.status || "?", 9), 9)}${c.reset} ` +
+        `${c.dim}${padVis(idShort, 10)}${c.reset} ${c.cyan}${padVis(trunc(sched, 12), 12)}${c.reset} ${name}`,
+    );
+    const run = a.lastRuns?.[0];
+    if (run) {
+      const rs = cronStatusColor(run.status);
+      const when = tsShort(run.startedAt || run.finishedAt);
+      const snip = run.logSnippet ? trunc(String(run.logSnippet).replace(/\s+/g, " "), Math.max(8, innerW - 28)) : "";
+      const dur = run.durationMs != null ? `${run.durationMs}ms` : "";
+      rows.push(
+        `    ${c.dim}last${c.reset} ${rs}${run.status}${c.reset} ${when}` +
+          (dur ? ` ${c.dim}${dur}${c.reset}` : "") +
+          (snip ? ` ${c.dim}${snip}${c.reset}` : ""),
+      );
+    } else {
+      rows.push(`    ${c.dim}last — no runs yet${c.reset}`);
+    }
+    if (a.credits != null) {
+      rows.push(`    ${c.dim}credits${c.reset} ${a.credits}`);
+    }
+  }
+  if (list.length > max) {
+    rows.push(`  ${c.dim}(+${list.length - max} more jobs)${c.reset}`);
+  }
+  return rows;
+}
+
+
+/** One TEAM op's portrait + ROLE/STATE/… + brief heads (no shared inbox/cron). */
+function buildUnitDetailRows({
+  slug,
+  dossier,
+  unit,
+  roster,
+  rightW,
+  selected = false,
+  useCover = false,
+}) {
+  const rows = [];
+  if (!unit) return rows;
+
+  const heroObj =
+    unit?.hero && Array.isArray(roster)
+      ? roster.find((h) => h.id === unit.hero) || { id: unit.hero }
+      : null;
+  let portrait = null;
+  if (useCover) {
+    const coverPath = resolveCoverImage(slug, dossier?.fields?.coverImage);
+    if (coverPath) {
+      portrait =
+        renderCoverImage(coverPath, ART_W, ART_H) ||
+        coverPlaceholderLines(coverPath, ART_W, ART_H);
+    }
+  }
+  if (!portrait && heroObj) portrait = artForHero(heroObj);
+
+  const kvW = 9;
+  const kvCol = 14;
+  const kvInner = Math.max(8, rightW - kvCol);
+  const fleetHero =
+    unit?.hero && Array.isArray(roster) ? roster.find((h) => h.id === unit.hero) : null;
+  const fleetVal = fleetHero
+    ? `${statusColor(fleetHero.status)}${statusShort(fleetHero.status)}${c.reset}`
+    : "—";
+  const stats = [
+    [`ROLE`, unit.role || "—"],
+    [`STATE`, `${unitStateColor(unit.state)}${unit.state || "planned"}${c.reset}`],
+    [`HERO`, trunc(unit.hero || "—", Math.max(6, kvInner - 1))],
+    [`SESSION`, sessionShort(unit.session)],
+    [`BRIEF`, trunc(briefLabel(unit.brief), Math.max(6, kvInner - 1))],
+    [`FLEET`, fleetVal],
+  ];
+
+  for (let i = 0; i < ART_H; i++) {
+    let left;
+    if (portrait && portrait[i] != null) left = padVis(portrait[i], 12);
+    else left = padVis(i === Math.floor(ART_H / 2) ? `${c.dim}(no hero)${c.reset}` : "", 12);
+    const kv = stats[i];
+    const right = kv ? `${c.dim}${padVis(kv[0], kvW)}${c.reset}${kv[1]}` : "";
+    rows.push(`${left}  ${right}`);
+  }
+  const sid = unit.hero ? shortId(unit.hero) : "";
+  const under = sid
+    ? `${c.dim}${padVis(
+        (" ".repeat(Math.max(0, Math.floor((12 - visLen(sid)) / 2))) + sid).slice(0, 12),
+        12,
+      )}${c.reset}`
+    : padVis("", 12);
+  rows.push(`${under}  `);
+
+  rows.push("__MID_MISSION__");
+  const briefText = loadBrief(slug, unit);
+  const heads = pickBriefHeads(briefText);
+  if (heads.length) {
+    for (const h of heads.slice(0, 4)) {
+      rows.push(
+        `  ${c.yellow}${h.head}${c.reset} ${trunc(h.text || "", Math.max(8, rightW - 14))}`,
+      );
+    }
+  } else if (selected) {
+    const goal = String(dossier?.fields?.goal || "").trim();
+    if (goal) rows.push(`  ${c.yellow}GOAL${c.reset} ${trunc(goal, Math.max(8, rightW - 14))}`);
+    else rows.push(`  ${c.dim}(no brief yet)${c.reset}`);
+  } else {
+    rows.push(`  ${c.dim}(no brief yet)${c.reset}`);
+  }
+
+  rows.push("__MID_ACCEPTANCE__");
+  const acceptBrief = heads.find((h) => h.head.toUpperCase() === "ACCEPTANCE");
+  if (acceptBrief?.text) {
+    rows.push(`  ${trunc(acceptBrief.text, Math.max(8, rightW - 4))}`);
+  } else if (selected) {
+    const acceptField = String(dossier?.fields?.acceptance || "").trim();
+    if (acceptField) {
+      for (const line of acceptField
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .slice(0, 2)) {
+        rows.push(`  ${trunc(line, Math.max(8, rightW - 4))}`);
+      }
+    } else {
+      rows.push(`  ${c.dim}(no acceptance)${c.reset}`);
+    }
+  } else {
+    rows.push(`  ${c.dim}(no acceptance)${c.reset}`);
+  }
+
+  return rows;
+}
+
+/**
+ * PROGRAM / UNITS table / AI-CRON / INBOX — each a full mid-section for the DOSSIER scroll body.
+ */
+function buildDossierProgramSections({
+  dossier,
+  units = [],
+  roster = [],
+  rightW,
+  cronAgents = [],
+  inboxMessages = [],
+  selIndex = 0,
+}) {
+  const rows = [];
+  const kv = (label, value) => `  ${c.dim}${padVis(label, 10)}${c.reset}${value}`;
+  const list = Array.isArray(units) ? units : [];
+
+  rows.push("__MID_PROGRAM__");
+  const playbook = trunc(String(dossier?.fields?.playbook || "—"), 16);
+  const status = trunc(String(dossier?.status || "—"), 10);
+  const host = trunc(String(dossier?.fields?.host || "—"), 10);
+  rows.push(kv("playbook", `${playbook} · ${status} · ${host}`));
+  rows.push(kv("updated", tsShort(dossier?.updatedAt)));
+  const pmHero = String(dossier?.fields?.pmHero || "").trim();
+  if (pmHero) {
+    const pmH = (roster || []).find((h) => h.id === pmHero);
+    const fleet = pmH
+      ? `${statusColor(pmH.status)}${statusShort(pmH.status)}${c.reset}`
+      : `${c.dim}—${c.reset}`;
+    rows.push(
+      kv(
+        "pm",
+        `${shortId(pmHero)} · ${trunc(String(dossier?.fields?.pmRole || "—"), 14)} · ${fleet}`,
+      ),
+    );
+  } else {
+    rows.push(kv("pm", `${c.dim}(unassigned)${c.reset}`));
+  }
+  const cover = String(dossier?.fields?.coverImage || "").trim();
+  rows.push(
+    kv(
+      "cover",
+      cover
+        ? `${c.dim}${trunc(basename(cover), Math.max(8, rightW - 14))}${c.reset}`
+        : `${c.dim}missing${c.reset}`,
+    ),
+  );
+  const goal = String(dossier?.fields?.goal || "").trim();
+  if (goal) {
+    rows.push(kv("goal", trunc(goal, Math.max(10, rightW - 14))));
+  }
+
+  rows.push("__MID_UNITS__");
+  const counts = countUnitStates(list);
+  const pct = counts.total ? Math.round((counts.done / counts.total) * 100) : 0;
+  rows.push(
+    `  ${c.dim}total${c.reset} ${c.gold}${counts.total}${c.reset}` +
+      ` ${c.dim}· plan${c.reset} ${c.gray}${counts.planned}${c.reset}` +
+      ` ${c.dim}· run${c.reset} ${c.green}${counts.running}${c.reset}` +
+      ` ${c.dim}· done${c.reset} ${c.white}${counts.done}${c.reset}` +
+      ` ${c.dim}· fail${c.reset} ${c.yellow}${counts.failed}${c.reset}` +
+      ` ${c.dim}·${c.reset} ${c.gold}${pct}%${c.reset}`,
+  );
+  if (!list.length) {
+    rows.push(`  ${c.dim}(no units)${c.reset}`);
+  } else {
+    rows.push(
+      `  ${c.dim}${padVis("id", 16)} ${padVis("role", 8)} ${padVis("state", 8)} ${padVis("hero", 12)} session${c.reset}`,
+    );
+    for (let i = 0; i < list.length; i++) {
+      const u = list[i];
+      const sel = i === selIndex;
+      const marker = sel ? `${c.yellow}${c.bold}▸${c.reset}` : " ";
+      const idBit = sel ? `${c.bold}${trunc(u.id, 15)}${c.reset}` : trunc(u.id, 15);
+      const st = unitStateColor(u.state);
+      rows.push(
+        `  ${marker}${padVis(idBit, 15)} ${padVis(trunc(u.role || "—", 8), 8)} ` +
+          `${st}${padVis(trunc(u.state || "planned", 8), 8)}${c.reset} ` +
+          `${padVis(trunc(shortId(u.hero), 12), 12)} ${sessionShort(u.session)}`,
+      );
+    }
+  }
+
+  // INBOX + AI-CRON live as full-width panels between TEAM and Gotchis (not here).
+  return rows;
+}
+
+/**
+ * DOSSIER body: PROGRAM, UNITS, AI-CRON, INBOX each as their own scroll section,
+ * then a full detail section per TEAM op. PROGRESS stays sticky at the bottom.
+ * Returns { stickyRows: [], rows, sectionStarts }.
+ */
 function buildDossierContentRows({
   empty,
   slug,
@@ -726,140 +1183,156 @@ function buildDossierContentRows({
   roster,
   rightW,
   cronAgents = [],
+  inboxMessages = [],
+  selIndex = 0,
 }) {
-  if (empty) return buildEmptyDetailLines(slug, rightW);
+  if (empty) {
+    return { stickyRows: [], rows: buildEmptyDetailLines(slug, rightW), sectionStarts: [] };
+  }
 
+  const list = Array.isArray(units) && units.length ? units : unit ? [unit] : [];
   const rows = [];
-  const heroObj =
-    unit?.hero && Array.isArray(roster)
-      ? roster.find((h) => h.id === unit.hero) || { id: unit.hero }
-      : null;
-  // Portrait slot: coverImage (chafa / placeholder box) wins; else unit gotchi ASCII.
-  let portrait = null;
-  const coverPath = resolveCoverImage(slug, dossier?.fields?.coverImage);
-  if (coverPath) {
-    portrait = renderCoverImage(coverPath, ART_W, ART_H) || coverPlaceholderLines(coverPath, ART_W, ART_H);
-  } else if (heroObj) {
-    portrait = artForHero(heroObj);
+  const sectionStarts = [];
+
+  // Own sections each — full tables, not a cramped sticky header.
+  for (const r of buildDossierProgramSections({
+    dossier,
+    units: list,
+    roster,
+    rightW,
+    cronAgents,
+    inboxMessages,
+    selIndex,
+  })) {
+    rows.push(r);
   }
-  const art = portrait;
-  const kvW = 9;
-  const kvCol = 14; // portrait 12 + 2 spaces
-  const kvInner = Math.max(8, rightW - kvCol);
 
-  const fleetHero = unit?.hero && Array.isArray(roster) ? roster.find((h) => h.id === unit.hero) : null;
-  const fleetVal = fleetHero
-    ? `${statusColor(fleetHero.status)}${statusShort(fleetHero.status)}${c.reset}`
-    : "—";
-
-  const stats = unit
-    ? [
-        [`ROLE`, unit.role || "—"],
-        [`STATE`, `${unitStateColor(unit.state)}${unit.state || "planned"}${c.reset}`],
-        [`HERO`, trunc(unit.hero || "—", Math.max(6, kvInner - 1))],
-        [`SESSION`, sessionShort(unit.session)],
-        [`BRIEF`, trunc(briefLabel(unit.brief), Math.max(6, kvInner - 1))],
-        [`FLEET`, fleetVal],
-      ]
-    : [];
-
-  for (let i = 0; i < ART_H; i++) {
-    let left;
-    if (art && art[i] != null) {
-      left = padVis(art[i], 12);
-    } else {
-      left = padVis(i === Math.floor(ART_H / 2) ? `${c.dim}(no hero)${c.reset}` : "", 12);
-    }
-    const kv = stats[i];
-    let right = "";
-    if (kv) {
-      right = `${c.dim}${padVis(kv[0], kvW)}${c.reset}${kv[1]}`;
-    }
-    rows.push(`${left}  ${right}`);
-  }
-  // shortId under portrait
-  const sid = unit?.hero ? shortId(unit.hero) : "";
-  const under = sid ? `${c.dim}${padVis((" ".repeat(Math.max(0, Math.floor((12 - visLen(sid)) / 2))) + sid).slice(0, 12), 12)}${c.reset}` : padVis("", 12);
-  rows.push(`${under}  `);
-
-  for (const r of buildAiCronRows(cronAgents, rightW)) rows.push(r);
-
-  rows.push("__MID_MISSION__");
-  const briefText = unit ? loadBrief(slug, unit) : "";
-  const heads = pickBriefHeads(briefText);
-  if (heads.length) {
-    for (const h of heads.slice(0, 4)) {
-      rows.push(
-        `  ${c.yellow}${h.head}${c.reset} ${trunc(h.text || "", Math.max(8, rightW - 14))}`,
-      );
-    }
+  if (!list.length) {
+    rows.push(`  ${c.dim}(no units — gotchibot pstack unit add)${c.reset}`);
   } else {
-    const goal = String(dossier?.fields?.goal || "").trim();
-    if (goal) {
-      rows.push(`  ${c.yellow}GOAL${c.reset} ${trunc(goal, Math.max(8, rightW - 14))}`);
-    } else {
-      rows.push(`  ${c.dim}(no brief yet)${c.reset}`);
+    for (let i = 0; i < list.length; i++) {
+      const u = list[i];
+      sectionStarts.push(countDossierExpanded(rows));
+      const selected = i === selIndex;
+      rows.push(`__MID_UNIT__:${u.id}:${selected ? "1" : "0"}`);
+      for (const r of buildUnitDetailRows({
+        slug,
+        dossier,
+        unit: u,
+        roster,
+        rightW,
+        selected,
+        useCover: selected,
+      })) {
+        rows.push(r);
+      }
+      if (i < list.length - 1) rows.push("");
     }
   }
 
-  rows.push("__MID_ACCEPTANCE__");
-  const acceptBrief = heads.find((h) => h.head.toUpperCase() === "ACCEPTANCE");
-  const acceptField = String(dossier?.fields?.acceptance || "").trim();
-  if (acceptField) {
-    for (const line of acceptField.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, 2)) {
-      rows.push(`  ${trunc(line, Math.max(8, rightW - 4))}`);
-    }
-  } else if (acceptBrief?.text) {
-    rows.push(`  ${trunc(acceptBrief.text, Math.max(8, rightW - 4))}`);
-  } else {
-    rows.push(`  ${c.dim}(no acceptance)${c.reset}`);
-  }
-
-  const counts = countUnitStates(units || []);
+  const counts = countUnitStates(list);
   const pct = counts.total ? Math.round((counts.done / counts.total) * 100) : 0;
   rows.push("__PROGRESS__");
   rows.push(
     `  ${c.gold}${c.bold}PROGRESS${c.reset} ${c.gold}${c.bold}${counts.done}${c.reset}/${c.gold}${c.bold}${counts.total}${c.reset} done · ${c.gold}${c.bold}${pct}%${c.reset}`,
   );
-  return rows;
+  return { stickyRows: [], rows, sectionStarts };
 }
 
-function packDossierPanel(contentRows, rightW, opsH, detailScroll, titleBase) {
+/** How many scrollable expanded rows `rows` produce (mirrors packDossierPanel scroll body). */
+function countDossierExpanded(rows) {
+  let n = 0;
+  let takeProgress = false;
+  for (const row of rows) {
+    if (
+      row === "__MID_MISSION__" ||
+      row === "__MID_ACCEPTANCE__" ||
+      row === "__MID_AI_CRON__" ||
+      row === "__MID_INBOX__" ||
+      row === "__MID_PROGRAM__" ||
+      row === "__MID_UNITS__" ||
+      (typeof row === "string" && row.startsWith("__MID_UNIT__:"))
+    ) {
+      n += 1;
+    } else if (row === "__PROGRESS__") {
+      takeProgress = true;
+    } else if (takeProgress) {
+      takeProgress = false;
+    } else {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+function expandDossierItem(row) {
+  if (row === "__MID_MISSION__") return { mid: "MISSION" };
+  if (row === "__MID_ACCEPTANCE__") return { mid: "ACCEPTANCE" };
+  if (row === "__MID_AI_CRON__") return { mid: "AI-CRON" };
+  if (row === "__MID_INBOX__") return { mid: "INBOX" };
+  if (row === "__MID_PROGRAM__") return { mid: "PROGRAM" };
+  if (row === "__MID_UNITS__") return { mid: "UNITS" };
+  if (typeof row === "string" && row.startsWith("__MID_UNIT__:")) {
+    const parts = row.split(":");
+    const id = parts[1] || "unit";
+    const selected = parts[2] === "1";
+    return { mid: selected ? `▸ ${id}` : id, unitSel: selected };
+  }
+  return { text: row };
+}
+
+function packDossierPanel(
+  contentRows,
+  rightW,
+  opsH,
+  detailScroll,
+  titleBase,
+  sectionStarts = [],
+  _stickyRows = [],
+) {
   const innerH = Math.max(1, opsH - 2); // top+bottom borders
   const expanded = [];
   let progressRow = null;
   let takeProgress = false;
   for (const row of contentRows) {
-    if (row === "__MID_MISSION__") expanded.push({ mid: "MISSION" });
-    else if (row === "__MID_ACCEPTANCE__") expanded.push({ mid: "ACCEPTANCE" });
-    else if (row === "__MID_AI_CRON__") expanded.push({ mid: "AI-CRON" });
-    else if (row === "__PROGRESS__") takeProgress = true;
-    else if (takeProgress) {
+    if (row === "__PROGRESS__") {
+      takeProgress = true;
+      continue;
+    }
+    if (takeProgress) {
       progressRow = { text: row };
       takeProgress = false;
-    } else expanded.push({ text: row });
+      continue;
+    }
+    expanded.push(expandDossierItem(row));
   }
-  // Pin PROGRESS as the last visible content row (JA2 overall feel); scroll the rest
-  const sticky = progressRow ? 1 : 0;
-  const scrollH = Math.max(1, innerH - sticky);
+
+  // Only PROGRESS is sticky (bottom). PROGRAM / UNITS / AI-CRON / INBOX / ops all scroll.
+  const stickyBottom = progressRow ? 1 : 0;
+  const scrollH = Math.max(1, innerH - stickyBottom);
   const maxScroll = Math.max(0, expanded.length - scrollH);
   const ds = Math.min(Math.max(0, detailScroll || 0), maxScroll);
   const slice = expanded.slice(ds, ds + scrollH);
   while (slice.length < scrollH) slice.push({ text: "" });
-  if (progressRow) slice.push(progressRow);
 
   const title =
     maxScroll > 0 ? `${titleBase} · scroll ${ds}/${maxScroll}` : titleBase;
   const out = [boxTop(title, rightW)];
-  for (const item of slice) {
-    if (item.mid) out.push(boxMid(item.mid, rightW));
-    else out.push(boxRow(item.text, rightW));
+  // Body rows (mids + content + optional sticky PROGRESS + pad) share one scrollbar track.
+  const bodyItems = [];
+  for (const item of slice) bodyItems.push(item);
+  if (progressRow) bodyItems.push({ text: progressRow.text });
+  while (bodyItems.length < opsH - 2) bodyItems.push({ text: "" });
+  if (bodyItems.length > opsH - 2) bodyItems.length = opsH - 2;
+  const track = dossierScrollTrack(bodyItems.length, ds, maxScroll, scrollH);
+  for (let i = 0; i < bodyItems.length; i++) {
+    const item = bodyItems[i];
+    const edge = track[i] || `${c.border}│${c.reset}`;
+    if (item.mid) out.push(boxMidScroll(item.mid, rightW, edge));
+    else out.push(boxRowScroll(item.text || "", rightW, edge));
   }
-  // Ensure exact opsH lines
-  while (out.length < opsH - 1) out.push(boxRow("", rightW));
-  if (out.length > opsH - 1) out.length = opsH - 1;
   out.push(boxBottom(rightW));
-  return { lines: out, maxScroll, ds };
+  return { lines: out, maxScroll, ds, sectionStarts };
 }
 
 function packOpsPanel(contentRows, leftW, opsH) {
@@ -1007,6 +1480,7 @@ function render({
   detailScroll,
   roster,
   cronAgents = [],
+  inboxMessages = [],
 }) {
   const cols = Math.max(30, term.cols);
   const rowsN = Math.max(14, term.rows);
@@ -1080,10 +1554,11 @@ function render({
         leftW,
         opsInnerH,
         cronAgents: cronAgents || [],
+        inboxMessages: inboxMessages || [],
       });
   const opsLines = packOpsPanel(opsBody, leftW, opsH);
 
-  const dossierRows = buildDossierContentRows({
+  const dossierBuilt = buildDossierContentRows({
     empty,
     slug,
     dossier,
@@ -1092,14 +1567,31 @@ function render({
     roster: roster || [],
     rightW,
     cronAgents: cronAgents || [],
+    inboxMessages: inboxMessages || [],
+    selIndex: sel || 0,
   });
+  const nOps = (unitList || []).length;
+  const titleBase =
+    `DOSSIER · ${nOps ? `${nOps} ops` : unitId}` +
+    (selUnit ? ` · ▸ ${selUnit.id}` : "") +
+    (dossier?.fields?.pmHero ? ` · PM ${shortId(dossier.fields.pmHero)}` : "");
+  // followSel (-1): snap scroll so the selected op's section is in view
+  let dsIn = detailScroll;
+  if (dsIn < 0 && dossierBuilt.sectionStarts?.length) {
+    const start = dossierBuilt.sectionStarts[Math.min(sel || 0, dossierBuilt.sectionStarts.length - 1)] || 0;
+    dsIn = start;
+  }
   const dossierPacked = packDossierPanel(
-    dossierRows,
+    dossierBuilt.rows,
     rightW,
     opsH,
-    detailScroll,
-    `DOSSIER · ${unitId}${dossier?.fields?.pmHero ? ` · PM ${shortId(dossier.fields.pmHero)}` : ""}`,
+    dsIn < 0 ? 0 : dsIn,
+    titleBase,
+    dossierBuilt.sectionStarts,
+    dossierBuilt.stickyRows || [],
   );
+  lastDossierScroll = dossierPacked.ds;
+  lastDossierMaxScroll = dossierPacked.maxScroll;
 
   const panelRows = Math.max(opsLines.length, dossierPacked.lines.length);
   for (let i = 0; i < panelRows; i++) {
@@ -1115,11 +1607,32 @@ function render({
     lines.push(pad(teamLines[i] || "", cols));
   }
 
-  // e) GOTCHIS grid — fill remaining body after panels+team, never eat footer
+  // e) INBOX then AI-CRON — full-width sections between TEAM and Gotchis
   const afterPanelsTeam = 1 + panelRows + teamBudget;
-  lastGridStartRow = afterPanelsTeam;
+  const remainForMidGrid = Math.max(4, rowsN - footerH - afterPanelsTeam);
+  // Prefer ~half of mid band for inbox+cron, leave ≥3 rows for Gotchis header+art
+  const midBand = Math.max(6, remainForMidGrid - 3);
+  let inboxH = Math.min(12, Math.max(5, Math.floor(midBand * 0.5)));
+  let cronH = Math.min(12, Math.max(5, midBand - inboxH));
+  if (inboxH + cronH > midBand) {
+    cronH = Math.max(4, midBand - inboxH);
+  }
+  const inboxBody = empty
+    ? [`  ${c.dim}(no project)${c.reset}`]
+    : buildInboxPanelBody(inboxMessages || [], cols);
+  const cronBody = empty
+    ? [`  ${c.dim}(no project)${c.reset}`]
+    : buildAiCronPanelBody(cronAgents || [], cols);
+  const inboxLines = packFullWidthPanel("INBOX", inboxBody, cols, inboxH);
+  const cronLines = packFullWidthPanel("AI-CRON", cronBody, cols, cronH);
+  for (const row of inboxLines) lines.push(pad(row, cols));
+  for (const row of cronLines) lines.push(pad(row, cols));
+
+  // f) GOTCHIS grid — fill remaining body, never eat footer
+  const afterMid = afterPanelsTeam + inboxLines.length + cronLines.length;
+  lastGridStartRow = afterMid;
   lastRows = rowsN;
-  const gridBudget = Math.max(1, rowsN - footerH - afterPanelsTeam);
+  const gridBudget = Math.max(1, rowsN - footerH - afterMid);
   const gridInnerW = cols - 1;
   const grid = buildGridLines(gridHeroes || [], gridInnerW, page || 0, gridRows);
   const pageLabel = grid.pages > 1 ? ` · page ${grid.pg + 1}/${grid.pages}` : "";
@@ -1138,7 +1651,7 @@ function render({
   while (lines.length < rowsN - footerH) lines.push(pad("", cols));
   lines.push(
     pad(
-      `${c.dim}j/k select · h/l page grid · u/d scroll dossier · wheel pages grid / scrolls dossier · q quit${c.reset}`,
+      `${c.dim}j/k select op · h/l page · PgUp/PgDn (b/f) scroll dossier · TEAM→INBOX→AI-CRON→Gotchis · [c][o][u] · wheel · q${c.reset}`,
       cols,
     ),
   );
@@ -1146,7 +1659,26 @@ function render({
   // At ≥72 cols allow 3-col overflow so the leave hint is not ellipsis-truncated.
   // Narrower panes: pad() keeps OVERALL and trims the leave tail.
   {
-    const foot2 = `${c.gold}${c.bold}OVERALL ${pct}% done (${counts.done}/${counts.total})${c.reset}${c.dim} · leave: orchestrator-layout.sh leave-pstack-dossier${c.reset}`;
+    const overall = `${c.gold}${c.bold}OVERALL ${pct}% done (${counts.done}/${counts.total})${c.reset}`;
+    const mk = (k, label) =>
+      `${c.bold}${c.cyan}[${c.reset}${c.bold}${k}${c.reset}${c.bold}${c.cyan}] ${label}${c.reset}`;
+    const btnC = mk("c", "Cockpit");
+    const btnO = mk("o", "Orch");
+    const btnU = mk("u", "User");
+    const gap = " ";
+    const foot2 = `${overall}  ${btnC}${gap}${btnO}${gap}${btnU}`;
+    let x = visLen(overall) + 2;
+    const hits = [];
+    for (const [key, btn] of [
+      ["cockpit", btnC],
+      ["orch", btnO],
+      ["user", btnU],
+    ]) {
+      const w = visLen(btn);
+      hits.push({ key, x0: x, x1: x + w, y: lines.length });
+      x += w + visLen(gap);
+    }
+    lastCockpitBtn = hits;
     const n = visLen(foot2);
     if (n <= cols) lines.push(foot2 + " ".repeat(cols - n));
     else if (cols >= 72) lines.push(foot2);
@@ -1159,12 +1691,41 @@ function render({
 
 /* ---------- state + watch ---------- */
 
+
+function leavePstackTo(target) {
+  const layout = join(ROOT, "scripts", "orchestrator-layout.sh");
+  const cmd =
+    target === "orch"
+      ? "leave-pstack-orch"
+      : target === "user"
+        ? "leave-pstack-user"
+        : "leave-pstack-cockpit";
+  spawnSync("bash", [layout, cmd], {
+    cwd: ROOT,
+    env: process.env,
+    stdio: "ignore",
+  });
+  process.exit(0);
+}
+
+/** Leave pstack dossier and reopen cockpit via leave-pstack-cockpit. */
+function returnToCockpit() {
+  leavePstackTo("cockpit");
+}
+function returnToOrch() {
+  leavePstackTo("orch");
+}
+function returnToUser() {
+  leavePstackTo("user");
+}
+
 function buildState() {
   const slug = currentSlug();
   const hasDossier = dossierExists(slug);
   const empty = !hasDossier;
   const dossier = hasDossier ? loadDossier(slug) : null;
   const cronAgents = loadCronAgents(slug, dossier);
+  const inboxMessages = loadInboxMessages(slug);
   const units = hasDossier ? loadUnits(slug) : [];
   const ledger = hasDossier ? loadLedger(slug) : [];
   const decisions = hasDossier ? loadDecisions(slug) : [];
@@ -1187,6 +1748,7 @@ function buildState() {
     empty,
     roster,
     cronAgents,
+    inboxMessages,
     gridHeroes: picked.heroes,
     gridLabel: picked.label,
     projectScope: picked.projectScope,
@@ -1227,7 +1789,7 @@ function runWatch() {
   let state = buildState();
   let sel = 0;
   let page = 0;
-  let detailScroll = 0;
+  let detailScroll = 0; // start at PROGRAM section; j/k jumps to selected op
   let lastFp = fingerprint(state);
   let lastRosterTick = Date.now();
   const term = termSize();
@@ -1291,8 +1853,26 @@ function runWatch() {
     readline.emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
     const scrollDetail = (delta) => {
-      detailScroll = Math.max(0, detailScroll + delta);
+      // Leave follow-sel; scroll from the last painted dossier offset.
+      const base = detailScroll < 0 ? lastDossierScroll : detailScroll;
+      detailScroll = Math.max(0, Math.min(lastDossierMaxScroll, base + delta));
       paint();
+    };
+    const handleCockpitClick = (mx, my) => {
+      const hits = Array.isArray(lastCockpitBtn)
+        ? lastCockpitBtn
+        : lastCockpitBtn
+          ? [{ ...lastCockpitBtn, key: "cockpit" }]
+          : [];
+      for (const hit of hits) {
+        if (my !== hit.y) continue;
+        if (mx < hit.x0 || mx >= hit.x1) continue;
+        cleanup();
+        if (hit.key === "orch") returnToOrch();
+        else if (hit.key === "user") returnToUser();
+        else returnToCockpit();
+        return;
+      }
     };
     const handleWheel = (btn, _x, y) => {
       // btn 64 = wheel up, 65 = wheel down (X10 / SGR)
@@ -1315,7 +1895,10 @@ function runWatch() {
         const btn = Number(m[1]);
         const mx = Number(m[2]) - 1;
         const my = Number(m[3]) - 1;
-        if (m[4] === "M") handleWheel(btn, mx, my);
+        if (m[4] === "M") {
+          if (btn === 0 || btn === 32) handleCockpitClick(mx, my);
+          else handleWheel(btn, mx, my);
+        }
       }
       // X10: ESC [ M btn x y  (each +32; x/y already 0-based)
       for (let i = 0; i + 6 <= s.length; i++) {
@@ -1323,12 +1906,32 @@ function runWatch() {
         const btn = s.charCodeAt(i + 3) - 32;
         const mx = s.charCodeAt(i + 4) - 32;
         const my = s.charCodeAt(i + 5) - 32;
-        handleWheel(btn, mx, my);
+        if (btn === 0 || btn === 32) handleCockpitClick(mx, my);
+        else handleWheel(btn, mx, my);
       }
     });
     process.stdin.on("keypress", (str, key) => {
       if (!key) return;
-      if ((key.ctrl && key.name === "c") || key.name === "q" || key.name === "escape") {
+      if (key.ctrl && key.name === "c") {
+        cleanup();
+        process.exit(0);
+      }
+      if (key.name === "c" || key.name === "escape" || str === "c") {
+        cleanup();
+        returnToCockpit();
+        return;
+      }
+      if (key.name === "o" || str === "o") {
+        cleanup();
+        returnToOrch();
+        return;
+      }
+      if (key.name === "u" || str === "u") {
+        cleanup();
+        returnToUser();
+        return;
+      }
+      if (key.name === "q") {
         cleanup();
         process.exit(0);
       }
@@ -1336,13 +1939,13 @@ function runWatch() {
       if (key.name === "j" || key.name === "down") {
         if (n) {
           sel = Math.min(n - 1, sel + 1);
-          detailScroll = 0;
+          detailScroll = -1; // follow selected op section
           paint();
         }
       } else if (key.name === "k" || key.name === "up") {
         if (n) {
           sel = Math.max(0, sel - 1);
-          detailScroll = 0;
+          detailScroll = -1;
           paint();
         }
       } else if (
@@ -1356,9 +1959,11 @@ function runWatch() {
         const dir = ["h", "[", "left"].includes(key.name) ? -1 : 1;
         page = Math.max(0, page + dir);
         paint();
-      } else if (key.name === "u") {
+      } else if (key.name === "pageup" || key.name === "b") {
+        // b = back/scroll up (u is User nav)
         scrollDetail(-3);
-      } else if (key.name === "d") {
+      } else if (key.name === "pagedown" || key.name === "f") {
+        // f = forward/scroll down
         scrollDetail(3);
       }
     });
@@ -1380,7 +1985,7 @@ function runOnce() {
 
 function usage() {
   console.log(`usage:
-  pstack-window watch            # interactive when stdin is a tty (j/k select · h/l page · u/d scroll · wheel pages grid / scrolls dossier · q quit); --interactive forces it
+  pstack-window watch            # interactive when stdin is a tty (j/k select · h/l page · u/d scroll · c Cockpit · wheel · q quit); --interactive forces it
   pstack-window once             # single render (debug / capture)
   pstack-window --interactive    # force interactive keys even if not obvious
 

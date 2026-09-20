@@ -1,0 +1,38 @@
+{
+  "id": "worker",
+  "roleId": "worker",
+  "version": "1.0.0",
+  "title": "Worker",
+  "summary": "Prof-seated worker desks request. Deep lanes: dispatch I/O (sessions/<id>), skill-requests.jsonl helper, ephemeral desk-terminals use/close.",
+  "skills": [
+    "cursor-cli",
+    "codex-cli",
+    "gotchibot-bridge",
+    "desk-wake",
+    "passoff",
+    "pstack"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "worker",
+    "dispatch",
+    "desk-request",
+    "prof"
+  ],
+  "downloadPath": "packs/worker",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/codex-cli/SKILL.md",
+    "skills/cursor-cli/SKILL.md",
+    "skills/desk-wake/SKILL.md",
+    "skills/gotchibot-bridge/SKILL.md",
+    "skills/passoff/SKILL.md",
+    "skills/pstack/SKILL.md"
+  ]
+}

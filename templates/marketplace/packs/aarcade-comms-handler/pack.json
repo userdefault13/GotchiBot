@@ -1,0 +1,28 @@
+{
+  "id": "aarcade-comms-handler",
+  "roleId": "aarcade-comms-handler",
+  "version": "1.0.0",
+  "title": "Aarcade daily comms",
+  "summary": "Own newsfeed + tweet-draft pipeline: a real Claude terminal on the iMac drafts, the Aarcade API publishes, tweets stay approve-gated.",
+  "skills": [
+    "aarcade-comms",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "Schedule truth: `./scripts/gotchibot comms schedule status` is the only source of truth for whether the desk's waker is loaded.",
+    "crontab: iMac user crontab entries are installed by the desk's schedule install command; `schedule status` confirms them."
+  ],
+  "tags": [
+    "marketplace"
+  ],
+  "downloadPath": "packs/aarcade-comms-handler",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/aarcade-comms/SKILL.md",
+    "skills/browser-tool/SKILL.md"
+  ]
+}

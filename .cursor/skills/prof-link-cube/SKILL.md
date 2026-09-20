@@ -62,7 +62,7 @@ Status: `./scripts/gotchibot link-cube status`.
 
 Underlying CLI: `./scripts/template-pack.mjs`. Pack authoring edits go through a work tool (`cursor-cli` default).
 
-Known packs UserDefault often asks for: `game-art-director`, `security-engineer`, `auditor`, `dossier-ai-cron-site`, `data-ai-cron-site` — apply with `gotchibot templates apply <id> --hero <available> --yes`.
+Known packs UserDefault often asks for: `worker`, `game-art-director`, `security-engineer`, `auditor`, `dossier-ai-cron-site`, `data-ai-cron-site`, `central-bot`, `tool-maker`, `skill-maker`, `policy-maker`, `rule-maker`, `mcp-maker`, `roadblock-reviewer` — apply with `gotchibot templates apply <id> --hero <available> --yes`. Worker tool index: `node ./scripts/worker-index.mjs --text`.
 
 ## Safety (hard)
 

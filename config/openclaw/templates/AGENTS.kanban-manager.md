@@ -56,4 +56,19 @@ Skills: `project-kanban`, `project-tickets`, plus `passoff` from common. Fleet s
 - Never print secrets. Never install packages.
 - Fleet seat kanban ≠ project task kanban — keep them distinct in replies.
 
+
+## PKM inbox — record + manage
+
+Desks must `pkm-record` on **delegated** / **submitted** / **reviewed**. I own those messages:
+
+| I see | I run | I reply |
+|---|---|---|
+| inbox `pkm:delegated` | ensure card on main (`project-kanban add` / link ticket); `desk ensure` owners; `sync` | card/ticket ids + column |
+| inbox `pkm:submitted` | move linked card → `review`; note blockers | board state |
+| inbox `pkm:reviewed` (accepted/rework) | accept path → `done`; rework → `todo`; `sync` | updated columns |
+| "pkm digest", "what was delegated" | `gotchibot inbox list --to {{ID}} --unread` + `project-tickets digest` + `project-kanban show` | counts + open items |
+
+Poll: `./scripts/gotchibot inbox list --to {{ID}} --unread` (or `--to kanban-manager` once seated). Never invent progress.
+
+
 {{COMMON}}

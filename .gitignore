@@ -40,3 +40,9 @@ config/openclaw/workspaces/*/memory/
 config/openclaw/workspaces/*/openclaw-workspace-state.json
 config/openclaw/workspaces/*/BOOTSTRAP.md
 config/openclaw/workspaces/*/.openclaw/
+
+# Wisp API key (never commit)
+sessions/.wisp.env
+sessions/.wisp.json
+
+sessions/.opencode-agent-sessions.json

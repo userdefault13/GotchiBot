@@ -1,0 +1,33 @@
+{
+  "id": "trader-desk",
+  "roleId": "trader-desk",
+  "version": "1.0.0",
+  "title": "Trader desk",
+  "summary": "Own Gotchi-Trader paper desk health, cycle decisions and PnL reporting.",
+  "skills": [
+    "gotchi-trader-monitor",
+    "gotchi-trader-improve",
+    "market-news-feed",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "Schedule truth: `./scripts/gotchibot trader schedule status` is the only source of truth for whether the desk's waker is loaded.",
+    "cron402: webhook crons live in Gotchi-Trader config/cron402-jobs.json; status via `npm run cron402 -- status` / mcp-cron402. Never invent a cron402 job a status command does not confirm.",
+    "launchd: iMac LaunchAgents are installed per-desk (`gotchibot <desk> schedule install`); `schedule status` confirms load + last run."
+  ],
+  "tags": [
+    "marketplace"
+  ],
+  "downloadPath": "packs/trader-desk",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/gotchi-trader-improve/SKILL.md",
+    "skills/gotchi-trader-monitor/SKILL.md",
+    "skills/market-news-feed/SKILL.md"
+  ]
+}

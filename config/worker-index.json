@@ -1,0 +1,242 @@
+{
+  "version": 2,
+  "roleId": "worker",
+  "title": "Worker (Prof-seated)",
+  "summary": "Generic worker desks request from Prof. Link-Cube. Executes scoped jobs via work tools; does not orchestrate, mint, or steal standing desks.",
+  "requestedBy": [
+    "desk agents",
+    "central-bot",
+    "orchestrator",
+    "UserDefault via Prof"
+  ],
+  "seat": {
+    "apply": "./scripts/gotchibot templates apply worker --hero <available> --yes",
+    "resummon": "./scripts/gotchibot link-cube resummon --hero <available> --role worker --yes",
+    "bindDefault": "link-cube bind defaults --role worker when omitted"
+  },
+  "tools": [
+    {
+      "id": "cursor-cli",
+      "lane": "work-tool",
+      "skill": "cursor-cli",
+      "invoke": "./scripts/cursor-cli.mjs run \"\u2026\"",
+      "when": "Default for edits, debug, investigation, deliverables"
+    },
+    {
+      "id": "codex-cli",
+      "lane": "work-tool",
+      "skill": "codex-cli",
+      "invoke": "./scripts/codex-cli.mjs run \"\u2026\"",
+      "when": "When UserDefault says codex / Codex"
+    },
+    {
+      "id": "gotchibot-bridge",
+      "lane": "work-tool",
+      "skill": "gotchibot-bridge",
+      "invoke": "node ./scripts/claudemode-ask.mjs \"\u2026\" | ./scripts/gotchibot claude-submit \"\u2026\"",
+      "when": "Hard reasoning / @claudemode \u2014 never /model @claudemode"
+    },
+    {
+      "id": "desk-terminals",
+      "lane": "desk-terminals",
+      "when": "Need a watchable Claude/Cursor Terminal turn on the iMac desk",
+      "invoke": "./scripts/gotchibot desk-terminals use <hero-id> [-- <cmd\u2026>]",
+      "detail": "lanes.desk-terminals"
+    },
+    {
+      "id": "dispatch-io",
+      "lane": "dispatch",
+      "when": "Spawned worker / multitask / orchestrate sessions",
+      "paths": [
+        "prompt.txt",
+        "bootstrap.txt",
+        "output.md",
+        "output.log",
+        "state.env",
+        "pid",
+        "runner.sh",
+        "skill-requests.jsonl"
+      ],
+      "invoke": "./scripts/gotchi-orchestrate.mjs spawn [--host auto] [--sandbox] [--model \u2026] \"PROMPT\"",
+      "detail": "lanes.dispatch-io"
+    },
+    {
+      "id": "skill-requests",
+      "lane": "skill-requests",
+      "when": "Needed skill/tool missing from catalog / skills/registry.json",
+      "invoke": "node ./scripts/worker-skill-request.mjs --session <id> --skill <name> --reason \"\u2026\"",
+      "paths": [
+        "sessions/<id>/skill-requests.jsonl"
+      ],
+      "detail": "lanes.skill-requests"
+    },
+    {
+      "id": "passoff",
+      "lane": "handoff",
+      "invoke": "./scripts/gotchibot passoff resume | send \u2026",
+      "when": "Continue a packet; never restart blindly"
+    },
+    {
+      "id": "bot-inbox",
+      "lane": "comms",
+      "invoke": "./scripts/gotchibot inbox send --to userdefault|orch --from <id> \u2026",
+      "when": "FYI / report / ask without meet"
+    },
+    {
+      "id": "link-cube-status",
+      "lane": "status",
+      "invoke": "./scripts/gotchibot link-cube status",
+      "when": "Desk / seating status"
+    },
+    {
+      "id": "project-kanban",
+      "lane": "project",
+      "invoke": "./scripts/project-kanban.mjs desk ensure|show|add|move \u2026",
+      "when": "Sealed project selected"
+    },
+    {
+      "id": "project-tickets",
+      "lane": "project",
+      "invoke": "./scripts/project-tickets.mjs request|claim|submit --by <id>",
+      "when": "Sealed project; kanban-manager accepts/closes"
+    },
+    {
+      "id": "project-mailbox",
+      "lane": "project",
+      "invoke": "./scripts/project-mailbox.mjs desk ensure|inbox|sent|read \u2026",
+      "when": "Read own mail; mail-courier sends"
+    },
+    {
+      "id": "desk-wake",
+      "lane": "schedule",
+      "skill": "desk-wake",
+      "invoke": "./scripts/gotchibot wake status|run <id>",
+      "when": "One bounded autonomy cycle; report to orch"
+    },
+    {
+      "id": "repo-scripts",
+      "lane": "scripts",
+      "invoke": "cd <repo> && ./scripts/<name> \u2026",
+      "when": "Any allowed script under the repo"
+    },
+    {
+      "id": "abra-secrets",
+      "lane": "secrets",
+      "skill": "abra-vault",
+      "invoke": "abra run gotchibot -- <cmd> (Desk host); never print values",
+      "when": "Named secrets only"
+    }
+  ],
+  "antiJobs": [
+    "Do not orchestrate fan-out / mint / steal LINK YFI WBTC desks",
+    "Do not DIY file work on the chat model \u2014 use a work tool",
+    "Do not leave desk-terminals open",
+    "Do not print secrets",
+    "Do not spend / post / chain tx without Julius yes in conversation",
+    "Do not install npm globals or new MCPs without UserDefault yes"
+  ],
+  "requestFlow": [
+    "Desk or central needs capacity \u2192 ask Prof. Link-Cube",
+    "Prof: templates apply worker --hero <available> --yes (or resummon/bind)",
+    "Orch/desk assigns job via spawn prompt or passoff",
+    "Worker runs work tool \u2192 output.md / reply",
+    "Missing tool \u2192 skill-requests.jsonl; continue if possible"
+  ],
+  "lanes": {
+    "dispatch-io": {
+      "id": "dispatch-io",
+      "lane": "dispatch",
+      "when": "Spawned worker / multitask / orchestrate sessions",
+      "sessionDir": "sessions/<id>/",
+      "files": {
+        "prompt.txt": "Job text from orch/desk (read first; do not rewrite unless interrupt)",
+        "bootstrap.txt": "Identity + rules injected at spawn (sandbox vs host)",
+        "output.md": "ONLY mergeable deliverable \u2014 write the result here",
+        "output.log": "Raw runtime log (optional; not the deliverable)",
+        "state.env": "status/runtime/pid/started/ended key=value",
+        "pid": "Runner pid while running",
+        "runner.sh": "Spawn runner (do not hand-edit mid-run)",
+        "skill-requests.jsonl": "Missing skill requests \u2014 one JSON object per line"
+      },
+      "commands": {
+        "spawn": "./scripts/gotchi-orchestrate.mjs spawn [--host auto] [--sandbox] [--model \u2026] \"PROMPT\"",
+        "status": "./scripts/opencode-dispatch.sh status <id>  OR  gotchi-orchestrate list",
+        "output": "./scripts/gotchi-orchestrate.mjs output <id>",
+        "interrupt": "./scripts/gotchi-orchestrate.mjs interrupt <id> \"FOLLOW-UP\"",
+        "export": "./scripts/opencode-dispatch.sh export <id>"
+      },
+      "contract": [
+        "Read prompt.txt (+ bootstrap.txt) before acting",
+        "All evidence and Definition of Done \u2192 output.md",
+        "No secrets in output.md",
+        "status=done in state.env when finished (runner usually sets this)",
+        "output.md is what orch merges \u2014 keep it short-led, complete"
+      ],
+      "antiJobs": [
+        "Do not treat output.log as the deliverable",
+        "Do not install packages mid-session \u2014 use skill-requests.jsonl",
+        "Do not escape sandbox (no cursor-cli inside docker sandbox jobs)"
+      ]
+    },
+    "skill-requests": {
+      "id": "skill-requests",
+      "lane": "skill-requests",
+      "when": "Needed skill/tool missing from catalog / skills/registry.json",
+      "path": "sessions/<id>/skill-requests.jsonl",
+      "schema": {
+        "skill": "string \u2014 skill or tool name requested",
+        "reason": "string \u2014 why this session needs it",
+        "requestedAt": "ISO-8601 timestamp"
+      },
+      "example": {
+        "skill": "browser-tool",
+        "reason": "need live page read for verify",
+        "requestedAt": "2026-09-19T08:00:00Z"
+      },
+      "appendHelper": "node ./scripts/worker-skill-request.mjs --session <id> --skill <name> --reason \"\u2026\"",
+      "harvest": "./scripts/opencode-dispatch.sh requests   # lists all sessions/*/skill-requests.jsonl for orch/Julius",
+      "rules": [
+        "Append one JSON object per line \u2014 never rewrite the whole file casually",
+        "Continue the job without the skill if possible; do not block forever",
+        "Never npm-install / add MCP yourself \u2014 request then continue",
+        "Orch surfaces requests to Julius (synergy / morning merge)"
+      ]
+    },
+    "desk-terminals": {
+      "id": "desk-terminals",
+      "lane": "desk-terminals",
+      "when": "Need a watchable Claude/Cursor Terminal turn on the iMac desk",
+      "script": "./scripts/gotchibot desk-terminals \u2026   (scripts/desk-terminals.mjs)",
+      "config": "config/desk-terminals.json (optional skip/heroes tool overrides)",
+      "logs": "sessions/desk-terminals-logs/",
+      "commands": {
+        "status": "./scripts/gotchibot desk-terminals status [--json]",
+        "use": "./scripts/gotchibot desk-terminals use <hero-id> [-- <cmd\u2026>]",
+        "open": "./scripts/gotchibot desk-terminals open [hero\u2026]",
+        "close": "./scripts/gotchibot desk-terminals close [hero\u2026]",
+        "install": "./scripts/gotchibot desk-terminals install   # driven desks only on timer"
+      },
+      "ephemeralVsDriven": {
+        "worker": "ephemeral \u2014 open for the turn, run tool, always close",
+        "orchestrator": "ephemeral",
+        "trader/infra/comms": "driven \u2014 sticky Claude window; close detaches Terminal but keeps tool"
+      },
+      "usePattern": [
+        "use <hero> with no cmd \u2192 opens desk; YOU must close when done",
+        "use <hero> -- <cmd\u2026> \u2192 open \u2192 run cmd \u2192 close in finally (preferred for one-shots)",
+        "example: gotchibot desk-terminals use {{ID}} -- node ./scripts/cursor-cli.mjs run \"\u2026\""
+      ],
+      "host": "Default --host imac from MBP; on iMac use --host local. Needs console login (keychain), not plain SSH.",
+      "antiJobs": [
+        "Never leave an ephemeral desk Terminal open after the turn",
+        "Never use LINK link-verify, YFI claude-verify, or WBTC comms-claude windows",
+        "Never skip close after use without -- cmd (if you opened bare, close explicitly)"
+      ]
+    }
+  },
+  "deepLanes": [
+    "dispatch-io",
+    "skill-requests",
+    "desk-terminals"
+  ]
+}
