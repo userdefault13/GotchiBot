@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "description": "Named Colabo rings for CoS opinion rounds. Prefer --ring over all-hands.",
+  "default": null,
+  "rings": {
+    "design": {
+      "summary": "Architecture / topology / options-matrix rounds",
+      "chairRole": "orchestrator",
+      "roles": [
+        {
+          "roleId": "architect",
+          "required": true
+        },
+        {
+          "roleId": "infra-monitor",
+          "required": false
+        }
+      ],
+      "notes": "CoS chairs the meet; agents in the ring reply. Never all-hands."
+    }
+  }
+}

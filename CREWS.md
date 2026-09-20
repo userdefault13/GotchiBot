@@ -73,6 +73,7 @@ Do not cross-steal lanes without Julius saying so.
 
 Route architecture asks here **before** locking a plan or spawning headcount.
 After the matrix, CoS routes build work — architect does not DIY.
+CoS opinion round: `gotchibot meet colabo --ring design "…"` (not all-hands).
 
 ## Adding a crew
 

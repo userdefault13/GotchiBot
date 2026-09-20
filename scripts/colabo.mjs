@@ -3,15 +3,101 @@
  * Colabo — in an open meeting, one user prompt → every agent responds.
  *
  *   node scripts/colabo.mjs "How should we ship X?"
- *   node scripts/colabo.mjs --prompt "…" [--timeout SEC] [--json]
+ *   node scripts/colabo.mjs --prompt "…" [--ring design] [--timeout SEC] [--json]
  *
  * Prefer: ./scripts/gotchibot meet colabo "…"
  * Models: config/model-policy.json scope=colabo (working models only).
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync, existsSync } from "node:fs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+const RINGS_PATH = join(ROOT, "config", "colabo-rings.json");
+const ROLES_PATH = join(ROOT, "config", "agent-roles.json");
+
+function loadJson(path, fallback) {
+  if (!existsSync(path)) return fallback;
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+function loadRings() {
+  return loadJson(RINGS_PATH, { rings: {} });
+}
+
+function heroesForRoles(roleSpecs) {
+  const roles = loadJson(ROLES_PATH, {});
+  const byRole = new Map();
+  for (const [hero, roleId] of Object.entries(roles)) {
+    if (!byRole.has(roleId)) byRole.set(roleId, []);
+    byRole.get(roleId).push(hero);
+  }
+  const required = [];
+  const optional = [];
+  const missingRequired = [];
+  for (const spec of roleSpecs || []) {
+    const roleId = typeof spec === "string" ? spec : spec.roleId;
+    const req = typeof spec === "string" ? true : spec.required !== false;
+    const heroes = byRole.get(roleId) || [];
+    if (!heroes.length) {
+      if (req) missingRequired.push(roleId);
+      continue;
+    }
+    const pick = heroes[0];
+    if (req) required.push({ roleId, hero: pick });
+    else optional.push({ roleId, hero: pick });
+  }
+  return { required, optional, missingRequired };
+}
+
+async function inviteRing(m, ringId) {
+  const cfg = loadRings();
+  const ring = cfg.rings?.[ringId];
+  if (!ring) {
+    const known = Object.keys(cfg.rings || {}).join(", ") || "(none)";
+    throw new Error("unknown colabo ring \"" + ringId + "\" — known: " + known);
+  }
+  const { required, optional, missingRequired } = heroesForRoles(ring.roles || []);
+  if (missingRequired.length) {
+    throw new Error(
+      "ring \"" + ringId + "\" missing required role(s): " + missingRequired.join(", ") +
+      ". Seat with: gotchibot templates apply <role> --hero <available> --yes",
+    );
+  }
+  const targets = [...required, ...optional];
+  const invited = [];
+  const skipped = [];
+  const errors = [];
+  const prevQuiet = process.env.GOTCHIBOT_MEET_INVITE_QUIET;
+  process.env.GOTCHIBOT_MEET_INVITE_QUIET = "1";
+  try {
+    for (const t of targets) {
+      try {
+        await m.inviteParticipant(t.hero);
+        invited.push(t);
+      } catch (e) {
+        const msg = String(e?.message || e);
+        if (/already/i.test(msg)) skipped.push(t);
+        else errors.push({ ...t, error: msg });
+      }
+    }
+  } finally {
+    if (prevQuiet === undefined) delete process.env.GOTCHIBOT_MEET_INVITE_QUIET;
+    else process.env.GOTCHIBOT_MEET_INVITE_QUIET = prevQuiet;
+  }
+  if (errors.length && !invited.length && !skipped.length) {
+    throw new Error(
+      "ring \"" + ringId + "\" invite failed: " +
+        errors.map((e) => e.hero + ": " + e.error).join("; "),
+    );
+  }
+  return { ringId, ring, invited, skipped, errors };
+}
 
 async function meetMod() {
   return import("./gotchi-meet.mjs");
@@ -93,7 +179,7 @@ async function runAgent(agentId, message, timeoutS) {
   return { ok: false, text: `(colabo failed: ${r.reason || "models-exhausted"})`, via: "none" };
 }
 
-export async function colabo(prompt, { timeoutS = 90, resumeFrom = null } = {}) {
+export async function colabo(prompt, { timeoutS = 90, resumeFrom = null, ring = null } = {}) {
   const text = String(
     (resumeFrom && resumeFrom.originalUserText) || prompt || "",
   ).trim();
@@ -112,14 +198,31 @@ export async function colabo(prompt, { timeoutS = 90, resumeFrom = null } = {}) 
   const meeting = (await m.ensureRoom?.()) || m.loadCurrentMeeting();
   if (!meeting) throw new Error("no open room — run: gotchibot meet open");
 
-  const agents = agentIds(meeting);
-  if (!agents.length) {
-    await m.inviteAllParticipants();
+  if (ring) {
+    await inviteRing(m, ring);
+  } else {
+    const agents = agentIds(meeting);
+    if (!agents.length) {
+      await m.inviteAllParticipants();
+    }
   }
   const meeting2 = m.loadCurrentMeeting();
   const mid = meeting2.id;
   let list = agentIds(meeting2);
-  if (!list.length) throw new Error("no agent participants");
+  if (ring) {
+    const cfg = loadRings();
+    const ringDef = cfg.rings?.[ring];
+    const { required, optional } = heroesForRoles(ringDef?.roles || []);
+    const allow = new Set([...required, ...optional].map((t) => t.hero));
+    list = list.filter((id) => allow.has(id));
+  }
+  if (!list.length) {
+    throw new Error(
+      ring
+        ? ("ring \"" + ring + "\" has no agent participants in the room")
+        : "no agent participants",
+    );
+  }
 
   const spokenIds = Array.isArray(resumeFrom?.spokenIds)
     ? [...resumeFrom.spokenIds]
@@ -130,9 +233,10 @@ export async function colabo(prompt, { timeoutS = 90, resumeFrom = null } = {}) 
     // Fresh colabo clears any leftover park from a prior round.
     clearPardonStack(mid);
     clearPardonRequest(mid);
-    await m.sayTurn(`[colabo] Julius asks everyone:\n\n${text}`, {
-      keepStack: true,
-    });
+    await m.sayTurn(
+      "[colabo · " + (ring ? "ring:" + ring : "everyone") + "] Julius asks:\n\n" + text,
+      { keepStack: true },
+    );
   }
 
   const replies = [];
@@ -147,6 +251,7 @@ export async function colabo(prompt, { timeoutS = 90, resumeFrom = null } = {}) 
       spokenIds,
       speakers: [...spokenIds, ...remaining],
       pickNote: "colabo",
+      ring: ring || null,
       reason: reason || "pardon",
       timeoutS,
     });
@@ -237,13 +342,22 @@ export async function resumeColabo(stack) {
   return colabo(stack.originalUserText || "", {
     timeoutS: Number(stack.timeoutS) || 90,
     resumeFrom: stack,
+    ring: stack.ring || null,
   });
 }
 
 function usage() {
-  console.error(`usage:
-  colabo.mjs "prompt for all agents"
-  colabo.mjs --prompt "…" [--timeout SEC] [--json]`);
+  const cfg = loadRings();
+  const known = Object.keys(cfg.rings || {}).join(", ") || "(none yet)";
+  console.error([
+    "usage:",
+    '  colabo.mjs "prompt" [--ring design] [--timeout SEC] [--json]',
+    '  colabo.mjs --prompt "..." [--ring design] [--timeout SEC] [--json]',
+    "",
+    "rings (config/colabo-rings.json): " + known,
+    "  design — CoS chairs; architect required; infra-monitor optional",
+    "Prefer --ring for CoS rounds. Bare colabo still invites all if the room is empty.",
+  ].join("\n"));
   process.exit(2);
 }
 
@@ -253,15 +367,17 @@ async function main() {
   let prompt = "";
   let timeoutS = 90;
   let json = false;
+  let ring = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--prompt") prompt = argv[++i] || "";
     else if (a === "--timeout") timeoutS = Number(argv[++i]) || timeoutS;
+    else if (a === "--ring") ring = String(argv[++i] || "").trim() || null;
     else if (a === "--json") json = true;
     else if (!a.startsWith("--") && !prompt) prompt = a;
     else if (!a.startsWith("--")) prompt = `${prompt} ${a}`.trim();
   }
-  const r = await colabo(prompt, { timeoutS });
+  const r = await colabo(prompt, { timeoutS, ring });
   if (json) console.log(JSON.stringify(r, null, 2));
   else {
     console.log(`colabo ${r.meetingId}`);

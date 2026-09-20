@@ -1,8 +1,9 @@
 ---
 name: colabo
 description: >-
-  In an open GotchiBot meeting, one user prompt → every invited agent replies
-  (Colabo round). Load for /colabo, meet colabo, all-hands opinions.
+  In an open GotchiBot meeting, one user prompt → invited agents reply (Colabo).
+  Prefer --ring for CoS rounds (design = architect + optional infra-monitor).
+  Load for /colabo, meet colabo, scoped opinion rounds — not default all-hands.
 license: MIT
 compatibility: opencode
 metadata:
@@ -12,23 +13,35 @@ metadata:
 
 # Colabo
 
-One prompt, all agents answer inside the open meeting transcript.
+One prompt, agents in the room answer. **CoS prefers named rings** over all-hands.
 
 ```bash
+# Design ring (recommended for architecture / topology asks)
+./scripts/gotchibot meet colabo --ring design "Should we keep Envio on the M1?"
+
+# Bare (legacy): if the room is empty, invites everyone — avoid for CoS
 ./scripts/gotchibot meet colabo "Should we ship the trader retune today?"
-# meet room:
-/colabo Should we ship the trader retune today?
 ```
 
-Requires an **open meeting** with agent participants (`invite` / `invite all`).
+Meet room: `/colabo --ring design …` when supported; else CLI above.
 
-Replies are posted as `[colabo · <hero>]` turns. Prefer OpenClaw chat; falls back to a short local spawn if gateway/quota fails.
+## Rings (`config/colabo-rings.json`)
+
+| ring | who replies | when |
+|---|---|---|
+| `design` | `architect` (required), `infra-monitor` (optional) | topology, options matrix, structure |
+
+CoS (`owned-954`) chairs the meet and does **not** reply as an agent in the round.
+Default path for CoS remains **delegate-first / inbox / graph** — Colabo only for real opinion rounds.
+
+Requires an **open meeting**. Replies: `[colabo · <hero>]`. Model policy scope: `colabo`.
 
 ## MCP
 
-`gotchibot-meet` → `meet_colabo`
+`gotchibot-meet` → `meet_colabo` (pass ring when the tool supports it)
 
 ## Forbidden
 
-- Running Colabo outside a meeting (start `/meet` first)
+- Running Colabo outside a meeting
+- CoS defaulting to bare all-hands for design asks
 - Inventing agent opinions without the script

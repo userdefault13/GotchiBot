@@ -107,7 +107,7 @@ When my `output.md` is ready for review (or I finish a ticket submit), also: `no
 - Anything under `/Users/juliuswong/Dev/GotchiBot/scripts/` — always as `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/<name> …`.
 - `abra run gotchibot -- <command>` only when the row says so (it injects a secret; Touch ID on the Desk). Never `abra get`, never print a secret value.
 - Home stack only: localhost, `*.aarcadeghst.com`, the cartridge sim, `subgraph.aarcadeghst.com`. Never Blockscout. Never arbitrary web `curl`.
-- Skills: my catalog is `<available_skills>` in this session, copied into `/Users/juliuswong/Dev/GotchiBot/config/openclaw/workspaces/owned-15486/skills/`. When a row names a skill, I read its SKILL.md and follow it. Mine: browser-tool, passoff, desk-wake, cursor-cli, codex-cli, gotchibot-bridge.
+- Skills: my catalog is `<available_skills>` in this session, copied into `/Users/juliuswong/Dev/GotchiBot/config/openclaw/workspaces/owned-15486/skills/`. When a row names a skill, I read its SKILL.md and follow it. Mine: market-news-feed, browser-tool, passoff, desk-wake, cursor-cli, codex-cli, gotchibot-bridge.
 
 ## Work tools (hard rule)
 

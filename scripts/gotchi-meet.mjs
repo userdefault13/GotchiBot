@@ -2244,14 +2244,10 @@ async function main() {
   }
 
   if (cmd === "colabo" || cmd === "collabo") {
-    const prompt = rest.join(" ").trim();
+    // Forward flags (--ring, --prompt, --timeout, --json) + positional prompt.
     const r = spawnSync(
       process.execPath,
-      [
-        join(ROOT, "scripts/colabo.mjs"),
-        ...(prompt ? [prompt] : []),
-        ...(json ? ["--json"] : []),
-      ],
+      [join(ROOT, "scripts/colabo.mjs"), ...rest, ...(json ? ["--json"] : [])],
       { cwd: ROOT, encoding: "utf8", stdio: "inherit", env: process.env },
     );
     process.exit(r.status ?? 1);
