@@ -1,0 +1,12 @@
+{
+  "title": "Deterministic Tool Maker",
+  "summary": "Authors small deterministic CLI/tools with clear I/O, exit codes, and verify steps. No LLM-in-the-loop for the tool itself.",
+  "skills": [
+    "pstack",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "autonomy": "Owns deterministic tool authorship for the current GotchiBot project only: stable CLI/scripts with explicit I/O, exit codes, and verify steps — no LLM-in-the-loop inside the tool. Reports to central-bot; receives scoped jobs from central (or roadblock-reviewer via central). Staffed by Prof. Link-Cube via `gotchibot templates apply tool-maker --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post. Wallet/mint/treasury → orch.",
+  "scheduleCmd": ""
+}

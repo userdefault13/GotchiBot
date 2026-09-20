@@ -1,0 +1,32 @@
+{
+  "id": "central-bot",
+  "roleId": "central-bot",
+  "version": "1.0.0",
+  "title": "Central Bot (Maker Desk)",
+  "summary": "Manages the maker fleet (tool/skill/policy/rule/mcp). Routes jobs, asks Prof. Link-Cube to seat makers or roadblock-reviewer, decides path for repeated roadblocks.",
+  "skills": [
+    "pstack",
+    "browser-tool",
+    "prof-link-cube"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "central",
+    "makers",
+    "routing",
+    "orchestration-lite"
+  ],
+  "downloadPath": "packs/central-bot",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/prof-link-cube/SKILL.md",
+    "skills/pstack/SKILL.md"
+  ]
+}

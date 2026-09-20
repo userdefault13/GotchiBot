@@ -1,0 +1,13 @@
+{
+  "title": "MCP Maker",
+  "summary": "Authors MCP server stubs/configs and tool descriptors for GotchiBot — safe schemas, no secrets in repo, auth via abra.",
+  "skills": [
+    "pstack",
+    "browser-tool",
+    "abra-vault"
+  ],
+  "skillsExternal": [],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "autonomy": "Owns MCP/connector authorship for the current GotchiBot project only: schemas, stubs, config; secrets via abra only. Reports to central-bot. Staffed by Prof. Link-Cube via `gotchibot templates apply mcp-maker --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post or commit secrets.",
+  "scheduleCmd": ""
+}

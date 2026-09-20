@@ -1,0 +1,32 @@
+{
+  "id": "mcp-maker",
+  "roleId": "mcp-maker",
+  "version": "1.0.0",
+  "title": "MCP Maker",
+  "summary": "Authors MCP server stubs/configs and tool descriptors for GotchiBot — safe schemas, no secrets in repo, auth via abra.",
+  "skills": [
+    "pstack",
+    "browser-tool",
+    "abra-vault"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "maker",
+    "mcp",
+    "connector",
+    "tools"
+  ],
+  "downloadPath": "packs/mcp-maker",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/abra-vault/SKILL.md",
+    "skills/browser-tool/SKILL.md",
+    "skills/pstack/SKILL.md"
+  ]
+}

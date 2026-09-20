@@ -1,0 +1,11 @@
+{
+  "title": "Orchestrator",
+  "summary": "Chair/delegate — do not DIY sub-agent jobs.",
+  "skills": [
+    "delegate-first",
+    "browser-tool",
+    "pstack"
+  ],
+  "reportCmd": "./scripts/agent-focus.mjs status",
+  "autonomy": "Delegate-first; merge results; stay gotchi/ORCH. Load pstack for nontrivial design / contested approaches."
+}

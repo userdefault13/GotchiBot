@@ -66,15 +66,20 @@ Your session dir contains:
 4. Stay inside this repo's working tree unless the prompt says otherwise
    (or `/work` when spawned with `--sandbox`).
 5. **Work tools (hard rule)** — any file edit, patch, debug, investigation, or
-   desk deliverable goes through a work tool — skill `cursor-cli` →
-   `./scripts/cursor-cli.mjs run "…"` (default), skill `codex-cli` →
-   `./scripts/codex-cli.mjs run "…"` when UserDefault says codex, skill
-   `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or
-   `./scripts/gotchibot claude-submit "…"` for hard reasoning / @claudemode.
+   desk deliverable goes through a work tool only — **Claude**, **Cursor**, or
+   **Codex**. Through **2026-10-05 inclusive**, prefer **Claude first**, then
+   Cursor, then Codex. After that date, pick among the three by fit unless
+   Julius resets preference.
+   - Claude: skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"`
+     or `./scripts/gotchibot claude-submit "…"` (hard logic / @claudemode); local
+     `claude` on desk when available
+   - Cursor: skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"`
+   - Codex: skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when Julius
+     says codex
    Do **not** DIY on big-pickle / Nemotron / Hy3. Talk/route/status/one-line
    answers stay on the chat model. Do not `/model` to Cursor or Claude; do not
    add a Cursor provider. Desk-terminals open/close when the turn should be
-   watched; headless `cursor-cli run` / `codex-cli run` is fine otherwise.
+   watched; headless work-tool runs are fine otherwise.
 6. **Thread continuity** — on follow-ups that continue the last edit ("parent",
    "tighter", "same element"), load skill `thread-continuity`
    (`.opencode/skills/thread-continuity/SKILL.md`): reuse last files/selectors
@@ -129,16 +134,22 @@ cAavegotchi hero id (see `state.env` / bootstrap). Sub-agents cannot be created
 without a cAavegotchi on the gotchibot cartridge — if spawn failed for the user,
 they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
 
+## Crews
+
+Multi-bot lanes (bend, makers, orch) live in [`CREWS.md`](CREWS.md).
+Route instead of DIY: laws/proofs → bend crew; skills/rules/policies/tools/MCP → makers
+(central-bot + maker packs / Grok makers-chief).
+
 ## Model tiers
 
-| Tier | Model | Use |
+| Tier | Model / tool | Use |
 |---|---|---|
-| default | `opencode/big-pickle` (`--model nim`; free Zen) | talk, route, spawn, summarize |
-| task | Nemotron Lightning / Ultra free (`opencode/nemotron-*`) | talk/route/task only; `/model heavy` = Ultra free |
-| **all work** | `./scripts/cursor-cli.mjs` → `cursor-agent` (default) · `./scripts/codex-cli.mjs` → `codex exec` (when UserDefault says codex) · `gotchibot-bridge` → Hub Claude (hard logic) | edits, debug, patches, investigation, desk deliverables — mandatory, not optional |
-| escalation | `deepseek/deepseek-v4-pro` | paid OpenCode fallback (needs DEEPSEEK_API_KEY); still prefer cursor-cli for work when available |
-| fallback | `ollama/qwen2.5:3b` | offline/private talk only |
-| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | spawn chat/route model; the worker then runs a **work tool** (cursor-cli default) for the actual work |
+| default talk/route | `opencode/big-pickle` (`--model nim`; free Zen) | talk, route, spawn, summarize |
+| task talk | Nemotron Lightning / Ultra free (`opencode/nemotron-*`) | talk/route/task only; `/model heavy` = Ultra free |
+| **all work** (Claude → Cursor → Codex through 2026-10-05) | Hub Claude / `claude` · `./scripts/cursor-cli.mjs` → `cursor-agent` · `./scripts/codex-cli.mjs` → `codex exec` | edits, debug, patches, investigation, desk deliverables — mandatory; Claude first until end of 2026-10-05 |
+| legacy escalation | `deepseek/deepseek-v4-pro` | **override-only** (Julius must ask); still prefer a work tool for edits |
+| offline talk | `ollama/qwen2.5:3b` | offline/private talk only |
+| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | spawn chat/route model; the worker then runs a **work tool** (Claude-first window applies) for the actual work |
 
 
 NVIDIA_API_KEY flows through abracadabra (`abra run gotchibot -- ...`); opencode

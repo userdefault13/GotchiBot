@@ -1,28 +1,36 @@
 # GotchiBot Orchestrator
 
-The GotchiBot orchestrator is a Cursor CLI agent wearing an Aavegotchi identity
-("the gotchi"). It routes work to parallel sub-agents, monitors them all,
-manages the skill registry, and handles context handoffs between sessions.
+The GotchiBot orchestrator is a Cursor / Claude desk agent wearing an Aavegotchi
+identity ("the gotchi", hero `owned-954`). It routes work to parallel workers,
+monitors them, manages the skill registry, and handles context handoffs between
+sessions.
+
+Crew index: [`CREWS.md`](CREWS.md) (bend · makers · orch). Prefer named workers over DIY.
 
 ## Architecture
 
 ```
-┌─ Terminal (you) ──── interactive opencode sessions ──┐
-│   prompt any agent directly                          │
+┌─ Terminal (you) ──── interactive desk sessions ──────┐
+│   prompt the gotchi or any worker directly           │
 │                                                      │
-│   Cursor CLI = Gotchi ORCHESTRATOR                   │
+│   Gotchi ORCHESTRATOR (Cursor desk / Claude Code)    │
 │     • gotchi persona + rules (.cursor/ + AGENTS.md)  │
 │     • routes tasks, monitors all agents              │
 │     • skill-request → you vet → approve/deny         │
 │                                                      │
+│   Work tools (mandatory for all code changes)        │
+│     • Claude  — Hub bridge / Claude Code (prefer     │
+│       first through 2026-10-05 inclusive)            │
+│     • Cursor  — `./scripts/cursor-cli.mjs`           │
+│     • Codex   — `./scripts/codex-cli.mjs`            │
+│                                                      │
 │   OpenClaw gateway (Docker: MBP now, iMac later)     │
-│     • hosts OpenCode sub-agent dispatch              │
-│     • DeepSeek tiers: Flash → Pro esc → R1 fallback  │
+│     • hosts OpenCode chat/route + session dispatch   │
 │     • TTS opt-in per session (orchestrator+subs)     │
 │     • Cloudflare tunnel + Access after migration     │
 │                                                      │
 │   AarcadeGh-t infra = identity layer                 │
-│     • "gotchibot" cartridge entry                    │
+│     • "gotchibot" cartridge entry                   │
 │     • CPortal VRF mints every agent's avatar         │
 │     • official previewAavegotchi SVGs                │
 │     • service-key auth for machine callers           │
@@ -32,49 +40,68 @@ manages the skill registry, and handles context handoffs between sessions.
 └──────────────────────────────────────────────────────┘
 ```
 
+## Work tools (hard rule)
+
+All coding / implementation / investigation that edits or verifies product code
+must use one of these three tools only:
+
+| Preference (through 2026-10-05 inclusive) | Tool | How |
+|---|---|---|
+| **1st — Claude** | Hub Claude Code / Claude CLI | skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`; local `claude` when on desk |
+| **2nd — Cursor** | Cursor agent CLI | skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` |
+| **3rd — Codex** | Codex CLI | skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when Julius says codex |
+
+After **2026-10-05**, pick among the three by fit (no automatic favorite) unless
+Julius resets preference. Do **not** DIY edits on chat/route models
+(big-pickle / Nemotron / etc.). Talk, route, and one-line answers stay on the
+chat model; the worker then runs a work tool for the actual work.
+
+Legacy OpenCode DeepSeek / Ollama paths are **override-only** (Julius must ask).
+They are not the default volume or escalation path.
+
 ## Agent Roster
 
-| Agent | Runtime | Model | Role |
-|---|---|---|---|
-| **gotchi** | Cursor CLI | (orchestrator persona; model per `.cursor` config) | Intake, routing, monitoring, skill vetting, handoffs |
-| **sub-coder** | `opencode run` headless | `deepseek/deepseek-v4-flash` | Volume coding tasks |
-| **sub-hard** | `opencode run` headless | `deepseek/deepseek-v4-pro` | Escalation: hard reasoning/coding |
-| **sub-local** | `opencode run` headless | `ollama/deepseek-r1:8b` on iMac | Offline/private fallback |
-| *(any)* | interactive `opencode` | user's choice | You prompt sub-agents directly in terminal tabs |
+| Agent | Runtime | Role |
+|---|---|---|
+| **gotchi** | Cursor desk / Claude Code | Intake, routing, monitoring, skill vetting, handoffs |
+| **worker (Claude)** | Hub bridge / `claude` | Default coding through 2026-10-05 |
+| **worker (Cursor)** | `cursor-cli.mjs` → `cursor-agent` | Coding when Claude unavailable or Julius picks Cursor |
+| **worker (Codex)** | `codex-cli.mjs` → `codex exec` | Coding when Julius picks Codex |
+| **sub (chat/route)** | OpenCode `sub` / interactive | Spawn talk/route only; must call a work tool for edits |
+| *(any)* | interactive terminal | Julius prompts workers directly in tabs |
 
 ## Responsibilities
 
 ### 1. Intake & routing
 - User describes a task to the gotchi.
-- The gotchi decomposes it and decides: single sub-agent, parallel fan-out, or
-  answer directly.
+- The gotchi decomposes it and decides: answer directly, single worker, or
+  parallel fan-out.
 - Routing rules:
-  - Default coding tasks → `sub-coder` (V4 Flash)
-  - Tasks flagged hard (multi-step reasoning, architecture, gnarly bugs) →
-    escalate to `sub-hard` (V4 Pro)
-  - API unavailable or user marks task private → `sub-local` (R1 on iMac Ollama)
-  - **`@claudemode` / Hub Claude Code** → stay on big-pickle; run
+  - **Default coding** → Claude work tool (through 2026-10-05), else Cursor,
+    else Codex
+  - **Hard reasoning / `@claudemode`** → stay on big-pickle for chat; run
     `claudemode-ask.mjs` / `gotchibot bridge` (skill `gotchibot-bridge`), then
-    act on the reply — not `/model @claudemode`, not a sub-agent spawn
-  - **`/pstack` / contested design** → skill `pstack`: gotchi stays chief
+    act on the reply — not `/model @claudemode`, not a naked sub-agent spawn
+  - **Contested design / `/pstack`** → skill `pstack`: gotchi stays chief
     (no product edits); role-tagged heroes run briefs; store under
     `sessions/pstack/<slug>/` via `gotchibot pstack`. Prefer plain
     `delegate-first` when there is no contested fork. Standing desks
     (LINK/YFI/WBTC) stay on their own playbooks.
+  - **Trivial Q** → answer directly on the chat model (no work tool)
 
 ### 2. Parallel execution & monitoring
-- Sub-agents are spawned via `scripts/opencode-dispatch.sh`, one process per
-  task, each writing output under `sessions/<id>/`.
-- The gotchi polls running sessions (`sessions/` state files), aggregates
-  results, reports progress, and merges outputs when a fan-out completes.
-- You can open your own interactive `opencode` session at any time — the
-  gotchi sees externally-created sessions too (shared `sessions/` dir).
+- Workers write under `sessions/<id>/` (prompt, output, status, skill requests).
+- OpenCode may still dispatch chat/route subs via `scripts/opencode-dispatch.sh`;
+  those subs must invoke a Cursor / Claude / Codex work tool for any code change.
+- The gotchi polls session state, aggregates results, reports progress, and
+  merges outputs when a fan-out completes.
+- Julius can open interactive sessions anytime — shared `sessions/` dir.
 
 ### 3. Skill registry (vetted additions only)
 - Registry lives at `skills/registry.json`. Seeded with:
   - `abracadabra` (local MCP secrets vault)
   - entries from `~/Dev/aavegotchi-agent-skills`
-- Sub-agents never install anything autonomously. When a sub-agent needs a
+- Sub-agents never install anything autonomously. When a worker needs a
   skill that isn't approved, it files a request through its session state →
   the gotchi surfaces it to you → you approve/deny → only then is it injected
   into future spawns.
@@ -91,10 +118,11 @@ manages the skill registry, and handles context handoffs between sessions.
 ### 5. Secrets via abracadabra
 - All credentials flow through `abra mcp` (`get_secrets` / `generate_wallet`).
 - Every request pops a Touch ID dialog naming the requesting agent.
-- `DEEPSEEK_API_KEY` lives in abracadabra, not in dotfiles.
+- Model API keys (Claude / Cursor / Codex / any fallback) live in abracadabra,
+  not in dotfiles.
 
 ### 6. Identity
-- Every agent (gotchi + each spawned sub-agent) has a minted cAavegotchi
+- Every agent (gotchi + each spawned worker) has a minted cAavegotchi
   identity from the `gotchibot` cartridge. See `IDENTITY_SYSTEM.md`.
 - Avatars render in the terminal via Midnight Commander + chafa panes.
 
@@ -106,6 +134,8 @@ GotchiBot/
 ├── ORCHESTRATOR.md          # this file
 ├── IDENTITY_SYSTEM.md       # avatar minting design
 ├── AGENTS.md                # instructions injected into agent sessions
+├── CURSOR.md                # Cursor desk map
+├── CLAUDE.md                # Hub Claude proxy (not the orchestrator)
 ├── docker/
 │   └── compose.override.yml # cloudflared service + volume mounts
 ├── config/
@@ -113,7 +143,10 @@ GotchiBot/
 │   ├── tts.personas.json5   # off by default; /tts opts in
 │   └── mcp.abracadabra.json
 ├── scripts/
-│   ├── opencode-dispatch.sh # parallel headless spawn wrapper
+│   ├── cursor-cli.mjs       # Cursor work tool
+│   ├── codex-cli.mjs        # Codex work tool
+│   ├── claudemode-ask.mjs   # Hub Claude bridge
+│   ├── opencode-dispatch.sh # chat/route spawn wrapper
 │   ├── fetch-gotchi-svg.mjs # local Envio Hasura :8084 → SVG
 │   ├── avatar-pane.sh       # tmux live-avatar watcher
 │   └── unify-md.sh          # KNOWLEDGE.md unifier cron job
@@ -123,22 +156,22 @@ GotchiBot/
     └── <session-id>/        # prompt, output, status, skill requests
 ```
 
-## Model tiers (DeepSeek)
+## Chat / route models (not work tools)
 
-| Tier | Model ID | Input $/M | Output $/M | Use |
-|---|---|---|---|---|
-| default | `deepseek-v4-flash` | 0.14 | 0.28 | routine coding |
-| escalation | `deepseek-v4-pro` | 0.435 | 0.87 | hard reasoning |
-| fallback | `deepseek-r1:8b` (Ollama on iMac) | free | free | offline/private |
+| Tier | Model | Use |
+|---|---|---|
+| default talk/route | `opencode/big-pickle` (`--model nim`) | talk, route, spawn, summarize |
+| task talk | Nemotron Lightning / Ultra free | talk/route only |
+| offline talk | local Ollama (e.g. qwen) | private/offline chat only |
+| legacy paid OpenCode | DeepSeek Pro (override-only) | Julius must ask; still prefer a work tool for edits |
 
-> Note: `deepseek-chat`/`deepseek-reasoner` aliases were retired 2026-07-24.
-> DeepSeek has signaled a future price increase; verify rates before relying
-> on the table above.
+NVIDIA / DeepSeek keys, when used, flow through abracadabra — never written to disk.
 
 ## Security posture
 
 - Secrets: Touch ID-gated via abracadabra, never in env files or prompts.
 - Skills: allowlist-only, human-vetted additions.
-- Sub-agents: sandboxed per OpenClaw tool policy; no autonomous installs.
+- Workers: sandboxed per OpenClaw / gotchibot-policy; no autonomous installs.
+- Work tools only for code: Claude → Cursor → Codex (Claude-first through 2026-10-05).
 - Remote access (post-migration): Cloudflare Access policy gates the hostname;
   gateway token as second layer.

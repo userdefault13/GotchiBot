@@ -1,0 +1,69 @@
+# CREWS.md — GotchiBot crew index
+
+Thin roster. **Playbooks stay in skills / packs** — this file only answers who
+owns what and where to route. Mirror of the Grok Bot fleet skill `crews`, kept
+in-repo so desk agents (OpenCode / Cursor / Claude) learn the same map.
+
+When a specialty is needed, check here before DIY.
+
+## How to read
+
+| Column | Meaning |
+|---|---|
+| Chief | Routes / merges; does not steal worker one-jobs |
+| Workers | One-job agents (GotchiBot heroes and/or Grok Bots) |
+| Desk | How to staff on this machine |
+
+## bend
+
+| | |
+|---|---|
+| **Chief** | Grok Bot `bend-chief` — intake, route, merge Bend work |
+| **Workers** | `bend-laws` → `LAWS.bend` · `bend-proofs` → `PROOF.bend` / `bend PROOF.bend` green |
+| **Playbook** | Fleet skill `bend-2`; install Bend via `curl -fsSL https://bend-lang.com/install.sh | sh` |
+| **Desk** | Prefer the Grok bend crew for LAWS/PROOF authorship. Do not invent a parallel Bend maker pack unless Julius asks. |
+
+Route laws → laws worker. Route proofs / checker fails → proofs worker. Do not
+have laws write proofs or proofs rewrite laws.
+
+## makers (skills · rules · policies · tools · MCP)
+
+| | |
+|---|---|
+| **Chief (desk)** | `central-bot` pack — manages maker fleet for the current project; seats via Prof. Link-Cube |
+| **Chief (Grok)** | `makers-chief` — same routing for fleet Grok workers |
+| **Workers** | `skill-maker` · `rule-maker` · `policy-maker` · `tool-maker` · `mcp-maker` |
+| **Desk packs** | `templates/marketplace/packs/{skill,rule,policy,tool,mcp}-maker` — `gotchibot templates apply <id> --hero <available> --yes` |
+| **Playbook** | Pack `playbook.json` / AGENTS.md per maker; fleet skill `makers` |
+
+### Routing map
+
+| Need | Maker |
+|---|---|
+| SKILL.md / when-to-use / anti-jobs | `skill-maker` |
+| lint / hooks / CI / checklist + verify | `rule-maker` |
+| allow/deny / approve-gates / escalation docs | `policy-maker` |
+| deterministic CLI (no LLM inside the tool) | `tool-maker` |
+| MCP schema / stub / connector config | `mcp-maker` |
+| repeated session roadblocks | `roadblock-reviewer` (via central / Prof) |
+
+Human approves installs. Secrets via abracadabra only. Never auto-mint; never
+steal LINK/YFI/WBTC standing desks.
+
+## gotchibot (orchestrator desk)
+
+| | |
+|---|---|
+| **Chief** | the gotchi / orch (`owned-954`) — see `ORCHESTRATOR.md`, `AGENTS.md`, pack `orchestrator` |
+| **Workers** | Specialist heroes and Grok coding bots (dossier-*, prof-modal, gotchi-omarchy, standing desks LINK/YFI/WBTC, …) |
+| **Work tools** | Claude → Cursor → Codex through **2026-10-05** inclusive, then by fit — see `ORCHESTRATOR.md` |
+
+Orch owns product routing. Central owns makers. Bend crew owns LAWS/PROOF.
+Do not cross-steal lanes without Julius saying so.
+
+## Adding a crew
+
+1. Define chief + workers with one-jobs and anti-jobs.
+2. Prefer a marketplace pack and/or Grok Bot pair so desk + fleet match.
+3. Append a section here and keep the fleet `crews` skill in sync.
+4. Point `AGENTS.md` / orch briefs at this file — do not paste full playbooks.

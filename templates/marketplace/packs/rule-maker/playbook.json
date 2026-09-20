@@ -1,0 +1,12 @@
+{
+  "title": "Rule Maker",
+  "summary": "Authors concrete enforceable rules (lint/CI/hooks/checklists) that implement policy intent with a verify command.",
+  "skills": [
+    "pstack",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "autonomy": "Owns enforceable rules (lint/hooks/CI/checklists) for the current GotchiBot project only, each with a verify command. Reports to central-bot. Staffed by Prof. Link-Cube via `gotchibot templates apply rule-maker --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post.",
+  "scheduleCmd": ""
+}

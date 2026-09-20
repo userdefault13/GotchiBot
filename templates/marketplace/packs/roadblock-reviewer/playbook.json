@@ -1,0 +1,12 @@
+{
+  "title": "Roadblock Reviewer",
+  "summary": "Reviews sessions for repeated roadblocks that already have a working solution; IDs them; passes packets to central-bot for path decision.",
+  "skills": [
+    "pstack",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "autonomy": "Reviews sessions for repeated roadblocks that already have a working cited solution; IDs them; passes packets to central-bot (central decides path → maker). Does not DIY maker work. Staffed when central asks Prof. Link-Cube: `gotchibot templates apply roadblock-reviewer --hero <available> --yes`. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post.",
+  "scheduleCmd": ""
+}

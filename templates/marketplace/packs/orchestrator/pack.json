@@ -1,0 +1,29 @@
+{
+  "id": "orchestrator",
+  "roleId": "orchestrator",
+  "version": "1.0.0",
+  "title": "Orchestrator",
+  "summary": "Chair/delegate — do not DIY sub-agent jobs.",
+  "skills": [
+    "delegate-first",
+    "browser-tool",
+    "pstack"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "marketplace"
+  ],
+  "downloadPath": "packs/orchestrator",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/delegate-first/SKILL.md",
+    "skills/pstack/SKILL.md"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "skill-maker",
+  "roleId": "skill-maker",
+  "version": "1.0.0",
+  "title": "Skill Maker",
+  "summary": "Authors SKILL.md packs (frontmatter, when-to-use, steps, anti-jobs) for GotchiBot agents. Clear, reusable, no secrets.",
+  "skills": [
+    "pstack",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "maker",
+    "skill",
+    "skillmd",
+    "workflow"
+  ],
+  "downloadPath": "packs/skill-maker",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/pstack/SKILL.md"
+  ]
+}

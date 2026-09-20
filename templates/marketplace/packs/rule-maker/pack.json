@@ -1,0 +1,31 @@
+{
+  "id": "rule-maker",
+  "roleId": "rule-maker",
+  "version": "1.0.0",
+  "title": "Rule Maker",
+  "summary": "Authors concrete enforceable rules (lint/CI/hooks/checklists) that implement policy intent with a verify command.",
+  "skills": [
+    "pstack",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "maker",
+    "rules",
+    "lint",
+    "hooks",
+    "ci"
+  ],
+  "downloadPath": "packs/rule-maker",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/browser-tool/SKILL.md",
+    "skills/pstack/SKILL.md"
+  ]
+}

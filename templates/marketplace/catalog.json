@@ -3,10 +3,26 @@
   "baseUrl": "https://templates.aarcadeghst.com",
   "packs": [
     {
+      "id": "aarcade-comms-handler",
+      "roleId": "aarcade-comms-handler",
+      "title": "Aarcade daily comms",
+      "summary": "Own newsfeed + tweet-draft pipeline: a real Claude terminal on the iMac drafts, the Aarcade API publishes, tweets stay approve-gated.",
+      "version": "1.0.0",
+      "path": "packs/aarcade-comms-handler",
+      "tags": [
+        "marketplace"
+      ],
+      "skills": [
+        "aarcade-comms",
+        "browser-tool"
+      ],
+      "skillsExternal": []
+    },
+    {
       "id": "abra-vault",
       "roleId": "abra-vault",
       "title": "Abracadabra Vault",
-      "summary": "Secrets desk: passwords, API keys, wallets, SSH keys via abracadabra (abra). Promote the vault — names in chat, values never. Touch ID / scoped ABRA_KEY; Desk host abra denied for agents.",
+      "summary": "Secrets desk: passwords, API keys, wallets, SSH keys via abracadabra (abra). Promote the vault \u2014 names in chat, values never. Touch ID / scoped ABRA_KEY; Desk host abra denied for agents.",
       "version": "1.0.0",
       "path": "packs/abra-vault",
       "tags": [
@@ -26,7 +42,7 @@
       "id": "accountant",
       "roleId": "accountant",
       "title": "Accountant",
-      "summary": "Owns books for merch + related ops: quotes, purchase orders, payables, receivables, invoice tracking — ledger craft, not treasury spend.",
+      "summary": "Own the merch ops ledger: vendor quotes, POs, AP/AR, invoices \u2014 sourced amounts, aging clarity. Tracks and reconciles; never spends or invents balances.",
       "version": "1.0.0",
       "path": "packs/accountant",
       "tags": [
@@ -37,7 +53,8 @@
       "skills": [
         "browser-tool",
         "pymupdf"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "arcade-game-monitor",
@@ -53,7 +70,8 @@
       ],
       "skills": [
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "art-director",
@@ -94,7 +112,8 @@
         "browser-tool",
         "pymupdf",
         "pstack"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "brand-design",
@@ -115,6 +134,26 @@
       "skillsExternal": [
         "mcp-pixellab"
       ]
+    },
+    {
+      "id": "central-bot",
+      "roleId": "central-bot",
+      "title": "Central Bot (Maker Desk)",
+      "summary": "Manages the maker fleet (tool/skill/policy/rule/mcp). Routes jobs, asks Prof. Link-Cube to seat makers or roadblock-reviewer, decides path for repeated roadblocks.",
+      "version": "1.0.0",
+      "path": "packs/central-bot",
+      "tags": [
+        "central",
+        "makers",
+        "routing",
+        "orchestration-lite"
+      ],
+      "skills": [
+        "pstack",
+        "browser-tool",
+        "prof-link-cube"
+      ],
+      "skillsExternal": []
     },
     {
       "id": "cron-manager",
@@ -139,7 +178,7 @@
       "id": "customer-support",
       "roleId": "customer-support",
       "title": "Customer Support",
-      "summary": "Own the client-facing support desk: manage a web chat bot that clients use to get help — configure/monitor the bot, triage conversations, draft replies, escalate blockers, keep a support ledger. On GotchiBot/AarcadeGh-t installs, also owns the project messaging system (AgentMail + desk mailboxes + tickets until a web widget is wired). Never posts marketing; never spends.",
+      "summary": "Own the client-facing support desk: manage a web chat bot that clients use to get help \u2014 configure/monitor the bot, triage conversations, draft replies, escalate blockers, keep a support ledger. On GotchiBot/AarcadeGh-t installs, also owns the project messaging system (AgentMail + desk mailboxes + tickets until a web widget is wired). Never posts marketing; never spends.",
       "version": "1.0.0",
       "path": "packs/customer-support",
       "tags": [
@@ -150,7 +189,8 @@
       "skills": [
         "browser-tool",
         "project-mailbox"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "data-ai-cron-site",
@@ -188,13 +228,14 @@
       "skills": [
         "dossier-ai-cron-site",
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "fe-marketing",
       "roleId": "fe-marketing",
       "title": "FE Marketing",
-      "summary": "Landing pages, conversion UX, brand web polish and campaign microsites — FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.",
+      "summary": "Landing pages, conversion UX, brand web polish and campaign microsites \u2014 FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.",
       "version": "1.0.0",
       "path": "packs/fe-marketing",
       "tags": [
@@ -203,13 +244,14 @@
       ],
       "skills": [
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "financial-analyst",
       "roleId": "financial-analyst",
       "title": "Financial Analyst / Trade Desk",
-      "summary": "Owns the Gotchi-Trader trade desk (monitor, improve, waker health) as main priority. Staffs market-news and market-research children for headlines and deep memos. Analysis/paper only — no live execution.",
+      "summary": "Owns the Gotchi-Trader trade desk (monitor, improve, waker health) as main priority. Staffs market-news and market-research children for headlines and deep memos. Analysis/paper only \u2014 no live execution.",
       "version": "1.0.0",
       "path": "packs/financial-analyst",
       "tags": [
@@ -221,13 +263,14 @@
         "market-news-feed",
         "browser-tool",
         "pymupdf"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "game-art-director",
       "roleId": "game-art-director",
       "title": "Game Art Director",
-      "summary": "Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels — the user owns image gen.",
+      "summary": "Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels \u2014 the user owns image gen.",
       "version": "1.0.0",
       "path": "packs/game-art-director",
       "tags": [
@@ -240,13 +283,14 @@
       "skills": [
         "browser-tool",
         "aseprite-tool"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "infra-bridge",
       "roleId": "infra-bridge",
-      "title": "Desk→Hub Claude bridge",
-      "summary": "Piece pack: Desk→Hub VS Code Claude bridge — bridge-ensure, hub bridge-check, vscode-open, claude-pane-init, claude-ask (stay big-pickle; never /model @claudemode). Install this if you only need the Claude bridge, not the full home stack (infra-monitor).",
+      "title": "Desk\u2192Hub Claude bridge",
+      "summary": "Own Desk\u2192Hub Claude bridge: ensure/check, VS Code open, claude pane init, short claude-ask. Stay on big-pickle \u2014 never /model @claudemode.",
       "version": "1.0.0",
       "path": "packs/infra-bridge",
       "tags": [
@@ -256,13 +300,14 @@
       "skills": [
         "hub-sop",
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "infra-docker",
       "roleId": "infra-docker",
       "title": "Docker / watched stack",
-      "summary": "Piece pack: the Docker watched set — infra-watch status/run, infra-monitor-cron, infra schedule status/install truth, infra-watch-ensure, gotchibot doctor (docker/env), and paper-only recovery of DEGRADED watched containers. Install this if you run only the Docker desk, not the full home stack (infra-monitor).",
+      "summary": "Own Docker watched containers and the infra watcher/verifier loop. Paper recover on DEGRADED. Subset of home infra for operators who only run the container stack.",
       "version": "1.0.0",
       "path": "packs/infra-docker",
       "tags": [
@@ -272,13 +317,14 @@
       "skills": [
         "infra-recover",
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "infra-hub",
       "roleId": "infra-hub",
       "title": "Hub / OpenClaw gateway",
-      "summary": "Piece pack: the always-on Hub (iMac) OpenClaw gateway — hub status, restart-gateway, hub doctor, hub roster. Install this if you only run the OpenClaw gateway, not the full home stack (infra-monitor). The Desk→Hub Claude bridge is the separate infra-bridge piece.",
+      "summary": "Own Hub OpenClaw gateway health: status, restart-gateway, doctor, roster. Subset of home infra.",
       "version": "1.0.0",
       "path": "packs/infra-hub",
       "tags": [
@@ -288,13 +334,14 @@
       "skills": [
         "hub-sop",
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "infra-mesh",
       "roleId": "infra-mesh",
-      "title": "Tailscale / mesh / remote Hub",
-      "summary": "Piece pack: Tailscale mesh between MBP and iMac — tailscale status, gotchibot mesh / mesh --live / mesh ping, remote-status, remote-setup, remote --, remote-push (ask first), remote-serve (ask first), topology status. Install this if you only need cross-machine mesh, not the full home stack (infra-monitor).",
+      "title": "Agent mesh / remote Hub",
+      "summary": "Own GotchiBot cross-machine agent mesh and remote Hub ops (status, ping, remote-setup, remote run/push/serve, topology). On path fail, defer to Tailscale / infra-tailscale first.",
       "version": "1.0.0",
       "path": "packs/infra-mesh",
       "tags": [
@@ -304,33 +351,50 @@
       "skills": [
         "gotchibot-mesh",
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "infra-monitor",
       "roleId": "infra-monitor",
       "title": "Home infra (full stack)",
-      "summary": "Owns the complete GotchiBot home stack: Docker watched set + tunnel/public subgraph + Hub/OpenClaw + Tailscale/mesh/remote + Desk→Hub Claude bridge + watcher/verifier. Public users who want the whole desk install this; operators who run a subset install the piece packs below (infra-docker, infra-tunnel, infra-hub, infra-mesh, infra-bridge).",
+      "summary": "Own the complete GotchiBot home stack: Docker watched set, Cloudflare tunnel/public subgraph, Hub/OpenClaw, Tailscale path, agent mesh/remote, and Desk\u2192Hub Claude bridge. Watch, probe, recover paper-only. Public operators who run a subset install the piece packs: infra-docker, infra-tunnel, infra-hub, infra-tailscale, infra-mesh, infra-bridge.",
       "version": "1.0.0",
       "path": "packs/infra-monitor",
       "tags": [
         "infra",
         "ops",
-        "home",
-        "full-stack"
+        "home"
       ],
       "skills": [
         "infra-recover",
         "hub-sop",
         "gotchibot-mesh",
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "infra-tailscale",
+      "roleId": "infra-tailscale",
+      "title": "Tailscale path",
+      "summary": "Own the Tailscale tailnet path to the always-on Hub: peers online, MagicDNS / 100.x. Never invent LAN IPs. Subset of home infra.",
+      "version": "1.0.0",
+      "path": "packs/infra-tailscale",
+      "tags": [
+        "infra",
+        "tailscale"
+      ],
+      "skills": [
+        "browser-tool"
+      ],
+      "skillsExternal": []
     },
     {
       "id": "infra-tunnel",
       "roleId": "infra-tunnel",
       "title": "Cloudflare tunnel / public subgraph",
-      "summary": "Piece pack: Cloudflare tunnel + public subgraph — `gotchibot tunnel status|restart`, cartridge Cloudflare 502 awareness, subgraph.aarcadeghst.com health. Install this if you only expose a public subgraph, not the full home stack (infra-monitor).",
+      "summary": "Own Cloudflare tunnel health and public subgraph endpoints. Cartridge Cloudflare 502 awareness. Subset of home infra.",
       "version": "1.0.0",
       "path": "packs/infra-tunnel",
       "tags": [
@@ -340,30 +404,54 @@
       "skills": [
         "infra-recover",
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "kanban-manager",
+      "roleId": "kanban-manager",
+      "title": "Project Kanban Manager",
+      "summary": "Own the sealed project's main task kanban and every desk's mini headless board: show/add/move cards, sync desk minis into the main board, pull assigned cards onto desks. Owns the project ticket lifecycle (accept/rework/close/digest) for agent request/claim/submit work.",
+      "version": "1.0.0",
+      "path": "packs/kanban-manager",
+      "tags": [
+        "kanban",
+        "project",
+        "boards",
+        "tasks"
+      ],
+      "skills": [
+        "project-kanban",
+        "project-tickets"
+      ],
+      "skillsExternal": []
     },
     {
       "id": "mail-courier",
       "roleId": "mail-courier",
       "title": "Mail Courier",
-      "summary": "Owns AgentMail send/receive for projects: one AgentMail address per project, desk mailboxes appended on every send and every relayed inbound. No other desk holds the key.",
+      "summary": "Own one AgentMail inbox per GotchiBot project: accept outbound from agents, send via AgentMail (abra AGENT_MAIL_API_KEY), monitor inbox/outbox, relay replies, track owed agent responses, remind after 24h, keep the orchestrator informed.",
       "version": "1.0.0",
       "path": "packs/mail-courier",
       "tags": [
+        "mail",
+        "courier",
+        "inbox",
         "email",
-        "agentmail",
-        "courier"
+        "agentmail"
       ],
       "skills": [
         "agentmail",
+        "abra-vault",
         "project-mailbox"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "market-news",
       "roleId": "market-news",
       "title": "Market News",
-      "summary": "Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only — not the trader monitor.",
+      "summary": "Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only \u2014 not the trader monitor.",
       "version": "1.0.0",
       "path": "packs/market-news",
       "tags": [
@@ -374,13 +462,14 @@
       "skills": [
         "market-news-feed",
         "browser-tool"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "market-research",
       "roleId": "market-research",
       "title": "Market Research",
-      "summary": "Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only — not the trader monitor.",
+      "summary": "Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only \u2014 not the trader monitor.",
       "version": "1.0.0",
       "path": "packs/market-research",
       "tags": [
@@ -392,13 +481,14 @@
         "browser-tool",
         "pymupdf",
         "market-news-feed"
-      ]
+      ],
+      "skillsExternal": []
     },
     {
       "id": "marketing-agency",
       "roleId": "marketing-agency",
       "title": "Marketing Agency",
-      "summary": "Research & analyze market trends, then staff web, social, merch and brand-design children — Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.",
+      "summary": "Research & analyze market trends, then staff web, social, merch and brand-design children \u2014 Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.",
       "version": "1.0.0",
       "path": "packs/marketing-agency",
       "tags": [
@@ -409,33 +499,109 @@
         "browser-tool",
         "market-news-feed",
         "pymupdf"
-      ]
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "mcp-maker",
+      "roleId": "mcp-maker",
+      "title": "MCP Maker",
+      "summary": "Authors MCP server stubs/configs and tool descriptors for GotchiBot \u2014 safe schemas, no secrets in repo, auth via abra.",
+      "version": "1.0.0",
+      "path": "packs/mcp-maker",
+      "tags": [
+        "maker",
+        "mcp",
+        "connector",
+        "tools"
+      ],
+      "skills": [
+        "pstack",
+        "browser-tool",
+        "abra-vault"
+      ],
+      "skillsExternal": []
     },
     {
       "id": "merch-desk",
       "roleId": "merch-desk",
       "title": "Merch Desk",
-      "summary": "Own merchandising: POD vendor research and shortlists, approve-gated outreach drafts for quotes, art-ready merch specs. Never sends email without approval; never spends.",
+      "summary": "Own the merch store supplier desk: research print-on-demand companies that make custom plushies and toys, rank API-capable vendors, approve-gated outreach to every shortlisted supplier, and pull brand kits / one-sheets / mocks from brand-design and product desks. Never sends without approval; never spends.",
       "version": "1.0.0",
       "path": "packs/merch-desk",
       "tags": [
         "merch",
         "pod",
+        "plush",
+        "toys",
         "quotes"
       ],
       "skills": [
         "browser-tool",
-        "market-news-feed"
+        "market-news-feed",
+        "pymupdf"
       ],
       "skillsExternal": [
+        "mcp-pixellab",
         "resend"
       ]
+    },
+    {
+      "id": "moltbook-watch",
+      "roleId": "moltbook-watch",
+      "title": "Moltbook watch desk",
+      "summary": "15-min radar for Moltbook replies-to-us and api-key / secrets / user-pain topics. Queue only \u2014 no posting.",
+      "version": "1.0.0",
+      "path": "packs/moltbook-watch",
+      "tags": [
+        "marketplace"
+      ],
+      "skills": [
+        "browser-tool"
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "orchestrator",
+      "roleId": "orchestrator",
+      "title": "Orchestrator",
+      "summary": "Chair/delegate \u2014 do not DIY sub-agent jobs.",
+      "version": "1.0.0",
+      "path": "packs/orchestrator",
+      "tags": [
+        "marketplace"
+      ],
+      "skills": [
+        "delegate-first",
+        "browser-tool",
+        "pstack"
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "policy-maker",
+      "roleId": "policy-maker",
+      "title": "Policy Maker",
+      "summary": "Authors durable policy docs (allow/deny, approve-gates, escalation). Policies guide agents; they are not runtime code.",
+      "version": "1.0.0",
+      "path": "packs/policy-maker",
+      "tags": [
+        "maker",
+        "policy",
+        "governance",
+        "gates"
+      ],
+      "skills": [
+        "pstack",
+        "browser-tool"
+      ],
+      "skillsExternal": []
     },
     {
       "id": "product-manager",
       "roleId": "product-manager",
       "title": "Product Manager",
-      "summary": "Sole product desk: discovery → roadmap → specs → ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers — including one arcade-game-monitor per Aarcade game. Not Prof; not chief.",
+      "summary": "Sole product desk: discovery \u2192 roadmap \u2192 specs \u2192 ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers \u2014 including one arcade-game-monitor per Aarcade game. Not Prof; not chief.",
       "version": "1.0.0",
       "path": "packs/product-manager",
       "tags": [
@@ -447,7 +613,47 @@
         "browser-tool",
         "pymupdf",
         "market-news-feed"
-      ]
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "roadblock-reviewer",
+      "roleId": "roadblock-reviewer",
+      "title": "Roadblock Reviewer",
+      "summary": "Reviews sessions for repeated roadblocks that already have a working solution; IDs them; passes packets to central-bot for path decision.",
+      "version": "1.0.0",
+      "path": "packs/roadblock-reviewer",
+      "tags": [
+        "review",
+        "roadblock",
+        "sessions",
+        "central"
+      ],
+      "skills": [
+        "pstack",
+        "browser-tool"
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "rule-maker",
+      "roleId": "rule-maker",
+      "title": "Rule Maker",
+      "summary": "Authors concrete enforceable rules (lint/CI/hooks/checklists) that implement policy intent with a verify command.",
+      "version": "1.0.0",
+      "path": "packs/rule-maker",
+      "tags": [
+        "maker",
+        "rules",
+        "lint",
+        "hooks",
+        "ci"
+      ],
+      "skills": [
+        "pstack",
+        "browser-tool"
+      ],
+      "skillsExternal": []
     },
     {
       "id": "security-engineer",
@@ -467,13 +673,33 @@
         "browser-tool",
         "pstack",
         "abra-vault"
-      ]
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "skill-maker",
+      "roleId": "skill-maker",
+      "title": "Skill Maker",
+      "summary": "Authors SKILL.md packs (frontmatter, when-to-use, steps, anti-jobs) for GotchiBot agents. Clear, reusable, no secrets.",
+      "version": "1.0.0",
+      "path": "packs/skill-maker",
+      "tags": [
+        "maker",
+        "skill",
+        "skillmd",
+        "workflow"
+      ],
+      "skills": [
+        "pstack",
+        "browser-tool"
+      ],
+      "skillsExternal": []
     },
     {
       "id": "social-media-manager",
       "roleId": "social-media-manager",
       "title": "Social Media Manager",
-      "summary": "Calendar, voice, channel strategy and drafts for web + social — channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.",
+      "summary": "Calendar, voice, channel strategy and drafts for web + social \u2014 channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.",
       "version": "1.0.0",
       "path": "packs/social-media-manager",
       "tags": [
@@ -486,6 +712,67 @@
       "skillsExternal": [
         "mcp-snapshot"
       ]
+    },
+    {
+      "id": "tool-maker",
+      "roleId": "tool-maker",
+      "title": "Deterministic Tool Maker",
+      "summary": "Authors small deterministic CLI/tools with clear I/O, exit codes, and verify steps. No LLM-in-the-loop for the tool itself.",
+      "version": "1.0.0",
+      "path": "packs/tool-maker",
+      "tags": [
+        "maker",
+        "tool",
+        "deterministic",
+        "cli"
+      ],
+      "skills": [
+        "pstack",
+        "browser-tool"
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "trader-desk",
+      "roleId": "trader-desk",
+      "title": "Trader desk",
+      "summary": "Own Gotchi-Trader paper desk health, cycle decisions and PnL reporting.",
+      "version": "1.0.0",
+      "path": "packs/trader-desk",
+      "tags": [
+        "marketplace"
+      ],
+      "skills": [
+        "gotchi-trader-monitor",
+        "gotchi-trader-improve",
+        "market-news-feed",
+        "browser-tool"
+      ],
+      "skillsExternal": []
+    },
+    {
+      "id": "worker",
+      "roleId": "worker",
+      "title": "Worker",
+      "summary": "Prof-seated worker desks request. Deep lanes: dispatch I/O (sessions/<id>), skill-requests.jsonl helper, ephemeral desk-terminals use/close.",
+      "version": "1.0.0",
+      "path": "packs/worker",
+      "tags": [
+        "worker",
+        "dispatch",
+        "desk-request",
+        "prof"
+      ],
+      "skills": [
+        "cursor-cli",
+        "codex-cli",
+        "gotchibot-bridge",
+        "desk-wake",
+        "passoff",
+        "pstack"
+      ],
+      "skillsExternal": []
     }
-  ]
+  ],
+  "updatedAt": "2026-09-19T08:59:44.292798+00:00"
 }

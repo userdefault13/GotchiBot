@@ -25,7 +25,7 @@ top, 2xN collateral-colored gotchi grid bottom); SoT is
 
 ## Where things live
 
-- **Eager:** this file, [`AGENTS.md`](AGENTS.md), [`.cursor/rules/gotchi-orchestrator.mdc`](.cursor/rules/gotchi-orchestrator.mdc), [`.cursor/rules/gotchi-cursor-layer.mdc`](.cursor/rules/gotchi-cursor-layer.mdc)
+- **Eager:** this file, [`AGENTS.md`](AGENTS.md), [`CREWS.md`](CREWS.md), [`.cursor/rules/gotchi-orchestrator.mdc`](.cursor/rules/gotchi-orchestrator.mdc), [`.cursor/rules/gotchi-cursor-layer.mdc`](.cursor/rules/gotchi-cursor-layer.mdc)
 - **Skills:** [`.cursor/skills/`](.cursor/skills/) (thin) → [`.opencode/skills/`](.opencode/skills/) (bodies)
 - **Subagents:** [`.claude/agents/`](.claude/agents/) — Cursor loads them via Claude compatibility; do not copy
 - **Commands:** [`.claude/commands/`](.claude/commands/) — same compat path
@@ -55,6 +55,7 @@ session (no double brief / double deny / double capsule).
 4. Before fresh work: `./scripts/gotchibot passoff resume`.
 5. `/minutes` → Task `meet-scribe` — do not read the transcript into this session.
 6. Before `/compact` or when context is low: narrative `gotchibot contexter save` (hooks are the safety net).
+7. **Work tools only** for code: Claude, Cursor, or Codex — see [`ORCHESTRATOR.md`](ORCHESTRATOR.md) and [`AGENTS.md`](AGENTS.md). Through **2026-10-05 inclusive**, prefer **Claude first**, then Cursor, then Codex.
 
 ## Give the iMac the same desk
 
