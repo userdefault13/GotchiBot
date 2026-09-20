@@ -408,6 +408,28 @@
       "skillsExternal": []
     },
     {
+      "id": "jev",
+      "roleId": "jev",
+      "title": "Jev (TypeSafe System One)",
+      "summary": "Structured decisions (Choice/Score/Noul + confidence) for GotchiBot workflows \u2014 not chat.",
+      "version": "1.0.0",
+      "path": "packs/jev",
+      "tags": [
+        "typesafe",
+        "jev",
+        "system-one",
+        "routing",
+        "decisions"
+      ],
+      "skills": [
+        "jev",
+        "browser-tool"
+      ],
+      "skillsExternal": [
+        "typesafe-ai"
+      ]
+    },
+    {
       "id": "kanban-manager",
       "roleId": "kanban-manager",
       "title": "Project Kanban Manager",

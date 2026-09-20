@@ -28,6 +28,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
   gotchibot mode [gotchi|sandbox|verse|plan|build|ask|cycle] [--restart]  OpenCode agent
+  gotchibot wisp status|mint|env [--json]   Wisp soul MCP (Gotchi Closet; key not printed)
+  gotchibot wisp-proxy [--check]            OpenAI proxy for /model wisp/gotchi (:45682)
                                   # note: mode sandbox = pink TUI playground; gotchibot sandbox = Docker
   gotchibot project [show|new|set|ready]  unsupervised project intake (/project modal)
   gotchibot gotchi-mode [status|env|model|ensure] [--json]  OpenCode TUI → iMac orchestrator session
@@ -39,10 +41,14 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot focus <n|id>          pin avatar + SUB chat focus
   gotchibot cockpit               mint / avatar / Settings (/cockpit)
   gotchibot kanban [--json] [--watch]   clawbot seats + tasks board (/kanban)
+    gotchibot messaging [--text|--json|--channel <id>]   channel routing index (bot-inbox/passoff/meet/agentmail)
+  gotchibot pkm-record …              notify kanban-manager (delegated|submitted|reviewed)
   gotchibot project-kanban …            sealed project + desk mini task boards
   gotchibot project-tickets …           agent request/claim/submit tickets (PKM owns lifecycle)
   gotchibot project-mailbox …           per-desk local mailboxes (inbox+sent) under project AgentMail
   gotchibot inbox send|list|read|archive|digest|unread|tui   internal bot mail (not AgentMail)
+  gotchibot graph …                 graph-state init|get|set|next|stop|list (sessions/graph)
+  gotchibot jev ask|smoke|models    TypeSafe Jev System One decisions (not chat)
   gotchibot meet start|open|invite|status|say|morning|colabo|end   persistent room (/meet); start/end = record
   gotchibot model-policy [show|pick|candidates|enforce]  working-models-only policy
   gotchibot tui-policy [show|enforce|apply]  Tab cycles in OpenCode TUI (no tmux steal)
@@ -187,16 +193,11 @@ cmd_chat() {
       printf 'opencode\n' > "$file"
       echo "chat runtime → opencode"
       if [ -n "${TMUX:-}" ] && tmux has-session -t "=$sess_name" 2>/dev/null; then
-        # Leave meet room UI if present, else just respawn OpenCode + avatar.
-        if [ -f "$SESSIONS/.layout-mode" ] && [ "$(tr -d '[:space:]' < "$SESSIONS/.layout-mode")" = "meet-gallery" ]; then
-          tmux run-shell -b -t "$sess:work.0" \
-            "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$layout\" leave-meet-gallery" \
-            2>/dev/null || true
-        else
-          tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
-          tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
-          tmux select-pane -t "$sess:work.1" 2>/dev/null || true
-        fi
+        # Always repair via leave-meet-gallery (idempotent). Gating on
+        # meet-gallery only left a blank center when mode was already normal.
+        tmux run-shell -b -t "$sess:work.0" \
+          "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$layout\" leave-meet-gallery" \
+          2>/dev/null || true
       else
         echo "respawn chat: ./scripts/gotchibot tmux"
       fi
@@ -513,6 +514,19 @@ cmd_inbox() {
   exec node "$ROOT/scripts/bot-inbox.mjs" "$@"
 }
 
+cmd_graph() {
+  exec node "$ROOT/scripts/graph-state.mjs" "$@"
+}
+
+cmd_jev() {
+  # Prefer abra `general` (JEV_DEV_API_KEY) when key not already in env.
+  if [ -z "${TYPESAFE_API_KEY:-}${JEV_API_KEY:-}${JEV_DEV_API_KEY:-}" ] && command -v abra >/dev/null 2>&1; then
+    exec abra run general -- node "$ROOT/scripts/jev.mjs" "$@"
+  fi
+  exec node "$ROOT/scripts/jev.mjs" "$@"
+}
+
+
 cmd_cockpit() {
   if command -v abra >/dev/null 2>&1; then
     exec abra run gotchibot -- node "$ROOT/scripts/agent-focus.mjs" cockpit "$@"
@@ -615,6 +629,11 @@ cmd_menubar() {
   esac
 }
 
+
+cmd_wisp() {
+  abra_or_node "$ROOT/scripts/wisp.mjs" "$@"
+}
+
 [ $# -ge 1 ] || usage
 cmd="$1"; shift
 case "$cmd" in
@@ -631,10 +650,14 @@ case "$cmd" in
   focus) cmd_focus "$@" ;;
   cockpit|onboarding) cmd_cockpit "$@" ;;
   kanban) cmd_kanban "$@" ;;
+  messaging|msg-index) exec node "$ROOT/scripts/messaging-index.mjs" "$@" ;;
+  pkm-record|pkm) exec node "$ROOT/scripts/pkm-record.mjs" "$@" ;;
   project-kanban|proj-kanban) cmd_project_kanban "$@" ;;
   project-tickets|proj-tickets|tickets) cmd_project_tickets "$@" ;;
   project-mailbox|proj-mailbox|mailbox) cmd_project_mailbox "$@" ;;
   inbox|bot-inbox) cmd_inbox "$@" ;;
+  graph|graph-state) cmd_graph "$@" ;;
+  jev|typesafe|systemone) cmd_jev "$@" ;;
   meet) cmd_meet "$@" ;;
   model-policy|models-policy)
     exec node "$ROOT/scripts/model-policy.mjs" "$@"
@@ -720,6 +743,7 @@ case "$cmd" in
   ask) cmd_ask "$@" ;;
   multitask) cmd_multitask "$@" ;;
   mode) cmd_mode "$@" ;;
+  wisp) cmd_wisp "$@" ;;
   gotchi-mode) cmd_gotchi_mode "$@" ;;
   cursor) cmd_cursor "$@" ;;
   codex) cmd_codex "$@" ;;
@@ -842,6 +866,15 @@ case "$cmd" in
       exit 1
     fi
     exec node "$ROOT/scripts/claudemode-proxy.mjs" "$@"
+    ;;
+  wisp-proxy|wisp_proxy)
+    # OpenAI proxy for /model wisp/gotchi (soul chat; desk stays on agent=gotchi).
+    if [ "${1:-}" = "--check" ]; then
+      curl -sf --max-time 2 http://127.0.0.1:45682/health && exit 0
+      echo "wisp proxy down on :45682 — start: gotchibot wisp-proxy" >&2
+      exit 1
+    fi
+    exec node "$ROOT/scripts/wisp-proxy.mjs" "$@"
     ;;
   tunnel)
     sub="${1:-status}"

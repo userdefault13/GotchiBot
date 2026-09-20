@@ -58,6 +58,7 @@ steal LINK/YFI/WBTC standing desks.
 | **Workers** | Specialist heroes and Grok coding bots (dossier-*, prof-modal, gotchi-omarchy, standing desks LINK/YFI/WBTC, …) |
 | **Work tools** | Claude → Cursor → Codex through **2026-10-05** inclusive, then by fit — see `ORCHESTRATOR.md` |
 
+CoS: `gotchibot graph` (sessions/graph state) + fleet skill `agent-graph`.
 Orch owns product routing. Central owns makers. Bend crew owns LAWS/PROOF.
 Do not cross-steal lanes without Julius saying so.
 
@@ -67,3 +68,16 @@ Do not cross-steal lanes without Julius saying so.
 2. Prefer a marketplace pack and/or Grok Bot pair so desk + fleet match.
 3. Append a section here and keep the fleet `crews` skill in sync.
 4. Point `AGENTS.md` / orch briefs at this file — do not paste full playbooks.
+
+## jev (TypeSafe System One)
+
+| | |
+|---|---|
+| **Desk pack** | `templates/marketplace/packs/jev` — `gotchibot templates apply jev --hero <available> --yes` |
+| **CLI** | `./scripts/gotchibot jev ask|smoke|models` |
+| **Secret** | abra `general` / `JEV_DEV_API_KEY` (names only); optional mirror `gotchibot` / `TYPESAFE_API_KEY` |
+| **Playbook** | Pack skill `jev`; live docs https://docs.typesafe.ai/llms.txt |
+| **Anti-jobs** | Not chat / not System 2 / not a work tool for edits |
+
+Use for graph/passoff routing, guardrails, and closed-set judgments. Compose
+atomic answers in code; escalate low confidence to Julius or a work tool.
