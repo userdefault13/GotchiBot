@@ -45,7 +45,8 @@ have laws write proofs or proofs rewrite laws.
 | allow/deny / approve-gates / escalation docs | `policy-maker` |
 | deterministic CLI (no LLM inside the tool) | `tool-maker` |
 | MCP schema / stub / connector config | `mcp-maker` |
-| repeated session roadblocks | `roadblock-reviewer` (via central / Prof) |
+| repeated session roadblocks (known working cite) | `roadblock-reviewer` (via central / Prof) |
+| side notes / novel flakiness / "worth looking at" | fleet **Issue Reviewer** (skill `issue-reviewer`) → Home Infra CoS / architect / makers |
 
 Human approves installs. Secrets via abracadabra only. Never auto-mint; never
 steal LINK/YFI/WBTC standing desks.

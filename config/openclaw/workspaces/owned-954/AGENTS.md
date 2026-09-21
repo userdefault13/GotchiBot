@@ -23,6 +23,7 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 | pane empty / bridge down | MCP `hub_bridge_ensure`; if no MCP, `./scripts/gotchibot hub bridge-ensure`; retry once | what happened |
 | handoff, "give this to X", "pick up where Y left off" | `./scripts/gotchibot passoff send <hero> --note "done so far" --next "what's left"` / `./scripts/gotchibot passoff resume` | what moved |
 | meeting, morning recap, minutes | MCP `meet_start_morning` … `meet_end` (skill `synergy` / `gotchibot-meet`). Room is persistent; start/end = recording only | the minutes / room stays open |
+| side note / flaky / "worth looking at" / incidental LAN or desk issue (Tailscale, mesh, ports, SSH) while main work continues | finish the main task first; file a packet to fleet **Issue Reviewer** (skill `issue-reviewer`) — do not DIY the side issue; desk twin `roadblock-reviewer` only if a working cited fix already exists | Issue Reviewer clusters repeats + recommends fix → Home Infra CoS / architect / makers as they say |
 | design / architecture / "how should we structure X", Colabo design ring | open meet if needed; `./scripts/gotchibot meet colabo --ring design "…"` (architect + optional infra-monitor; I chair — do not all-hands) | ring replies in transcript; then I route build via CREWS / graph |
 | overnight dept reports (03:00 PT iMessage meet channel), "prep the morning report" | collect the dept iMessage reports from the meet channel, then prep the morning overview: project status, day's plan/workflow/goals, open issues needing answers | the morning report, ready before/with the morning recap |
 | `/pstack`, `/poteto-mode`, nontrivial design, contested approach, "are we sure?", "go deep" | read skill `pstack`, then `./scripts/delegate-pick.mjs --json "<playbook brief>"` (or spawn competing approaches per the skill) | who took it, the playbook label, and when I'll check back |
@@ -47,7 +48,7 @@ I stay on the gateway default model for talk/route/spawn/summarize. `@claudemode
 - Anything under `/Users/juliuswong/Dev/GotchiBot/scripts/` — always as `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/<name> …`.
 - `abra run gotchibot -- <command>` only when the row says so (it injects a secret; Touch ID on the Desk). Never `abra get`, never print a secret value.
 - Home stack only: localhost, `*.aarcadeghst.com`, the cartridge sim, `subgraph.aarcadeghst.com`. Never Blockscout. Never arbitrary web `curl`.
-- Skills: my catalog is `<available_skills>` in this session, copied into `/Users/juliuswong/Dev/GotchiBot/config/openclaw/workspaces/owned-954/skills/`. When a row names a skill, I read its SKILL.md and follow it. Mine: delegate-first, browser-tool, pstack, gotchibot-bridge, claude-pane-proxy, hub-sop, synergy, caavegotchi-spawn, gotchibot-hub, gotchibot, ralph, passoff, desk-wake, cursor-cli, codex-cli, colabo, architect.
+- Skills: my catalog is `<available_skills>` in this session, copied into `/Users/juliuswong/Dev/GotchiBot/config/openclaw/workspaces/owned-954/skills/`. When a row names a skill, I read its SKILL.md and follow it. Mine: delegate-first, browser-tool, pstack, gotchibot-bridge, claude-pane-proxy, hub-sop, synergy, caavegotchi-spawn, gotchibot-hub, gotchibot, ralph, passoff, desk-wake, cursor-cli, codex-cli, colabo, architect, issue-reviewer.
 
 ## Work tools (hard rule)
 
@@ -121,6 +122,8 @@ Inbox goes to role `kanban-manager` (alias `pkm`); if unseated, falls back to or
 
 
 ## Messaging policy (hard)
+
+**Side notes.** If I (or a worker) hit a Side note / flaky incidental issue while shipping, finish the main work, then file it to fleet **Issue Reviewer** (skill `issue-reviewer`) — they pin repeats and recommend a fix. Do not block the push. Desk pack `roadblock-reviewer` is only for repeats that already have a working cited solution.
 
 **Colabo (scoped).** Default stays delegate-first / inbox / graph. For architecture opinion rounds only: `gotchibot meet colabo --ring design "…"` (config/colabo-rings.json). Never bare all-hands for design. Skill `colabo`.
 
