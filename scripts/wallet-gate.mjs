@@ -13,6 +13,15 @@ import { readGotchiBotCartridgeSepolia } from "./cartridge-sepolia.mjs";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WALLET = `${ROOT}/sessions/.wallet.json`;
 
+const CONCIERGE_URL = "https://www.aarcadeghst.com/concierge/terminal";
+const SETUP_URL = "https://www.aarcadeghst.com/gotchibot/setup";
+const LICENSE_STEPS = [
+  "Mint the GotchiBot license NFT at the Concierge terminal",
+  "Seal it into a cartridge (nested license)",
+  "Open the sealed cartridge",
+  "Bind / activate it for GotchiBot",
+];
+
 function readWallet() {
   try {
     const w = JSON.parse(readFileSync(WALLET, "utf8"));
@@ -23,14 +32,18 @@ function readWallet() {
 }
 
 function fail(code, message, fix, extra = {}) {
-  const out = { ok: false, code, message, fix, ...extra };
+  const assist =
+    code === "cartridge" || code === "sealed" || code === "heroes"
+      ? { fixUrl: CONCIERGE_URL, setupUrl: SETUP_URL, howto: LICENSE_STEPS }
+      : {};
+  const out = { ok: false, code, message, fix, ...assist, ...extra };
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify(out, null, 2));
   } else {
     console.error(`✗ ${message}`);
     if (fix) console.error(`  → ${fix}`);
-    if (extra.fixUrl) console.error(`  mint: ${extra.fixUrl}`);
-    if (extra.setupUrl) console.error(`  setup: ${extra.setupUrl}`);
+    if (out.fixUrl) console.error(`  mint: ${out.fixUrl}`);
+    if (out.setupUrl) console.error(`  setup: ${out.setupUrl}`);
   }
   process.exit(code === "wallet" ? 10 : code === "cartridge" || code === "sealed" ? 11 : 12);
 }
@@ -99,9 +112,13 @@ export async function checkSpawnGate({ quiet = false } = {}) {
             code: "sealed",
             message: "GotchiBot cartridge is sealed — open it before binding heroes.",
             fix:
-              "Open the portal on-chain, then bind. Mint/help: https://www.aarcadeghst.com/concierge/terminal · setup: https://www.aarcadeghst.com/gotchibot/setup",
-            fixUrl: "https://www.aarcadeghst.com/concierge/terminal",
-            setupUrl: "https://www.aarcadeghst.com/gotchibot/setup",
+              "Open on-chain (GotchiBotNestFacet.open) then bind owned/starter/rental. Mint/open at Concierge: " +
+              CONCIERGE_URL +
+              " · setup: " +
+              SETUP_URL,
+            fixUrl: CONCIERGE_URL,
+            setupUrl: SETUP_URL,
+            howto: LICENSE_STEPS,
             owner,
             cartridgeId: sep.cartridgeId,
             portalStatus: sep.portalStatus,
@@ -114,9 +131,13 @@ export async function checkSpawnGate({ quiet = false } = {}) {
             code: "heroes",
             message: "Open cartridge has no cAavegotchis — bind a starter or owned gotchi.",
             fix:
-              "Bind via Aarcade cartridge manage, then re-run the gate. Guide: https://www.aarcadeghst.com/gotchibot/setup",
-            fixUrl: "https://www.aarcadeghst.com/gotchibot/setup",
-            setupUrl: "https://www.aarcadeghst.com/gotchibot/setup",
+              "Bind via Aarcade / ChainCartridgeProvider bindStarter|bindOwned. Mint/open at Concierge: " +
+              CONCIERGE_URL +
+              " · setup: " +
+              SETUP_URL,
+            fixUrl: CONCIERGE_URL,
+            setupUrl: SETUP_URL,
+            howto: LICENSE_STEPS,
             owner,
             cartridgeId: sep.cartridgeId,
             portalStatus: sep.portalStatus,
@@ -167,11 +188,17 @@ export async function checkSpawnGate({ quiet = false } = {}) {
     return {
       ok: false,
       code: "cartridge",
-      message: "No gotchibot cartridge yet.",
+      message: "No gotchibot cartridge yet — mint and open one first.",
       fix:
-        "Mint a sealed GotchiBot cartridge at https://www.aarcadeghst.com/concierge/terminal then open + bind. Setup: https://www.aarcadeghst.com/gotchibot/setup (desk: ./scripts/gotchibot init after mint)",
-      fixUrl: "https://www.aarcadeghst.com/concierge/terminal",
-      setupUrl: "https://www.aarcadeghst.com/gotchibot/setup",
+        "Mint at Concierge: " +
+        CONCIERGE_URL +
+        " · setup: " +
+        SETUP_URL +
+        " · steps: " +
+        LICENSE_STEPS.join(" → "),
+      fixUrl: CONCIERGE_URL,
+      setupUrl: SETUP_URL,
+      howto: LICENSE_STEPS,
     };
   }
 
@@ -205,9 +232,15 @@ export async function checkSpawnGate({ quiet = false } = {}) {
       code: "heroes",
       message: "Cartridge has no cAavegotchis — bind a starter or open a portal pack.",
       fix:
-        "Bind a hero, then re-check. Guide: https://www.aarcadeghst.com/gotchibot/setup (desk: ./scripts/gotchibot identity bind)",
-      fixUrl: "https://www.aarcadeghst.com/gotchibot/setup",
-      setupUrl: "https://www.aarcadeghst.com/gotchibot/setup",
+        "Mint/open at Concierge: " +
+        CONCIERGE_URL +
+        " · setup: " +
+        SETUP_URL +
+        " · steps: " +
+        LICENSE_STEPS.join(" → "),
+      fixUrl: CONCIERGE_URL,
+      setupUrl: SETUP_URL,
+      howto: LICENSE_STEPS,
       owner,
       cartridgeId,
     };
@@ -231,6 +264,7 @@ async function main() {
     fail(gate.code, gate.message, gate.fix, {
       ...(gate.fixUrl ? { fixUrl: gate.fixUrl } : {}),
       ...(gate.setupUrl ? { setupUrl: gate.setupUrl } : {}),
+      ...(gate.howto ? { howto: gate.howto } : {}),
       ...(gate.owner ? { owner: gate.owner } : {}),
       ...(gate.cartridgeId ? { cartridgeId: gate.cartridgeId } : {}),
     });

@@ -172,10 +172,9 @@ try {
 } catch {}
 if (cartridgeId) ok(`cartridge: ${cartridgeId}`);
 else {
-  warn("no cartridge id cached — mint sealed GotchiBot at Concierge, then onboard");
-  warn("  mint: https://www.aarcadeghst.com/concierge/terminal");
-  warn("  setup: https://www.aarcadeghst.com/gotchibot/setup");
-  warn("  desk: ./scripts/gotchibot onboard");
+  warn(
+    "no cartridge id cached — mint/open at https://www.aarcadeghst.com/concierge/terminal · setup https://www.aarcadeghst.com/gotchibot/setup — run ./scripts/gotchibot onboard",
+  );
 }
 warn("sepolia nest: node ./scripts/cartridge-sepolia.mjs <wallet>");
 
