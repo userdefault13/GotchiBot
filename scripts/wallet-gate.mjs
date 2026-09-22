@@ -83,67 +83,89 @@ export async function checkSpawnGate({ quiet = false } = {}) {
   let heroes = [];
   let activeHeroId = meta?.activeHeroId ?? null;
 
-  // Prefer Base Sepolia on-chain nest (SIM is fallback while migration completes).
+  // Base Sepolia nest is authoritative. SIM is legacy — only used when Sepolia
+  // is explicitly opted out (GOTCHIBOT_CARTRIDGE_CHAIN=sim) or diamond config is missing.
   const preferSepolia =
-    process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "sepolia" ||
-    process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "84532" ||
-    process.env.GOTCHIBOT_PREFER_SEPOLIA === "1" ||
-    true; // default on during nest cutover
+    process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "sim" &&
+    process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "local" &&
+    (process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "sepolia" ||
+      process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "84532" ||
+      process.env.GOTCHIBOT_PREFER_SEPOLIA === "1" ||
+      process.env.GOTCHIBOT_PREFER_SEPOLIA !== "0");
   if (preferSepolia) {
     try {
       const sep = await readGotchiBotCartridgeSepolia(owner);
-      if (sep.cartridgeId) {
-        if (sep.ok) {
-          return {
-            ok: true,
-            owner,
-            cartridgeId: sep.cartridgeId,
-            heroCount: sep.heroCount,
-            activeHeroId: sep.heroes[0] || activeHeroId,
-            heroes: sep.heroes.map((id) => ({ id, role: null })),
-            source: "sepolia",
-            portalStatus: sep.portalStatus,
-            licenseNested: sep.licenseNested,
-          };
+      if (sep.reason === "missing_diamond_config") {
+        if (!quiet) {
+          console.error("[gate] sepolia diamond config missing — falling back to SIM");
         }
-        if (sep.reason === "sealed_open_required") {
-          return {
-            ok: false,
-            code: "sealed",
-            message: "GotchiBot cartridge is sealed — open it before binding heroes.",
-            fix:
-              "Open on-chain (GotchiBotNestFacet.open) then bind owned/starter/rental. Mint/open at Concierge: " +
-              CONCIERGE_URL +
-              " · setup: " +
-              SETUP_URL,
-            fixUrl: CONCIERGE_URL,
-            setupUrl: SETUP_URL,
-            howto: LICENSE_STEPS,
-            owner,
-            cartridgeId: sep.cartridgeId,
-            portalStatus: sep.portalStatus,
-            licenseNested: sep.licenseNested,
-          };
-        }
-        if (sep.reason === "no_heroes_bind_required") {
-          return {
-            ok: false,
-            code: "heroes",
-            message: "Open cartridge has no cAavegotchis — bind a starter or owned gotchi.",
-            fix:
-              "Bind via Aarcade / ChainCartridgeProvider bindStarter|bindOwned. Mint/open at Concierge: " +
-              CONCIERGE_URL +
-              " · setup: " +
-              SETUP_URL,
-            fixUrl: CONCIERGE_URL,
-            setupUrl: SETUP_URL,
-            howto: LICENSE_STEPS,
-            owner,
-            cartridgeId: sep.cartridgeId,
-            portalStatus: sep.portalStatus,
-            licenseNested: sep.licenseNested,
-          };
-        }
+      } else if (!sep.cartridgeId) {
+        return {
+          ok: false,
+          code: "cartridge",
+          message: "No gotchibot cartridge on Base Sepolia yet — mint and open one first.",
+          fix:
+            "Mint at Concierge: " +
+            CONCIERGE_URL +
+            " · setup: " +
+            SETUP_URL +
+            " · steps: " +
+            LICENSE_STEPS.join(" → "),
+          fixUrl: CONCIERGE_URL,
+          setupUrl: SETUP_URL,
+          howto: LICENSE_STEPS,
+          source: "sepolia",
+        };
+      } else if (sep.ok) {
+        return {
+          ok: true,
+          owner,
+          cartridgeId: sep.cartridgeId,
+          heroCount: sep.heroCount,
+          activeHeroId: sep.heroes[0] || activeHeroId,
+          heroes: sep.heroes.map((id) => ({ id, role: null })),
+          source: "sepolia",
+          portalStatus: sep.portalStatus,
+          licenseNested: sep.licenseNested,
+        };
+      } else if (sep.reason === "sealed_open_required") {
+        return {
+          ok: false,
+          code: "sealed",
+          message: "GotchiBot cartridge is sealed — open it before binding heroes.",
+          fix:
+            "Open on-chain (GotchiBotNestFacet.open) then bind owned/starter/rental. Mint/open at Concierge: " +
+            CONCIERGE_URL +
+            " · setup: " +
+            SETUP_URL,
+          fixUrl: CONCIERGE_URL,
+          setupUrl: SETUP_URL,
+          howto: LICENSE_STEPS,
+          owner,
+          cartridgeId: sep.cartridgeId,
+          portalStatus: sep.portalStatus,
+          licenseNested: sep.licenseNested,
+          source: "sepolia",
+        };
+      } else if (sep.reason === "no_heroes_bind_required") {
+        return {
+          ok: false,
+          code: "heroes",
+          message: "Open cartridge has no cAavegotchis — bind a starter or owned gotchi.",
+          fix:
+            "Bind via Aarcade / ChainCartridgeProvider bindStarter|bindOwned. Mint/open at Concierge: " +
+            CONCIERGE_URL +
+            " · setup: " +
+            SETUP_URL,
+          fixUrl: CONCIERGE_URL,
+          setupUrl: SETUP_URL,
+          howto: LICENSE_STEPS,
+          owner,
+          cartridgeId: sep.cartridgeId,
+          portalStatus: sep.portalStatus,
+          licenseNested: sep.licenseNested,
+          source: "sepolia",
+        };
       }
     } catch (e) {
       if (!quiet) {

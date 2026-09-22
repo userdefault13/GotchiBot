@@ -167,14 +167,50 @@ try {
 if (walletSet) ok("wallet connected (sessions/.wallet.json)");
 else warn("no wallet connected — run ./scripts/gotchibot connect");
 let cartridgeId = null;
+let cartridgeSource = null;
 try {
-  cartridgeId = JSON.parse(readFileSync(identityPath, "utf8")).cartridgeId ?? null;
+  const idMeta = JSON.parse(readFileSync(identityPath, "utf8"));
+  cartridgeId = idMeta.cartridgeId ?? null;
+  cartridgeSource = idMeta.cartridgeSource ?? null;
 } catch {}
-if (cartridgeId) ok(`cartridge: ${cartridgeId}`);
-else {
-  warn(
-    "no cartridge id cached — mint/open at https://www.aarcadeghst.com/concierge/terminal · setup https://www.aarcadeghst.com/gotchibot/setup — run ./scripts/gotchibot onboard",
-  );
+try {
+  const { readGotchiBotCartridgeSepolia } = await import("./cartridge-sepolia.mjs");
+  const w = JSON.parse(readFileSync(walletPath, "utf8")).address;
+  if (w) {
+    const sep = await readGotchiBotCartridgeSepolia(w);
+    if (sep.cartridgeId) {
+      cartridgeId = sep.cartridgeId;
+      cartridgeSource = "sepolia";
+      ok(`cartridge: ${cartridgeId} (Base Sepolia · ${sep.heroCount} heroes)`);
+    } else if (sep.reason === "no_cartridge") {
+      warn(
+        "no Base Sepolia cartridge — mint/open at https://www.aarcadeghst.com/concierge/terminal · setup https://www.aarcadeghst.com/gotchibot/setup",
+      );
+      if (cartridgeId && String(cartridgeId).startsWith("sim-")) {
+        warn(`legacy sim cart ignored: ${cartridgeId}`);
+      }
+      cartridgeId = null;
+    } else if (cartridgeId) {
+      ok(`cartridge: ${cartridgeId}${cartridgeSource ? ` (${cartridgeSource})` : ""}`);
+    } else {
+      warn(
+        "no cartridge id — mint/open at https://www.aarcadeghst.com/concierge/terminal · setup https://www.aarcadeghst.com/gotchibot/setup",
+      );
+    }
+  } else if (cartridgeId) {
+    ok(`cartridge: ${cartridgeId}`);
+  } else {
+    warn(
+      "no cartridge id cached — mint/open at https://www.aarcadeghst.com/concierge/terminal · setup https://www.aarcadeghst.com/gotchibot/setup — run ./scripts/gotchibot onboard",
+    );
+  }
+} catch (e) {
+  if (cartridgeId) ok(`cartridge: ${cartridgeId} (sepolia check failed: ${e?.message || e})`);
+  else {
+    warn(
+      "no cartridge id cached — mint/open at https://www.aarcadeghst.com/concierge/terminal · setup https://www.aarcadeghst.com/gotchibot/setup — run ./scripts/gotchibot onboard",
+    );
+  }
 }
 warn("sepolia nest: node ./scripts/cartridge-sepolia.mjs <wallet>");
 

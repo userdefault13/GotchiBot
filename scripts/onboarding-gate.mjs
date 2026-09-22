@@ -28,8 +28,26 @@ import {
   pinAvatar,
 } from "./onboarding-lib.mjs";
 import { loadMeta, saveMeta } from "./identity.mjs";
+import {
+  readGotchiBotCartridgeSepolia,
+  readAbraCartridgeSepolia,
+  formatAbraCartLine,
+} from "./cartridge-sepolia.mjs";
 import { runLayout, tmuxSessionName as layoutSession } from "./tmux-layout.mjs";
 import { withStatusBar, Progress } from "./progress-bar.mjs";
+
+const CONCIERGE_MINT_URL = "https://www.aarcadeghst.com/concierge/terminal";
+
+function preferSepoliaNest() {
+  return (
+    process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "sim" &&
+    process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "local" &&
+    (process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "sepolia" ||
+      process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "84532" ||
+      process.env.GOTCHIBOT_PREFER_SEPOLIA === "1" ||
+      process.env.GOTCHIBOT_PREFER_SEPOLIA !== "0")
+  );
+}
 
 function tmuxSessionName() {
   return layoutSession();
@@ -373,6 +391,54 @@ async function connectWalletMenu() {
 
 async function ensureCartridge(wallet) {
   title("Cartridge");
+
+  if (preferSepoliaNest()) {
+    try {
+      const sep = await readGotchiBotCartridgeSepolia(wallet);
+      const meta = loadMeta() || {};
+      const prevId = meta.cartridgeId ? String(meta.cartridgeId) : "";
+      const patch = {
+        owner: wallet,
+        cartridgeSource: "sepolia",
+        cartridgeId: sep.cartridgeId || null,
+      };
+      if (prevId.startsWith("sim-")) {
+        patch.legacySimCartridgeId = prevId;
+      }
+      saveMeta(patch);
+
+      if (!sep.cartridgeId || sep.heroCount === 0) {
+        // Fresh Sepolia nest — drop sim-era orch pin so cockpit shows unset.
+        saveOnboarding({
+          wallet,
+          cartridgeId: sep.cartridgeId || null,
+          orchestratorHeroId: null,
+          complete: Boolean(sep.cartridgeId),
+        });
+        saveMeta({ activeHeroId: null });
+        try {
+          unlinkSync(`${ROOT}/sessions/.pin`);
+        } catch {}
+      } else {
+        saveOnboarding({ wallet, cartridgeId: sep.cartridgeId });
+      }
+
+      if (sep.cartridgeId) {
+        console.log(
+          `  ✓ Base Sepolia cartridge ${sep.cartridgeId} · ${sep.heroCount} cAavegotchi(s)`,
+        );
+        return sep.cartridgeId;
+      }
+      console.log("  · Base Sepolia: no cartridge yet (sim mints do not count)");
+      console.log(`  · Mint nested sealed cart: ${CONCIERGE_MINT_URL}`);
+      return null;
+    } catch (e) {
+      console.log(`  · Sepolia read failed: ${e?.message || e}`);
+      console.log(`  · Mint at Concierge: ${CONCIERGE_MINT_URL}`);
+      return null;
+    }
+  }
+
   let meta = loadMeta();
   if (meta?.cartridgeId) {
     console.log(`  ✓ cartridge ${meta.cartridgeId}`);
@@ -385,6 +451,22 @@ async function ensureCartridge(wallet) {
   const id = await apiOp("ensure", wallet);
   console.log(`  ✓ cartridge ${id}`);
   return id;
+}
+
+async function fetchDeskHeroes(wallet, cartridgeId) {
+  if (!cartridgeId) return [];
+  if (preferSepoliaNest() && !String(cartridgeId).startsWith("sim-")) {
+    try {
+      const sep = await readGotchiBotCartridgeSepolia(wallet);
+      if (sep.cartridgeId && String(sep.cartridgeId) === String(cartridgeId)) {
+        return (sep.heroes || []).map((id) => ({ id: String(id) }));
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+  return fetchCartridgeHeroes(cartridgeId);
 }
 
 const GOTCHI_PAGE_SIZE = 25;
@@ -1344,17 +1426,35 @@ async function mainMenu(wallet, cartridgeId) {
   for (;;) {
     clear();
     console.log(readWelcomeArt(12));
-    const heroes = await fetchCartridgeHeroes(cartridgeId);
+    const heroes = await fetchDeskHeroes(wallet, cartridgeId);
     const ob = loadOnboarding();
     const orch = ob.orchestratorHeroId ?? "(none)";
+    let abraLine = "(skipped)";
+    if (preferSepoliaNest()) {
+      try {
+        abraLine = formatAbraCartLine(await readAbraCartridgeSepolia(wallet));
+      } catch (e) {
+        abraLine = `(read failed: ${e?.message || e})`;
+      }
+    }
 
     const project = currentProjectSlug();
     title("GotchiBot cockpit");
     console.log(`  wallet      ${wallet.slice(0, 6)}…${wallet.slice(-4)}`);
-    console.log(`  cartridge   ${cartridgeId}`);
+    console.log(
+      `  cartridge   ${
+        cartridgeId
+          ? `${cartridgeId}${preferSepoliaNest() && !String(cartridgeId).startsWith("sim-") ? " (Base Sepolia)" : ""}`
+          : "(none — mint on Base Sepolia)"
+      }`,
+    );
+    console.log(`  abra cart   ${abraLine}`);
     console.log(`  roster      ${heroes.length} cAavegotchi(s)`);
     console.log(`  orchestrator ${orch}`);
     console.log(`  project     ${project || "(none — select a project)"}`);
+    if (!cartridgeId && preferSepoliaNest()) {
+      console.log(`  next        mint at ${CONCIERGE_MINT_URL}`);
+    }
     hr();
 
     const pick = await choose("What next?", [
@@ -1475,11 +1575,25 @@ async function mainMenu(wallet, cartridgeId) {
     }
 
     if (pick.key === "import") {
+      if (!cartridgeId) {
+        title("Import gotchi");
+        console.log("  No Base Sepolia cartridge yet — mint one first.");
+        console.log(`  ${CONCIERGE_MINT_URL}`);
+        await pause();
+        continue;
+      }
       await importOrChooseGotchi(wallet, cartridgeId);
       continue;
     }
 
     if (pick.key === "mint") {
+      if (!cartridgeId) {
+        title("Mint cAavegotchi");
+        console.log("  No Base Sepolia cartridge yet — mint a sealed cart first.");
+        console.log(`  ${CONCIERGE_MINT_URL}`);
+        await pause();
+        continue;
+      }
       title("Mint cAavegotchi");
       console.log("  Mint a new sub-agent cAavegotchi for $5.\n");
       const collateral = await pickCollateral("Choose collateral for new sub-agent hero");
@@ -1527,7 +1641,9 @@ async function run() {
     clearStaleSessionPin();
     const wallet = await connectWalletMenu();
     const cartridgeId = await ensureCartridge(wallet);
-    const heroes = await resolveHeroes(wallet, cartridgeId);
+    const heroes = cartridgeId
+      ? await resolveHeroes(wallet, cartridgeId)
+      : [];
     await ensureOrchestratorHero(heroes);
     await mainMenu(wallet, cartridgeId);
   } finally {
@@ -1536,12 +1652,8 @@ async function run() {
 }
 
 /** In-app cockpit (/cockpit) — skip wallet welcome when already connected. */
-async function loadCartridgeHeroesQuiet(cartridgeId) {
-  let heroes = await fetchCartridgeHeroes(cartridgeId);
-  if (!heroes.length) {
-    heroes = await fetchCartridgeHeroes(cartridgeId);
-  }
-  return heroes;
+async function loadCartridgeHeroesQuiet(wallet, cartridgeId) {
+  return fetchDeskHeroes(wallet, cartridgeId);
 }
 
 async function runCockpit() {
@@ -1553,7 +1665,7 @@ async function runCockpit() {
     }
     const cartridgeId = await ensureCartridge(wallet);
     // Cockpit is settings/mint/roster — not first-time onboarding bind flow.
-    const heroes = await loadCartridgeHeroesQuiet(cartridgeId);
+    const heroes = await loadCartridgeHeroesQuiet(wallet, cartridgeId);
     await ensureOrchestratorHero(heroes);
     await mainMenu(wallet, cartridgeId);
   } finally {
@@ -1572,9 +1684,8 @@ async function runMeet() {
     // Skip Cartridge splash — jump straight to the meeting menu.
     let heroes = [];
     try {
-      const meta = loadMeta();
-      const cartridgeId = meta?.cartridgeId || (await ensureCartridge(wallet));
-      heroes = (await loadCartridgeHeroesQuiet(cartridgeId)) || [];
+      const cartridgeId = await ensureCartridge(wallet);
+      heroes = (await loadCartridgeHeroesQuiet(wallet, cartridgeId)) || [];
       await ensureOrchestratorHero(heroes);
     } catch (e) {
       console.log(`  ⚠ roster load: ${e.message || e}`);
