@@ -19,9 +19,8 @@ Crew index: [`CREWS.md`](CREWS.md) (bend · makers · orch). Prefer named worker
 │     • skill-request → you vet → approve/deny         │
 │                                                      │
 │   Work tools (mandatory for all code changes)        │
-│     • Claude  — Hub bridge / Claude Code (prefer     │
-│       first through 2026-10-05 inclusive)            │
-│     • Cursor  — `./scripts/cursor-cli.mjs`           │
+│     • Cursor  — `./scripts/cursor-cli.mjs` (default) │
+│     • Claude  — Hub bridge / Claude Code             │
 │     • Codex   — `./scripts/codex-cli.mjs`            │
 │                                                      │
 │   OpenClaw gateway (Docker: MBP now, iMac later)     │
@@ -45,13 +44,13 @@ Crew index: [`CREWS.md`](CREWS.md) (bend · makers · orch). Prefer named worker
 All coding / implementation / investigation that edits or verifies product code
 must use one of these three tools only:
 
-| Preference (through 2026-10-05 inclusive) | Tool | How |
+| Preference (default order) | Tool | How |
 |---|---|---|
-| **1st — Claude** | Hub Claude Code / Claude CLI | skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`; local `claude` when on desk |
-| **2nd — Cursor** | Cursor agent CLI | skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` |
+| **1st — Cursor** | Cursor agent CLI | skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` |
+| **2nd — Claude** | Hub Claude Code / Claude CLI | skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`; local `claude` when on desk |
 | **3rd — Codex** | Codex CLI | skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when Julius says codex |
 
-After **2026-10-05**, pick among the three by fit (no automatic favorite) unless
+If Cursor is unavailable, pick Claude then Codex by fit unless
 Julius resets preference. Do **not** DIY edits on chat/route models
 (big-pickle / Nemotron / etc.). Talk, route, and one-line answers stay on the
 chat model; the worker then runs a work tool for the actual work.
@@ -64,8 +63,8 @@ They are not the default volume or escalation path.
 | Agent | Runtime | Role |
 |---|---|---|
 | **gotchi** | Cursor desk / Claude Code | Intake, routing, monitoring, skill vetting, handoffs |
-| **worker (Claude)** | Hub bridge / `claude` | Default coding through 2026-10-05 |
-| **worker (Cursor)** | `cursor-cli.mjs` → `cursor-agent` | Coding when Claude unavailable or Julius picks Cursor |
+| **worker (Cursor)** | `./scripts/cursor-cli.mjs` / skill `cursor-cli` | Default coding |
+| **worker (Claude)** | Hub bridge / `claude` | Coding when Cursor unavailable or Julius picks Claude |
 | **worker (Codex)** | `codex-cli.mjs` → `codex exec` | Coding when Julius picks Codex |
 | **sub (chat/route)** | OpenCode `sub` / interactive | Spawn talk/route only; must call a work tool for edits |
 | *(any)* | interactive terminal | Julius prompts workers directly in tabs |
@@ -77,7 +76,7 @@ They are not the default volume or escalation path.
 - The gotchi decomposes it and decides: answer directly, single worker, or
   parallel fan-out.
 - Routing rules:
-  - **Default coding** → Claude work tool (through 2026-10-05), else Cursor,
+  - **Default coding** → Cursor (cursor-cli) work tool, else Claude,
     else Codex
   - **Hard reasoning / `@claudemode`** → stay on big-pickle for chat; run
     `claudemode-ask.mjs` / `gotchibot bridge` (skill `gotchibot-bridge`), then
@@ -172,6 +171,6 @@ NVIDIA / DeepSeek keys, when used, flow through abracadabra — never written to
 - Secrets: Touch ID-gated via abracadabra, never in env files or prompts.
 - Skills: allowlist-only, human-vetted additions.
 - Workers: sandboxed per OpenClaw / gotchibot-policy; no autonomous installs.
-- Work tools only for code: Claude → Cursor → Codex (Claude-first through 2026-10-05).
+- Work tools only for code: Cursor (cursor-cli) → Claude → Codex.
 - Remote access (post-migration): Cloudflare Access policy gates the hostname;
   gateway token as second layer.

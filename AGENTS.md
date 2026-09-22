@@ -69,7 +69,7 @@ Your session dir contains:
 6. **Jev (TypeSafe System One)** — closed-set decisions via `./scripts/gotchibot jev` / skill `jev` (pack `jev`). Not a chat model and not a work tool for edits. Key: abra `general` / `JEV_DEV_API_KEY` (names only).
 7. **Work tools (hard rule)** — any file edit, patch, debug, investigation, or
    desk deliverable goes through a work tool only — **Claude**, **Cursor**, or
-   **Codex**. Through **2026-10-05 inclusive**, prefer **Claude first**, then
+   **Codex**. Prefer **Cursor (cursor-cli) first**, then
    Cursor, then Codex. After that date, pick among the three by fit unless
    Julius resets preference.
    - Claude: skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"`
@@ -148,10 +148,10 @@ Route instead of DIY: laws/proofs → bend crew; skills/rules/policies/tools/MCP
 |---|---|---|
 | default talk/route | `opencode/big-pickle` (`--model nim`; free Zen) | talk, route, spawn, summarize |
 | task talk | Nemotron Lightning / Ultra free (`opencode/nemotron-*`) | talk/route/task only; `/model heavy` = Ultra free |
-| **all work** (Claude → Cursor → Codex through 2026-10-05) | Hub Claude / `claude` · `./scripts/cursor-cli.mjs` → `cursor-agent` · `./scripts/codex-cli.mjs` → `codex exec` | edits, debug, patches, investigation, desk deliverables — mandatory; Claude first until end of 2026-10-05 |
+| **all work** (Cursor (cursor-cli) → Claude → Codex) | Hub Claude / `claude` · `./scripts/cursor-cli.mjs` → `cursor-agent` · `./scripts/codex-cli.mjs` → `codex exec` | edits, debug, patches, investigation, desk deliverables — mandatory; Cursor (cursor-cli) first |
 | legacy escalation | `deepseek/deepseek-v4-pro` | **override-only** (Julius must ask); still prefer a work tool for edits |
 | offline talk | `ollama/qwen2.5:3b` | offline/private talk only |
-| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | spawn chat/route model; the worker then runs a **work tool** (Claude-first window applies) for the actual work |
+| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | spawn chat/route model; the worker then runs a **work tool** (Cursor-first / cursor-cli applies) for the actual work |
 
 
 NVIDIA_API_KEY flows through abracadabra (`abra run gotchibot -- ...`); opencode

@@ -55,7 +55,7 @@ session (no double brief / double deny / double capsule).
 4. Before fresh work: `./scripts/gotchibot passoff resume`.
 5. `/minutes` → Task `meet-scribe` — do not read the transcript into this session.
 6. Before `/compact` or when context is low: narrative `gotchibot contexter save` (hooks are the safety net).
-7. **Work tools only** for code: Claude, Cursor, or Codex — see [`ORCHESTRATOR.md`](ORCHESTRATOR.md) and [`AGENTS.md`](AGENTS.md). Through **2026-10-05 inclusive**, prefer **Claude first**, then Cursor, then Codex.
+7. **Work tools only** for code: Claude, Cursor, or Codex — see [`ORCHESTRATOR.md`](ORCHESTRATOR.md) and [`AGENTS.md`](AGENTS.md). Prefer **Cursor (cursor-cli) first**, then Claude, then Codex.
 
 ## Give the iMac the same desk
 
