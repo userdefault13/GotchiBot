@@ -1,0 +1,15 @@
+{
+  "chainId": 84532,
+  "network": "base-sepolia",
+  "feeSplitter": "0x2e63168f50b4925acb7667d8482163bd2c4044b3",
+  "consoleDiamond": "0x4c4fa38420c457c5a5a33beebd6f340618e62f8a",
+  "cartridgeDiamond": "0xbb44b67de78393a54bcda56707e6ffc719b3a645",
+  "ghstToken": "0xe97f36a00058aa7dfc4e85d23532c3f70453a7ae",
+  "l1AavegotchiDiamond": "",
+  "subgraphName": "aarcade-cartridge-base",
+  "gotchiBotLicense": "0xfd576e01a60CF9F867c74eE01F01151D93a08bEf",
+  "gotchiBotCartridgeMinter": "",
+  "nestFacetNote": "DiamondCut GotchiBotNestFacet onto cartridgeDiamond; setNestMinter + setGotchiBotLicense",
+  "abraCartridgeMinter": "",
+  "abraNestNote": "DiamondCut AbraNestFacet; soulbound; recoveryTransfer when compromised"
+}

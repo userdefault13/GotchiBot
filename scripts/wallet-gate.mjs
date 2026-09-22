@@ -8,6 +8,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { call, loadMeta, GAME_ID } from "./identity.mjs";
 import { isMainModule } from "./is-main.mjs";
+import { readGotchiBotCartridgeSepolia } from "./cartridge-sepolia.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WALLET = `${ROOT}/sessions/.wallet.json`;
@@ -21,15 +22,17 @@ function readWallet() {
   }
 }
 
-function fail(code, message, fix) {
-  const out = { ok: false, code, message, fix };
+function fail(code, message, fix, extra = {}) {
+  const out = { ok: false, code, message, fix, ...extra };
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify(out, null, 2));
   } else {
     console.error(`✗ ${message}`);
     if (fix) console.error(`  → ${fix}`);
+    if (extra.fixUrl) console.error(`  mint: ${extra.fixUrl}`);
+    if (extra.setupUrl) console.error(`  setup: ${extra.setupUrl}`);
   }
-  process.exit(code === "wallet" ? 10 : code === "cartridge" ? 11 : 12);
+  process.exit(code === "wallet" ? 10 : code === "cartridge" || code === "sealed" ? 11 : 12);
 }
 
 /** Heroes this desk has seen before — used only when the API is unreachable. */
@@ -66,6 +69,67 @@ export async function checkSpawnGate({ quiet = false } = {}) {
   let cartridgeId = meta?.cartridgeId ?? null;
   let heroes = [];
   let activeHeroId = meta?.activeHeroId ?? null;
+
+  // Prefer Base Sepolia on-chain nest (SIM is fallback while migration completes).
+  const preferSepolia =
+    process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "sepolia" ||
+    process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "84532" ||
+    process.env.GOTCHIBOT_PREFER_SEPOLIA === "1" ||
+    true; // default on during nest cutover
+  if (preferSepolia) {
+    try {
+      const sep = await readGotchiBotCartridgeSepolia(owner);
+      if (sep.cartridgeId) {
+        if (sep.ok) {
+          return {
+            ok: true,
+            owner,
+            cartridgeId: sep.cartridgeId,
+            heroCount: sep.heroCount,
+            activeHeroId: sep.heroes[0] || activeHeroId,
+            heroes: sep.heroes.map((id) => ({ id, role: null })),
+            source: "sepolia",
+            portalStatus: sep.portalStatus,
+            licenseNested: sep.licenseNested,
+          };
+        }
+        if (sep.reason === "sealed_open_required") {
+          return {
+            ok: false,
+            code: "sealed",
+            message: "GotchiBot cartridge is sealed — open it before binding heroes.",
+            fix:
+              "Open the portal on-chain, then bind. Mint/help: https://www.aarcadeghst.com/concierge/terminal · setup: https://www.aarcadeghst.com/gotchibot/setup",
+            fixUrl: "https://www.aarcadeghst.com/concierge/terminal",
+            setupUrl: "https://www.aarcadeghst.com/gotchibot/setup",
+            owner,
+            cartridgeId: sep.cartridgeId,
+            portalStatus: sep.portalStatus,
+            licenseNested: sep.licenseNested,
+          };
+        }
+        if (sep.reason === "no_heroes_bind_required") {
+          return {
+            ok: false,
+            code: "heroes",
+            message: "Open cartridge has no cAavegotchis — bind a starter or owned gotchi.",
+            fix:
+              "Bind via Aarcade cartridge manage, then re-run the gate. Guide: https://www.aarcadeghst.com/gotchibot/setup",
+            fixUrl: "https://www.aarcadeghst.com/gotchibot/setup",
+            setupUrl: "https://www.aarcadeghst.com/gotchibot/setup",
+            owner,
+            cartridgeId: sep.cartridgeId,
+            portalStatus: sep.portalStatus,
+            licenseNested: sep.licenseNested,
+          };
+        }
+      }
+    } catch (e) {
+      if (!quiet) {
+        console.error(`[gate] sepolia read failed: ${e?.message || e} — falling back to SIM`);
+      }
+    }
+  }
 
   // Track reachability separately: "the API said you have no heroes" and "the
   // API never answered" are different problems with different fixes, and the
@@ -104,7 +168,10 @@ export async function checkSpawnGate({ quiet = false } = {}) {
       ok: false,
       code: "cartridge",
       message: "No gotchibot cartridge yet.",
-      fix: "abra run gotchibot -- ./scripts/gotchibot init",
+      fix:
+        "Mint a sealed GotchiBot cartridge at https://www.aarcadeghst.com/concierge/terminal then open + bind. Setup: https://www.aarcadeghst.com/gotchibot/setup (desk: ./scripts/gotchibot init after mint)",
+      fixUrl: "https://www.aarcadeghst.com/concierge/terminal",
+      setupUrl: "https://www.aarcadeghst.com/gotchibot/setup",
     };
   }
 
@@ -137,7 +204,10 @@ export async function checkSpawnGate({ quiet = false } = {}) {
       ok: false,
       code: "heroes",
       message: "Cartridge has no cAavegotchis — bind a starter or open a portal pack.",
-      fix: "abra run gotchibot -- ./scripts/gotchibot identity bind",
+      fix:
+        "Bind a hero, then re-check. Guide: https://www.aarcadeghst.com/gotchibot/setup (desk: ./scripts/gotchibot identity bind)",
+      fixUrl: "https://www.aarcadeghst.com/gotchibot/setup",
+      setupUrl: "https://www.aarcadeghst.com/gotchibot/setup",
       owner,
       cartridgeId,
     };
@@ -157,7 +227,14 @@ export async function checkSpawnGate({ quiet = false } = {}) {
 
 async function main() {
   const gate = await checkSpawnGate();
-  if (!gate.ok) fail(gate.code, gate.message, gate.fix);
+  if (!gate.ok) {
+    fail(gate.code, gate.message, gate.fix, {
+      ...(gate.fixUrl ? { fixUrl: gate.fixUrl } : {}),
+      ...(gate.setupUrl ? { setupUrl: gate.setupUrl } : {}),
+      ...(gate.owner ? { owner: gate.owner } : {}),
+      ...(gate.cartridgeId ? { cartridgeId: gate.cartridgeId } : {}),
+    });
+  }
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify(gate, null, 2));
   } else {

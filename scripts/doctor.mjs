@@ -171,7 +171,13 @@ try {
   cartridgeId = JSON.parse(readFileSync(identityPath, "utf8")).cartridgeId ?? null;
 } catch {}
 if (cartridgeId) ok(`cartridge: ${cartridgeId}`);
-else warn("no cartridge id cached — run ./scripts/gotchibot onboard");
+else {
+  warn("no cartridge id cached — mint sealed GotchiBot at Concierge, then onboard");
+  warn("  mint: https://www.aarcadeghst.com/concierge/terminal");
+  warn("  setup: https://www.aarcadeghst.com/gotchibot/setup");
+  warn("  desk: ./scripts/gotchibot onboard");
+}
+warn("sepolia nest: node ./scripts/cartridge-sepolia.mjs <wallet>");
 
 /* ─── 4b. infra auth (install token vs legacy operator) ─────── */
 const mode = authMode();
