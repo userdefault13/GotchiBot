@@ -159,12 +159,18 @@ async function rules() {
 }
 
 async function checkpoint() {
-  serviceKey();
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
     console.error("no cartridge yet — run: gotchibot identity ensure");
     process.exit(1);
   }
+
+  const preferSepolia =
+    meta.cartridgeSource === "sepolia" ||
+    (meta.cartridgeId && !String(meta.cartridgeId).startsWith("sim-") &&
+      process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "sim" &&
+      process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "local");
+
   const sessionId = process.env.GOTCHIBOT_CHECKPOINT_SESSION;
   const label = process.env.GOTCHIBOT_CHECKPOINT_LABEL ?? "milestone";
   let gameState = { schemaVersion: 1 };
@@ -198,25 +204,99 @@ async function checkpoint() {
     gameState.handoff = { note: label, at: new Date().toISOString() };
   }
 
-  const r0 = await call(`/cartridges/${meta.cartridgeId}`);
+  try {
+    const { projectCheckpointSlice, emptyProjectCheckpointSlice, clearCurrentProject } =
+      await import("./project-context.mjs");
+    if (process.env.GOTCHIBOT_CHECKPOINT_CLEAR_PROJECTS === "1") {
+      clearCurrentProject();
+      gameState.projects = emptyProjectCheckpointSlice(
+        process.env.GOTCHIBOT_CHECKPOINT_CLEAR_REASON || "transfer",
+      );
+    } else {
+      gameState.projects = projectCheckpointSlice();
+    }
+  } catch {
+    gameState.projects = { current: null, slugs: [], updatedAt: new Date().toISOString() };
+  }
+
+  try {
+    const { packWearableCheckpointSlice, clearAllPackWearables } = await import("./pack-wearable.mjs");
+    if (process.env.GOTCHIBOT_CHECKPOINT_CLEAR_PROJECTS === "1") {
+      clearAllPackWearables(process.env.GOTCHIBOT_CHECKPOINT_CLEAR_REASON || "transfer");
+      gameState.equippedPacks = {
+        assignmentSlot: 15,
+        nested: [],
+        byHero: {},
+        updatedAt: new Date().toISOString(),
+        clearedReason: process.env.GOTCHIBOT_CHECKPOINT_CLEAR_REASON || "transfer",
+      };
+    } else {
+      gameState.equippedPacks = packWearableCheckpointSlice();
+    }
+  } catch {
+    gameState.equippedPacks = { assignmentSlot: 15, nested: [], byHero: {}, updatedAt: new Date().toISOString() };
+  }
+
+  const stableStringify = (obj) => JSON.stringify(obj, Object.keys(obj).sort());
+  const stateHash = "0x" + crypto.createHash("sha256").update(stableStringify(gameState)).digest("hex");
+
+  // Sepolia nest: no SIM POST — keep desk snapshot + hash for later on-chain checkpointSave.
+  if (preferSepolia) {
+    const snapPath = `${ROOT}/sessions/.checkpoint-local.json`;
+    mkdirSync(dirname(snapPath), { recursive: true });
+    writeFileSync(
+      snapPath,
+      `${JSON.stringify(
+        {
+          cartridgeId: meta.cartridgeId,
+          label,
+          stateHash,
+          gameState,
+          savedAt: new Date().toISOString(),
+          note: "Local Sepolia checkpoint — on-chain SaveStateFacet / Concierge when wired; SIM disabled.",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          source: "local-sepolia",
+          cartridgeId: meta.cartridgeId,
+          stateHash,
+          path: "sessions/.checkpoint-local.json",
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  serviceKey();
+  const cartridgeId = meta.cartridgeId;
+
+  const r0 = await call(`/cartridges/${cartridgeId}`);
   if (!r0.ok) { print(r0); return; }
   const snap = r0.data.cartridge ?? r0.data;
   const nonce = (snap.checkpoint?.nonce || 0) + 1;
 
-  const stableStringify = (obj) => JSON.stringify(obj, Object.keys(obj).sort());
-  const stateHash = "0x" + crypto.createHash("sha256").update(stableStringify(gameState)).digest("hex");
   const message = [
     "Aarcade cartridge checkpoint",
-    `cartridgeId: ${meta.cartridgeId}`,
+    `cartridgeId: ${cartridgeId}`,
     `nonce: ${nonce}`,
     `stateHash: ${stateHash}`,
   ].join("\n");
 
-  const r = await call(`/cartridges/${meta.cartridgeId}/checkpoint`, {
+  const r = await call(`/cartridges/${cartridgeId}/checkpoint`, {
     method: "POST",
     body: {
       gameId: GAME_ID,
       gameState,
+      stateUri: gameState.projects?.storage?.stateUri || process.env.GOTCHIBOT_CHECKPOINT_STATE_URI || "",
+      stateHash,
       signature: "service-key",
       message,
       label,

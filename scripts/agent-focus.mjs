@@ -631,10 +631,10 @@ function resolveEntry(arg, hostFilter, { subDesk = false } = {}) {
 function orchestratorHeroId() {
   const ob = loadOnboarding();
   const meta = loadMeta();
-  // Prefer owned-* orchestrator; ignore starter-* left over from a bad pin
-  if (ob.orchestratorHeroId && String(ob.orchestratorHeroId).startsWith("owned-")) {
-    return ob.orchestratorHeroId;
-  }
+  if (ob.orchestratorHeroId) return ob.orchestratorHeroId;
+  if (meta?.activeHeroId) return meta.activeHeroId;
+  // Sepolia nest desks start with no orch — never invent owned-954.
+  if (meta?.cartridgeSource === "sepolia") return null;
   try {
     const cache = JSON.parse(readFileSync(LIST_CACHE, "utf8"));
     const owned = (cache.entries || []).find(
@@ -642,11 +642,7 @@ function orchestratorHeroId() {
     );
     if (owned) return owned.id;
   } catch {}
-  if (meta?.activeHeroId && String(meta.activeHeroId).startsWith("owned-")) {
-    return meta.activeHeroId;
-  }
-  if (ob.orchestratorHeroId) return ob.orchestratorHeroId;
-  return meta?.activeHeroId || "owned-954";
+  return "owned-954";
 }
 
 async function cmdSelect(arg, { host, via = "select", respawn = false } = {}) {
@@ -861,6 +857,10 @@ async function cmdMeet() {
 
 async function cmdOrch({ respawn = false } = {}) {
   const heroId = orchestratorHeroId();
+  if (!heroId) {
+    console.log("no orchestrator set yet — open cockpit and mint one first");
+    return;
+  }
   pinAvatar(heroId, { asOrchestrator: true });
   signalAvatar(heroId);
   saveMeta({ activeHeroId: heroId });

@@ -95,8 +95,31 @@ export class Progress {
     }
   }
 
+  /**
+   * Animate from current % → toPct so the terminal can paint each frame
+   * (sync set() jumps look like "always 100%").
+   */
+  async advance(toPct, label, { ms = 320 } = {}) {
+    const from = this._pct;
+    const target = Math.max(0, Math.min(100, Math.round(toPct)));
+    if (label) this._label = label;
+    const delta = target - from;
+    if (delta <= 0) {
+      this.set(target, this._label);
+      await new Promise((r) => setTimeout(r, Math.min(ms, 80)));
+      return;
+    }
+    const steps = Math.max(4, Math.ceil(delta / 6));
+    const slice = Math.max(35, Math.floor(ms / steps));
+    for (let i = 1; i <= steps; i++) {
+      const pct = Math.round(from + (delta * i) / steps);
+      this.set(pct, this._label);
+      await new Promise((r) => setTimeout(r, slice));
+    }
+  }
+
   /** Pulse while fn runs, then restore determinate bar at nextPct. */
-  async pulse(label, fn, { nextPct = null } = {}) {
+  async pulse(label, fn, { nextPct = null, minMs = 700 } = {}) {
     this._stopPulse();
     this._pulsing = true;
     this._frame = 0;
@@ -110,7 +133,10 @@ export class Progress {
       pulseFrame(label, this._frame, secs);
     }, INTERVAL_MS);
     try {
-      return await fn();
+      const result = await fn();
+      const left = minMs - (Date.now() - this._started);
+      if (left > 0) await new Promise((r) => setTimeout(r, left));
+      return result;
     } finally {
       this._stopPulse();
       this._pulsing = false;

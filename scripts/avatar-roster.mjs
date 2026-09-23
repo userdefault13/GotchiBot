@@ -87,11 +87,37 @@ function heroesFromCache() {
     }));
 }
 
+function isSepoliaNestDesk(meta) {
+  if (!meta) return false;
+  if (meta.cartridgeSource === "sepolia") return true;
+  const id = meta.cartridgeId != null ? String(meta.cartridgeId) : "";
+  return Boolean(id) && !id.startsWith("sim-") && /^\d+$/.test(id);
+}
+
 async function heroesFresh() {
   try {
-    const { fetchCartridgeHeroes } = await import("./onboarding-lib.mjs");
     const meta = loadMeta();
-    if (!meta?.cartridgeId) return heroesFromCache();
+    // No cartridge yet (new mint path) — don't leak the old fleet into "other cAavegotchis".
+    if (!meta?.cartridgeId) return [];
+
+    // Sepolia nest desk: only on-chain nested heroes — never focus-list / sim fleet.
+    if (isSepoliaNestDesk(meta)) {
+      const { readGotchiBotCartridgeSepolia } = await import("./cartridge-sepolia.mjs");
+      const owner = meta.owner || null;
+      if (!owner) return [];
+      const sep = await readGotchiBotCartridgeSepolia(owner);
+      if (!sep?.cartridgeId || String(sep.cartridgeId) !== String(meta.cartridgeId)) return [];
+      return (sep.heroes || []).map((id) => ({
+        id: String(id),
+        collateral: null,
+        hauntId: null,
+        bindType: "nested",
+        name: null,
+        agentStatus: "available",
+      }));
+    }
+
+    const { fetchCartridgeHeroes } = await import("./onboarding-lib.mjs");
     const heroes = await fetchCartridgeHeroes(meta.cartridgeId);
     return heroes.map((h) => ({
       id: h.id,
@@ -103,6 +129,8 @@ async function heroesFresh() {
       agentStatus: h.agentStatus || "available",
     }));
   } catch {
+    const meta = loadMeta();
+    if (isSepoliaNestDesk(meta) || !meta?.cartridgeId) return [];
     return heroesFromCache();
   }
 }
@@ -123,10 +151,23 @@ function roleFromFocus() {
 
 async function build() {
   const refresh = process.argv.includes("--refresh");
-  const pinned = pinId() || loadMeta()?.activeHeroId || null;
+  const meta = loadMeta();
+  const sepolia = isSepoliaNestDesk(meta);
+  const pinned = pinId() || (sepolia ? null : meta?.activeHeroId) || null;
   const role = roleFromFocus();
-  const heroes = refresh ? await heroesFresh() : heroesFromCache();
-  const list = heroes.length ? heroes : heroesFromCache();
+  // Sepolia / no-cart: never use focus-list (old OpenClaw fleet history).
+  let list = [];
+  if (!meta?.cartridgeId) {
+    list = [];
+  } else if (sepolia) {
+    list = await heroesFresh();
+  } else if (refresh) {
+    list = await heroesFresh();
+    if (!list.length) list = [];
+  } else {
+    list = heroesFromCache();
+    if (!list.length) list = await heroesFresh();
+  }
   const busy = busyHeroIds();
 
   const others = list

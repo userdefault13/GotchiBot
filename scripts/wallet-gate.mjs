@@ -96,9 +96,16 @@ export async function checkSpawnGate({ quiet = false } = {}) {
     try {
       const sep = await readGotchiBotCartridgeSepolia(owner);
       if (sep.reason === "missing_diamond_config") {
-        if (!quiet) {
-          console.error("[gate] sepolia diamond config missing — falling back to SIM");
-        }
+        return {
+          ok: false,
+          code: "cartridge",
+          message: "Base Sepolia diamond config missing — cannot use nest desk.",
+          fix: "Set cartridgeDiamond / nest in config/cartridgeChain.base-sepolia.json · Concierge: " + CONCIERGE_URL,
+          fixUrl: CONCIERGE_URL,
+          setupUrl: SETUP_URL,
+          howto: LICENSE_STEPS,
+          source: "sepolia",
+        };
       } else if (!sep.cartridgeId) {
         return {
           ok: false,
@@ -169,9 +176,30 @@ export async function checkSpawnGate({ quiet = false } = {}) {
       }
     } catch (e) {
       if (!quiet) {
-        console.error(`[gate] sepolia read failed: ${e?.message || e} — falling back to SIM`);
+        console.error(`[gate] sepolia read failed: ${e?.message || e} — not falling back to SIM`);
       }
+      return {
+        ok: false,
+        code: "cartridge",
+        message: `Base Sepolia read failed: ${e?.message || e}`,
+        fix: "Check RPC / diamond config, or mint/open at Concierge: " + CONCIERGE_URL,
+        fixUrl: CONCIERGE_URL,
+        setupUrl: SETUP_URL,
+        howto: LICENSE_STEPS,
+        source: "sepolia",
+      };
     }
+    // Prefer Sepolia but no usable cart result above — fail closed (no SIM).
+    return {
+      ok: false,
+      code: "cartridge",
+      message: "No usable GotchiBot cartridge on Base Sepolia.",
+      fix: "Mint/open at Concierge: " + CONCIERGE_URL + " · setup: " + SETUP_URL,
+      fixUrl: CONCIERGE_URL,
+      setupUrl: SETUP_URL,
+      howto: LICENSE_STEPS,
+      source: "sepolia",
+    };
   }
 
   // Track reachability separately: "the API said you have no heroes" and "the

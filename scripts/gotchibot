@@ -31,7 +31,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot wisp status|mint|env [--json]   Wisp soul MCP (Gotchi Closet; key not printed)
   gotchibot wisp-proxy [--check]            OpenAI proxy for /model wisp/gotchi (:45682)
                                   # note: mode sandbox = pink TUI playground; gotchibot sandbox = Docker
-  gotchibot project [show|new|set|ready]  unsupervised project intake (/project modal)
+  gotchibot templates …               marketplace packs (list|show|install|apply|equip|cdn)
+  gotchibot pack-wearable …           nest/equip marketplace packs on cGotchi slot 15 (assignment label)
   gotchibot gotchi-mode [status|env|model|ensure] [--json]  OpenCode TUI → iMac orchestrator session
   gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
   gotchibot codex run|resume|status  Codex CLI (alternate coding agent)
@@ -40,6 +41,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot switch [n|id]         list agents, or switch avatar+direct chat (/switch)
   gotchibot focus <n|id>          pin avatar + SUB chat focus
   gotchibot cockpit               mint / avatar / Settings (/cockpit)
+  gotchibot mint-cart --product abra|gotchibot|bundle [--tier t] [--pay usdc|ghst]
+                                  # sealed Base Sepolia mint via MetaMask (or --quote)
   gotchibot kanban [--json] [--watch]   clawbot seats + tasks board (/kanban)
     gotchibot messaging [--text|--json|--channel <id>]   channel routing index (bot-inbox/passoff/meet/agentmail)
   gotchibot pkm-record …              notify kanban-manager (delegated|submitted|reviewed)
@@ -102,7 +105,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot contexter save|latest|show|list|prune   carry key values, decisions and
                                   dead ends across a context window (skill: contexter)
   gotchibot cursor-layer check [--json]  assert Cursor desk layer (hooks, policy, skills)
-  gotchibot checkpoint <id> <label>   push a milestone to the cartridge
+  gotchibot checkpoint project [--clear] [<label>]  desk projects → cart (signed gameState; --clear on transfer)
+  gotchibot checkpoint <id> <label>   push a milestone to the cartridge (+ projects)
   gotchibot identity ensure|mint|roster   cartridge identity ops
   gotchibot reset [--full] [--yes]      wipe gotchibot cartridge (new-user test)
   gotchibot onboarding              re-run welcome / sign-in gate
@@ -337,6 +341,28 @@ EOF
 }
 
 cmd_checkpoint() {
+  # gotchibot checkpoint project [--clear] [<label>]  — desk projects → cart gameState
+  # gotchibot checkpoint <sessionId> <label> — session milestone (+ projects)
+  if [ "${1:-}" = "project" ]; then
+    shift
+    local clear=0 label="project"
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --clear) clear=1; shift ;;
+        *) label="$1"; shift ;;
+      esac
+    done
+    if [ "$clear" = 1 ]; then
+      GOTCHIBOT_CHECKPOINT_CLEAR_PROJECTS=1 \
+      GOTCHIBOT_CHECKPOINT_CLEAR_REASON=transfer \
+      GOTCHIBOT_CHECKPOINT_LABEL="${label:-project-cleared}" \
+        node "$ROOT/scripts/identity.mjs" checkpoint
+    else
+      GOTCHIBOT_CHECKPOINT_LABEL="$label" \
+        node "$ROOT/scripts/identity.mjs" checkpoint
+    fi
+    return
+  fi
   [ $# -ge 2 ] || usage
   GOTCHIBOT_CHECKPOINT_SESSION="$1" GOTCHIBOT_CHECKPOINT_LABEL="$2" \
     node "$ROOT/scripts/identity.mjs" checkpoint
@@ -704,6 +730,9 @@ case "$cmd" in
       exec node "$ROOT/scripts/doctor.mjs" "$@"
     fi
     ;;
+  mint-cart)
+    exec node "$ROOT/scripts/cartridge-mint-sepolia.mjs" "$@"
+    ;;
   login) exec "$ROOT/scripts/opencode-login.sh" "$@" ;;
   wsl) exec node "$ROOT/scripts/wsl-setup.mjs" "$@" ;;
   update) exec node "$ROOT/scripts/update-check.mjs" "$@" ;;
@@ -907,6 +936,9 @@ case "$cmd" in
   model) abra_or_node "$ROOT/scripts/model-auto.mjs" "$@" ;;
   templates)
     exec node "$ROOT/scripts/template-pack.mjs" "$@"
+    ;;
+  pack-wearable|pack-wearables|wearable-pack)
+    exec node "$ROOT/scripts/pack-wearable.mjs" "$@"
     ;;
   sidebar) exec "$ROOT/scripts/orchestrator-layout.sh" sidebar ;;
   files-max|explorer) exec "$ROOT/scripts/orchestrator-layout.sh" files-max ;;

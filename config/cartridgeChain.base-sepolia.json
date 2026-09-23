@@ -8,8 +8,9 @@
   "l1AavegotchiDiamond": "",
   "subgraphName": "aarcade-cartridge-base",
   "gotchiBotLicense": "0xfd576e01a60CF9F867c74eE01F01151D93a08bEf",
-  "gotchiBotCartridgeMinter": "",
+  "gotchiBotCartridgeMinter": "0x052387D6E0AB431643d7D20ec008619182377519",
   "nestFacetNote": "DiamondCut GotchiBotNestFacet onto cartridgeDiamond; setNestMinter + setGotchiBotLicense",
-  "abraCartridgeMinter": "",
+  "abraLicense": "0x55A310C560Cb1927Ae356aCFaC34BBACC501C264",
+  "abraCartridgeMinter": "0xc9AaE7301719a6304bf7cb159B6C7a0ABB13e006",
   "abraNestNote": "DiamondCut AbraNestFacet; soulbound; recoveryTransfer when compromised"
 }

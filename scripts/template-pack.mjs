@@ -563,6 +563,14 @@ async function cmdApply(arg, { hero, yes = false, standingDuty = null } = {}) {
     console.error(`apply: prof-link-cube resummon failed (exit ${r.status})`);
     process.exit(r.status || 1);
   }
+  // Nest pack on cart + equip assignment slot (label = marketplace pack).
+  try {
+    const { equipPack } = await import("./pack-wearable.mjs");
+    const eq = equipPack(hero, entry?.id || roleId);
+    console.log(`  ✓ pack wearable → slot ${eq.slot}  (${eq.packId})  [assignment label]`);
+  } catch (e) {
+    console.error(`  · pack wearable equip skipped: ${e?.message || e}`);
+  }
 }
 
 async function main() {
@@ -573,7 +581,8 @@ async function main() {
   template-pack.mjs list [--json]            print the catalog
   template-pack.mjs show <id>                print pack.json + file tree
   template-pack.mjs install <id|path|url> [--yes]   merge playbook + AGENTS + skills (+ standing duties with --yes)
-  template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]   install + prof-link-cube resummon
+  template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]   install + resummon + equip pack wearable (slot 15 = assignment)
+  template-pack.mjs equip <id> --hero <hero>   nest + equip pack wearable only (no resummon)
   template-pack.mjs cdn deploy|status|undeploy [--yes]   home-infra CDN (templates.aarcadeghst.com)`);
     process.exit(2);
   }
@@ -630,6 +639,18 @@ async function main() {
       const yes = rest.includes("--yes");
       const standingDuty = flagValue(rest, "--standing-duty");
       await cmdApply(arg, { hero, yes, standingDuty });
+      break;
+    }
+    case "equip": {
+      const arg = rest[0];
+      const hero = flagValue(rest, "--hero");
+      if (!arg || !hero) {
+        console.error("usage: template-pack.mjs equip <id> --hero <hero>");
+        process.exit(2);
+      }
+      const { equipPack } = await import("./pack-wearable.mjs");
+      const eq = equipPack(hero, arg);
+      console.log(`equipped ${hero} → ${eq.packId}  (slot ${eq.slot})  [assignment label]`);
       break;
     }
     default:

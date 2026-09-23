@@ -35,6 +35,30 @@ const SESSIONS = join(ROOT, "sessions");
 const PSTACK_ROOT = join(SESSIONS, "pstack");
 const DOSSIER_CURRENT = join(SESSIONS, ".pstack-dossier-current");
 const PROJECT_CURRENT = join(SESSIONS, ".project-current");
+const STORAGE_PREFS = join(SESSIONS, ".project-storage.json");
+
+/** Desk default: local only. IPFS is opt-in via cockpit Settings. */
+export function loadProjectStoragePrefs() {
+  try {
+    const j = JSON.parse(readFileSync(STORAGE_PREFS, "utf8"));
+    return { ipfsEnabled: j.ipfsEnabled === true };
+  } catch {
+    return { ipfsEnabled: false };
+  }
+}
+
+export function saveProjectStoragePrefs(patch = {}) {
+  mkdirSync(SESSIONS, { recursive: true });
+  const next = { ...loadProjectStoragePrefs(), ...patch };
+  next.ipfsEnabled = next.ipfsEnabled === true;
+  next.updatedAt = new Date().toISOString();
+  writeFileSync(STORAGE_PREFS, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
+}
+
+export function isIpfsStorageEnabled() {
+  return loadProjectStoragePrefs().ipfsEnabled === true;
+}
 
 export function slugOk(slug) {
   return typeof slug === "string" && /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(slug);
@@ -60,6 +84,38 @@ export function setCurrentProject(slug) {
   writeFileSync(PROJECT_CURRENT, `${slug}\n`, "utf8");
   ensureProjectDirs(slug);
   return slug;
+}
+
+/** Clear desk project selection (new nest install / fresh onboard / cart transfer). */
+export function clearCurrentProject() {
+  for (const path of [DOSSIER_CURRENT, PROJECT_CURRENT]) {
+    try {
+      if (existsSync(path)) writeFileSync(path, "", "utf8");
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+/**
+ * Empty projects slice for a signed checkpoint after cart transfer.
+ * Dossier dirs stay on the seller's disk; cart gameState must not carry them.
+ */
+export function emptyProjectCheckpointSlice(reason = "transfer") {
+  return {
+    current: null,
+    slugs: [],
+    entries: [],
+    storage: {
+      mode: "cleared",
+      localRoot: "sessions/pstack",
+      ipfsEnabled: isIpfsStorageEnabled(),
+      stateUri: null,
+    },
+    updatedAt: new Date().toISOString(),
+    clearedReason: reason,
+  };
 }
 
 export function projectRoot(slug = currentProjectSlug()) {
@@ -212,6 +268,125 @@ export function ensureProjectDirs(slug = currentProjectSlug()) {
   return root;
 }
 
+export function listProjectSlugsOnDisk() {
+  if (!existsSync(PSTACK_ROOT)) return [];
+  try {
+    return readdirSync(PSTACK_ROOT)
+      .filter((name) => {
+        try {
+          return existsSync(join(PSTACK_ROOT, name, "dossier.json"));
+        } catch {
+          return false;
+        }
+      })
+      .filter((name) => slugOk(name))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Dual storage for a project stamp:
+ *   local  — desk sealed room path (always present when on this machine)
+ *   ipfs   — optional CID URI after pin (cart / transfer-friendly)
+ * Both can coexist; on-chain checkpointSave keeps stateHash + stateUri (prefer IPFS).
+ */
+export function projectStoragePaths(slug) {
+  if (!slug || !slugOk(slug)) return null;
+  const localRel = `sessions/pstack/${slug}`;
+  const localAbs = join(PSTACK_ROOT, slug);
+  let ipfs = null;
+  // IPFS pointers only surface when Settings → IPFS storage is on.
+  if (isIpfsStorageEnabled()) {
+    const tip = join(localAbs, "storage.json");
+    try {
+      if (existsSync(tip)) {
+        const j = JSON.parse(readFileSync(tip, "utf8"));
+        const uri = String(j.ipfsUri || j.ipfs || j.cid || "").trim();
+        if (uri) ipfs = uri.startsWith("ipfs://") || uri.startsWith("http") ? uri : `ipfs://${uri}`;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return {
+    slug,
+    local: localRel,
+    localAbs,
+    ipfs,
+  };
+}
+
+/** Persist / update IPFS pointer for a project (local path unchanged). Requires Settings → IPFS on. */
+export function setProjectIpfsUri(slug, ipfsUri) {
+  if (!slugOk(slug)) throw new Error(`invalid project slug: ${slug}`);
+  if (!isIpfsStorageEnabled()) {
+    throw new Error(
+      "IPFS storage is off (local is default). Enable it in cockpit → Settings → IPFS storage.",
+    );
+  }
+  ensureProjectDirs(slug);
+  const tip = join(PSTACK_ROOT, slug, "storage.json");
+  let prev = {};
+  try {
+    if (existsSync(tip)) prev = JSON.parse(readFileSync(tip, "utf8"));
+  } catch {
+    prev = {};
+  }
+  const uri = String(ipfsUri || "").trim();
+  const next = {
+    ...prev,
+    project: slug,
+    local: `sessions/pstack/${slug}`,
+    ipfsUri: uri
+      ? uri.startsWith("ipfs://") || uri.startsWith("http")
+        ? uri
+        : `ipfs://${uri}`
+      : null,
+    updatedAt: new Date().toISOString(),
+  };
+  writeFileSync(tip, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
+}
+
+/**
+ * Slice for cartridge checkpoint gameState.projects —
+ * desk sealed rooms mirrored onto the cart via signed save (not a mint line).
+ * Local is always present. IPFS entries / stateUri only when Settings enables it.
+ */
+export function projectCheckpointSlice() {
+  const current = currentProjectSlug();
+  const slugs = listProjectSlugsOnDisk();
+  const ipfsOn = isIpfsStorageEnabled();
+  const entries = slugs.map((slug) => {
+    const s = projectStoragePaths(slug);
+    return {
+      slug,
+      local: s?.local || `sessions/pstack/${slug}`,
+      ipfs: ipfsOn ? s?.ipfs || null : null,
+    };
+  });
+  const preferredIpfs = ipfsOn
+    ? (current && projectStoragePaths(current)?.ipfs) ||
+      entries.find((e) => e.ipfs)?.ipfs ||
+      null
+    : null;
+  return {
+    current: current || null,
+    slugs,
+    entries,
+    storage: {
+      mode: ipfsOn && preferredIpfs ? "dual" : ipfsOn ? "local+ipfs-ready" : "local",
+      localRoot: "sessions/pstack",
+      ipfsEnabled: ipfsOn,
+      /** Prefer this for on-chain checkpointSave stateUri when IPFS is enabled + pinned. */
+      stateUri: preferredIpfs,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function loadRoster(slug = currentProjectSlug()) {
   const rp = rosterPath(slug);
   if (!rp || !existsSync(rp)) {
@@ -306,7 +481,11 @@ function usage() {
   console.error(`usage:
   project-context current [--json]
   project-context set <slug>
+  project-context clear
   project-context root [<slug>]
+  project-context storage [<slug>] [--json]
+  project-context storage-set <slug> <ipfsUri|cid>
+  project-context ipfs [on|off|status]
   project-context roster [<slug>] [--json]
   project-context roster-add <hero> [<slug>]
   project-context mail show [<slug>] [--json]
@@ -334,6 +513,11 @@ async function main() {
     console.log(`project → ${slug}`);
     return;
   }
+  if (cmd === "clear") {
+    clearCurrentProject();
+    console.log("project → (none)");
+    return;
+  }
   if (cmd === "root") {
     const slug = args[0] || currentProjectSlug();
     const root = projectRoot(slug);
@@ -348,6 +532,51 @@ async function main() {
     const slug = args[0] || requireProjectSlug();
     if (args[0]) setCurrentProject(args[0]);
     console.log(ensureProjectDirs(slug));
+    return;
+  }
+  if (cmd === "storage") {
+    const slug = args[0] || currentProjectSlug();
+    if (!slug) {
+      console.error("no project selected");
+      process.exit(1);
+    }
+    const s = projectStoragePaths(slug) || { slug, local: `sessions/pstack/${slug}`, ipfs: null };
+    const prefs = loadProjectStoragePrefs();
+    if (json) console.log(JSON.stringify({ ...s, ipfsEnabled: prefs.ipfsEnabled }, null, 2));
+    else {
+      console.log(`project     ${s.slug}`);
+      console.log(`local       ${s.local}`);
+      console.log(`ipfs        ${s.ipfs || "(none)"}`);
+      console.log(`ipfs setting ${prefs.ipfsEnabled ? "on" : "off (local default)"}`);
+    }
+    return;
+  }
+  if (cmd === "ipfs") {
+    const sub = args[0] || "status";
+    if (sub === "on") {
+      const p = saveProjectStoragePrefs({ ipfsEnabled: true });
+      console.log("IPFS storage → on (local remains default desk path; pin + storage-set to attach CIDs)");
+      console.log(JSON.stringify(p));
+      return;
+    }
+    if (sub === "off") {
+      const p = saveProjectStoragePrefs({ ipfsEnabled: false });
+      console.log("IPFS storage → off (local only)");
+      console.log(JSON.stringify(p));
+      return;
+    }
+    const p = loadProjectStoragePrefs();
+    console.log(`IPFS storage  ${p.ipfsEnabled ? "on" : "off"}  (local is always on)`);
+    return;
+  }
+  if (cmd === "storage-set") {
+    const slug = args[0];
+    const uri = args[1];
+    if (!slug || !uri) usage();
+    const next = setProjectIpfsUri(slug, uri);
+    console.log(`storage ${slug}`);
+    console.log(`  local  ${next.local}`);
+    console.log(`  ipfs   ${next.ipfsUri}`);
     return;
   }
   if (cmd === "roster") {
