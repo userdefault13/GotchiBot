@@ -9,7 +9,7 @@
  *
  * Needs GOTCHIBOT_INFRA_TOKEN (abra run gotchibot -- …).
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
@@ -181,9 +181,15 @@ async function cmdSnapshot(opts) {
 
 /**
  * Prompt after git commit (TTY). Skip unless GOTCHIBOT_CHAT_CHECKPOINT=1 or --onchain.
+ * On yes: Arcade snapshot → identity checkpoint (local/SIM) → optional Sepolia checkpointSave.
  */
-export async function promptChatCheckpointAfterCommit({ commitSha, branch, onchain = false } = {}) {
-  const force = onchain || process.env.GOTCHIBOT_CHAT_CHECKPOINT === "1";
+export async function promptChatCheckpointAfterCommit({
+  commitSha,
+  branch,
+  onchain = false,
+  skipPrompt = false,
+} = {}) {
+  const force = onchain || skipPrompt || process.env.GOTCHIBOT_CHAT_CHECKPOINT === "1";
   if (!force && !process.stdin.isTTY) return { skipped: true, reason: "non-interactive" };
 
   let yes = force;
@@ -201,10 +207,15 @@ export async function promptChatCheckpointAfterCommit({ commitSha, branch, oncha
   }
   if (!yes) return { skipped: true, reason: "declined" };
 
-  const snap = await cmdSnapshot({ commit: commitSha, branch, json: true });
-  // Local pointer for identity checkpoint wiring; on-chain still opt-in via identity.mjs
+  const snap = await cmdSnapshot({
+    commit: commitSha,
+    branch,
+    json: Boolean(process.env.GOTCHIBOT_CHAT_CHECKPOINT_QUIET),
+  });
+  const short = String(commitSha || snap.gitCommit || "").slice(0, 7);
+  const label = `chat-sync:${short || "head"}`;
   const pin = {
-    label: `chat-sync:${String(commitSha || snap.gitCommit || "").slice(0, 7)}`,
+    label,
     stateUri: snap.stateUri,
     contentHash: snap.contentHash,
     snapshotId: snap.snapshotId,
@@ -212,16 +223,97 @@ export async function promptChatCheckpointAfterCommit({ commitSha, branch, oncha
     savedAt: new Date().toISOString(),
   };
   writeFileSync(`${SESSIONS}/.chat-sync-checkpoint.json`, `${JSON.stringify(pin, null, 2)}\n`);
-  console.log(`Arcade snapshot ready — run: GOTCHIBOT_CHECKPOINT_LABEL=${pin.label} gotchibot checkpoint`);
+  console.log(`Arcade snapshot ${snap.snapshotId}`);
   console.log(`  stateUri ${pin.stateUri}`);
-  return pin;
+
+  const { spawnSync } = await import("node:child_process");
+  const idEnv = {
+    ...process.env,
+    GOTCHIBOT_CHECKPOINT_LABEL: label,
+    GOTCHIBOT_CHECKPOINT_CHAT_SYNC: "1",
+    GOTCHIBOT_CHECKPOINT_STATE_URI: pin.stateUri,
+    GOTCHIBOT_CHECKPOINT_STATE_HASH: pin.contentHash,
+  };
+  const id = spawnSync(process.execPath, [`${ROOT}/scripts/identity.mjs`, "checkpoint"], {
+    cwd: ROOT,
+    encoding: "utf8",
+    env: idEnv,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (id.status !== 0) {
+    console.error(String(id.stderr || id.stdout || "identity checkpoint failed").slice(0, 600));
+    return { ...pin, identityOk: false };
+  }
+  console.log(String(id.stdout || "").trim() || "identity checkpoint ok");
+
+  const wantOnchain =
+    onchain ||
+    process.env.GOTCHIBOT_CHAT_CHECKPOINT_ONCHAIN === "1" ||
+    (process.stdin.isTTY &&
+      (await (async () => {
+        process.stdout.write("Broadcast checkpointSave on Base Sepolia now? [y/N] ");
+        const a = await new Promise((resolvePromise) => {
+          process.stdin.once("data", (d) => resolvePromise(String(d)));
+        });
+        return /^y(es)?$/i.test(a.trim());
+      })()));
+
+  if (!wantOnchain) {
+    console.log("Skipped on-chain send. Later: gotchibot chats onchain");
+    return { ...pin, identityOk: true, onChain: null };
+  }
+
+  const { runChatCheckpointOnchain } = await import("./chat-checkpoint-onchain.mjs");
+  const chain = await runChatCheckpointOnchain({
+    stateHash: pin.contentHash,
+    stateUri: pin.stateUri,
+  });
+  return { ...pin, identityOk: true, onChain: chain.onChain || chain };
+}
+
+async function cmdHook(opts) {
+  const sub = opts._[1] || "status";
+  const hookSrc = resolve(ROOT, "scripts/git-hooks/post-commit-chat-sync");
+  const hookDst = resolve(ROOT, ".git/hooks/post-commit");
+  const { copyFileSync, chmodSync, unlinkSync, readFileSync: rf } = await import("node:fs");
+  if (sub === "install") {
+    if (!existsSync(resolve(ROOT, ".git"))) {
+      throw new Error("not a git repo");
+    }
+    copyFileSync(hookSrc, hookDst);
+    chmodSync(hookDst, 0o755);
+    console.log(`installed ${hookDst}`);
+    console.log("After each commit (TTY): prompts for chat-sync Sepolia checkpoint.");
+    console.log("Skip: GOTCHIBOT_CHAT_CHECKPOINT=0 git commit …");
+    return;
+  }
+  if (sub === "uninstall") {
+    if (existsSync(hookDst)) {
+      const body = rf(hookDst, "utf8");
+      if (!body.includes("post-commit-chat-sync") && !body.includes("checkpoint-prompt")) {
+        throw new Error("post-commit hook is not ours — refuse to delete");
+      }
+      unlinkSync(hookDst);
+      console.log("removed .git/hooks/post-commit");
+    } else {
+      console.log("no post-commit hook");
+    }
+    return;
+  }
+  if (sub === "status") {
+    console.log(existsSync(hookDst) ? `hook: ${hookDst}` : "hook: not installed");
+    return;
+  }
+  throw new Error("usage: chats hook install|uninstall|status");
 }
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const cmd = opts._[0];
   if (!cmd) {
-    console.error("usage: chats push|pull|threads|snapshot|checkpoint-prompt […]");
+    console.error(
+      "usage: chats push|pull|threads|snapshot|checkpoint-prompt|onchain|hook […]",
+    );
     process.exit(2);
   }
   try {
@@ -235,7 +327,11 @@ async function main() {
         branch: opts.branch || gitRev("branch"),
         onchain: opts._.includes("--onchain") || process.argv.includes("--onchain"),
       });
-    } else {
+    } else if (cmd === "onchain") {
+      const { runChatCheckpointOnchain } = await import("./chat-checkpoint-onchain.mjs");
+      await runChatCheckpointOnchain();
+    } else if (cmd === "hook") await cmdHook(opts);
+    else {
       console.error(`unknown chats command: ${cmd}`);
       process.exit(2);
     }

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# GotchiBot — optional post-commit chat-sync checkpoint prompt (TTY only).
+# Install: ./scripts/gotchibot chats hook install
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# Skip when non-interactive or explicitly disabled
+if [ ! -t 0 ] || [ ! -t 1 ]; then exit 0; fi
+if [ "${GOTCHIBOT_CHAT_CHECKPOINT:-}" = "0" ]; then exit 0; fi
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+cd "$ROOT"
+
+# Prefer abra so GOTCHIBOT_INFRA_TOKEN is available for Arcade snapshot
+if command -v abra >/dev/null 2>&1; then
+  exec abra run gotchibot -- node "$ROOT/scripts/chat-sync.mjs" checkpoint-prompt
+fi
+exec node "$ROOT/scripts/chat-sync.mjs" checkpoint-prompt

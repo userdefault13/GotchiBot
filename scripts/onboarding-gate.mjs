@@ -3,7 +3,7 @@
  * Interactive welcome / sign-in gate for GotchiBot tmux (center pane).
  */
 import readline from "node:readline/promises";
-import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import {
@@ -37,6 +37,7 @@ import { runLayout, tmuxSessionName as layoutSession } from "./tmux-layout.mjs";
 import { withStatusBar, Progress } from "./progress-bar.mjs";
 
 const CONCIERGE_MINT_URL = "https://www.aarcadeghst.com/concierge/terminal";
+const MARKETPLACE_URL = "https://aarcadeghst.com/gotchibot-templates";
 
 function preferSepoliaNest() {
   return (
@@ -105,12 +106,16 @@ function enterPstackDossierLayout() {
   console.log("    Leave with: ./scripts/orchestrator-layout.sh leave-pstack-dossier");
 }
 
-/** Current project slug (sessions/.pstack-dossier-current · synced to .project-current). */
+/** Current project slug — desk resolves local dossiers + Sepolia checkpoint (ignores smoke leftovers). */
 function currentProjectSlug() {
-  const r = spawnSync(process.execPath, [`${ROOT}/scripts/project-context.mjs`, "current"], {
-    cwd: ROOT,
-    encoding: "utf8",
-  });
+  const r = spawnSync(
+    process.execPath,
+    [`${ROOT}/scripts/project-context.mjs`, "current", "--resolve"],
+    {
+      cwd: ROOT,
+      encoding: "utf8",
+    },
+  );
   const slug = String(r.stdout || "")
     .trim()
     .split("\n")
@@ -172,7 +177,7 @@ async function selectProjectMenu({ freshInstall = false } = {}) {
   // pointer was cleared. Fresh nest only changes the nudge copy — not the list.
   const slugs = listProjectSlugs();
   if (freshInstall) {
-    console.log("  Fresh nest — create a new project or pick an existing one.\n");
+    console.log("  Fresh roster — create a new project or pick an existing one.\n");
   }
   const options = [
     ...slugs.map((slug) => ({
@@ -288,7 +293,7 @@ async function apiOp(op, ...args) {
     }
     if (op === "ensure" || op === "bind-owned" || op === "bind-starter" || op === "mint-sub") {
       const err = new Error(
-        `SIM disabled on Sepolia nest — ${op} is on-chain at Concierge: ${CONCIERGE_MINT_URL}`,
+        `SIM disabled on Sepolia roster — ${op} is on-chain at Concierge: ${CONCIERGE_MINT_URL}`,
       );
       err.code = "SEPOLIA_NO_SIM";
       err.concierge = CONCIERGE_MINT_URL;
@@ -340,7 +345,7 @@ async function apiOp(op, ...args) {
 }
 
 function openConcierge(extraNote = "") {
-  console.log(`\n  Opening Concierge for on-chain open/bind (MetaMask will prompt)…`);
+  console.log(`\n  Opening Concierge for on-chain bind (MetaMask will prompt)…`);
   if (extraNote) console.log(`  ${extraNote}`);
   console.log(`  ${CONCIERGE_MINT_URL}\n`);
   try {
@@ -350,13 +355,34 @@ function openConcierge(extraNote = "") {
   }
 }
 
+function openMarketplace(extraNote = "") {
+  console.log(`\n  Opening Marketplace…`);
+  if (extraNote) console.log(`  ${extraNote}`);
+  console.log(`  Pulling packs from ${MARKETPLACE_URL}\n`);
+  const r = spawnSync(
+    process.execPath,
+    [`${ROOT}/scripts/marketplace-menu.mjs`],
+    { cwd: ROOT, stdio: "inherit" },
+  );
+  if (r.status !== 0 && r.status != null) {
+    console.log(`  · menu exited ${r.status} — falling back to catalog list`);
+    const listed = spawnSync(
+      process.execPath,
+      [`${ROOT}/scripts/template-pack.mjs`, "list", "--remote"],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+    if (listed.stdout) process.stdout.write(listed.stdout);
+    if (listed.stderr) process.stderr.write(listed.stderr);
+  }
+}
+
 /**
  * SIM-only parallel identity cart. Sepolia nest desks skip this entirely.
  */
 async function ensureSimIdentityCart(wallet, { bar = null } = {}) {
   if (preferSepoliaNest()) {
     if (bar) {
-      await bar.advance(100, "Sepolia nest — no SIM cart", { ms: 200 });
+      await bar.advance(100, "Sepolia roster — no SIM cart", { ms: 200 });
     }
     return null;
   }
@@ -491,216 +517,483 @@ async function assignAsOrchestratorIfFirst(heroId, wallet, cartridgeId, opts = {
   return true;
 }
 
-/** First orch for a fresh nest desk — before project select. */
+/** First cAavegotchi on a fresh desk — mint/bind first, then ask to set orch. */
 async function runFirstOrchMintMenu(wallet, cartridgeId) {
-  title("Mint orchestrator");
-  console.log("  First gotchi minted becomes the orchestrator (orch pack · slot 15).");
-  if (preferSepoliaNest()) {
-    console.log("  Base Sepolia nest — no cartridge-sim. Desk pin here; MetaMask bind at Concierge.\n");
-  } else {
-    console.log("  Pick how to mint it:\n");
-  }
+  for (;;) {
+    title("Add cAavegotchi");
+    console.log("  First step: get a cAavegotchi on the desk (and on-chain roster when you mint).");
+    console.log("  After that, you can set it as orchestrator (desk orch pack · slot 15).\n");
+    const pickOpts = preferSepoliaNest()
+      ? [
+          { key: "wallet", label: "Mint wallet cAavegotchi (free)" },
+          { key: "collateral", label: "Mint base collateral ($5 USDC)" },
+          { key: "marketplace", label: "View Marketplace" },
+          { key: "view", label: "View cart roster / set orch from roster" },
+          { key: "concierge", label: "Open Concierge only (bind / mint on-chain)" },
+          { key: "back", label: "Back / quit" },
+        ]
+      : [
+          { key: "wallet", label: "Mint wallet cAavegotchi (free)" },
+          { key: "collateral", label: "Mint base collateral ($5 USDC)" },
+          { key: "marketplace", label: "View Marketplace" },
+          { key: "back", label: "Back / quit" },
+        ];
 
-  if (preferSepoliaNest()) {
-    try {
-      const sep = await readGotchiBotCartridgeSepolia(wallet);
-      if (sep.portalStatus === 1 && sep.cartridgeId) {
-        console.log("  note: sealed cart — open on-chain before bind.\n");
-        const openPick = await choose("Open sealed cart first?", [
-          { key: "open", label: "YES — MetaMask open(cartridgeId) now" },
-          { key: "later", label: "Skip — open later / Concierge" },
-        ]);
-        if (openPick?.key === "open") {
-          const { promptAndOpenSealedCart } = await import("./cartridge-mint-sepolia.mjs");
-          const opened = await promptAndOpenSealedCart(wallet, sep.cartridgeId, { autoYes: true });
-          if (opened?.ok) {
-            console.log("  ✓ Cart open — pick a gotchi to bind as orch.\n");
-          }
-        }
-      }
-    } catch {
-      /* ignore */
+    const pick = await choose("How to add your first cAavegotchi?", pickOpts);
+    if (!pick || pick.key === "back") return null;
+
+    if (pick.key === "marketplace") {
+      title("Marketplace");
+      console.log("  Bot-template packs for cAavegotchi assignment (slot 15).\n");
+      openMarketplace();
+      continue;
     }
-  }
 
-  const pickOpts = preferSepoliaNest()
-    ? [
-        { key: "wallet", label: "Pick wallet Aavegotchi → desk orch + Concierge bind (MetaMask)" },
-        { key: "open", label: "Open sealed cart (MetaMask · GotchiBotNestFacet.open)" },
-        { key: "concierge", label: "Open Concierge only (bind / mint on-chain)" },
-        { key: "back", label: "Back / quit" },
-      ]
-    : [
-        { key: "wallet", label: "Import wallet Aavegotchi (free · bind owned)" },
-        { key: "collateral", label: "Mint collateral cAavegotchi — $5" },
-        { key: "back", label: "Back / quit" },
-      ];
-
-  const pick = await choose("How to mint your orchestrator?", pickOpts);
-  if (!pick || pick.key === "back") return null;
-
-  if (pick.key === "open") {
-    try {
-      const sep = await readGotchiBotCartridgeSepolia(wallet);
-      if (!sep.cartridgeId) {
-        console.log("  · No GotchiBot cart yet — mint one first.");
-        await pause();
-        return null;
-      }
-      if (sep.portalStatus === 2) {
-        console.log(`  · Cart #${sep.cartridgeId} already open.`);
-        await pause();
-        return null;
-      }
-      const { promptAndOpenSealedCart } = await import("./cartridge-mint-sepolia.mjs");
-      await promptAndOpenSealedCart(wallet, sep.cartridgeId, { autoYes: true });
-    } catch (e) {
-      console.log(`  ✗ ${e?.message || e}`);
+    if (pick.key === "view") {
+      const setId = await viewCartCAavegotchisMenu(wallet, cartridgeId);
+      if (setId) return setId;
+      continue;
     }
-    await pause();
-    return null;
-  }
 
-  if (pick.key === "concierge") {
-    openConcierge("Open sealed cart, then bind owned/starter — MetaMask will prompt.");
-    await pause("Press Enter after you finish in Concierge…");
-    const nest = await fetchDeskHeroes(wallet, cartridgeId);
-    if (nest.length) {
+    if (pick.key === "concierge") {
+      openConcierge("Bind owned/starter — MetaMask will prompt.");
+      await pause("Press Enter after you finish in Concierge…");
+      const nest = await fetchDeskHeroes(wallet, cartridgeId);
+      if (!nest.length) {
+        console.log("  · No roster heroes yet — bind one in browser, then return.");
+        await pause();
+        continue;
+      }
       const heroId = String(nest[0].id);
-      await setOrchestratorHero(heroId, wallet, cartridgeId);
-      console.log(`  ✓ first nest hero → orchestrator ${heroId}`);
-      return heroId;
+      const asOrch = await askSetAsOrch(heroId, wallet, cartridgeId);
+      if (asOrch) return asOrch;
+      continue;
     }
-    console.log("  · No nest heroes yet — bind one in Concierge, then return to cockpit.");
+
+    if (!preferSepoliaNest()) {
+      try {
+        console.log("");
+        const bar = new Progress();
+        bar.set(0, "Preparing identity cartridge…");
+        try {
+          await ensureSimIdentityCart(wallet, { bar });
+          bar.done("Identity cartridge ready");
+        } catch (inner) {
+          bar.fail("Identity cartridge — failed");
+          throw inner;
+        }
+      } catch (e) {
+        console.log(`  · ensure sim cart: ${e?.message || e}`);
+        console.log("  · continuing — will set desk orch locally if SIM is down");
+      }
+    }
+
+    if (pick.key === "wallet") {
+      const heroId = await runWalletGotchiMint(wallet, cartridgeId);
+      if (!heroId) continue;
+      const asOrch = await askSetAsOrch(heroId, wallet, cartridgeId);
+      if (asOrch) return asOrch;
+      continue;
+    }
+
+    // collateral
+    if (preferSepoliaNest()) {
+      const heroId = await runCollateralGotchiMint(wallet, cartridgeId);
+      if (!heroId) continue;
+      const asOrch = await askSetAsOrch(heroId, wallet, cartridgeId);
+      if (asOrch) return asOrch;
+      continue;
+    }
+
+    const collateral = await pickCollateral("Choose collateral for cAavegotchi");
+    console.log(`\n  Minting (${collateral}) · $5…`);
+    try {
+      const heroId = await apiOp("mint-sub", collateral);
+      console.log(`  ✓ minted ${heroId}`);
+      const asOrch = await askSetAsOrch(heroId, wallet, cartridgeId);
+      if (asOrch) return asOrch;
+    } catch (e) {
+      console.log(`  ✗ mint failed: ${String(e?.message || e).slice(0, 200)}`);
+      console.log("  Try wallet gotchi (free) or retry later.");
+      await pause();
+    }
+  }
+}
+
+/** After a cGotchi exists — opt-in orch (slot 15). Returns heroId if set, else null. */
+async function askSetAsOrch(heroId, wallet, cartridgeId) {
+  if (!heroId) return null;
+  console.log(`\n  ✓ cAavegotchi ready · ${heroId}`);
+  if (preferSepoliaNest()) {
+    console.log("  Orch assignment is desk-local (orch pack · slot 15 in sessions) — no MetaMask.");
+  }
+  const ans = (await rl.question("  Set as orchestrator (orch pack · slot 15)? [Y/n]: ")).trim().toLowerCase();
+  if (ans === "n" || ans === "no") {
+    console.log("  · Left unset — pick again or set from roster when ready.");
     await pause();
     return null;
   }
+  await setOrchestratorHero(heroId, wallet, cartridgeId);
+  console.log(`  ✓ orchestrator → ${heroId}`);
+  await pause();
+  return heroId;
+}
 
-  if (!preferSepoliaNest()) {
+function shortHeroId(id) {
+  const s = String(id || "");
+  if (s.startsWith("0x") && s.length > 18) return `${s.slice(0, 10)}…${s.slice(-6)}`;
+  return s;
+}
+
+/** @returns {Promise<string|null>} orch hero id if user set one */
+async function viewCartCAavegotchisMenu(wallet, cartridgeId) {
+  title("cAavegotchis on cart");
+  if (!cartridgeId) {
+    console.log("  No GotchiBot cart yet — mint one first.");
+    await pause();
+    return null;
+  }
+  const nest = await fetchDeskHeroes(wallet, cartridgeId);
+  const orch = await resolveValidOrchestratorId(wallet, cartridgeId);
+  const meta = loadMeta() || {};
+  console.log(`  cart       #${cartridgeId}`);
+  console.log(`  desk orch  ${orch || "(none)"}`);
+  if (meta.activeHeroId && String(meta.activeHeroId) !== String(orch || "")) {
+    console.log(`  active     ${meta.activeHeroId}`);
+  }
+  console.log("");
+  if (!nest.length) {
+    console.log("  (none bound on-chain yet — pick wallet gotchi or mint collateral)");
+    await pause();
+    return null;
+  }
+  nest.forEach((h, i) => {
+    const id = String(h.id);
+    const mark = orch && String(orch) === id ? "  ← orch" : "";
+    console.log(`  ${String(i + 1).padStart(2)}) ${shortHeroId(id)}${mark}`);
+  });
+  const opts = [
+    { key: "set", label: "Set desk orch from a cart hero" },
+    { key: "back", label: "Back" },
+  ];
+  const pick = await choose("Cart heroes", opts);
+  if (!pick || pick.key === "back") return null;
+  const options = nest.map((h) => ({
+    key: String(h.id),
+    label: shortHeroId(h.id),
+  }));
+  const gPick = await choose("Which cart hero becomes orch?", options);
+  if (!gPick) return null;
+  await setOrchestratorHero(gPick.key, wallet, cartridgeId);
+  console.log(`  ✓ orchestrator → ${gPick.key}`);
+  await pause();
+  return gPick.key;
+}
+
+/** Sepolia: only gotchis whose Mock L1 ownerOf matches the wallet (bindOwned will work). */
+async function filterSepoliaMockOwnedGotchis(wallet, gotchis) {
+  const { readFileSync } = await import("node:fs");
+  const { join, dirname, resolve } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  let l1Addr = String(process.env.L1_AAVEGOTCHI_DIAMOND || "").trim();
+  if (!l1Addr) {
     try {
-      console.log("");
-      const bar = new Progress();
-      bar.set(0, "Preparing identity cartridge…");
-      try {
-        await ensureSimIdentityCart(wallet, { bar });
-        bar.done("Identity cartridge ready");
-      } catch (inner) {
-        bar.fail("Identity cartridge — failed");
-        throw inner;
-      }
-    } catch (e) {
-      console.log(`  · ensure sim cart: ${e?.message || e}`);
-      console.log("  · continuing — will set desk orch locally if SIM is down");
+      const cfg = JSON.parse(readFileSync(join(root, "config/cartridgeChain.base-sepolia.json"), "utf8"));
+      l1Addr = String(cfg.l1AavegotchiDiamond || "").trim();
+    } catch {
+      return gotchis;
     }
   }
+  if (!l1Addr || l1Addr === "0x0000000000000000000000000000000000000000") return gotchis;
 
-  if (pick.key === "wallet") {
-    let onChain = [];
+  let ethersMod;
+  try {
+    ethersMod = await import("ethers");
+  } catch {
+    ethersMod = await import(resolve(root, "../AarcadeGh-t/node_modules/ethers/lib.esm/index.js"));
+  }
+  const ethers = ethersMod.ethers || ethersMod.default || ethersMod;
+  const rpc = process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org";
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const l1 = new ethers.Contract(l1Addr, ["function ownerOf(uint256) view returns (address)"], provider);
+  const want = String(wallet).toLowerCase();
+  const zero = "0x0000000000000000000000000000000000000000";
+  const out = [];
+  for (const g of gotchis) {
+    const id = String(g.gotchiId ?? g.id ?? "");
+    if (!/^\d+$/.test(id)) continue;
     try {
-      onChain = await withStatusBar("Loading gotchis from subgraph…", () => fetchWalletGotchis(wallet));
-    } catch (e) {
-      console.log(`  Subgraph: ${e.message || e}`);
+      const owner = String(await l1.ownerOf(BigInt(id))).toLowerCase();
+      if (owner && owner !== zero && owner === want) out.push(g);
+    } catch {
+      /* not on mock */
     }
-    if (!onChain.length) {
-      console.log("\n  No Aavegotchis in this wallet.");
-      console.log(
-        preferSepoliaNest()
-          ? "  Buy/mint one on Base, or mint/bind at Concierge."
-          : "  Buy/mint one on Base, or pick collateral cAavegotchi ($5).",
+  }
+  return out;
+}
+
+/** Mint/bind wallet gotchi — does not set orch (caller asks). */
+async function runWalletGotchiMint(wallet, cartridgeId) {
+  let onChain = [];
+  try {
+    onChain = await withStatusBar("Loading gotchis from subgraph…", () => fetchWalletGotchis(wallet));
+  } catch (e) {
+    console.log(`  Subgraph: ${e.message || e}`);
+  }
+  if (preferSepoliaNest() && onChain.length) {
+    try {
+      const seeded = await withStatusBar("Checking Sepolia Mock L1…", () =>
+        filterSepoliaMockOwnedGotchis(wallet, onChain),
       );
+      if (!seeded.length) {
+        console.log("\n  No wallet gotchis seeded on Sepolia Mock L1 yet.");
+        console.log("  Only Mock-owned ids can mint free (e.g. #22899). Seed more or mint base collateral.");
+        await pause();
+        return null;
+      }
+      if (seeded.length < onChain.length) {
+        console.log(
+          `  · Sepolia: showing ${seeded.length} Mock-seeded of ${onChain.length} Base wallet gotchis`,
+        );
+      }
+      onChain = seeded;
+    } catch (e) {
+      console.log(`  · Mock L1 filter skipped: ${e?.message || e}`);
+    }
+  }
+  if (!onChain.length) {
+    console.log("\n  No Aavegotchis in this wallet.");
+    console.log("  Buy/mint one on Base, or mint base collateral ($5 USDC).");
+    await pause();
+    return null;
+  }
+  const options = onChain.slice(0, 40).map((g) => ({
+    key: String(g.gotchiId ?? g.id),
+    label: formatGotchiLabel(g),
+    gotchi: g,
+  }));
+  const gPick = await choose("Which wallet gotchi?", options);
+  if (!gPick) return null;
+  const tokenId = String(gPick.key);
+  const heroId = `owned-${tokenId}`;
+
+  try {
+    const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
+    const { libraryNameToSpiritId, fetchWalletGotchiById, walletGotchiTraits } = await import(
+      "./onboarding-lib.mjs"
+    );
+    let g = gPick.gotchi || {};
+    try {
+      const full = await fetchWalletGotchiById(wallet, tokenId);
+      if (full) g = { ...g, ...full };
+    } catch {
+      /* keep pick */
+    }
+    const hauntId = g.hauntId != null ? Number(g.hauntId) : null;
+    const colors = findCollateralColors(g.collateral || g.collateralName || "", hauntId || 2);
+    const spirit =
+      colors?.spirit || libraryNameToSpiritId(g.collateralName || g.collateral || "") || null;
+    const traits = walletGotchiTraits(g);
+    persistHeroCollateral(heroId, {
+      collateral: spirit,
+      collateralAddress: g.collateral || null,
+      collateralName: colors?.name || g.collateralName || null,
+      hauntId,
+      primary: colors?.primary,
+      secondary: colors?.secondary,
+      sourceTokenId: tokenId,
+      modifiedTraits: traits || undefined,
+      numericTraits: g.numericTraits || traits || undefined,
+    });
+    if (traits) {
+      const eyeShape = Number(traits[4]);
+      const eyeColor = Number(traits[5]);
+      console.log(
+        `  · cheeks  eyeShape ${String(eyeShape).padStart(2, "0")} · eyeColor ${String(eyeColor).padStart(2, "0")}`,
+      );
+    }
+  } catch {
+    /* optional */
+  }
+
+  if (preferSepoliaNest()) {
+    if (!cartridgeId) {
+      console.log("  · No cart id — mint/open a GotchiBot cart first.");
       await pause();
       return null;
     }
-    const options = onChain.slice(0, 40).map((g) => ({
-      key: String(g.gotchiId ?? g.id),
-      label: formatGotchiLabel(g),
-      gotchi: g,
-    }));
-    const gPick = await choose(
-      preferSepoliaNest() ? "Which wallet gotchi becomes orch?" : "Which wallet gotchi? (free bind)",
-      options,
-    );
-    if (!gPick) return null;
-    const tokenId = String(gPick.key);
-    const heroId = `owned-${tokenId}`;
-
-    // Persist collateral art for desk avatar even before nest bind.
+    const bar = new Progress();
+    bar.set(5, `Minting wallet cAavegotchi #${tokenId}…`);
     try {
-      const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
-      const { libraryNameToSpiritId } = await import("./onboarding-lib.mjs");
-      const g = gPick.gotchi || {};
-      const hauntId = g.hauntId != null ? Number(g.hauntId) : null;
-      const colors = findCollateralColors(g.collateral || g.collateralName || "", hauntId || 2);
-      const spirit =
-        colors?.spirit || libraryNameToSpiritId(g.collateralName || g.collateral || "") || null;
-      persistHeroCollateral(heroId, {
-        collateral: spirit,
-        collateralAddress: g.collateral || null,
-        collateralName: colors?.name || g.collateralName || null,
-        hauntId,
-        primary: colors?.primary,
-        secondary: colors?.secondary,
-        sourceTokenId: tokenId,
-      });
-    } catch {}
-
-    if (preferSepoliaNest()) {
-      console.log(`\n  Desk orch → ${heroId} (slot 15 orch pack).`);
-      console.log("  Nest bind is on-chain — MetaMask sign at Concierge.\n");
-      await setOrchestratorHero(heroId, wallet, cartridgeId);
-      openConcierge(`Bind owned #${tokenId} into cart #${cartridgeId} (open first if sealed).`);
-      await pause("Press Enter after MetaMask bind in Concierge (or skip for desk-only)…");
-      console.log(`  ✓ orchestrator → ${heroId}`);
-      return heroId;
-    }
-
-    console.log(`\n  Binding owned gotchi #${tokenId} (free)…`);
-    try {
-      const bar = new Progress();
-      bar.set(10, `Binding owned #${tokenId}…`);
+      const { runBindOwned, refreshDeskMeta } = await import("./cartridge-mint-sepolia.mjs");
+      bar.set(15, `MetaMask bindOwned #${tokenId} — confirm in browser…`);
       let bound;
       try {
-        bound = await bar.pulse(`Binding owned #${tokenId}…`, () => apiOp("bind-owned", tokenId, gPick.gotchi), {
-          nextPct: 70,
-        });
+        bound = await bar.pulse(
+          `Minting #${tokenId} (waiting on MetaMask)…`,
+          () =>
+            runBindOwned({
+              expectWallet: wallet,
+              cartridgeId: String(cartridgeId),
+              sourceTokenId: tokenId,
+            }),
+          { nextPct: 85 },
+        );
       } catch (bindErr) {
-        bar.fail(`Bind #${tokenId} — failed`);
+        bar.fail(`Mint #${tokenId} — failed`);
         throw bindErr;
       }
-      const id = bound || heroId;
-      bar.set(85, `Setting orchestrator ${id}…`);
-      await setOrchestratorHero(id, wallet, cartridgeId);
-      bar.done(`orchestrator → ${id}`);
-      console.log(`  ✓ bound ${id}`);
-      console.log(`  ✓ orchestrator → ${id}`);
+      if (bound?.ok) {
+        try {
+          await bar.pulse("Refreshing desk…", () => refreshDeskMeta(wallet), { nextPct: 95 });
+        } catch {
+          /* optional */
+        }
+        bar.done(`minted ${heroId}${bound.txHash ? ` · ${String(bound.txHash).slice(0, 10)}…` : ""}`);
+        console.log(`  ✓ roster ${heroId}${bound.txHash ? ` · ${bound.txHash}` : ""}`);
+        return heroId;
+      }
+      bar.fail(`Mint #${tokenId} — ${bound?.error || "skipped"}`);
+      console.log(`  · Mint skipped/failed: ${bound?.error || "unknown"}`);
+      console.log(`  · Desk cheeks kept for ${heroId} — retry when ready`);
       await pause();
-      return id;
+      return null;
     } catch (e) {
-      console.log(`  ✗ bind failed: ${String(e?.message || e).slice(0, 200)}`);
+      try {
+        bar.fail(`Mint #${tokenId} — failed`);
+      } catch {
+        /* bar already closed */
+      }
+      console.log(`  · bindOwned page failed: ${e?.message || e}`);
       await pause();
       return null;
     }
   }
 
-  // collateral $5 — SIM desks only
-  if (preferSepoliaNest()) {
-    console.log("  Collateral mint-sub is SIM-only — use wallet gotchi or Concierge on Sepolia.");
-    openConcierge();
+  console.log(`\n  Binding owned gotchi #${tokenId} (free)…`);
+  try {
+    const bar = new Progress();
+    bar.set(10, `Binding owned #${tokenId}…`);
+    let bound;
+    try {
+      bound = await bar.pulse(`Binding owned #${tokenId}…`, () => apiOp("bind-owned", tokenId, gPick.gotchi), {
+        nextPct: 90,
+      });
+    } catch (bindErr) {
+      bar.fail(`Bind #${tokenId} — failed`);
+      throw bindErr;
+    }
+    const id = bound || heroId;
+    bar.done(`bound ${id}`);
+    console.log(`  ✓ bound ${id}`);
+    return id;
+  } catch (e) {
+    console.log(`  ✗ bind failed: ${String(e?.message || e).slice(0, 200)}`);
     await pause();
     return null;
   }
-  const collateral = await pickCollateral("Choose collateral for orchestrator cAavegotchi");
-  console.log(`\n  Minting orchestrator (${collateral}) · $5…`);
-  try {
-    const heroId = await apiOp("mint-sub", collateral);
-    console.log(`  ✓ minted ${heroId}`);
-    await setOrchestratorHero(heroId, wallet, cartridgeId);
-    console.log(`  ✓ orchestrator → ${heroId}`);
+}
+
+async function pickCollateralOption(promptText) {
+  const options = loadBaseStarterCollaterals();
+  if (!options.length) throw new Error("no starter collaterals loaded — check assets/collateral-colors.json");
+
+  console.log(`\n  ${promptText}\n`);
+  options.forEach((c, i) => {
+    console.log(`    ${String(i + 1).padStart(2)} ) ${c.libraryName.padEnd(10)} (H${c.hauntId})`);
+  });
+  for (;;) {
+    const ans = (await rl.question(`\n  Collateral [1-${options.length}]: `)).trim();
+    const n = Number(ans);
+    if (n >= 1 && n <= options.length) return options[n - 1];
+    console.log(`  pick 1–${options.length}`);
+  }
+}
+
+/** Collateral starter mint — does not set orch (caller asks). */
+async function runCollateralGotchiMint(wallet, cartridgeId) {
+  if (!cartridgeId) {
+    console.log("  · No cart id — mint/open a GotchiBot cart first.");
     await pause();
+    return null;
+  }
+  let option;
+  try {
+    option = await pickCollateralOption("Choose collateral for cAavegotchi");
+  } catch (e) {
+    console.log(`  ✗ ${e?.message || e}`);
+    await pause();
+    return null;
+  }
+  const haunt = option.hauntId || 1;
+  const nestBefore = await fetchDeskHeroes(wallet, cartridgeId);
+  const n = nestBefore.filter((h) => String(h.id).includes(option.id)).length + 1;
+  const heroId = `starter-${option.id}-h${haunt}-${n}`;
+  const collateralAddr =
+    option.collateralType && String(option.collateralType).startsWith("0x")
+      ? String(option.collateralType)
+      : "0x0000000000000000000000000000000000000000";
+
+  console.log(`\n  Roster mint — MetaMask bindStarter · ${option.libraryName} · $5 USDC\n`);
+  try {
+    const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
+    const colors = findCollateralColors(collateralAddr || option.id, haunt);
+    persistHeroCollateral(heroId, {
+      collateral: option.id,
+      collateralAddress: collateralAddr,
+      collateralName: colors?.name || option.libraryName,
+      hauntId: haunt,
+      primary: colors?.primary,
+      secondary: colors?.secondary,
+    });
+  } catch {
+    /* optional */
+  }
+
+  const bar = new Progress();
+  bar.set(5, `Minting base collateral · ${option.libraryName}…`);
+  try {
+    const { runBindStarter, refreshDeskMeta } = await import("./cartridge-mint-sepolia.mjs");
+    bar.set(15, `MetaMask bindStarter — confirm in browser…`);
+    let bound;
+    try {
+      bound = await bar.pulse(
+        `Minting ${option.libraryName} (waiting on MetaMask)…`,
+        () =>
+          runBindStarter({
+            expectWallet: wallet,
+            cartridgeId: String(cartridgeId),
+            templateId: option.id,
+            collateral: collateralAddr,
+          }),
+        { nextPct: 85 },
+      );
+    } catch (bindErr) {
+      bar.fail(`Mint ${option.libraryName} — failed`);
+      throw bindErr;
+    }
+    if (bound?.ok) {
+      try {
+        await bar.pulse("Refreshing desk…", () => refreshDeskMeta(wallet), { nextPct: 95 });
+      } catch {
+        /* optional */
+      }
+      bar.done(`minted ${heroId}${bound.txHash ? ` · ${String(bound.txHash).slice(0, 10)}…` : ""}`);
+      console.log(`  ✓ roster starter ${option.id}${bound.txHash ? ` · ${bound.txHash}` : ""}`);
+      return heroId;
+    }
+    bar.fail(`Mint ${option.libraryName} — ${bound?.error || "skipped"}`);
+    console.log(`  · Mint skipped/failed: ${bound?.error || "unknown"}`);
+    console.log(`  · Desk hero ${heroId} kept for cheek art / later orch`);
     return heroId;
   } catch (e) {
-    console.log(`  ✗ mint failed: ${String(e?.message || e).slice(0, 200)}`);
-    console.log("  Try wallet gotchi (free) or retry later.");
+    try {
+      bar.fail(`Mint ${option.libraryName} — failed`);
+    } catch {
+      /* bar already closed */
+    }
+    console.log(`  · bindStarter page failed: ${e?.message || e}`);
     await pause();
     return null;
   }
@@ -822,7 +1115,7 @@ async function ensureCartridge(wallet) {
       saveMeta(patch);
 
       if (!sep.cartridgeId || sep.heroCount === 0) {
-        // Fresh Sepolia nest — drop sim-era orch pin so cockpit shows unset.
+        // Fresh Sepolia roster — drop sim-era orch pin so cockpit shows unset.
         saveOnboarding({
           wallet,
           cartridgeId: sep.cartridgeId || null,
@@ -914,7 +1207,7 @@ async function resolveValidOrchestratorId(wallet, cartridgeId) {
   if (meta.activeHeroId && String(meta.activeHeroId) === String(raw)) return raw;
   if (String(raw).startsWith("owned-") || String(raw).startsWith("starter-")) return raw;
 
-  console.log(`  · clearing stale orch pin ${raw} (not on this nest desk)`);
+  console.log(`  · clearing stale orch pin ${raw} (not on this roster desk)`);
   saveOnboarding({ orchestratorHeroId: null });
   if (meta.activeHeroId && String(meta.activeHeroId) === String(raw)) {
     saveMeta({ activeHeroId: null });
@@ -1653,6 +1946,113 @@ async function viewHubStatus() {
   await pause();
 }
 
+/** True when desk already reaches the always-on Hub (cached live probe). */
+function isHubUpQuick() {
+  try {
+    const cache = JSON.parse(readFileSync(`${ROOT}/sessions/.imac-status-cache.json`, "utf8"));
+    if (cache.remoteOk === true) return true;
+    if (typeof cache.barLine === "string" && /\bHub:\s*up\b/i.test(cache.barLine)) return true;
+  } catch {
+    /* no cache */
+  }
+  return false;
+}
+
+/** New / unconfigured desk: no hub host wired yet. */
+function isHubNetworkUnset() {
+  const envHost = ["GOTCHIBOT_HUB_HOST", "REMOTE_HOST", "GOTCHIBOT_REMOTE_HOST"]
+    .map((k) => process.env[k])
+    .find((v) => v && String(v).trim());
+  if (envHost) return false;
+  try {
+    const cfg = JSON.parse(readFileSync(`${ROOT}/config/hub-bridge.json`, "utf8"));
+    const host = String(cfg.host || "").trim();
+    if (!host || /YOUR-HUB-HOSTNAME/i.test(host)) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+async function implementGotchiHubNetwork() {
+  clear();
+  title("Implement Gotchi Hub (network)");
+  console.log("  Wire this desk to the always-on Hub (Tailscale · SSH · OpenClaw).\n");
+  console.log("  Steps:");
+  console.log("    1. Hub Mac on Tailscale (MagicDNS name)");
+  console.log("    2. config/hub-bridge.json host = that name (seeded below if missing)");
+  console.log("    3. abra project gotchibot holds REMOTE_HOST / SSH key");
+  console.log("    4. Probe: ./scripts/gotchibot hub status\n");
+
+  try {
+    const { ensureLocalConfig } = await import("./ensure-local-config.mjs");
+    const r = ensureLocalConfig(ROOT, { quiet: true });
+    if (r?.created?.length) {
+      console.log(`  · seeded ${r.created.length} config file(s)`);
+    } else {
+      console.log("  · local config already present");
+    }
+  } catch (e) {
+    console.log(`  · ensure-local-config: ${e?.message || e}`);
+  }
+
+  try {
+    const cfgPath = `${ROOT}/config/hub-bridge.json`;
+    if (existsSync(cfgPath)) {
+      const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+      console.log(`  · hub-bridge host  ${cfg.host || "(unset)"}`);
+      if (/YOUR-HUB-HOSTNAME/i.test(String(cfg.host || ""))) {
+        console.log("  · Edit config/hub-bridge.json — replace YOUR-HUB-HOSTNAME with MagicDNS.");
+      }
+    }
+  } catch {
+    /* optional */
+  }
+
+  console.log("\n  Probing hub…");
+  const bar = new Progress();
+  bar.set(10, "Hub network probe…");
+  let probe;
+  try {
+    probe = await bar.pulse(
+      "Hub status (waiting)…",
+      () => runAbraNode("scripts/hub-status.mjs", ["--json", "--live"]),
+      { nextPct: 90 },
+    );
+  } catch (e) {
+    bar.fail("Hub probe — failed");
+    console.log(`  ✗ ${e?.message || e}`);
+    await pause();
+    return;
+  }
+
+  let up = false;
+  try {
+    const j = JSON.parse(String(probe?.stdout || "{}"));
+    up = j?.ssh?.ok === true || j?.remoteOk === true;
+    if (probe?.stdout) {
+      // Prefer human dashboard after json probe
+    }
+  } catch {
+    up = probe?.status === 0;
+  }
+
+  if (up) {
+    bar.done("Hub network reachable");
+    console.log("  ✓ Hub is up — cockpit will show Hub status / Hub infra next time.\n");
+    const human = runAbraNode("scripts/hub-status.mjs", ["--live"]);
+    if (human.stdout) process.stdout.write(human.stdout);
+  } else {
+    bar.fail("Hub not reachable yet");
+    if (probe?.stdout) process.stdout.write(probe.stdout);
+    if (probe?.stderr) process.stderr.write(probe.stderr);
+    console.log("\n  Still down — check Tailscale, hub power, and:");
+    console.log("    abra run gotchibot -- ./scripts/gotchibot hub status");
+    console.log("    abra run gotchibot -- ./scripts/gotchibot hub doctor");
+  }
+  await pause();
+}
+
 async function viewHubInfra() {
   clear();
   title("Hub infra");
@@ -2019,7 +2419,7 @@ async function runSealedCartMintMenu(wallet, { abraSnap = null } = {}) {
       console.log(`\n  ✓ GotchiBot cartridge #${nextId}`);
       if (out?.opened) console.log("  ✓ Cart opened on-chain");
       else if (out?.snap?.gbot?.portalStatus === 1) {
-        console.log("  · Still sealed — open before bind (cockpit → mint orch → Open sealed cart)");
+        console.log("  · Still sealed — re-run mint cart to finish open, or Concierge");
       }
     }
     await pause();
@@ -2066,9 +2466,13 @@ async function mainMenu(wallet, cartridgeId) {
       }`,
     );
     console.log(`  abra cart   ${abraLine}`);
-    console.log(`  roster      ${heroes.length} cAavegotchi(s)`);
+    if (preferSepoliaNest() && heroes.length === 0 && orchId) {
+      console.log(`  roster      0 on-chain · desk orch ${orchId} (pin only — mint collateral for on-chain)`);
+    } else {
+      console.log(`  roster      ${heroes.length} cAavegotchi(s)`);
+    }
     console.log(`  orchestrator ${orch}`);
-    console.log(`  project     ${project || "(none — select a project)"}`);
+    console.log(`  project     ${project || "(none — select local · Sepolia)"}`);
     if (needsGotchiBotCart) {
       const haveAbra = Boolean(abraSnap && abraSnap.cartridgeId);
       console.log(
@@ -2083,9 +2487,9 @@ async function mainMenu(wallet, cartridgeId) {
       continue;
     }
 
-    // Cart ready → mint orchestrator before project.
+    // Cart ready → mint cAavegotchi first, then optionally set orch.
     if (preferSepoliaNest() && cartridgeId && !orchId) {
-      console.log(`  next        mint orchestrator (wallet free · or collateral $5)`);
+      console.log(`  next        mint cAavegotchi · then set orch`);
       hr();
       const heroId = await runFirstOrchMintMenu(wallet, cartridgeId);
       if (!heroId) quitToTerminal();
@@ -2105,22 +2509,31 @@ async function mainMenu(wallet, cartridgeId) {
     }
     hr();
 
+    const hubUp = isHubUpQuick() && !isHubNetworkUnset();
+    const hubMenu = hubUp
+      ? [
+          { key: "hub", label: "Hub status (iMac OpenClaw · tunnel · Docker)" },
+          { key: "hub-infra", label: "Hub infra (Docker container table)" },
+        ]
+      : [{ key: "hub-implement", label: "Implement Gotchi Hub (network)" }];
+
     const pick = await choose("What next?", [
-      { key: "launch", label: project ? `Return to project (${project})` : "Return to project" },
-      { key: "select-project", label: "Select new project" },
-      { key: "checkpoint-project", label: "Checkpoint project → cart (signed gameState)" },
+      { key: "launch", label: "Open desk" },
+      { key: "select-project", label: "Switch to another project" },
+      { key: "checkpoint-project", label: "Save project to Sepolia" },
+      { key: "checkpoint-chat", label: "Checkpoint chat sync to Sepolia" },
+      ...hubMenu,
       { key: "meet", label: "Start meeting / morning recap" },
-      { key: "hub", label: "Hub status (iMac OpenClaw · tunnel · Docker)" },
-      { key: "hub-infra", label: "Hub infra (Docker container table)" },
       { key: "roster", label: "View agent roster (MBP + iMac · status)" },
       { key: "kanban", label: "Kanban (agents · tasks · seats)" },
-      { key: "inbox", label: "Bot inbox (internal mail · FYI / reports)" },
+      { key: "inbox", label: "Bot inbox (iMessage · agents | thread)" },
       { key: "pstack", label: "Pstack (dossier pane · program store)" },
       { key: "export-roster", label: "Export agent roster to CSV" },
+      { key: "import", label: "Browse cartridge cAavegotchis" },
+      { key: "mint", label: "Mint another wallet gotchi — Free (sub-agent identity)" },
+      { key: "mint-collateral", label: "Mint a base collateral cAavegotchi ($5 USDC)" },
+      { key: "marketplace", label: "View Marketplace" },
       { key: "settings", label: "Settings (voice, read speed, mouse, replay, IPFS)" },
-      { key: "import", label: "Import on-chain gotchi / browse cartridge cAavegotchis" },
-      { key: "mint-cart", label: "Mint sealed cart (Abra / GotchiBot / Bundle · Base Sepolia)" },
-      { key: "mint", label: "Mint another cAavegotchi — $5 (sub-agent identity)" },
       { key: "avatar", label: "Change orchestrator avatar" },
     ]);
     if (!pick) quitToTerminal();
@@ -2133,9 +2546,9 @@ async function mainMenu(wallet, cartridgeId) {
       console.log(readWelcomeArt(10));
       const proj = currentProjectSlug();
       console.log(`\n  ✓ Orchestrator ready — ${heroId}`);
-      if (proj) console.log(`  ✓ Project — ${proj}`);
+      if (proj) console.log(`  ✓ Project — ${proj} (local · Sepolia)`);
       else console.log("  · No project selected — pick one from cockpit anytime.");
-      console.log("  Returning to the project desk…");
+      console.log("  Opening the desk…");
       console.log("  Talk in natural language to spin up sub-agents.");
       console.log("  Start an empty prompt with ! to run a shell command yourself — its output lands in chat.\n");
       const saying = quirkyOpenclawSaying();
@@ -2161,7 +2574,7 @@ async function mainMenu(wallet, cartridgeId) {
     }
 
     if (pick.key === "checkpoint-project") {
-      title("Checkpoint project → cart");
+      title("Save project to Sepolia");
       const proj = currentProjectSlug();
       if (!proj) {
         console.log("  No project selected — create/pick one first.");
@@ -2169,8 +2582,8 @@ async function mainMenu(wallet, cartridgeId) {
         continue;
       }
       console.log(`  Current project  ${proj}`);
-      console.log("  Writes gameState.projects onto the cartridge via signed checkpoint.");
-      console.log("  (SIM/Hub must be up; not a separate mint.)\n");
+      console.log("  Writes gameState.projects onto the cartridge (signed checkpoint).");
+      console.log("  Local dossier stays on disk; Sepolia gets hash + URI pointer.\n");
       const label = `project:${proj}`;
       const r = spawnSync(
         process.execPath,
@@ -2189,6 +2602,29 @@ async function mainMenu(wallet, cartridgeId) {
       } else {
         console.log(`  ✗ checkpoint failed: ${(err || out).slice(0, 400)}`);
         console.log("  Retry when cartridge-sim / Hub is healthy.");
+      }
+      await pause();
+      continue;
+    }
+
+    if (pick.key === "checkpoint-chat") {
+      title("Checkpoint chat sync to Sepolia");
+      console.log("  1) Arcade snapshot (gotchibot.aarcadeghst.com)");
+      console.log("  2) Desk identity checkpoint (local / SIM)");
+      console.log("  3) Optional MetaMask checkpointSave on Base Sepolia\n");
+      console.log("  Needs GOTCHIBOT_INFRA_TOKEN + home gotchibot-api healthy.\n");
+      const r = spawnSync(
+        process.execPath,
+        [`${ROOT}/scripts/chat-sync.mjs`, "checkpoint-prompt", "--onchain"],
+        {
+          cwd: ROOT,
+          encoding: "utf8",
+          env: { ...process.env, GOTCHIBOT_CHAT_CHECKPOINT: "1" },
+          stdio: "inherit",
+        },
+      );
+      if (r.status !== 0) {
+        console.log("  ✗ chat checkpoint failed — check home API + install token.");
       }
       await pause();
       continue;
@@ -2214,6 +2650,11 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "hub") {
       await viewHubStatus();
+      continue;
+    }
+
+    if (pick.key === "hub-implement") {
+      await implementGotchiHubNetwork();
       continue;
     }
 
@@ -2259,7 +2700,7 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "import") {
       if (!cartridgeId) {
-        title("Import gotchi");
+        title("Browse cartridge cAavegotchis");
         console.log("  No Base Sepolia cartridge yet — mint one first.");
         console.log(`  ${CONCIERGE_MINT_URL}`);
         await pause();
@@ -2269,48 +2710,52 @@ async function mainMenu(wallet, cartridgeId) {
       continue;
     }
 
-    if (pick.key === "mint-cart") {
-      const nextId = await runSealedCartMintMenu(wallet, { abraSnap });
-      if (nextId) cartridgeId = nextId;
-      continue;
-    }
-
     if (pick.key === "mint") {
       if (!cartridgeId) {
-        title("Mint cAavegotchi");
+        title("Mint wallet gotchi");
         console.log("  No Base Sepolia cartridge yet — mint a sealed cart first.");
         console.log(`  ${CONCIERGE_MINT_URL}`);
         await pause();
         continue;
       }
-      if (preferSepoliaNest()) {
-        title("Mint / bind cAavegotchi (on-chain)");
-        console.log("  SIM mint-sub is off on Sepolia nest.");
-        console.log("  Open Concierge — MetaMask will prompt to open/bind/mint.\n");
-        openConcierge();
-        await pause("Press Enter after Concierge…");
-        continue;
-      }
-      const firstOrch = !loadOnboarding()?.orchestratorHeroId;
-      title(firstOrch ? "Mint orchestrator (first gotchi)" : "Mint cAavegotchi");
-      console.log(
-        firstOrch
-          ? "  First gotchi minted becomes the orchestrator (orch pack · slot 15).\n"
-          : "  Mint a new sub-agent cAavegotchi for $5.\n",
-      );
-      const collateral = await pickCollateral(
-        firstOrch ? "Choose collateral for orchestrator cAavegotchi" : "Choose collateral for new sub-agent hero",
-      );
-      console.log(`\n  Minting ${firstOrch ? "orchestrator" : "sub-agent"} (${collateral})${firstOrch ? "" : "…"}`);
-      const heroId = await apiOp("mint-sub", collateral);
-      if (firstOrch) {
-        await setOrchestratorHero(heroId, wallet, cartridgeId);
-        console.log(`  ✓ minted ${heroId} → orchestrator`);
-      } else {
-        console.log(`  ✓ minted ${heroId} (available for sub-agent spawn)`);
+      title("Mint wallet gotchi — Free");
+      console.log("  Bind an Aavegotchi you already own as a sub-agent identity.");
+      console.log("  Free (no SIM / $5 collateral fee).\n");
+      const heroId = await runWalletGotchiMint(wallet, cartridgeId);
+      if (heroId) {
+        console.log(`  ✓ ${heroId} ready as sub-agent identity`);
+        await assignAsOrchestratorIfFirst(heroId, wallet, cartridgeId);
         await syncFleetQuiet();
       }
       await pause();
+      continue;
+    }
+
+    if (pick.key === "mint-collateral") {
+      if (!cartridgeId) {
+        title("Mint base collateral cAavegotchi");
+        console.log("  No Base Sepolia cartridge yet — mint a sealed cart first.");
+        console.log(`  ${CONCIERGE_MINT_URL}`);
+        await pause();
+        continue;
+      }
+      title("Mint base collateral cAavegotchi — $5 USDC");
+      console.log("  Mint a starter collateral gotchi onto the nest (MetaMask bindStarter).");
+      console.log("  Sub-agent identity — pick DAI / LINK / … from the collateral list.\n");
+      const heroId = await runCollateralGotchiMint(wallet, cartridgeId);
+      if (heroId) {
+        console.log(`  ✓ ${heroId} ready as sub-agent identity`);
+        await assignAsOrchestratorIfFirst(heroId, wallet, cartridgeId);
+        await syncFleetQuiet();
+      }
+      await pause();
+      continue;
+    }
+
+    if (pick.key === "marketplace") {
+      title("Marketplace");
+      console.log("  Bot-template packs for cAavegotchi assignment (slot 15).\n");
+      openMarketplace();
       continue;
     }
 

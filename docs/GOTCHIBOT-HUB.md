@@ -49,14 +49,28 @@ Default thread id: `orch`.
 
 ## Light on-chain checkpoint (opt-in)
 
-After a git commit, optionally:
+After a git commit (TTY), or anytime:
 
 ```bash
+# one-shot
 abra run gotchibot -- ./scripts/gotchibot chats checkpoint-prompt
-# or non-interactive:
-GOTCHIBOT_CHAT_CHECKPOINT=1 abra run gotchibot -- ./scripts/gotchibot chats checkpoint-prompt --onchain
+# force snapshot + Sepolia send (no prompts)
+abra run gotchibot -- ./scripts/gotchibot chats checkpoint-prompt --onchain
+# broadcast only (pin already written)
+abra run gotchibot -- ./scripts/gotchibot chats onchain
+
+# post-commit hook (prompts after each commit)
+./scripts/gotchibot chats hook install
+# skip one commit: GOTCHIBOT_CHAT_CHECKPOINT=0 git commit …
+./scripts/gotchibot chats hook uninstall
 ```
 
-Builds an Arcade snapshot (`stateUri` + `contentHash` + `gitCommit`), writes
-`sessions/.chat-sync-checkpoint.json`. On-chain save still goes through
-`gotchibot checkpoint` / identity — never silent MetaMask.
+Flow:
+
+1. Arcade snapshot on `gotchibot.aarcadeghst.com` (`contentHash` + `stateUri`)
+2. Desk `identity checkpoint` with `gameState.chatSync` (local Sepolia file or SIM POST)
+3. Optional MetaMask / cast `checkpointSave(cartridgeId, stateHash, stateUri)` on Base Sepolia
+
+Cockpit: **Checkpoint chat sync to Sepolia** (same as `checkpoint-prompt --onchain`).
+
+Pin file: `sessions/.chat-sync-checkpoint.json`.

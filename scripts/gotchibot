@@ -77,8 +77,9 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot wsl [--check]       WSL2 install guide (Windows) or in-WSL readiness check
   gotchibot update [--check|--apply|--force]  check/install GotchiBot updates (CDN or git)
   gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
+  gotchibot chats push|pull|threads|snapshot|checkpoint-prompt|onchain|hook
+                                  Arcade chat sync + optional Sepolia checkpointSave
   gotchibot hub enable <host>|status|pin   own Hub Tailscale host → sessions/.hub.json
-  gotchibot chats push|pull|threads|snapshot|checkpoint-prompt   Arcade chat sync
   gotchibot infra schedule status|install|uninstall|run-now  YFI 15-min supervisor LaunchAgent (run on the iMac)
   gotchibot desk-terminals status|open|close|use|install|uninstall [hero…] [--host imac|local]
                                   driven desks stay up; workers: use → tool → close (ephemeral)
@@ -345,8 +346,13 @@ EOF
 }
 
 cmd_checkpoint() {
+  # gotchibot checkpoint chat-sync | chat   — Arcade snap + optional Sepolia
   # gotchibot checkpoint project [--clear] [<label>]  — desk projects → cart gameState
   # gotchibot checkpoint <sessionId> <label> — session milestone (+ projects)
+  if [ "${1:-}" = "chat-sync" ] || [ "${1:-}" = "chat" ]; then
+    shift
+    exec node "$ROOT/scripts/chat-sync.mjs" checkpoint-prompt "$@"
+  fi
   if [ "${1:-}" = "project" ]; then
     shift
     local clear=0 label="project"

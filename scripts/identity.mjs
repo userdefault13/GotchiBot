@@ -237,8 +237,40 @@ async function checkpoint() {
     gameState.equippedPacks = { assignmentSlot: 15, nested: [], byHero: {}, updatedAt: new Date().toISOString() };
   }
 
+  // Opt-in chat-sync slice (Arcade snapshot URI + content hash from chats checkpoint-prompt).
+  let chatPin = null;
+  try {
+    const pinPath = `${ROOT}/sessions/.chat-sync-checkpoint.json`;
+    if (
+      process.env.GOTCHIBOT_CHECKPOINT_CHAT_SYNC === "1" ||
+      String(label).startsWith("chat-sync:")
+    ) {
+      chatPin = JSON.parse(readFileSync(pinPath, "utf8"));
+      gameState.chatSync = {
+        snapshotId: chatPin.snapshotId || null,
+        stateUri: chatPin.stateUri || process.env.GOTCHIBOT_CHECKPOINT_STATE_URI || null,
+        contentHash: chatPin.contentHash || null,
+        gitCommit: chatPin.gitCommit || null,
+        label,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+  } catch {
+    /* no pin */
+  }
+
   const stableStringify = (obj) => JSON.stringify(obj, Object.keys(obj).sort());
-  const stateHash = "0x" + crypto.createHash("sha256").update(stableStringify(gameState)).digest("hex");
+  let stateHash = "0x" + crypto.createHash("sha256").update(stableStringify(gameState)).digest("hex");
+  if (process.env.GOTCHIBOT_CHECKPOINT_STATE_HASH) {
+    stateHash = String(process.env.GOTCHIBOT_CHECKPOINT_STATE_HASH).trim();
+  } else if (chatPin?.contentHash) {
+    stateHash = String(chatPin.contentHash).trim();
+  }
+  const stateUri =
+    process.env.GOTCHIBOT_CHECKPOINT_STATE_URI ||
+    chatPin?.stateUri ||
+    gameState.projects?.storage?.stateUri ||
+    "";
 
   // Sepolia nest: no SIM POST — keep desk snapshot + hash for later on-chain checkpointSave.
   if (preferSepolia) {
@@ -251,9 +283,12 @@ async function checkpoint() {
           cartridgeId: meta.cartridgeId,
           label,
           stateHash,
+          stateUri: stateUri || null,
           gameState,
           savedAt: new Date().toISOString(),
-          note: "Local Sepolia checkpoint — on-chain SaveStateFacet / Concierge when wired; SIM disabled.",
+          note: chatPin
+            ? "Chat-sync checkpoint — run chats onchain / MetaMask checkpointSave to finalize."
+            : "Local Sepolia checkpoint — on-chain SaveStateFacet / Concierge when wired; SIM disabled.",
         },
         null,
         2,
@@ -266,7 +301,9 @@ async function checkpoint() {
           source: "local-sepolia",
           cartridgeId: meta.cartridgeId,
           stateHash,
+          stateUri: stateUri || null,
           path: "sessions/.checkpoint-local.json",
+          chatSync: Boolean(chatPin),
         },
         null,
         2,
@@ -295,7 +332,7 @@ async function checkpoint() {
     body: {
       gameId: GAME_ID,
       gameState,
-      stateUri: gameState.projects?.storage?.stateUri || process.env.GOTCHIBOT_CHECKPOINT_STATE_URI || "",
+      stateUri,
       stateHash,
       signature: "service-key",
       message,
