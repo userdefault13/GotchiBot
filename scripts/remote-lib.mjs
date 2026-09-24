@@ -2,21 +2,40 @@
 /**
  * Shared Tailscale/SSH helpers for gotchibot remote.
  * Secrets stay in env (abra run gotchibot -- …); never logged.
+ *
+ * Host resolution order:
+ *   1. REMOTE_HOST / GOTCHIBOT_REMOTE_HOST (env / abra)
+ *   2. sessions/.hub.json tailscaleHost (from gotchibot hub enable)
+ *   3. empty (caller must set)
  */
-import { mkdtempSync, writeFileSync, chmodSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+function hubPinHost() {
+  try {
+    const pin = JSON.parse(readFileSync(join(ROOT, "sessions", ".hub.json"), "utf8"));
+    if (pin?.enabled && pin.tailscaleHost) return String(pin.tailscaleHost).trim();
+  } catch {
+    /* no pin */
+  }
+  return "";
+}
+
 export function remoteConfig() {
-  const host = process.env.REMOTE_HOST || process.env.GOTCHIBOT_REMOTE_HOST || "";
+  const host =
+    process.env.REMOTE_HOST || process.env.GOTCHIBOT_REMOTE_HOST || hubPinHost() || "";
   const user = process.env.REMOTE_USER || process.env.GOTCHIBOT_REMOTE_USER || "";
   let dir = (process.env.REMOTE_DIR || process.env.GOTCHIBOT_REMOTE_DIR || "").trim();
   if (!dir || dir.includes("$HOME") || dir.startsWith("~/")) {
     dir = user ? `/Users/${user}/Dev/GotchiBot` : "$HOME/Dev/GotchiBot";
   }
   const key = process.env.SSH_PRIVATE_KEY || "";
-  return { host, user, dir, key };
+  return { host, user, dir, key, hubPinned: Boolean(hubPinHost()) && !(process.env.REMOTE_HOST || process.env.GOTCHIBOT_REMOTE_HOST) };
 }
 
 export function assertRemoteReady({ needKey = true } = {}) {
@@ -29,11 +48,13 @@ export function assertRemoteReady({ needKey = true } = {}) {
     const tip = [
       "Missing: " + missing.join(", "),
       "",
-      "On this MacBook (Touch ID):",
-      "  abra keygen ssh gotchibot --comment gotchibot-agent@mbp",
-      "  abra set gotchibot REMOTE_USER   # iMac macOS username",
+      "Own Hub (prod):",
+      "  ./scripts/gotchibot hub enable <MagicDNS|100.x>   # writes sessions/.hub.json",
+      "  abra set gotchibot REMOTE_USER   # Hub Mac username",
+      "  abra set gotchibot SSH_PRIVATE_KEY / keygen",
+      "",
+      "Or set REMOTE_HOST explicitly (overrides .hub.json):",
       "  abra set gotchibot REMOTE_HOST   # Tailscale MagicDNS or 100.x",
-      "  abra get gotchibot SSH_PUBLIC_KEY  # install on iMac authorized_keys",
       "",
       "Then: abra run gotchibot -- ./scripts/gotchibot remote -- <cmd>",
     ].join("\n");

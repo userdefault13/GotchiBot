@@ -31,7 +31,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot wisp status|mint|env [--json]   Wisp soul MCP (Gotchi Closet; key not printed)
   gotchibot wisp-proxy [--check]            OpenAI proxy for /model wisp/gotchi (:45682)
                                   # note: mode sandbox = pink TUI playground; gotchibot sandbox = Docker
-  gotchibot templates …               marketplace packs (list|show|install|apply|equip|cdn)
+  gotchibot marketplace               native Marketplace TUI (CDN → local fallback)
+  gotchibot templates …               marketplace packs (list|menu|show|install|apply|equip|cdn)
   gotchibot pack-wearable …           nest/equip marketplace packs on cGotchi slot 15 (assignment label)
   gotchibot gotchi-mode [status|env|model|ensure] [--json]  OpenCode TUI → iMac orchestrator session
   gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
@@ -76,6 +77,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot wsl [--check]       WSL2 install guide (Windows) or in-WSL readiness check
   gotchibot update [--check|--apply|--force]  check/install GotchiBot updates (CDN or git)
   gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
+  gotchibot hub enable <host>|status|pin   own Hub Tailscale host → sessions/.hub.json
+  gotchibot chats push|pull|threads|snapshot|checkpoint-prompt   Arcade chat sync
   gotchibot infra schedule status|install|uninstall|run-now  YFI 15-min supervisor LaunchAgent (run on the iMac)
   gotchibot desk-terminals status|open|close|use|install|uninstall [hero…] [--host imac|local]
                                   driven desks stay up; workers: use → tool → close (ephemeral)
@@ -156,8 +159,9 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot model [pick|list|resolve] [--json] [--probe]  pick a free, listed model
   gotchibot aseprite …                Aseprite batch export/init (see skill aseprite-tool)
   gotchibot pdf check|info|search|read-pages|tables|chunks|render  PDF via PyMuPDF
+  gotchibot marketplace|templates menu   native Marketplace (pulls templates.aarcadeghst.com)
   gotchibot templates list|show|pack|install|apply|cdn   bot-template marketplace (Prof. Link-Cube)
-                                  # cdn deploy|status → templates.aarcadeghst.com via home tunnel
+                                  # list --remote · cdn deploy|status → templates.aarcadeghst.com
   gotchibot tts on|off|status|test|speed|warm|stop-daemon  voice (MeloTTS EN-AU / edge-tts / say)
 EOF
   exit 2
@@ -430,26 +434,24 @@ cmd_identity() {
 
 cmd_remote_setup() {
   cat <<'EOF'
-GotchiBot — Fleet / iMac orchestrator (Tailscale)
+GotchiBot — Fleet / own Hub (Tailscale)
 
-  iPhone ─┐
-          ├─→ iMac :4096  opencode serve (gotchi) → sub-agents on iMac
-  MBP    ─┘
+  Desk MBP ──Tailscale──→ Hub Mac (OpenClaw + gotchibot)
+  Arcade (aarcadeghst) holds install + chat sync + hub.tailscaleHost
 
-Pin this machine:  ./scripts/gotchibot topology fleet
-(Leave topology unset for legacy = same prefer-remote behavior.)
-
-1) MBP vault: SSH key + REMOTE_USER/HOST + OPENCODE_SERVER_PASSWORD
-2) iMac: Remote Login, Tailscale CLI, pubkey, ~/Dev/GotchiBot
-3) From MBP:
+1) Register install:  ./scripts/gotchibot infra register
+2) Enable Hub:        ./scripts/gotchibot hub enable <MagicDNS|100.x>
+                      → writes sessions/.hub.json (remote-lib reads it)
+3) Vault:             abra set gotchibot REMOTE_USER + SSH key
+4) From Desk:
    abra run gotchibot -- ./scripts/gotchibot remote-push
-   abra run gotchibot -- ./scripts/gotchibot remote-serve
-4) Clients:
-   MBP:    abra run gotchibot -- ./scripts/gotchibot attach
-   iPhone: http://$REMOTE_HOST:4096  user opencode
-           password: abra get gotchibot OPENCODE_SERVER_PASSWORD
+   abra run gotchibot -- ./scripts/gotchibot attach
 
-See DEPLOYMENT.md Phase 11 + docs/SOLO-AND-FLEET.md.
+Chat sync (orch thread):
+   abra run gotchibot -- ./scripts/gotchibot chats push --text "…"
+   abra run gotchibot -- ./scripts/gotchibot chats pull
+
+See docs/GOTCHIBOT-HUB.md + Aarcade GOTCHIBOT-INSTALL-AUTH.md.
 EOF
 }
 
@@ -743,6 +745,8 @@ case "$cmd" in
       *) echo "usage: gotchibot infra register|status" >&2; exit 2 ;;
     esac
     ;;
+  hub) exec node "$ROOT/scripts/hub.mjs" "$@" ;;
+  chats|chat-sync) exec node "$ROOT/scripts/chat-sync.mjs" "$@" ;;
   infra-usage|usage-report) exec node "$ROOT/scripts/infra-usage-report.mjs" "$@" ;;
   desk-terminals|terminals) abra_or_node "$ROOT/scripts/desk-terminals.mjs" "$@" ;;
   aseprite) exec node "$ROOT/scripts/aseprite-tool.mjs" "$@" ;;
@@ -934,6 +938,9 @@ case "$cmd" in
       *) exec node "$ROOT/scripts/moltbook-watch.mjs" "$@" ;;
     esac ;;
   model) abra_or_node "$ROOT/scripts/model-auto.mjs" "$@" ;;
+  marketplace|market)
+    exec node "$ROOT/scripts/marketplace-menu.mjs" "$@"
+    ;;
   templates)
     exec node "$ROOT/scripts/template-pack.mjs" "$@"
     ;;
