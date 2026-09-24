@@ -1,8 +1,10 @@
 # GotchiBot Hub (user-owned) + chat sync
 
 Each install’s **Hub** is their always-on Mac (OpenClaw + gotchibot) on **Tailscale**.
-Arcade (`aarcadeghst.com`) stores install metadata, chat sync, and the Hub host pin —
-it does not host strangers’ OpenClaw.
+Chat sync + Hub enable/status run on **home infra** (`gotchibot.aarcadeghst.com` → `:8793`),
+not Vercel serverless. Register stays on www.
+
+See Aarcade [`GOTCHIBOT-HOME-API.md`](../../AarcadeGh-t/docs/GOTCHIBOT-HOME-API.md).
 
 Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserved).
 
@@ -15,6 +17,7 @@ Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserve
    - Install Tailscale; note MagicDNS name or `100.x`  
    - Clone GotchiBot; Remote Login (SSH); install desk pubkey  
    - Run OpenClaw / `gotchibot` as you would on the PoC iMac  
+   - Run home GotchiBot API LaunchAgent (`com.aarcade.gotchibot-api`) + tunnel ingress  
 
 3. **Enable Hub** (wallet-signed)  
    ```bash
@@ -31,9 +34,9 @@ Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserve
    abra run gotchibot -- ./scripts/gotchibot remote -- hostname
    ```
 
-## Chat sync (Arcade Mongo)
+## Chat sync (home Mongo)
 
-Install-token auth. Collections: `gotchibot_chat_*` (not legacy `chat_messages`).
+Install-token auth. Base: `https://gotchibot.aarcadeghst.com` (`GOTCHIBOT_DESK_API_BASE`).
 
 ```bash
 abra run gotchibot -- ./scripts/gotchibot chats push --text "hello from desk"
@@ -41,18 +44,6 @@ abra run gotchibot -- ./scripts/gotchibot chats pull
 abra run gotchibot -- ./scripts/gotchibot chats threads
 abra run gotchibot -- ./scripts/gotchibot chats snapshot
 ```
-
-API (www):
-
-| Method | Path |
-|--------|------|
-| POST | `/api/gotchibot/chats/push` |
-| GET | `/api/gotchibot/chats/pull?threadId=&since=` |
-| GET | `/api/gotchibot/chats/threads` |
-| POST | `/api/gotchibot/chats/snapshot` |
-| GET | `/api/gotchibot/chats/snapshot/:id` (public light metadata) |
-| POST | `/api/gotchibot/hub/enable` |
-| GET | `/api/gotchibot/hub/status` |
 
 Default thread id: `orch`.
 
@@ -69,12 +60,3 @@ GOTCHIBOT_CHAT_CHECKPOINT=1 abra run gotchibot -- ./scripts/gotchibot chats chec
 Builds an Arcade snapshot (`stateUri` + `contentHash` + `gitCommit`), writes
 `sessions/.chat-sync-checkpoint.json`. On-chain save still goes through
 `gotchibot checkpoint` / identity — never silent MetaMask.
-
-## PoC vs prod
-
-| PoC | Prod |
-|-----|------|
-| Fixed home iMac in abra `REMOTE_HOST` | `hub.tailscaleHost` on install + `.hub.json` |
-| Operator-only knowledge | Concierge / setup checklist above |
-
-See also: Aarcade [`GOTCHIBOT-INSTALL-AUTH.md`](../../AarcadeGh-t/docs/GOTCHIBOT-INSTALL-AUTH.md).

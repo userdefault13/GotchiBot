@@ -4,5 +4,6 @@
   "clientHeaderValue": "gotchibot",
   "registerUrl": "https://www.aarcadeghst.com/api/gotchibot/register",
   "statusUrl": "https://www.aarcadeghst.com/api/gotchibot/install/status",
-  "soloApiBase": "https://www.aarcadeghst.com"
+  "soloApiBase": "https://www.aarcadeghst.com",
+  "deskApiBase": "https://gotchibot.aarcadeghst.com"
 }

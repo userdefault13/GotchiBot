@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import http from "node:http";
 import { isMainModule } from "./is-main.mjs";
-import { infraHeaders, soloApiBase, hasInstallToken } from "./infra-client.mjs";
+import { infraHeaders, deskApiBase, hasInstallToken } from "./infra-client.mjs";
 import {
   hasAbra,
   resolveCastBin,
@@ -75,7 +75,7 @@ function readHubPin() {
 }
 
 async function api(method, path, { body } = {}) {
-  const base = soloApiBase();
+  const base = deskApiBase();
   const headers = { ...infraHeaders(), "Content-Type": "application/json" };
   const res = await fetch(`${base}${path}`, {
     method,

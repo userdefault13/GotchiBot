@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { isMainModule } from "./is-main.mjs";
-import { infraHeaders, soloApiBase, hasInstallToken } from "./infra-client.mjs";
+import { infraHeaders, deskApiBase, hasInstallToken } from "./infra-client.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -39,7 +39,7 @@ async function api(method, path, { query, body } = {}) {
   if (!hasInstallToken()) {
     throw new Error("GOTCHIBOT_INFRA_TOKEN required — abra run gotchibot -- ./scripts/gotchibot chats …");
   }
-  const base = soloApiBase();
+  const base = deskApiBase();
   const url = new URL(`${base}${path}`);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -167,7 +167,7 @@ async function cmdSnapshot(opts) {
   const result = await api("POST", "/api/gotchibot/chats/snapshot", {
     body: { gitCommit, gitBranch },
   });
-  const base = soloApiBase();
+  const base = deskApiBase();
   const stateUri = `${base}${result.stateUriPath}`;
   if (opts.json) console.log(JSON.stringify({ ...result, stateUri }));
   else {

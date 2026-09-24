@@ -58,6 +58,13 @@ export function soloApiBase(env = process.env) {
   );
 }
 
+/** Chat sync + Hub enable/status — home tunnel (not Vercel serverless). */
+export function deskApiBase(env = process.env) {
+  return String(
+    env.GOTCHIBOT_DESK_API_BASE || AUTH_CFG.deskApiBase || "https://gotchibot.aarcadeghst.com",
+  ).replace(/\/$/, "");
+}
+
 export function resolveSubgraphUrl(subgraphName = "aavegotchi-core-base", env = process.env) {
   if (useSoloApi(env)) {
     return `${soloApiBase(env)}/api/subgraph/${subgraphName}`;
