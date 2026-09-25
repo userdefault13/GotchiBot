@@ -30,6 +30,7 @@ import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { isDarwin, macGuiAvailable, skipNote } from "./lib/platform-guard.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOME = homedir();
@@ -95,6 +96,8 @@ async function runOnImac() {
       `cd ${shellQuote(remoteRoot)}`,
       'export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"',
       "export GOTCHIBOT_ON_IMAC=1",
+      // Deliberately drawing on the iMac's screen from ssh — bypass the SSH GUI skip.
+      "export GOTCHIBOT_MAC_GUI=1",
       `node scripts/desk-terminals.mjs --host local ${passthrough.map(shellQuote).join(" ")}`,
     ].join("; ");
     console.error(`[desk-terminals] running on the iMac (${cfg.host})…`);
@@ -274,6 +277,12 @@ function ensureGroupedSession(h, log) {
 
 function showTerminal(h, log) {
   if (dryRun) return log(`would open Terminal "${h.title}" on ${h.session}:${h.window}`);
+  if (!macGuiAvailable()) {
+    const reason = isDarwin() ? "over SSH" : "macOS only";
+    skipNote("Terminal.app window", reason);
+    log(`skipped Terminal — attach with: tmux attach -t ${h.session}`);
+    return true;
+  }
   const r = sh(
     join(ROOT, "scripts/agent-desktop-terminal.sh"),
     ["--session", h.session, "--window", h.window, "--title", h.title, "--cols", String(COLS), "--rows", String(ROWS)],
@@ -284,10 +293,16 @@ function showTerminal(h, log) {
 }
 
 function open(heroes) {
-  const user = consoleUser();
-  if (!dryRun && (!user || user === "root")) {
-    console.error("[desk-terminals] no console user logged in — nothing to draw on (log in at the iMac screen)");
-    process.exit(1);
+  if (!isDarwin()) {
+    skipNote("desk-terminals open", "macOS only");
+    return 0;
+  }
+  if (macGuiAvailable()) {
+    const user = consoleUser();
+    if (!dryRun && (!user || user === "root")) {
+      console.error("[desk-terminals] no console user logged in — nothing to draw on (log in at the iMac screen)");
+      process.exit(1);
+    }
   }
   let failed = 0;
   for (const h of heroes) {
@@ -295,7 +310,7 @@ function open(heroes) {
     try {
       ensureWindow(h, log);
       ensureGroupedSession(h, log);
-      // Pin this hero's session to its window, then attach a Terminal to it.
+      // Pin this hero's session to its window, then attach a Terminal to it (local GUI only).
       if (!dryRun) tmux(["select-window", "-t", `=${h.session}:${h.window}`]);
       if (showTerminal(h, log) === false) failed++;
     } catch (e) {
@@ -398,11 +413,15 @@ function printStatus(st, launch) {
     );
   }
   if (launch) {
-    console.log(
-      `${launch.loaded ? "ok   " : "off  "} LaunchAgent ${LABEL} ${
-        launch.loaded ? `loaded (runs=${launch.loaded.runs ?? "?"})` : "not installed — run: gotchibot desk-terminals install"
-      }`,
-    );
+    if (launch.skipped) {
+      console.log(`skip  LaunchAgent ${LABEL} (macOS only)`);
+    } else {
+      console.log(
+        `${launch.loaded ? "ok   " : "off  "} LaunchAgent ${LABEL} ${
+          launch.loaded ? `loaded (runs=${launch.loaded.runs ?? "?"})` : "not installed — run: gotchibot desk-terminals install"
+        }`,
+      );
+    }
   }
 }
 
@@ -421,13 +440,19 @@ async function main() {
 
   if (cmd === "status") {
     const st = status(heroes);
-    const launch = { loaded: launchd.loaded(LABEL), plist: existsSync(launchd.plistPath(LABEL)) };
+    const launch = isDarwin()
+      ? { loaded: launchd.loaded(LABEL), plist: existsSync(launchd.plistPath(LABEL)) }
+      : { loaded: false, plist: false, skipped: true, reason: "macOS only" };
     if (json) console.log(JSON.stringify({ ...st, launchAgent: launch }, null, 2));
     else printStatus(st, launch);
     const bad = st.heroes.filter((h) => (h.driven || !h.ephemeral) && !(h.windowAlive && h.terminals > 0));
     process.exit(bad.length ? 1 : 0);
   }
   if (cmd === "open") {
+    if (!isDarwin()) {
+      skipNote("desk-terminals open", "macOS only");
+      process.exit(0);
+    }
     const targets = heroArgs.length ? heroes : heroes.filter((h) => h.driven);
     if (!targets.length) {
       console.error(
@@ -446,6 +471,10 @@ async function main() {
     process.exit(use(heroes));
   }
   if (cmd === "install") {
+    if (!isDarwin()) {
+      skipNote("desk-terminals install", "macOS only");
+      process.exit(0);
+    }
     const r = launchd.install({
       label: LABEL,
       args: [`${ROOT}/scripts/desk-terminals.mjs`, "open", "--host", "local"],
@@ -455,12 +484,24 @@ async function main() {
       runAtLoad: true,
       env: { GOTCHIBOT_ON_IMAC: "1" },
     });
+    if (r.skipped) {
+      skipNote("desk-terminals install", r.reason || "macOS only");
+      process.exit(0);
+    }
     console.log(`${r.changed ? "wrote" : "kept"} ${r.path} (node ${r.node})`);
     console.log(`loaded ${LABEL}: re-opens driven desks at login / every ${REOPEN_SEC}s (workers stay ephemeral)`);
     return;
   }
   if (cmd === "uninstall") {
-    launchd.uninstall(LABEL);
+    if (!isDarwin()) {
+      skipNote("desk-terminals uninstall", "macOS only");
+      process.exit(0);
+    }
+    const r = launchd.uninstall(LABEL);
+    if (r?.skipped) {
+      skipNote("desk-terminals uninstall", r.reason || "macOS only");
+      process.exit(0);
+    }
     console.log(`removed ${LABEL} (tool windows and Terminals left as they are)`);
     return;
   }

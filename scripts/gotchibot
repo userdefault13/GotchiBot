@@ -10,6 +10,13 @@ DISPATCH="$ROOT/scripts/opencode-dispatch.sh"
 PIN="$SESSIONS/.pin"
 mkdir -p "$SESSIONS"
 
+# Local macOS GUI (open / SwiftBar) — false on Linux or over SSH.
+is_macos_local() {
+  [ "$(uname -s)" = "Darwin" ] || return 1
+  [ "${GOTCHIBOT_MAC_GUI:-}" = "1" ] && return 0
+  [ -z "${SSH_TTY:-}" ] && [ -z "${SSH_CONNECTION:-}" ]
+}
+
 usage() {
   cat >&2 <<'EOF'
 gotchibot — GotchiBot orchestrator CLI
@@ -644,11 +651,24 @@ cmd_menubar() {
       printf '%s\n' "$plugins_dir"
       ;;
     open)
+      if [ "$(uname -s)" != "Darwin" ]; then
+        printf '%s\n' "$plugins_dir"
+        echo "gotchibot: menubar open skipped (macOS only)" >&2
+        return 0
+      fi
       mkdir -p "$plugins_dir"
-      open "$plugins_dir"
+      if is_macos_local; then
+        open "$plugins_dir"
+      else
+        echo "gotchibot: Finder open skipped (over SSH)" >&2
+      fi
       printf '%s\n' "$plugins_dir"
       ;;
     install)
+      if [ "$(uname -s)" != "Darwin" ]; then
+        echo "gotchibot: SwiftBar install skipped (macOS only)" >&2
+        return 0
+      fi
       if [ ! -d "/Applications/SwiftBar.app" ] && [ ! -d "$HOME/Applications/SwiftBar.app" ]; then
         echo "SwiftBar not found. Install it first (needs your approval):" >&2
         echo "  brew install --cask swiftbar" >&2
@@ -658,8 +678,12 @@ cmd_menubar() {
       mkdir -p "$plugins_dir"
       ln -sfn "$plugin_src" "$dest"
       chmod +x "$plugin_src"
-      open "$plugins_dir" 2>/dev/null || true
-      open -g -a SwiftBar 2>/dev/null || true
+      if is_macos_local; then
+        open "$plugins_dir" 2>/dev/null || true
+        open -g -a SwiftBar 2>/dev/null || true
+      else
+        echo "gotchibot: SwiftBar open skipped (over SSH)" >&2
+      fi
       echo "linked: $dest"
       echo ""
       echo "If SwiftBar asks for a plugins folder (Documents is blocked):"

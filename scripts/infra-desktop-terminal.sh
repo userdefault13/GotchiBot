@@ -25,6 +25,18 @@ ROWS="${INFRA_DESKTOP_ROWS:-50}"
 
 [ -x "$TMUX_BIN" ] || TMUX_BIN="$(command -v tmux || echo /usr/local/bin/tmux)"
 
+# Skip Terminal.app on Linux or over SSH (would pop a window on the remote Mac),
+# unless the caller explicitly targets the Mac's screen (GOTCHIBOT_MAC_GUI=1 /
+# GOTCHIBOT_ON_IMAC=1, as desk-terminals --host imac does).
+_gb_gui_forced=0
+{ [ "${GOTCHIBOT_MAC_GUI:-}" = "1" ] || [ "${GOTCHIBOT_ON_IMAC:-}" = "1" ]; } && _gb_gui_forced=1
+if [ "$(uname -s)" != "Darwin" ] || { [ "$_gb_gui_forced" = 0 ] && { [ -n "${SSH_TTY:-}" ] || [ -n "${SSH_CONNECTION:-}" ]; }; }; then
+  if [ "${1:-}" != "--status" ]; then
+    echo "gotchibot: Terminal.app window skipped (macOS only / over SSH) — attach with: tmux attach -t ${SESSION}" >&2
+    exit 0
+  fi
+fi
+
 attached_clients() {
   "$TMUX_BIN" list-clients -t "$SESSION" 2>/dev/null | grep -c . || true
 }
@@ -33,7 +45,11 @@ if [ "${1:-}" = "--status" ]; then
   echo "session:  $SESSION"
   echo "window:   $WINDOW"
   echo "clients:  $(attached_clients)"
-  echo "console:  $(stat -f '%Su' /dev/console)"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    echo "console:  $(stat -f '%Su' /dev/console 2>/dev/null || echo n/a)"
+  else
+    echo "console:  n/a (non-macOS)"
+  fi
   exit 0
 fi
 

@@ -6,16 +6,20 @@
  * The plist is rendered at install time with THIS host's node path and HOME;
  * a committed plist that hard-codes /usr/local/bin/node is wrong on a desk
  * where node lives under nvm.
+ *
+ * Non-darwin: loaded() → false; install/uninstall → { ok:false, skipped:true, reason:"macOS only" }.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { isDarwin } from "./platform-guard.mjs";
 
 export const AGENTS_DIR = join(homedir(), "Library", "LaunchAgents");
 const sh = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8" });
 const uid = () => userInfo().uid;
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const SKIPPED = Object.freeze({ ok: false, skipped: true, reason: "macOS only" });
 
 export function plistPath(label) {
   return join(AGENTS_DIR, `${label}.plist`);
@@ -50,10 +54,11 @@ ${Object.entries(envAll).map(([k, v]) => `    <key>${esc(k)}</key><string>${esc(
 `;
 }
 
-/** null when not loaded; else { runs, lastExit } from `launchctl print`. */
+/** false on non-darwin; null when not loaded; else { runs, lastExit } from `launchctl print`. */
 export function loaded(label) {
+  if (!isDarwin()) return false;
   const r = sh("launchctl", ["print", `gui/${uid()}/${label}`]);
-  if (r.status !== 0) return null;
+  if (r.error || r.status !== 0) return null;
   return {
     lastExit: r.stdout.match(/last exit code = (\S+)/)?.[1] ?? null,
     runs: (() => {
@@ -64,6 +69,7 @@ export function loaded(label) {
 }
 
 export function install(spec) {
+  if (!isDarwin()) return { ...SKIPPED };
   const path = plistPath(spec.label);
   mkdirSync(AGENTS_DIR, { recursive: true });
   mkdirSync(spec.logDir, { recursive: true });
@@ -74,16 +80,19 @@ export function install(spec) {
   let r = sh("launchctl", ["bootstrap", `gui/${uid()}`, path]);
   if (r.status !== 0) r = sh("launchctl", ["load", "-w", path]);
   if (r.status !== 0) throw new Error(`launchctl failed: ${(r.stderr || r.stdout).trim()}`);
-  return { path, changed, node: process.execPath };
+  return { ok: true, path, changed, node: process.execPath };
 }
 
 export function uninstall(label) {
+  if (!isDarwin()) return { ...SKIPPED };
   const path = plistPath(label);
   if (loaded(label)) sh("launchctl", ["bootout", `gui/${uid()}/${label}`]);
   if (existsSync(path)) unlinkSync(path);
+  return { ok: true };
 }
 
 export function kickstart(label) {
+  if (!isDarwin()) throw new Error("macOS only");
   if (!loaded(label)) throw new Error("not loaded — run install first");
   const r = sh("launchctl", ["kickstart", `gui/${uid()}/${label}`]);
   if (r.status !== 0) throw new Error(`kickstart failed: ${(r.stderr || r.stdout).trim()}`);
