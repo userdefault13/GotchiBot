@@ -16,7 +16,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(fileURLToPath(import.meta.url), "..", "..");
-const host = (process.env.REMOTE_HOST || "100.68.95.90").replace(/^https?:\/\//, "");
+const hostRaw = process.env.REMOTE_HOST || process.env.GOTCHIBOT_OPENCODE_HOSTNAME || "";
+if (!hostRaw) {
+  console.error(
+    "set REMOTE_HOST to the opencode host's Tailscale IP/MagicDNS (or GOTCHIBOT_OPENCODE_HOSTNAME)",
+  );
+  process.exit(1);
+}
+const host = hostRaw.replace(/^https?:\/\//, "");
 const port = process.env.OPENCODE_SERVER_PORT || "4096";
 const user = process.env.OPENCODE_SERVER_USERNAME || "opencode";
 const pass = process.env.OPENCODE_SERVER_PASSWORD || "";

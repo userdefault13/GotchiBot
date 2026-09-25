@@ -5,6 +5,18 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   canonicalJson,
   contentHashOf,
@@ -16,7 +28,6 @@ import {
   parseStateUri,
   isPublicSafeStateUri,
 } from "../scripts/chat-state-uri.mjs";
-import { resolve } from "node:path";
 import {
   classifyRequest,
   checkOrigin,
@@ -679,5 +690,119 @@ describe("hub-install render + parse helpers", () => {
     );
     assert.equal(noFunnel.funnel, false);
     assert.equal(noFunnel.target, "http://127.0.0.1:8793");
+  });
+});
+
+// ─── opencode-serve guard + port registry ────────────────────────────────────
+
+describe("opencode-serve guard + port registry", () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const serveSh = resolve(root, "scripts/opencode-serve.sh");
+
+  function makeOpencodeStub(dir, marker) {
+    const stub = join(dir, "opencode");
+    writeFileSync(
+      stub,
+      `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(marker)}\n`,
+      { mode: 0o755 },
+    );
+    return stub;
+  }
+
+  it("opencode-serve.sh refuses when OPENCODE_SERVER_PASSWORD is unset", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-serve-nopw-"));
+    const marker = join(dir, "ran.marker");
+    try {
+      makeOpencodeStub(dir, marker);
+      const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
+      delete env.OPENCODE_SERVER_PASSWORD;
+      delete env.GOTCHIBOT_OPENCODE_IOS;
+      const r = spawnSync("bash", [serveSh], { encoding: "utf8", env });
+      assert.notEqual(r.status, 0);
+      assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("opencode-serve.sh refuses GOTCHIBOT_OPENCODE_IOS=1 even with a password", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-serve-ios-"));
+    const marker = join(dir, "ran.marker");
+    try {
+      makeOpencodeStub(dir, marker);
+      const r = spawnSync("bash", [serveSh], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${dir}:${process.env.PATH}`,
+          OPENCODE_SERVER_PASSWORD: "test-only-pw",
+          GOTCHIBOT_OPENCODE_IOS: "1",
+        },
+      });
+      assert.notEqual(r.status, 0);
+      assert.equal(existsSync(marker), false);
+      assert.match(`${r.stderr}\n${r.stdout}`, /removed/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("opencode-serve.sh execs stub with serve --hostname --port when password set", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-serve-ok-"));
+    const marker = join(dir, "ran.marker");
+    try {
+      makeOpencodeStub(dir, marker);
+      const r = spawnSync("bash", [serveSh], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${dir}:${process.env.PATH}`,
+          OPENCODE_SERVER_PASSWORD: "test-only-pw",
+          GOTCHIBOT_OPENCODE_MDNS: "0",
+        },
+      });
+      assert.equal(r.status, 0, r.stderr || r.stdout);
+      assert.equal(existsSync(marker), true);
+      const argv = readFileSync(marker, "utf8");
+      assert.match(argv, /\bserve\b/);
+      assert.match(argv, /--hostname/);
+      assert.match(argv, /--port/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("iphone-qr.mjs source contains no hard-coded 100.68.95.90", () => {
+    const src = readFileSync(resolve(root, "scripts/iphone-qr.mjs"), "utf8");
+    assert.equal(src.includes("100.68.95.90"), false);
+  });
+
+  it("port registry: CHECKPOINT_SIGN/HOST_ARTIFACT outside RESERVED_HUB_PORTS; no stray Hub defaults", async () => {
+    const { PORTS, RESERVED_HUB_PORTS } = await import("../scripts/lib/ports.mjs");
+    assert.equal(PORTS.CHECKPOINT_SIGN, 8796);
+    assert.equal(PORTS.HOST_ARTIFACT, 8797);
+    assert.ok(!RESERVED_HUB_PORTS.includes(PORTS.CHECKPOINT_SIGN));
+    assert.ok(!RESERVED_HUB_PORTS.includes(PORTS.HOST_ARTIFACT));
+
+    // Hub API / pair clients that may still default to 8793 via ?? / ||.
+    // Minimal allowlist from ripgrep of scripts/**/*.mjs for those literals.
+    const allowlist = new Set(["scripts/infra-client.mjs"]);
+    const re = /(\?\?|\|\|)\s*["']?879[34]["']?/;
+    const hits = [];
+    for (const name of readdirSync(resolve(root, "scripts"))) {
+      if (!name.endsWith(".mjs")) continue;
+      const rel = `scripts/${name}`;
+      if (allowlist.has(rel)) continue;
+      const text = readFileSync(resolve(root, rel), "utf8");
+      if (re.test(text)) hits.push(rel);
+    }
+    for (const name of readdirSync(resolve(root, "scripts/lib"))) {
+      if (!name.endsWith(".mjs")) continue;
+      const rel = `scripts/lib/${name}`;
+      if (allowlist.has(rel)) continue;
+      const text = readFileSync(resolve(root, rel), "utf8");
+      if (re.test(text)) hits.push(rel);
+    }
+    assert.deepEqual(hits, [], `unexpected Hub port defaults: ${hits.join(", ")}`);
   });
 });

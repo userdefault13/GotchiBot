@@ -13,12 +13,13 @@ import http from "node:http";
 import { isMainModule } from "./is-main.mjs";
 import { resolveCastBin } from "./platform.mjs";
 import { isPublicSafeStateUri } from "./chat-state-uri.mjs";
+import { PORTS } from "./lib/ports.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PIN = `${ROOT}/sessions/.chat-sync-checkpoint.json`;
 const IDENTITY = `${ROOT}/sessions/.identity.json`;
 const WALLET = `${ROOT}/sessions/.wallet.json`;
-const SIGN_PORT = Number(process.env.GOTCHIBOT_CHECKPOINT_SIGN_PORT ?? 8794);
+const SIGN_PORT = Number(process.env.GOTCHIBOT_CHECKPOINT_SIGN_PORT ?? PORTS.CHECKPOINT_SIGN);
 export const CHAIN_ID = 84532;
 
 function loadJson(path) {

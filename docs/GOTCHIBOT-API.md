@@ -66,6 +66,10 @@ Prefer the install wizard’s service unit for always-on. Manual start is for de
 
 Env wins over the Hub config file. Prefer bind `127.0.0.1` and expose with `tailscale serve`.
 
+## Ports
+
+Hub API default bind is **8793**. The live Hub host often runs the API on **8794**. Other features must not default to either port — see the frozen registry in `scripts/lib/ports.mjs` (`RESERVED_HUB_PORTS`, checkpoint sign on 8796, etc.).
+
 ## Files
 
 | Path | Where | Notes |
