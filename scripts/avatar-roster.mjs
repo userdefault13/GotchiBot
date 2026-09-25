@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Snapshot for avatar pane: role label + other cartridge cAavegotchis.
+ * Snapshot for avatar pane: role label + cartridge roster (other cAavegotchis).
  *
  *   node scripts/avatar-roster.mjs [--json] [--refresh]
  */
@@ -97,7 +97,7 @@ function isSepoliaNestDesk(meta) {
 async function heroesFresh() {
   try {
     const meta = loadMeta();
-    // No cartridge yet (new mint path) — don't leak the old fleet into "other cAavegotchis".
+    // No cartridge yet (new mint path) — don't leak the old fleet into the roster.
     if (!meta?.cartridgeId) return [];
 
     // Sepolia nest desk: only on-chain nested heroes — never focus-list / sim fleet.

@@ -609,7 +609,7 @@ resolve_thumb_collateral() {
   printf '%s\t%s\n' "${spirit:-}" "${haunt:-}"
 }
 
-# Roster / "other cAavegotchis" tile — large thumb, doubled collateral, eyes plain.
+# Roster tile — large thumb, doubled collateral, eyes plain.
 # (iMessage meet bubbles use --thumb and stay plain regular eyes.)
 thumb_art() {
   local collateral="${1:-}" id="${2:-}" haunt="${3:-}"
@@ -1003,7 +1003,7 @@ render_body() {
   fi
 
   # Pinned header from row 0 — orch face never moves. Pagination swaps the 3-col row.
-  # (main art + ── orchestrator ── caption + "other cAavegotchis" label)
+  # (main art + ── orchestrator ── caption + roster label)
   local main
   memo_call main "art|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget" \
     render_main_art "$status" "$cols" "$main_budget"
@@ -1045,7 +1045,7 @@ render_body() {
   put_line "$row" ""
   row=$((row + 1))
 
-  put_line "$row" $'\033[38;5;245mother cAavegotchis\033[0m'
+  put_line "$row" $'\033[38;5;245mroster\033[0m'
   row=$((row + 1))
 
   roster_raw="$(load_roster_json)"

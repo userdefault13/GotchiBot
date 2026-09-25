@@ -27,6 +27,7 @@ import {
   collateralCharacter,
   findCollateralColors,
   hexNormalize,
+  loadHeroState,
   persistHeroCollateral,
   resolveHeroColors,
   starterSpiritFromHeroId,
@@ -170,7 +171,7 @@ export function renderKanbanAscii(colors = null, opts = {}) {
 }
 
 /**
- * Avatar "other cAavegotchis" / sub-agent roster tile: same tombstone as
+ * Avatar roster / sub-agent tile: same tombstone as
  * iMessage, regular ▄▄/▀▀ eyes (left alone), doubled forehead collateral
  * for symmetry (░░ → UU / ₿₿ / …).
  */
@@ -372,6 +373,8 @@ async function enrichFromWallet(hero) {
     if (!address) return hero;
     const g = await fetchWalletGotchiById(address, tokenId);
     if (!g) return hero;
+    const traits =
+      g.modifiedTraits || g.withSetsNumericTraits || g.numericTraits || hero.modifiedTraits || hero.traits || null;
     return {
       ...hero,
       sourceTokenId: tokenId,
@@ -379,6 +382,9 @@ async function enrichFromWallet(hero) {
       collateralAddress: g.collateral || hero.collateralAddress,
       hauntId: g.hauntId ?? hero.hauntId,
       name: g.name || hero.name,
+      numericTraits: g.numericTraits || hero.numericTraits || traits,
+      modifiedTraits: traits,
+      traits,
     };
   } catch {
     return hero;
@@ -408,16 +414,36 @@ async function heroIdentity() {
     colors = resolveHeroColors(hero, hero.id);
   }
 
-  const traits = hero.modifiedTraits ?? hero.traits ?? [];
-  if (colors?.primary && hero.id) {
+  // Always enrich owned-* from Base wallet when traits missing (cheeks).
+  const persisted = hero.id ? loadHeroState(hero.id) : null;
+  const hasTraits = Array.isArray(hero.modifiedTraits || hero.traits || hero.numericTraits)
+    && (hero.modifiedTraits || hero.traits || hero.numericTraits).length >= 6;
+  const hasPersistedTraits =
+    Array.isArray(persisted?.modifiedTraits) && persisted.modifiedTraits.length >= 6;
+  if (tokenIdFromHeroId(hero.id) && !hasTraits && !hasPersistedTraits) {
+    hero = await enrichFromWallet(hero);
+    colors = resolveHeroColors(hero, hero.id) || colors;
+  }
+
+  const traits =
+    (Array.isArray(hero.modifiedTraits) && hero.modifiedTraits.length >= 6 && hero.modifiedTraits) ||
+    (Array.isArray(hero.traits) && hero.traits.length >= 6 && hero.traits) ||
+    (Array.isArray(hero.numericTraits) && hero.numericTraits.length >= 6 && hero.numericTraits) ||
+    (Array.isArray(persisted?.modifiedTraits) && persisted.modifiedTraits.length >= 6 && persisted.modifiedTraits) ||
+    (Array.isArray(persisted?.numericTraits) && persisted.numericTraits.length >= 6 && persisted.numericTraits) ||
+    [];
+
+  if ((colors?.primary || traits.length >= 6) && hero.id) {
     persistHeroCollateral(hero.id, {
-      collateral: colors.spirit,
+      collateral: colors?.spirit,
       collateralAddress: hero.collateralAddress || hero.collateral,
-      collateralName: colors.name,
-      hauntId: colors.hauntId ?? hero.hauntId,
-      primary: colors.primary,
-      secondary: colors.secondary,
+      collateralName: colors?.name,
+      hauntId: colors?.hauntId ?? hero.hauntId,
+      primary: colors?.primary,
+      secondary: colors?.secondary,
       sourceTokenId: hero.sourceTokenId || tokenIdFromHeroId(hero.id),
+      modifiedTraits: traits.length >= 6 ? traits : undefined,
+      numericTraits: hero.numericTraits || (traits.length >= 6 ? traits : undefined),
     });
   }
 

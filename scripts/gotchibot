@@ -87,6 +87,10 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot hub pair|desks|revoke <deskId>        on the Hub: pairing codes + paired desks
   gotchibot hub join <host> <code>                on a desk: pair with your Hub
   gotchibot api start|stop|status                 run gotchibot-api by hand (dev)
+  gotchibot host register|run|status
+                                  Aarcade Host Network provider (Node agent; slots)
+  gotchibot slots submit|status <jobId>
+                                  enqueue / inspect slot jobs (SIM: --sim)
   gotchibot infra schedule status|install|uninstall|run-now  YFI 15-min supervisor LaunchAgent (run on the iMac)
   gotchibot desk-terminals status|open|close|use|install|uninstall [hero…] [--host imac|local]
                                   driven desks stay up; workers: use → tool → close (ephemeral)
@@ -873,6 +877,9 @@ case "$cmd" in
         abra_or_node "$ROOT/scripts/hub-status.mjs" "$@"
         ;;
     esac
+    ;;
+  host|slots)
+    exec node "$ROOT/scripts/host-network.mjs" "$@"
     ;;
   hubmon|agent-monitor)
     if [ $# -eq 0 ]; then

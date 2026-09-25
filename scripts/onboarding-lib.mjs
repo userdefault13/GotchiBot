@@ -127,6 +127,8 @@ const USERS_GOTCHIS_QUERY = `query GotchisOwnedByUser($owner: String!, $first: I
       name
       collateral
       hauntId
+      numericTraits
+      withSetsNumericTraits
     }
   }
 }`;
@@ -138,6 +140,8 @@ const GOTCHIS_BY_OWNER_QUERY = `query GotchisByOwner($owner: String!, $first: In
     name
     collateral
     hauntId
+    numericTraits
+    withSetsNumericTraits
   }
 }`;
 
@@ -148,6 +152,8 @@ const GOTCHIS_BY_OWNER_NESTED_QUERY = `query GotchisByOwnerNested($owner: String
     name
     collateral
     hauntId
+    numericTraits
+    withSetsNumericTraits
   }
 }`;
 
@@ -171,16 +177,38 @@ function encodeGetAavegotchiCalldata(tokenId) {
   return `${GET_AAVEGOTCHI_SELECTOR}${id.toString(16).padStart(64, "0")}`;
 }
 
+function coerceTraits6(v) {
+  if (!Array.isArray(v) || v.length < 6) return null;
+  const out = v.slice(0, 6).map((n) => Number(n));
+  if (out.some((n) => !Number.isFinite(n))) return null;
+  return out;
+}
+
+function traitsFromGotchiFields(g = {}) {
+  return (
+    coerceTraits6(g.withSetsNumericTraits) ||
+    coerceTraits6(g.modifiedNumericTraits) ||
+    coerceTraits6(g.modifiedTraits) ||
+    coerceTraits6(g.numericTraits) ||
+    coerceTraits6(g.traits) ||
+    null
+  );
+}
+
 function parseGetAavegotchiCastJson(stdout) {
   try {
     const parsed = JSON.parse(String(stdout || "").trim());
     const row = Array.isArray(parsed?.[0]) ? parsed[0] : Array.isArray(parsed) ? parsed : null;
     if (!row) return null;
     const name = row[1] != null ? String(row[1]).trim() : "";
+    const numericTraits = coerceTraits6(row[5]);
+    const modifiedTraits = coerceTraits6(row[6]);
     return {
       name: name || null,
-      hauntId: row[17] != null ? Number(row[17]) : null,
+      hauntId: row[18] != null ? Number(row[18]) : row[17] != null ? Number(row[17]) : null,
       collateral: row[8] ? String(row[8]) : null,
+      numericTraits,
+      modifiedTraits: modifiedTraits || numericTraits,
     };
   } catch {
     return null;
@@ -245,9 +273,9 @@ async function fetchAavegotchiInfo(tokenId) {
   return fetchAavegotchiInfoFetch(tokenId);
 }
 
-async function enrichGotchiNamesFromRpc(gotchis) {
+async function enrichGotchisFromRpc(gotchis) {
   const list = Array.isArray(gotchis) ? gotchis : [];
-  const pending = list.filter((g) => !g.name);
+  const pending = list.filter((g) => !g.name || !traitsFromGotchiFields(g));
   if (!pending.length) return list;
 
   for (let i = 0; i < pending.length; i += RPC_NAME_BATCH) {
@@ -263,13 +291,23 @@ async function enrichGotchiNamesFromRpc(gotchis) {
     );
     for (let j = 0; j < chunk.length; j++) {
       const info = infos[j];
-      if (!info?.name) continue;
-      chunk[j].name = info.name;
+      if (!info) continue;
+      if (!chunk[j].name && info.name) chunk[j].name = info.name;
       if (!chunk[j].hauntId && info.hauntId) chunk[j].hauntId = info.hauntId;
       if (!chunk[j].collateral && info.collateral) chunk[j].collateral = info.collateral;
+      const traits = traitsFromGotchiFields(info);
+      if (traits && !traitsFromGotchiFields(chunk[j])) {
+        chunk[j].numericTraits = coerceTraits6(info.numericTraits) || traits;
+        chunk[j].modifiedTraits = traits;
+      }
     }
   }
   return list;
+}
+
+/** @deprecated name kept for callers — now also fills eye traits from Base RPC when missing. */
+async function enrichGotchiNamesFromRpc(gotchis) {
+  return enrichGotchisFromRpc(gotchis);
 }
 
 function baseRpcUrls() {
@@ -413,11 +451,15 @@ async function postSubgraph(query, variables, { timeoutMs = 15_000 } = {}) {
 }
 
 function normalizeGotchi(g) {
+  const traits = traitsFromGotchiFields(g);
   return {
     gotchiId: String(g.gotchiId ?? g.id),
     name: g.name ?? null,
     collateral: g.collateral ?? null,
     hauntId: g.hauntId ?? null,
+    numericTraits: coerceTraits6(g.numericTraits) || traits,
+    modifiedTraits: traits,
+    withSetsNumericTraits: coerceTraits6(g.withSetsNumericTraits) || null,
   };
 }
 
@@ -515,31 +557,48 @@ export async function fetchWalletGotchiById(address, gotchiId) {
   if (!/^\d+$/.test(id)) return null;
   const owner = address.toLowerCase();
 
+  let hit = null;
   try {
     const data = await postSubgraph(
       `query GotchiById($owner: String!, $id: String!) {
         aavegotchis(first: 1, where: { id: $id, owner: { id: $owner } }) {
-          id gotchiId name collateral hauntId
+          id gotchiId name collateral hauntId numericTraits withSetsNumericTraits
         }
       }`,
       { owner, id },
     );
-    const hit = data?.aavegotchis?.[0];
-    if (hit) return normalizeGotchi(hit);
+    const row = data?.aavegotchis?.[0];
+    if (row) hit = normalizeGotchi(row);
   } catch {}
 
-  const owned = await fetchWalletGotchis(owner);
-  const hit = owned.find((g) => String(g.gotchiId) === id) ?? null;
-  if (hit?.name) return hit;
+  if (!hit) {
+    const owned = await fetchWalletGotchis(owner);
+    hit = owned.find((g) => String(g.gotchiId) === id) ?? null;
+  }
 
-  try {
-    const info = await fetchAavegotchiInfo(id);
-    if (info?.name) {
-      return normalizeGotchi({ gotchiId: id, ...info });
-    }
-  } catch {}
+  if (!hit || !traitsFromGotchiFields(hit) || !hit.name) {
+    try {
+      const info = await fetchAavegotchiInfo(id);
+      if (info) {
+        hit = normalizeGotchi({
+          gotchiId: id,
+          name: hit?.name || info.name,
+          collateral: hit?.collateral || info.collateral,
+          hauntId: hit?.hauntId ?? info.hauntId,
+          numericTraits: info.numericTraits,
+          modifiedTraits: info.modifiedTraits,
+          withSetsNumericTraits: info.modifiedTraits,
+        });
+      }
+    } catch {}
+  }
 
   return hit;
+}
+
+/** Traits for cheeks: [4]=eyeShape, [5]=eyeColor. Prefer withSets → modified → numeric. */
+export function walletGotchiTraits(g) {
+  return traitsFromGotchiFields(g);
 }
 
 export function commandExists(cmd) {
@@ -700,6 +759,8 @@ export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = n
     primary: colors?.primary,
     secondary: colors?.secondary,
     sourceTokenId: tokenId,
+    modifiedTraits: walletGotchiTraits(walletGotchi) || hero?.modifiedTraits || undefined,
+    numericTraits: walletGotchi?.numericTraits || walletGotchiTraits(walletGotchi) || undefined,
   });
   try {
     const idx = loadWalletGotchiIndex();
