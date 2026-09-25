@@ -203,6 +203,10 @@ export function detectTermCaps(env = process.env, opts = {}) {
         const clientTerm = pipe >= 0 ? line.slice(0, pipe) : line;
         const features = pipe >= 0 ? line.slice(pipe + 1) : "";
         const ct = String(clientTerm || "").toLowerCase();
+        if (!ct && !/RGB/i.test(features)) {
+          // No attached client yet (detached session) — unknown, not "16".
+          throw new Error("no tmux client");
+        }
         if (
           /RGB/i.test(features) ||
           isModernTruecolorTerm(ct) ||

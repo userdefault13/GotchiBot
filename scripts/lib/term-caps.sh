@@ -98,6 +98,10 @@ gotchibot_term_caps() {
             client_features="${probe_out#*|}"
           fi
           ct=$(printf '%s' "$client_term" | tr '[:upper:]' '[:lower:]')
+          # No attached client yet (detached session) → unknown → 256, not 16.
+          if [ -z "$ct" ]; then
+            case "$client_features" in *RGB*|*rgb*) ;; *) client_features="__none__"; ct="tmux-256color" ;; esac
+          fi
           case "$client_features" in
             *RGB*|*rgb*)
               color="truecolor"

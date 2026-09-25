@@ -216,6 +216,14 @@ describe("detectTermCaps — tmux probe", () => {
     assert.equal(c.color, "truecolor");
   });
 
+  it("tmux-256color + detached session (empty client) => 256, not 16", () => {
+    const c = detectTermCaps(
+      base({ TERM: "tmux-256color", TMUX: "/tmp/tmux-1/default,1,0" }),
+      { probeTmux: () => "|" },
+    );
+    assert.equal(c.color, "256");
+  });
+
   it("tmux-256color + probe throw => 256", () => {
     const c = detectTermCaps(
       base({ TERM: "tmux-256color", TMUX: "/tmp/tmux-1/default,1,0" }),
