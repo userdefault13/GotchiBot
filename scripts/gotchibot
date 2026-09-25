@@ -86,6 +86,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot hub install [--dry-run|--uninstall]   set up THIS computer as your Hub (gotchibot-api + Mongo + tailscale serve)
   gotchibot hub pair|desks|revoke|share|unshare|shares
                                   on the Hub: pairing codes, desks, thread shares
+  gotchibot hub runner [--once|--check]           Hub phone-reply runner (prefer: abra run gotchibot -- node scripts/hub-runner.mjs)
   gotchibot hub join <host> <code>                on a desk: pair with your Hub
   gotchibot api start|stop|status                 run gotchibot-api by hand (dev)
   gotchibot infra schedule status|install|uninstall|run-now  YFI 15-min supervisor LaunchAgent (run on the iMac)
@@ -837,6 +838,10 @@ case "$cmd" in
     case "$sub" in
       pair|join|desks|revoke|share|unshare|shares)
         exec node "$ROOT/scripts/hub-pair.mjs" "$@"
+        ;;
+      runner)
+        shift || true
+        exec node "$ROOT/scripts/hub-runner.mjs" "$@"
         ;;
       install|uninstall)
         exec node "$ROOT/scripts/hub-install.mjs" "$@"

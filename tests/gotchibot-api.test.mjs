@@ -1302,6 +1302,231 @@ describe("S2 phone send + reply tracking", async () => {
     });
     assert.equal(retryForbidden.status, 404);
   });
+
+  it("hub-runner tick writes assistant reply + reply.replied", async () => {
+    const phone = await claim("phone", "s2-phone-hubrun");
+    // Drain leftovers
+    for (let i = 0; i < 50; i++) {
+      const leftover = await store.claimNextPendingReply({ runnerId: "drain" });
+      if (!leftover) break;
+      await store.completeReply({
+        threadId: leftover.threadId,
+        messageId: leftover.messageId,
+        replyMessageId: "drain",
+      });
+    }
+
+    const send = await httpJson(port, "POST", "/api/gotchibot/chats/send", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { text: "ping gotchi" },
+    });
+    assert.equal(send.status, 200);
+    const { threadId, messageId } = send.json;
+
+    const { createHubRunner } = await import("../services/gotchibot-api/runner.mjs");
+    const runner = createHubRunner({
+      store,
+      runnerId: "hub-runner-test",
+      env: {
+        GOTCHIBOT_HUB_RUNNER_ALLOW_NO_KEY: "1",
+        PATH: process.env.PATH,
+      },
+      complete: async () => ({ text: "hello from gotchi", model: "test/mock" }),
+      logger: { info() {}, log() {}, error() {} },
+    });
+    const worked = await runner.tick();
+    assert.equal(worked, true);
+
+    const orig = await store.db.collection("chat_messages").findOne({
+      threadId,
+      messageId,
+    });
+    assert.equal(orig.reply.status, "replied");
+    assert.equal(orig.reply.model, "test/mock");
+    assert.ok(orig.reply.replyMessageId);
+
+    const asst = await store.db.collection("chat_messages").findOne({
+      threadId,
+      messageId: orig.reply.replyMessageId,
+    });
+    assert.ok(asst);
+    assert.equal(asst.role, "assistant");
+    assert.equal(asst.text, "hello from gotchi");
+    assert.equal(asst.deskId, store.HUB_RUNNER_DESK_ID);
+
+    const pull = await httpJson(
+      port,
+      "GET",
+      `/api/gotchibot/chats/pull?threadId=${threadId}&after=0`,
+      { headers: { "X-GotchiBot-Desk-Token": phone.deskToken } },
+    );
+    assert.ok(
+      pull.json.messages.some(
+        (m) => m.messageId === orig.reply.replyMessageId && m.role === "assistant",
+      ),
+    );
+  });
+
+  it("hub-runner model failure → error; retry → pending; later tick replies", async () => {
+    const phone = await claim("phone", "s2-phone-hubfail");
+    for (let i = 0; i < 50; i++) {
+      const leftover = await store.claimNextPendingReply({ runnerId: "drain" });
+      if (!leftover) break;
+      await store.completeReply({
+        threadId: leftover.threadId,
+        messageId: leftover.messageId,
+        replyMessageId: "drain",
+      });
+    }
+
+    const send = await httpJson(port, "POST", "/api/gotchibot/chats/send", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { text: "will explode" },
+    });
+    const { threadId, messageId } = send.json;
+
+    const { createHubRunner } = await import("../services/gotchibot-api/runner.mjs");
+    let calls = 0;
+    const runner = createHubRunner({
+      store,
+      runnerId: "hub-runner-fail",
+      env: { GOTCHIBOT_HUB_RUNNER_ALLOW_NO_KEY: "1", PATH: process.env.PATH },
+      complete: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("boom gbd_secrettoken999");
+        return { text: "recovered", model: "test/mock2" };
+      },
+      logger: { info() {}, log() {}, error() {} },
+    });
+
+    await runner.tick();
+    const failed = await store.db.collection("chat_messages").findOne({
+      threadId,
+      messageId,
+    });
+    assert.equal(failed.reply.status, "error");
+    assert.match(failed.reply.error, /gbd_\*\*\*/);
+    assert.doesNotMatch(failed.reply.error, /secrettoken/);
+
+    const retry = await httpJson(port, "POST", "/api/gotchibot/chats/retry", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { threadId, messageId },
+    });
+    assert.equal(retry.status, 200);
+    assert.equal(retry.json.reply.status, "pending");
+
+    await runner.tick();
+    const done = await store.db.collection("chat_messages").findOne({
+      threadId,
+      messageId,
+    });
+    assert.equal(done.reply.status, "replied");
+    assert.equal(done.reply.model, "test/mock2");
+  });
+
+  it("hub-runner missing provider key → heartbeat error, message stays pending", async () => {
+    const phone = await claim("phone", "s2-phone-nokey");
+    for (let i = 0; i < 50; i++) {
+      const leftover = await store.claimNextPendingReply({ runnerId: "drain" });
+      if (!leftover) break;
+      await store.completeReply({
+        threadId: leftover.threadId,
+        messageId: leftover.messageId,
+        replyMessageId: "drain",
+      });
+    }
+
+    const send = await httpJson(port, "POST", "/api/gotchibot/chats/send", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { text: "waiting for keys" },
+    });
+    const { threadId, messageId } = send.json;
+
+    const { createHubRunner } = await import("../services/gotchibot-api/runner.mjs");
+    const bareEnv = {
+      PATH: process.env.PATH,
+      // explicitly no provider keys, no escape hatch
+    };
+    const runner = createHubRunner({
+      store,
+      runnerId: "hub-runner-nokey",
+      env: bareEnv,
+      complete: async () => {
+        throw new Error("should not be called");
+      },
+      logger: { info() {}, log() {}, error() {} },
+    });
+    const worked = await runner.tick();
+    assert.equal(worked, false);
+
+    const pending = await store.db.collection("chat_messages").findOne({
+      threadId,
+      messageId,
+    });
+    assert.equal(pending.reply.status, "pending");
+
+    const status = await store.getRunnerStatus();
+    assert.equal(status.status, "error");
+    assert.match(status.detail || "", /no provider key|abra run gotchibot/i);
+
+    const httpStatus = await httpJson(port, "GET", "/api/gotchibot/hub/runner", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+    });
+    assert.equal(httpStatus.status, 200);
+    assert.equal(httpStatus.json.runner.status, "error");
+    assert.match(httpStatus.json.runner.detail || "", /no provider key|abra run gotchibot/i);
+  });
+});
+
+// ─── hub-runner parsers (unit, no Mongo / no opencode spawn) ─────────────────
+
+describe("hub-runner parsers", () => {
+  it("parseOpencodeOutput prefers --format json text events", async () => {
+    const { parseOpencodeOutput } = await import(
+      "../services/gotchibot-api/runner.mjs"
+    );
+    const ndjson = [
+      JSON.stringify({ type: "step_start", timestamp: 1, sessionID: "s" }),
+      JSON.stringify({
+        type: "text",
+        timestamp: 2,
+        sessionID: "s",
+        part: { type: "text", text: "hello from json", time: { end: 3 } },
+      }),
+      JSON.stringify({ type: "step_finish", timestamp: 3, sessionID: "s" }),
+    ].join("\n");
+    assert.equal(parseOpencodeOutput(ndjson), "hello from json");
+  });
+
+  it("parseOpencodeOutput strips ANSI + default header lines", async () => {
+    const { parseOpencodeOutput } = await import(
+      "../services/gotchibot-api/runner.mjs"
+    );
+    const raw = [
+      "\x1b[2m> build · glm-5.3-flash\x1b[0m",
+      "",
+      "PONG",
+      "",
+    ].join("\n");
+    assert.equal(parseOpencodeOutput(raw), "PONG");
+  });
+
+  it("parseGotchiModelEnv reads only the export line", async () => {
+    const { parseGotchiModelEnv } = await import(
+      "../services/gotchibot-api/runner.mjs"
+    );
+    assert.equal(
+      parseGotchiModelEnv(
+        "# comment\nexport GOTCHIBOT_OPENCODE_MODEL=opencode-go/glm-5.3-flash\nexport OTHER=nope\n",
+      ),
+      "opencode-go/glm-5.3-flash",
+    );
+    assert.equal(
+      parseGotchiModelEnv('export GOTCHIBOT_OPENCODE_MODEL="opencode/big-pickle"\n'),
+      "opencode/big-pickle",
+    );
+    assert.equal(parseGotchiModelEnv("GOTCHIBOT_OPENCODE_MODEL=nope\n"), null);
+  });
 });
 
 // ─── CLI helpers (run 3) ─────────────────────────────────────────────────────

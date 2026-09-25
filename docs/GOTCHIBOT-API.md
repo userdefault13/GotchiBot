@@ -58,12 +58,37 @@ Existing desk records with no `kind` field are treated as `desk` everywhere (no 
 - Role forced to `user` (a phone cannot write assistant/system).
 - Only `op: "message"` — edit/delete → `403` *phone desks may only push op message*.
 - Empty / whitespace-only text → `400` *text required* (32k char cap unchanged).
-- Phone-originated user messages are stamped for the future `hub-runner`:
+- Phone-originated user messages are stamped for `hub-runner`:
   - `originKind: "phone"`
   - `reply: { status: "pending"|"claimed"|"replied"|"error", requestedAt, … }`
 - Desk (non-phone) pushes are unchanged — no `originKind` / `reply` fields.
 
 **Phone reply UX routes:** `POST /chats/send`, `POST /chats/retry`, `GET /hub/runner` (any paired desk). Pull includes `originKind` + `reply` when present so the PWA can show thinking / error+retry.
+
+### hub-runner
+
+Always-on Hub process (`services/gotchibot-api/runner.mjs`, CLI `scripts/hub-runner.mjs`) that:
+
+1. Preflights `opencode` on `PATH` + at least one provider key in env (same list as desk `colabo`: `NVIDIA_API_KEY`, `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, `OPENCODE_API_KEY`, `OPENCODE_ZEN_API_KEY`) — presence only, never logged.
+2. Claims one pending phone user message (`claimNextPendingReply`, stale reclaim ~5 min).
+3. Builds short context (`getThreadMessagesForContext`), calls OpenCode the **same way the desk does** (`opencode run -m … --agent hub-reply --dir <scratch> --format json --pure`), with tools denied via an isolated `opencode.json` (not the repo root).
+4. Inserts the assistant row with `deskId: "hub-runner"`, then `completeReply` / `failReply`.
+
+**Run (secrets via abracadabra only):**
+
+```bash
+abra run gotchibot -- node scripts/hub-runner.mjs
+abra run gotchibot -- node scripts/hub-runner.mjs --check
+./scripts/gotchibot hub runner [--once|--check]
+```
+
+Without abra, `--check` fails with *no provider key in env* (expected). Escape hatch for tests/free models: `GOTCHIBOT_HUB_RUNNER_ALLOW_NO_KEY=1`.
+
+**Model order:** `GOTCHIBOT_HUB_RUNNER_MODEL` → `GOTCHIBOT_OPENCODE_MODEL` / `sessions/.gotchi-model.env` → `completeWithPolicy("chat")`. Limit/402/429 → next candidate.
+
+**Status:** heartbeats into `hub_runner`; `GET /api/gotchibot/hub/runner` returns `ok` / `error` / `offline` (~90s). Preflight errors do **not** claim work.
+
+**systemd (Linux Hub):** template `services/gotchibot-api/systemd/gotchibot-hub-runner.service` — `ExecStart=@ABRA@ run -p gotchibot -- @NODE@ @REPO@/scripts/hub-runner.mjs`.
 
 **Phone-forbidden routes** (`403` *not allowed for phone desks*): `GET /hub/desks`, `POST /chats/snapshot`, `GET /chats/snapshot/:id`.
 
@@ -101,6 +126,10 @@ Prefer the install wizard’s service unit for always-on. Manual start is for de
 | `GOTCHIBOT_HUB_OWNER_LOGIN` | (from config file) | Hub | Tailscale login required for non-loopback / proxied requests |
 | `GOTCHIBOT_HUB_CONFIG` | `sessions/.hub-api.json` | Hub | Install-wizard JSON path |
 | `GOTCHIBOT_HUB_APP_URL` | (from config `appUrl`) | Hub | PWA base for `hub pair --qr` deep links (else `https://<MagicDNS>/app/`) |
+| `GOTCHIBOT_HUB_RUNNER_MODEL` | (unset) | Hub | Prefer this model in hub-runner before the desk pin |
+| `GOTCHIBOT_OPENCODE_MODEL` | (from `sessions/.gotchi-model.env`) | Hub | Desk chat pin reused by hub-runner |
+| `GOTCHIBOT_HUB_RUNNER_TIMEOUT_MS` | `120000` | Hub | Per opencode call timeout |
+| `GOTCHIBOT_HUB_RUNNER_ALLOW_NO_KEY` | (unset) | Hub | `1` skips provider-key preflight (tests / free models only) |
 | `GOTCHIBOT_DESK_API_BASE` | (from pin) | Desk | Hub API base, e.g. `http://<MagicDNS>:8793` |
 | `GOTCHIBOT_DESK_TOKEN` | (from pin) | Desk | Desk token override |
 | `GOTCHIBOT_HUB_PIN` | `sessions/.hub.json` | Desk | Absolute path override for the pin file |
@@ -162,7 +191,7 @@ Install token alone on a chat/hub route → `401` *install token cannot unlock c
 - Push is **idempotent**: existing `(threadId, messageId)` → `duplicate` with existing `seq`; else allocate `seq` via `counters` (`_id: "chat_seq"`) and insert. `E11000` race → duplicate (seq gaps are fine).
 - `messageId` / ULID-friendly ids: 1–128 of `[A-Za-z0-9_-]`. Max 200 messages per push; text max 32000 chars.
 - **Edit / delete** are new tombstone rows (`op: "edit"` with new text / `op: "delete"` with empty text) referencing `targetMessageId` — never mutate or remove old docs. Phones cannot push edit/delete.
-- **Phone reply tracking** (phone user messages only): `originKind:"phone"`, `reply.status` lifecycle `pending` → `claimed` → `replied` | `error`. Store helpers for the future hub-runner process: `claimNextPendingReply`, `getThreadMessagesForContext`, `completeReply`, `failReply`, `writeRunnerHeartbeat` / `getRunnerStatus` (`hub_runner` collection). Assistant replies are inserted via `pushMessages` with deskId `hub-runner` (trusted non-phone writer).
+- **Phone reply tracking** (phone user messages only): `originKind:"phone"`, `reply.status` lifecycle `pending` → `claimed` → `replied` | `error`. Store helpers used by hub-runner: `claimNextPendingReply`, `getThreadMessagesForContext`, `completeReply`, `failReply`, `writeRunnerHeartbeat` / `getRunnerStatus` (`hub_runner` collection). Assistant replies are inserted via `pushMessages` with deskId `hub-runner` (trusted non-phone writer).
 - **Pull** with `after=<seq>` (cursor). Messages sorted by `seq` ascending.
 - **Threads** last-writer-wins on `(updatedAt, deskId)`: apply incoming title only when incoming `updatedAt` is greater, or equal and incoming `deskId` is greater (string compare). Always `$max` `lastSeq` / `lastMessageAt`.
 
