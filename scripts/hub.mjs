@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Enable / status for user-owned Hub (Tailscale MagicDNS on install record).
- * Writes sessions/.hub.json for remote-lib.
+ * Writes sessions/.hub.json for remote-lib (path override: GOTCHIBOT_HUB_PIN).
+ * writeHubPin preserves desk pairing fields (deskId/deskToken/…) across Arcade refreshes.
  *
  * Hub metadata (enable / arcade-status / chat-store) → www (soloApiBase).
  * Chat bodies → deskApiBase (user Hub), not this script.
@@ -16,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import http from "node:http";
 import { isMainModule } from "./is-main.mjs";
-import { infraHeaders, soloApiBase, hasInstallToken } from "./infra-client.mjs";
+import { infraHeaders, soloApiBase, hasInstallToken, hubPinPath } from "./infra-client.mjs";
 import {
   hasAbra,
   resolveCastBin,
@@ -56,8 +57,14 @@ function buildEnableMessage(wallet, installId, tailscaleHost) {
 }
 
 function writeHubPin(hub, installId, extras = {}) {
-  mkdirSync(SESSIONS, { recursive: true });
-  const prev = readHubPin() || {};
+  const pinPath = hubPinPath();
+  mkdirSync(dirname(pinPath), { recursive: true });
+  let prev = {};
+  try {
+    prev = JSON.parse(readFileSync(pinPath, "utf8"));
+  } catch {
+    /* no prior pin */
+  }
   const pin = {
     kind: hub.kind || "owned",
     enabled: Boolean(hub.enabled),
@@ -65,10 +72,19 @@ function writeHubPin(hub, installId, extras = {}) {
     enabledAt: hub.enabledAt,
     chatStore: hub.chatStore || prev.chatStore || null,
     deskApiBase: extras.deskApiBase || prev.deskApiBase || null,
+    // Preserve desk pairing across Arcade enable/status/chat-store refreshes
+    deskId: extras.deskId ?? prev.deskId ?? undefined,
+    deskToken: extras.deskToken ?? prev.deskToken ?? undefined,
+    deskName: extras.deskName ?? prev.deskName ?? undefined,
+    pairedAt: extras.pairedAt ?? prev.pairedAt ?? undefined,
     installId,
     writtenAt: new Date().toISOString(),
   };
-  writeFileSync(HUB_PIN, `${JSON.stringify(pin, null, 2)}\n`);
+  // Drop undefined so we don't wipe fields with JSON null-ish noise
+  for (const k of ["deskId", "deskToken", "deskName", "pairedAt"]) {
+    if (pin[k] === undefined) delete pin[k];
+  }
+  writeFileSync(pinPath, `${JSON.stringify(pin, null, 2)}\n`, { mode: 0o600 });
   return pin;
 }
 

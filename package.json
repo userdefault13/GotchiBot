@@ -22,6 +22,7 @@
   },
   "files": [
     "scripts/",
+    "services/",
     "skills/",
     "assets/",
     "docs/",
@@ -93,6 +94,7 @@
     "agents"
   ],
   "dependencies": {
-    "cron402-mcp": "^1.1.0"
+    "cron402-mcp": "^1.1.0",
+    "mongodb": "^6.21.0"
   }
 }

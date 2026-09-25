@@ -12,19 +12,20 @@ import { spawnSync } from "node:child_process";
 import http from "node:http";
 import { isMainModule } from "./is-main.mjs";
 import { resolveCastBin } from "./platform.mjs";
+import { isPublicSafeStateUri } from "./chat-state-uri.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PIN = `${ROOT}/sessions/.chat-sync-checkpoint.json`;
 const IDENTITY = `${ROOT}/sessions/.identity.json`;
 const WALLET = `${ROOT}/sessions/.wallet.json`;
 const SIGN_PORT = Number(process.env.GOTCHIBOT_CHECKPOINT_SIGN_PORT ?? 8794);
-const CHAIN_ID = 84532;
+export const CHAIN_ID = 84532;
 
 function loadJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
-function loadDiamond() {
+export function loadDiamond() {
   const candidates = [
     resolve(ROOT, "config/cartridgeChain.base-sepolia.json"),
     resolve(ROOT, "../AarcadeGh-t/config/cartridgeChain.base-sepolia.json"),
@@ -225,6 +226,11 @@ export async function runChatCheckpointOnchain(opts = {}) {
   const stateHash = ensureHex32(opts.stateHash || pin.contentHash);
   const stateUri = String(opts.stateUri || pin.stateUri || "").trim();
   if (!stateUri) throw new Error("stateUri missing on pin");
+  if (!isPublicSafeStateUri(stateUri)) {
+    throw new Error(
+      "stateUri must be an opaque gotchibot-hub://<id> — re-run: gotchibot chats snapshot",
+    );
+  }
 
   const chain = loadDiamond();
   const diamond = String(process.env.CARTRIDGE_DIAMOND || chain.cartridgeDiamond || "").trim();

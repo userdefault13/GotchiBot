@@ -5,7 +5,7 @@ Each install’s **Hub** is their always-on Mac (OpenClaw + gotchibot-api) on **
 
 Arcade (`www`) only holds: install token, `hub.tailscaleHost`, `hub.chatStore.kind` (+ optional host hint). **No URI, no messages.**
 
-See Aarcade [`GOTCHIBOT-HOME-API.md`](../../AarcadeGh-t/docs/GOTCHIBOT-HOME-API.md).
+Full API, auth, sync model, and install wizard: [`GOTCHIBOT-API.md`](./GOTCHIBOT-API.md).
 
 Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserved).
 
@@ -13,20 +13,34 @@ Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserve
 
 1. **Install + register** on Desk  
    `gotchibot onboard` / `gotchibot infra register` → `GOTCHIBOT_INFRA_TOKEN` in abra.
+   Install token is for **Arcade metadata only** (`hub enable`, `hub chat-store`) — not for chats.
 
 2. **Hub Mac**  
    - Install Tailscale; note MagicDNS name or `100.x`  
    - Clone GotchiBot; Remote Login (SSH); install desk pubkey  
    - Run OpenClaw / `gotchibot` as you would on the PoC iMac  
-   - Run **gotchibot-api** on `:8793` (LaunchAgent) talking to **local** Mongo  
+   - Run the Hub install wizard (gotchibot-api + Mongo + serve):
 
-3. **Enable Hub** (wallet-signed → Arcade metadata)  
+   ```bash
+   gotchibot hub install
+   # → LaunchAgent/systemd, local Mongo if needed, tailscale serve (never funnel),
+   #   prints: gotchibot hub join <MagicDNS> <code>
+   ```
+
+3. **Pair each desk**  
+   ```bash
+   gotchibot hub join <MagicDNS> <code>
+   ```  
+   Writes `sessions/.hub.json` with `deskToken` + `deskApiBase` (mode `0600`).  
+   More codes: on the Hub, `gotchibot hub pair`. List / revoke: `hub desks`, `hub revoke <deskId>`.
+
+4. **Enable Hub metadata** (wallet-signed → Arcade; optional if install already offered it)  
    ```bash
    abra run gotchibot -- ./scripts/gotchibot hub enable <MagicDNS-or-100.x>
    ```  
-   Writes `sessions/.hub.json`. `remote-lib` uses that host when `REMOTE_HOST` is unset.
+   Preserves desk pairing fields in `sessions/.hub.json`. `remote-lib` uses that host when `REMOTE_HOST` is unset.
 
-4. **BYO Mongo**  
+5. **BYO Mongo** (if you skipped Docker during install)  
    ```bash
    ./scripts/gotchibot db wizard
    # or: db local | db atlas | db none
@@ -36,28 +50,31 @@ Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserve
    - **atlas** — URI via `abra set gotchibot MONGODB_URI` (never Arcade)  
    - **none** — Hub ok; no chat push/pull  
 
-5. **Vault**  
+6. **Vault**  
    `abra set gotchibot REMOTE_USER` + SSH key. Optional: still set `REMOTE_HOST` to override the pin.
 
-6. **Verify**  
+7. **Verify**  
    ```bash
    abra run gotchibot -- ./scripts/gotchibot hub pin          # Arcade hub + chatStore metadata
    abra run gotchibot -- ./scripts/gotchibot db status
    abra run gotchibot -- ./scripts/gotchibot remote -- hostname
+   gotchibot api status                                       # on the Hub
    ```
 
 ## Chat sync (your Hub Mongo)
 
-Install-token auth. Chats go **ONLY** to your pinned Hub (`GOTCHIBOT_DESK_API_BASE` or `sessions/.hub.json` via `hub enable` / `db pin-desk`) — **never** `gotchibot.aarcadeghst.com`. With no pin, chat commands fail with `NO_HUB_PINNED`. Shared Arcade hosts are refused outright (`SHARED_ARCADE_CHAT`).
+Auth = **desk token** from `gotchibot hub join` (`sessions/.hub.json` or `GOTCHIBOT_DESK_TOKEN`).  
+**Not** the Arcade install token. Chats go **ONLY** to your pinned Hub (`GOTCHIBOT_DESK_API_BASE` or pin via `hub join` / `hub enable` / `db pin-desk`) — **never** `gotchibot.aarcadeghst.com`. With no pin, chat commands fail with `NO_HUB_PINNED`. Shared Arcade hosts are refused (`SHARED_ARCADE_CHAT`). Missing pair → `NO_DESK_TOKEN`.
 
 ```bash
-abra run gotchibot -- ./scripts/gotchibot chats push --text "hello from desk"
-abra run gotchibot -- ./scripts/gotchibot chats pull
-abra run gotchibot -- ./scripts/gotchibot chats threads
-abra run gotchibot -- ./scripts/gotchibot chats snapshot
+./scripts/gotchibot chats push --text "hello from desk"
+./scripts/gotchibot chats pull
+./scripts/gotchibot chats threads
+./scripts/gotchibot chats snapshot
+./scripts/gotchibot chats verify <snapshotId|gotchibot-hub://id>
 ```
 
-Default thread id: `orch`. Snapshot `stateUri` points at **your** Hub API.
+Default thread id: `orch`. Snapshot `stateUri` is opaque `gotchibot-hub://<snapshotId>` (Hub Mongo only — never a URL/hostname on chain). See [`GOTCHIBOT-API.md`](./GOTCHIBOT-API.md).
 
 ## Light on-chain checkpoint (opt-in)
 
@@ -65,11 +82,11 @@ After a git commit (TTY), or anytime:
 
 ```bash
 # one-shot
-abra run gotchibot -- ./scripts/gotchibot chats checkpoint-prompt
+./scripts/gotchibot chats checkpoint-prompt
 # force snapshot + Sepolia send (no prompts)
-abra run gotchibot -- ./scripts/gotchibot chats checkpoint-prompt --onchain
+./scripts/gotchibot chats checkpoint-prompt --onchain
 # broadcast only (pin already written)
-abra run gotchibot -- ./scripts/gotchibot chats onchain
+./scripts/gotchibot chats onchain
 
 # post-commit hook (prompts after each commit)
 ./scripts/gotchibot chats hook install
@@ -79,7 +96,7 @@ abra run gotchibot -- ./scripts/gotchibot chats onchain
 
 Flow:
 
-1. Snapshot on **your** Hub (`contentHash` + `stateUri`)
+1. Snapshot on **your** Hub (`contentHash` + `stateUri` `gotchibot-hub://…`)
 2. Desk `identity checkpoint` with `gameState.chatSync` (local Sepolia file or SIM POST)
 3. Optional MetaMask / cast `checkpointSave(cartridgeId, stateHash, stateUri)` on Base Sepolia
 

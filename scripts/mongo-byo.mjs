@@ -31,13 +31,13 @@ import {
   readHubPin,
   readMongoPin,
   isArcadeSharedChatBase,
+  hubPinPath,
 } from "./infra-client.mjs";
 import { hasAbra, abraInstallHint } from "./platform.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
 const MONGO_PIN = `${SESSIONS}/.mongo.json`;
-const HUB_PIN = `${SESSIONS}/.hub.json`;
 const COMPOSE_DIR = `${ROOT}/docker/chat-mongo`;
 const DEFAULT_URI = "mongodb://127.0.0.1:27017";
 const DEFAULT_DB = "GotchiBot";
@@ -96,13 +96,14 @@ async function publishChatStore(kind, { dbName, atlasHostHint } = {}) {
     console.warn("  Local pin still written. Retry: gotchibot hub chat-store --kind " + kind);
     return null;
   }
-  // Refresh hub pin chatStore field
+  // Refresh hub pin chatStore field (preserve deskToken / pairing via spread)
   try {
     const hub = readHubPin() || {};
     if (json.hub) {
       writeFileSync(
-        HUB_PIN,
+        hubPinPath(),
         `${JSON.stringify({ ...hub, ...json.hub, chatStore: json.hub.chatStore, writtenAt: new Date().toISOString() }, null, 2)}\n`,
+        { mode: 0o600 },
       );
     }
   } catch {
@@ -229,7 +230,7 @@ function cmdPinDesk() {
     deskApiBase: base,
     writtenAt: new Date().toISOString(),
   };
-  writeFileSync(HUB_PIN, `${JSON.stringify(next, null, 2)}\n`);
+  writeFileSync(hubPinPath(), `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
   console.log(`deskApiBase → ${base}`);
   console.log(`  (also: export GOTCHIBOT_DESK_API_BASE=${base})`);
   if (isArcadeSharedChatBase(base)) {
@@ -283,6 +284,24 @@ BYO chat storage (Arcade never holds your messages)
     await cmdNone();
   } else {
     await cmdLocal();
+    const rlHub = createReadline({ input: process.stdin, output: process.stdout });
+    const hubNow = (
+      await ask(
+        rlHub,
+        "Is THIS computer your Hub (the one that stays on)? Set it up now? [y/N]: ",
+      )
+    )
+      .trim()
+      .toLowerCase();
+    rlHub.close();
+    if (hubNow === "y" || hubNow === "yes") {
+      spawnSync(process.execPath, [resolve(ROOT, "scripts/hub-install.mjs"), "install"], {
+        stdio: "inherit",
+        cwd: ROOT,
+      });
+    } else {
+      console.log("On your Hub computer run: gotchibot hub install");
+    }
   }
 
   const hub = readHubPin();
@@ -334,4 +353,4 @@ if (isMainModule(import.meta.url)) {
   main();
 }
 
-export { writeMongoPin, cmdLocalInstall, extractAtlasHost };
+export { writeMongoPin, cmdLocalInstall, extractAtlasHost, publishChatStore };

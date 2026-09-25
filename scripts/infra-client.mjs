@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /**
- * Outbound auth for Solo infra (install token) vs legacy operator secrets.
+ * Outbound auth helpers.
+ *
+ * - infraHeaders() / install token → Arcade metadata only (enable, status, chat-store kind).
+ * - deskAuthHeaders() / desk token → Hub chat API (push/pull/snapshot). Never mix.
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +16,12 @@ const AUTH_CFG = JSON.parse(readFileSync(`${ROOT}/config/infra.auth.json`, "utf8
 const ARCADE_CHAT_HOSTS = new Set(
   ["gotchibot.aarcadeghst.com", "www.aarcadeghst.com"].map((h) => h.toLowerCase()),
 );
+
+const NO_DESK_TOKEN_MSG = [
+  "This desk is not paired with your Hub yet.",
+  "On the Hub run: gotchibot hub pair",
+  "Then here: gotchibot hub join <MagicDNS> <code>",
+].join("\n");
 
 export function hasInstallToken(env = process.env) {
   return Boolean(String(env.GOTCHIBOT_INFRA_TOKEN || "").trim());
@@ -75,9 +84,48 @@ export function readMongoPin(root = ROOT) {
   return readJsonSafe(`${root}/sessions/.mongo.json`);
 }
 
-/** Hub Tailscale pin — sessions/.hub.json */
+/**
+ * Path to Hub pin (sessions/.hub.json).
+ * Override: GOTCHIBOT_HUB_PIN = absolute path (tests/dev).
+ */
+export function hubPinPath(env = process.env) {
+  const override = String(env.GOTCHIBOT_HUB_PIN || "").trim();
+  if (override) return resolve(override);
+  return resolve(ROOT, "sessions/.hub.json");
+}
+
+/** Hub Tailscale pin — sessions/.hub.json (or GOTCHIBOT_HUB_PIN). */
 export function readHubPin(root = ROOT) {
+  const override = String(process.env.GOTCHIBOT_HUB_PIN || "").trim();
+  if (override) return readJsonSafe(resolve(override));
   return readJsonSafe(`${root}/sessions/.hub.json`);
+}
+
+/** Desk token: env GOTCHIBOT_DESK_TOKEN, else hub pin deskToken. */
+export function readDeskToken(env = process.env) {
+  const fromEnv = String(env.GOTCHIBOT_DESK_TOKEN || "").trim();
+  if (fromEnv) return fromEnv;
+  const pin = readJsonSafe(hubPinPath(env));
+  const fromPin = pin?.deskToken != null ? String(pin.deskToken).trim() : "";
+  return fromPin || null;
+}
+
+/**
+ * Headers for Hub chat/desk API. Never includes install token or operator secrets.
+ * @throws {Error} code NO_DESK_TOKEN
+ */
+export function deskAuthHeaders(env = process.env) {
+  const token = readDeskToken(env);
+  if (!token) {
+    const err = new Error(NO_DESK_TOKEN_MSG);
+    err.code = "NO_DESK_TOKEN";
+    throw err;
+  }
+  return {
+    Accept: "application/json",
+    "User-Agent": "GotchiBot/desk",
+    "X-GotchiBot-Desk-Token": token,
+  };
 }
 
 /**
