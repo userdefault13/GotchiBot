@@ -126,7 +126,30 @@ export function resolvePinnedChatModel(env = process.env, root = ROOT) {
 }
 
 /**
+ * Strip model reasoning tags so they never land in stored thread replies.
+ * - Complete `<think>…</think>` / `<thinking>…</thinking>` blocks (multiline, case-insensitive)
+ * - Leading orphan closing tag: everything through the first `</think>` / `</thinking>`
+ *   when no opening tag remains
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripReasoningContent(text) {
+  let s = String(text || "");
+  s = s.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "");
+  s = s.replace(/<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi, "");
+  // Orphan closer with no opener left — drop everything through the first closer.
+  if (
+    !/<(?:think|thinking)\b/i.test(s) &&
+    /<\/(?:think|thinking)>/i.test(s)
+  ) {
+    s = s.replace(/^[\s\S]*?<\/(?:think|thinking)>/i, "");
+  }
+  return s.trim();
+}
+
+/**
  * Strip ANSI + opencode default-format headers; prefer --format json NDJSON.
+ * Ignores JSON reasoning parts; strips embedded think/thinking tags from text.
  * @param {string} stdout
  * @param {string} [stderr]
  * @returns {string}
@@ -142,8 +165,18 @@ export function parseOpencodeOutput(stdout, stderr = "") {
       const ev = JSON.parse(t);
       if (!ev || typeof ev !== "object" || typeof ev.type !== "string") continue;
       sawJson = true;
+      // Keep only assistant text parts — skip reasoning event types / parts.
+      if (ev.type === "reasoning") continue;
       if (ev.type === "text") {
         const part = ev.part;
+        if (
+          part &&
+          typeof part === "object" &&
+          typeof part.type === "string" &&
+          /^reasoning$/i.test(part.type)
+        ) {
+          continue;
+        }
         const text =
           (part && typeof part.text === "string" && part.text) ||
           (typeof ev.text === "string" && ev.text) ||
@@ -154,7 +187,7 @@ export function parseOpencodeOutput(stdout, stderr = "") {
       /* not NDJSON */
     }
   }
-  if (sawJson) return texts.join("\n\n").trim();
+  if (sawJson) return stripReasoningContent(texts.join("\n\n"));
 
   const cleaned = raw
     .replace(ANSI_RE, "")
@@ -169,7 +202,7 @@ export function parseOpencodeOutput(stdout, stderr = "") {
     })
     .join("\n")
     .trim();
-  if (cleaned) return cleaned;
+  if (cleaned) return stripReasoningContent(cleaned);
 
   // Last resort: stderr sometimes holds the reply when stdout is empty
   const errClean = String(stderr || "")
@@ -179,7 +212,7 @@ export function parseOpencodeOutput(stdout, stderr = "") {
     .filter((l) => l && !HEADER_RE.test(l))
     .join("\n")
     .trim();
-  return errClean;
+  return stripReasoningContent(errClean);
 }
 
 /**

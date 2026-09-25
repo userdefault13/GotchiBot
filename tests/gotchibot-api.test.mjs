@@ -1498,6 +1498,54 @@ describe("hub-runner parsers", () => {
     assert.equal(parseOpencodeOutput(ndjson), "hello from json");
   });
 
+  it("parseOpencodeOutput strips orphan closing think tag", async () => {
+    const { parseOpencodeOutput } = await import(
+      "../services/gotchibot-api/runner.mjs"
+    );
+    assert.equal(parseOpencodeOutput("</think>Hey"), "Hey");
+  });
+
+  it("parseOpencodeOutput strips complete think blocks (multiline)", async () => {
+    const { parseOpencodeOutput } = await import(
+      "../services/gotchibot-api/runner.mjs"
+    );
+    assert.equal(
+      parseOpencodeOutput("<think>plan\nstuff</think>\n\nAnswer"),
+      "Answer",
+    );
+  });
+
+  it("parseOpencodeOutput ignores JSON reasoning parts, keeps text", async () => {
+    const { parseOpencodeOutput } = await import(
+      "../services/gotchibot-api/runner.mjs"
+    );
+    const ndjson = [
+      JSON.stringify({
+        type: "reasoning",
+        part: { type: "reasoning", text: "internal plan" },
+      }),
+      JSON.stringify({
+        type: "text",
+        part: { type: "text", text: "final answer" },
+      }),
+      JSON.stringify({
+        type: "text",
+        part: { type: "reasoning", text: "should skip" },
+      }),
+    ].join("\n");
+    assert.equal(parseOpencodeOutput(ndjson), "final answer");
+  });
+
+  it("parseOpencodeOutput leaves plain text mentioning think untouched", async () => {
+    const { parseOpencodeOutput } = await import(
+      "../services/gotchibot-api/runner.mjs"
+    );
+    assert.equal(
+      parseOpencodeOutput("I think this is fine — keep thinking."),
+      "I think this is fine — keep thinking.",
+    );
+  });
+
   it("parseOpencodeOutput strips ANSI + default header lines", async () => {
     const { parseOpencodeOutput } = await import(
       "../services/gotchibot-api/runner.mjs"
