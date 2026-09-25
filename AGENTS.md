@@ -222,4 +222,4 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 - Paid OpenCode fallback: `deepseek/deepseek-v4-pro` (needs `DEEPSEEK_API_KEY` via abra)
 - Private/offline: local Ollama on the iMac
 - **Tab:** cycles agents **in the OpenCode TUI** (`config/tui-policy.json`) including **Project**. tmux must not steal Tab. No pane restart. `./scripts/gotchibot tui-policy show|enforce|apply`
-- Avatar roster page (any pane): **Ctrl+Space** then **P** / **N**, or **Alt+,** / **Alt+.**
+- Avatar roster page (any pane): **Ctrl+Space** then **P** / **N**, or **Alt+,** / **Alt+.** Headless/SSH desk notes: `DEPLOYMENT.md` § Headless / SSH.

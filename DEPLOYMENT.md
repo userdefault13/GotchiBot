@@ -143,6 +143,44 @@ gotchibot tmux     # mc left | right pane: your gotchi (top), active sub-agent (
 - Pin an agent: `gotchibot avatar <agentId>`
 - Page the avatar roster from any pane (no mouse): **Ctrl+Space** then **P** / **N**, or **Alt+,** / **Alt+.**
 
+### Headless / SSH
+
+Desk UI degrades gracefully over SSH or on Linux — no hard errors for macOS-only bits.
+
+**Detection.** Color/glyphs/mouse come from `COLORTERM` / `TERM` / `NO_COLOR` / locale.
+SSH alone never downgrades color; under tmux the detector probes the outer client.
+Inspect what was detected:
+
+```bash
+node scripts/lib/term-caps.mjs
+```
+
+**Flags** (override detection; truecolor + unicode stays the default when the terminal supports it):
+
+| Flag | Effect |
+|------|--------|
+| `GOTCHIBOT_TUI_COLOR=truecolor\|256\|16\|none` | force color mode |
+| `GOTCHIBOT_TUI_ASCII=1` | ASCII glyphs |
+| `GOTCHIBOT_TUI_PLAIN=1` | 16 colors + ASCII + no mouse |
+| `GOTCHIBOT_TUI_MOUSE=0` | disable mouse |
+| `GOTCHIBOT_TUI_NO_PROBE=1` | skip tmux outer-client probe |
+| `NO_COLOR` | no color (standard) |
+| gotchi-art `--color-mode` / `--ascii` | art renderer overrides |
+
+`GOTCHIBOT_HEADLESS` is unrelated — it means non-interactive Claude (`claudemode-ask.mjs`), not SSH/TUI.
+
+**Avatar paging** (any pane, no mouse): **Ctrl+Space** then **P** / **N**, or **Alt+,** / **Alt+.**
+
+**Inline meeting** (single terminal, no tmux split):
+
+```bash
+ssh -t <host> 'cd ~/dev/GotchiBot && ./scripts/gotchibot meet room --inline'
+```
+
+Needs an open meeting. Leave with `q` / Ctrl+C / Ctrl+D; PgUp/PgDn scroll.
+
+**macOS-only.** SwiftBar (`gotchibot menubar`), Terminal.app desk windows, and `pbcopy` are skipped on Linux or over SSH (`SSH_TTY` / `SSH_CONNECTION`) with a one-line stderr note (`gotchibot: … skipped (macOS only|over SSH)`). Clipboard falls back to OSC 52; attach tmux yourself when windows are skipped. To draw on the Mac's screen from an SSH session on purpose, set `GOTCHIBOT_MAC_GUI=1` (`desk-terminals --host imac` already does, and `GOTCHIBOT_ON_IMAC=1` counts).
+
 Apple Terminal renders chafa output as ANSI half-blocks — flat Aavegotchi art
 looks good; no graphics protocol needed.
 
