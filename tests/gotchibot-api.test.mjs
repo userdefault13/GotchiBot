@@ -1529,6 +1529,108 @@ describe("hub-runner parsers", () => {
   });
 });
 
+// ─── runOpencodeOnce model-limit classification (fake spawn, no real opencode) ─
+
+describe("runOpencodeOnce model-limit heuristics", () => {
+  /** Realistic NDJSON whose timestamps/ids embed digit sequences 402 and 429. */
+  function successStdoutWith402429Noise() {
+    return [
+      JSON.stringify({
+        type: "step_start",
+        timestamp: 1790356546646,
+        sessionID: "ses_429deadbeef",
+        snapshot: "sha256:a402bfdead429cafe",
+      }),
+      JSON.stringify({
+        type: "text",
+        timestamp: 1790429000429,
+        sessionID: "ses_429deadbeef",
+        part: {
+          id: "prt_0d99402abc429",
+          type: "text",
+          text: "Hi Julius!",
+          time: { start: 1790429000402, end: 1790429000429 },
+        },
+      }),
+      JSON.stringify({
+        type: "step_finish",
+        timestamp: 1790429001429,
+        sessionID: "ses_429deadbeef",
+      }),
+    ].join("\n");
+  }
+
+  function fakeSpawn({ stdout = "", stderr = "", status = 0, error = null, signal = null } = {}) {
+    return () => ({ status, stdout, stderr, error, signal });
+  }
+
+  it("exit 0 + text part is ok even when timestamps/ids contain 402/429", async () => {
+    const { runOpencodeOnce } = await import("../services/gotchibot-api/runner.mjs");
+    const workDir = mkdtempSync(join(tmpdir(), "hub-runner-once-"));
+    try {
+      const r = runOpencodeOnce({
+        model: "opencode/big-pickle",
+        prompt: "hi",
+        workDir,
+        spawn: fakeSpawn({ stdout: successStdoutWith402429Noise(), status: 0 }),
+      });
+      assert.equal(r.ok, true);
+      assert.equal(r.text, "Hi Julius!");
+      assert.equal(r.reason, undefined);
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("JSON error event with 429 / rate limit → model-limit", async () => {
+    const { runOpencodeOnce } = await import("../services/gotchibot-api/runner.mjs");
+    const workDir = mkdtempSync(join(tmpdir(), "hub-runner-once-"));
+    try {
+      const stdout = [
+        JSON.stringify({
+          type: "error",
+          timestamp: 1790356546646,
+          error: {
+            name: "APIError",
+            data: { message: "429 Too Many Requests — rate limit exceeded" },
+          },
+        }),
+      ].join("\n");
+      const r = runOpencodeOnce({
+        model: "opencode/big-pickle",
+        prompt: "hi",
+        workDir,
+        spawn: fakeSpawn({ stdout, status: 1 }),
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.reason, "model-limit");
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("failed run with stderr HTTP 402 Payment Required → model-limit", async () => {
+    const { runOpencodeOnce } = await import("../services/gotchibot-api/runner.mjs");
+    const workDir = mkdtempSync(join(tmpdir(), "hub-runner-once-"));
+    try {
+      const r = runOpencodeOnce({
+        model: "opencode/big-pickle",
+        prompt: "hi",
+        workDir,
+        spawn: fakeSpawn({
+          stdout: "",
+          stderr: "HTTP 402 Payment Required",
+          status: 1,
+        }),
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.reason, "model-limit");
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+});
+
 // ─── CLI helpers (run 3) ─────────────────────────────────────────────────────
 
 describe("hub-pair + gotchibot-api helpers", () => {

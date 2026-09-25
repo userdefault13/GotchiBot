@@ -292,6 +292,78 @@ export function buildOpencodePrompt({ messages, systemPrompt } = {}) {
 }
 
 /**
+ * Pull the message from the first NDJSON `type:"error"` event, if any.
+ * @param {string} stdout
+ * @returns {string|null}
+ */
+export function extractOpencodeJsonError(stdout) {
+  for (const line of String(stdout || "").split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t.startsWith("{")) continue;
+    try {
+      const ev = JSON.parse(t);
+      if (ev?.type === "error") {
+        return String(
+          ev.error?.data?.message ||
+            ev.error?.message ||
+            ev.error?.name ||
+            "opencode error",
+        );
+      }
+    } catch {
+      /* not NDJSON */
+    }
+  }
+  return null;
+}
+
+/**
+ * Lines from stdout that are not parseable JSON objects — plain-text failure
+ * noise only. Never returns NDJSON event lines (timestamps/ids can contain
+ * digit sequences like 402/429 that must not trigger limit heuristics).
+ * @param {string} stdout
+ * @returns {string}
+ */
+export function nonJsonStdoutText(stdout) {
+  const kept = [];
+  for (const line of String(stdout || "").split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith("{")) {
+      try {
+        JSON.parse(t);
+        continue;
+      } catch {
+        /* keep non-JSON */
+      }
+    }
+    kept.push(t);
+  }
+  return kept.join("\n");
+}
+
+/**
+ * Contextual HTTP 402/429 — never a bare digit substring.
+ * Pair with isModelLimitError on scoped failure text only (error messages /
+ * stderr / non-JSON stdout), never whole NDJSON event streams.
+ */
+const MODEL_LIMIT_HTTP_RE =
+  /(?:\b(?:HTTP|status|code)\b[^\n]{0,48}\b(?:402|429)\b|\b(?:402|429)\b[^\n]{0,48}\b(?:Payment Required|Too Many Requests|rate[\s-]?limit|quota)\b)/i;
+
+/**
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function looksLikeModelLimitFailure(text) {
+  const s = String(text || "").trim();
+  if (!s) return false;
+  // Shared semantic phrases (rate limit, payment required, \b402\b, …) —
+  // caller must already have scoped away successful JSON event lines.
+  if (isModelLimitError(s)) return true;
+  return MODEL_LIMIT_HTTP_RE.test(s);
+}
+
+/**
  * Spawn one opencode run. stdin ignored (must be closed or opencode hangs).
  * @returns {{ ok: boolean, text?: string, reason?: string, stdout?: string, status?: number|null }}
  */
@@ -334,35 +406,44 @@ export function runOpencodeOnce({
   if (r.signal === "SIGTERM" || r.error?.code === "ETIMEDOUT" || /ETIMEDOUT/i.test(String(r.error || ""))) {
     return { ok: false, reason: "timeout", stdout: blob.slice(0, 400), status: r.status };
   }
-  if (isModelLimitError(blob) || /402|429|payment required/i.test(blob)) {
-    return { ok: false, reason: "model-limit", stdout: blob.slice(0, 400), status: r.status };
-  }
-  // JSON error events
-  for (const line of stdout.split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t.startsWith("{")) continue;
-    try {
-      const ev = JSON.parse(t);
-      if (ev?.type === "error") {
-        const msg =
-          ev.error?.data?.message ||
-          ev.error?.message ||
-          ev.error?.name ||
-          "opencode error";
-        const errBlob = String(msg);
-        if (isModelLimitError(errBlob) || /402|429/i.test(errBlob)) {
-          return { ok: false, reason: "model-limit", stdout: errBlob.slice(0, 400), status: r.status };
-        }
-        return { ok: false, reason: "opencode-error", stdout: errBlob.slice(0, 400), status: r.status };
-      }
-    } catch {
-      /* ignore */
-    }
-  }
+
+  const jsonError = extractOpencodeJsonError(stdout);
   const text = parseOpencodeOutput(stdout, stderr);
-  if (r.status === 0 && text) {
+
+  // Successful JSON run: never apply limit heuristics to timestamps / ids.
+  if (r.status === 0 && text && !jsonError) {
     return { ok: true, text, status: r.status };
   }
+
+  // Limit detection only on (a) JSON error messages and (b) stderr / non-JSON
+  // failure output — never the whole NDJSON event stream.
+  if (jsonError) {
+    if (looksLikeModelLimitFailure(jsonError)) {
+      return {
+        ok: false,
+        reason: "model-limit",
+        stdout: jsonError.slice(0, 400),
+        status: r.status,
+      };
+    }
+    return {
+      ok: false,
+      reason: "opencode-error",
+      stdout: jsonError.slice(0, 400),
+      status: r.status,
+    };
+  }
+
+  const failureProbe = [stderr, nonJsonStdoutText(stdout)].filter(Boolean).join("\n");
+  if (looksLikeModelLimitFailure(failureProbe)) {
+    return {
+      ok: false,
+      reason: "model-limit",
+      stdout: failureProbe.slice(0, 400),
+      status: r.status,
+    };
+  }
+
   if (!text) {
     return {
       ok: false,
