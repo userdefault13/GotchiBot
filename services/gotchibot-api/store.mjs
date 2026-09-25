@@ -15,6 +15,25 @@ const PAIRING_TTL_MS = 15 * 60 * 1000;
 const SNAPSHOT_MAX_BYTES = 12 * 1024 * 1024;
 const LAST_SEEN_MIN_MS = 60_000;
 
+/** @param {unknown} kind @returns {"desk"|"phone"} */
+function normalizeDeskKind(kind, { defaultKind = "desk" } = {}) {
+  if (kind == null || kind === "") return defaultKind;
+  const k = String(kind).trim().toLowerCase();
+  if (k !== "desk" && k !== "phone") {
+    const err = new Error("invalid kind — must be desk or phone");
+    err.status = 400;
+    throw err;
+  }
+  return k;
+}
+
+/** Desk kind for access checks; missing/legacy → "desk". */
+function deskKindOf(desk) {
+  if (!desk) return "desk";
+  const k = desk.kind != null ? String(desk.kind).trim().toLowerCase() : "";
+  return k === "phone" ? "phone" : "desk";
+}
+
 /**
  * @param {{ mongoUri: string, dbName: string }} opts
  */
@@ -35,6 +54,8 @@ export async function connectStore({ mongoUri, dbName }) {
     await chatMessages.createIndex({ seq: 1 });
     await chatMessages.createIndex({ threadId: 1, seq: 1 });
     await chatThreads.createIndex({ threadId: 1 }, { unique: true });
+    await chatThreads.createIndex({ createdByDeskId: 1 });
+    await chatThreads.createIndex({ sharedWithDeskIds: 1 });
     await chatSnapshots.createIndex({ snapshotId: 1 }, { unique: true });
     await desks.createIndex({ tokenHash: 1 }, { unique: true });
     await desks.createIndex({ deskId: 1 }, { unique: true });
@@ -69,7 +90,8 @@ export async function connectStore({ mongoUri, dbName }) {
     await desks.updateOne({ deskId }, { $set: { lastSeen: now } });
   }
 
-  async function mintPairingCode({ name } = {}) {
+  async function mintPairingCode({ name, kind } = {}) {
+    const deskKind = normalizeDeskKind(kind);
     const code = newPairingCode();
     const codeHash = hashToken(normalizePairingCode(code));
     const now = new Date();
@@ -77,23 +99,55 @@ export async function connectStore({ mongoUri, dbName }) {
     await pairingCodes.insertOne({
       codeHash,
       name: name != null ? String(name).slice(0, 128) : null,
+      kind: deskKind,
       createdAt: now,
       expiresAt,
       usedAt: null,
       usedByDeskId: null,
     });
-    return { code, expiresAt };
+    return { code, expiresAt, kind: deskKind };
   }
 
-  async function claimPairingCode({ code, name } = {}) {
+  async function claimPairingCode({ code, name, kind } = {}) {
     const normalized = normalizePairingCode(code);
     if (!normalized || normalized.length !== 8) {
       const err = new Error("invalid pairing code");
       err.code = "INVALID_CODE";
       throw err;
     }
+
+    let claimKind = null;
+    if (kind != null && kind !== "") {
+      claimKind = normalizeDeskKind(kind);
+    }
+
     const codeHash = hashToken(normalized);
     const now = new Date();
+
+    // Peek before consume so kind-mismatch does not burn the code.
+    const pending = await pairingCodes.findOne({
+      codeHash,
+      usedAt: null,
+      expiresAt: { $gt: now },
+    });
+    if (!pending) {
+      const err = new Error("pairing code invalid or expired");
+      err.code = "INVALID_CODE";
+      throw err;
+    }
+
+    const codeKind = normalizeDeskKind(pending.kind);
+    let finalKind = codeKind;
+    if (claimKind != null) {
+      if (claimKind === "desk" && codeKind === "phone") {
+        const err = new Error("kind mismatch");
+        err.status = 403;
+        throw err;
+      }
+      // Downgrade desk→phone allowed; same-kind ok.
+      finalKind = claimKind;
+    }
+
     const claimed = await pairingCodes.findOneAndUpdate(
       { codeHash, usedAt: null, expiresAt: { $gt: now } },
       { $set: { usedAt: now } },
@@ -114,6 +168,7 @@ export async function connectStore({ mongoUri, dbName }) {
     await desks.insertOne({
       deskId,
       name: String(deskName).slice(0, 128),
+      kind: finalKind,
       tokenHash: hashToken(deskToken),
       createdAt: now,
       lastSeen: now,
@@ -123,7 +178,12 @@ export async function connectStore({ mongoUri, dbName }) {
       { codeHash },
       { $set: { usedByDeskId: deskId } },
     );
-    return { deskId, deskToken, name: String(deskName).slice(0, 128) };
+    return {
+      deskId,
+      deskToken,
+      name: String(deskName).slice(0, 128),
+      kind: finalKind,
+    };
   }
 
   async function listDesks() {
@@ -131,6 +191,7 @@ export async function connectStore({ mongoUri, dbName }) {
     return rows.map((d) => ({
       deskId: d.deskId,
       name: d.name,
+      kind: deskKindOf(d),
       createdAt: d.createdAt,
       lastSeen: d.lastSeen,
       revokedAt: d.revokedAt ?? null,
@@ -146,7 +207,105 @@ export async function connectStore({ mongoUri, dbName }) {
   }
 
   /**
-   * @param {{ threadId: string, title?: string, thread?: object, messages: object[], deskId: string }} input
+   * @param {object|null|undefined} desk
+   * @returns {object} Mongo filter for chat_threads
+   */
+  function visibleThreadFilter(desk) {
+    if (!desk || deskKindOf(desk) !== "phone") return {};
+    const deskId = desk.deskId;
+    return {
+      $or: [
+        { createdByDeskId: deskId },
+        { sharedWithDeskIds: deskId },
+      ],
+    };
+  }
+
+  async function canDeskAccessThread(desk, threadId) {
+    if (!desk || deskKindOf(desk) !== "phone") return true;
+    const id = String(threadId || "").trim();
+    if (!id) return false;
+    const thread = await chatThreads.findOne({ threadId: id });
+    if (!thread) return false;
+    if (thread.createdByDeskId === desk.deskId) return true;
+    const shared = Array.isArray(thread.sharedWithDeskIds)
+      ? thread.sharedWithDeskIds
+      : [];
+    return shared.includes(desk.deskId);
+  }
+
+  async function shareThread(threadId, deskId) {
+    const tid = String(threadId || "").trim();
+    const did = String(deskId || "").trim();
+    const thread = await chatThreads.findOne({ threadId: tid });
+    if (!thread) {
+      const err = new Error("thread not found");
+      err.status = 404;
+      throw err;
+    }
+    const desk = await desks.findOne({ deskId: did });
+    if (!desk) {
+      const err = new Error("desk not found");
+      err.status = 404;
+      throw err;
+    }
+    if (desk.revokedAt) {
+      const err = new Error("desk revoked");
+      err.status = 409;
+      throw err;
+    }
+    const before = Array.isArray(thread.sharedWithDeskIds)
+      ? thread.sharedWithDeskIds
+      : [];
+    const already = before.includes(did);
+    await chatThreads.updateOne(
+      { threadId: tid },
+      { $addToSet: { sharedWithDeskIds: did } },
+    );
+    return {
+      ok: true,
+      threadId: tid,
+      deskId: did,
+      changed: !already,
+      deskKind: deskKindOf(desk),
+    };
+  }
+
+  async function unshareThread(threadId, deskId) {
+    const tid = String(threadId || "").trim();
+    const did = String(deskId || "").trim();
+    const thread = await chatThreads.findOne({ threadId: tid });
+    if (!thread) {
+      const err = new Error("thread not found");
+      err.status = 404;
+      throw err;
+    }
+    const before = Array.isArray(thread.sharedWithDeskIds)
+      ? thread.sharedWithDeskIds
+      : [];
+    const had = before.includes(did);
+    await chatThreads.updateOne(
+      { threadId: tid },
+      { $pull: { sharedWithDeskIds: did } },
+    );
+    return { ok: true, changed: had };
+  }
+
+  async function listThreadShares(threadId) {
+    const tid = String(threadId || "").trim();
+    const thread = await chatThreads.findOne({ threadId: tid });
+    if (!thread) {
+      const err = new Error("thread not found");
+      err.status = 404;
+      throw err;
+    }
+    return Array.isArray(thread.sharedWithDeskIds)
+      ? [...thread.sharedWithDeskIds]
+      : [];
+  }
+
+  /**
+   * @param {{ threadId: string, title?: string, thread?: object, messages: object[], deskId: string, desk?: object }} input
    */
   async function pushMessages(input) {
     const threadId = String(input.threadId || "").trim();
@@ -168,6 +327,21 @@ export async function connectStore({ mongoUri, dbName }) {
     }
 
     const deskId = input.deskId;
+    const desk = input.desk || (deskId ? await desks.findOne({ deskId }) : null);
+
+    // Phone must not push into an existing unshared thread.
+    if (desk && deskKindOf(desk) === "phone") {
+      const existingThread = await chatThreads.findOne({ threadId });
+      if (existingThread) {
+        const ok = await canDeskAccessThread(desk, threadId);
+        if (!ok) {
+          const err = new Error("thread not shared with this desk");
+          err.status = 403;
+          throw err;
+        }
+      }
+    }
+
     const now = new Date();
     const results = [];
     let inserted = 0;
@@ -317,6 +491,8 @@ export async function connectStore({ mongoUri, dbName }) {
           title: incomingTitle || threadId,
           updatedAt: hasThreadMeta ? incomingUpdatedAt : now,
           deskId,
+          createdByDeskId: deskId,
+          sharedWithDeskIds: [],
           lastSeq: lastSeq || 0,
           lastMessageAt,
           createdAt: now,
@@ -370,11 +546,40 @@ export async function connectStore({ mongoUri, dbName }) {
     }
   }
 
-  async function pullMessages({ threadId, after = 0, limit = 100 } = {}) {
+  async function pullMessages({ threadId, after = 0, limit = 100, desk } = {}) {
     const lim = Math.min(500, Math.max(1, Number(limit) || 100));
     const afterSeq = Number(after) || 0;
     const filter = { seq: { $gt: afterSeq } };
-    if (threadId) filter.threadId = String(threadId).trim();
+    const tid = threadId ? String(threadId).trim() : null;
+
+    if (desk && deskKindOf(desk) === "phone") {
+      if (tid) {
+        const ok = await canDeskAccessThread(desk, tid);
+        if (!ok) {
+          const err = new Error("thread not found");
+          err.status = 404;
+          throw err;
+        }
+        filter.threadId = tid;
+      } else {
+        const visible = await chatThreads
+          .find(visibleThreadFilter(desk), { projection: { threadId: 1 } })
+          .toArray();
+        const ids = visible.map((t) => t.threadId);
+        if (!ids.length) {
+          return {
+            ok: true,
+            threadId: null,
+            messages: [],
+            nextAfter: afterSeq,
+            hasMore: false,
+          };
+        }
+        filter.threadId = { $in: ids };
+      }
+    } else if (tid) {
+      filter.threadId = tid;
+    }
 
     const rows = await chatMessages
       .find(filter)
@@ -400,36 +605,61 @@ export async function connectStore({ mongoUri, dbName }) {
       : afterSeq;
     return {
       ok: true,
-      threadId: threadId ? String(threadId).trim() : null,
+      threadId: tid || null,
       messages,
       nextAfter,
       hasMore: messages.length === lim,
     };
   }
 
-  async function listThreads({ limit = 100 } = {}) {
+  async function listThreads({ limit = 100, desk } = {}) {
     const lim = Math.min(500, Math.max(1, Number(limit) || 100));
+    const filter = visibleThreadFilter(desk);
     const rows = await chatThreads
-      .find({})
+      .find(filter)
       .sort({ updatedAt: -1 })
       .limit(lim)
       .toArray();
+    const isPhone = desk && deskKindOf(desk) === "phone";
+    const isFullDesk = desk && deskKindOf(desk) === "desk";
+    const callerId = desk?.deskId;
     return {
       ok: true,
-      threads: rows.map((t) => ({
-        threadId: t.threadId,
-        title: t.title,
-        updatedAt:
-          t.updatedAt instanceof Date
-            ? t.updatedAt.toISOString()
-            : t.updatedAt,
-        deskId: t.deskId,
-        lastSeq: t.lastSeq || 0,
-        lastMessageAt:
-          t.lastMessageAt instanceof Date
-            ? t.lastMessageAt.toISOString()
-            : t.lastMessageAt,
-      })),
+      threads: rows.map((t) => {
+        const sharedIds = Array.isArray(t.sharedWithDeskIds)
+          ? t.sharedWithDeskIds
+          : [];
+        const base = {
+          threadId: t.threadId,
+          title: t.title,
+          updatedAt:
+            t.updatedAt instanceof Date
+              ? t.updatedAt.toISOString()
+              : t.updatedAt,
+          deskId: t.deskId,
+          lastSeq: t.lastSeq || 0,
+          lastMessageAt:
+            t.lastMessageAt instanceof Date
+              ? t.lastMessageAt.toISOString()
+              : t.lastMessageAt,
+        };
+        if (!desk) return base;
+        if (isPhone) {
+          return {
+            ...base,
+            shared:
+              t.createdByDeskId !== callerId && sharedIds.includes(callerId),
+          };
+        }
+        if (isFullDesk) {
+          return {
+            ...base,
+            createdByDeskId: t.createdByDeskId ?? null,
+            sharedWithDeskIds: sharedIds,
+          };
+        }
+        return base;
+      }),
     };
   }
 
@@ -552,6 +782,11 @@ export async function connectStore({ mongoUri, dbName }) {
     pushMessages,
     pullMessages,
     listThreads,
+    shareThread,
+    unshareThread,
+    listThreadShares,
+    canDeskAccessThread,
+    visibleThreadFilter,
     createSnapshot,
     getSnapshot,
     close,

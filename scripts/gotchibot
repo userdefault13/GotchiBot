@@ -84,7 +84,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot hub enable <host>|pin|chat-store|arcade-status
                                   own Hub Tailscale pin → sessions/.hub.json (Arcade metadata)
   gotchibot hub install [--dry-run|--uninstall]   set up THIS computer as your Hub (gotchibot-api + Mongo + tailscale serve)
-  gotchibot hub pair|desks|revoke <deskId>        on the Hub: pairing codes + paired desks
+  gotchibot hub pair|desks|revoke|share|unshare|shares
+                                  on the Hub: pairing codes, desks, thread shares
   gotchibot hub join <host> <code>                on a desk: pair with your Hub
   gotchibot api start|stop|status                 run gotchibot-api by hand (dev)
   gotchibot infra schedule status|install|uninstall|run-now  YFI 15-min supervisor LaunchAgent (run on the iMac)
@@ -834,7 +835,7 @@ case "$cmd" in
     # Arcade pin (enable/pin/chat-store) vs Hub SOP (status/ops/monitor)
     sub="${1:-status}"
     case "$sub" in
-      pair|join|desks|revoke)
+      pair|join|desks|revoke|share|unshare|shares)
         exec node "$ROOT/scripts/hub-pair.mjs" "$@"
         ;;
       install|uninstall)

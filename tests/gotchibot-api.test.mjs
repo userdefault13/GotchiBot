@@ -548,6 +548,335 @@ describe("gotchibot-api integration", async () => {
   });
 });
 
+// ─── desk kinds + phone scoping (Mongo) ──────────────────────────────────────
+
+describe("desk kinds + phone scoping", async () => {
+  const uri =
+    process.env.GOTCHIBOT_TEST_MONGODB_URI || "mongodb://127.0.0.1:27017";
+  const reachable = await mongoReachable(uri);
+  if (!reachable) {
+    it("skips when Mongo unreachable", { skip: "Mongo not reachable within 1.5s" }, () => {});
+    return;
+  }
+
+  const { hashToken, newDeskToken } = await import(
+    "../services/gotchibot-api/auth.mjs"
+  );
+
+  const dbName = `gotchibot_test_${randomBytes(6).toString("hex")}`;
+  const ownerLogin = "testowner@example.com";
+  let store;
+  let server;
+  let port;
+
+  before(async () => {
+    store = await connectStore({ mongoUri: uri, dbName });
+    await store.ensureIndexes();
+    server = createApiServer({
+      store,
+      config: {
+        host: "127.0.0.1",
+        port: 0,
+        mongoUri: uri,
+        dbName,
+        ownerLogin,
+      },
+    });
+    port = await listen(server);
+  });
+
+  after(async () => {
+    if (server) await closeServer(server);
+    if (store) {
+      try {
+        await store.db.dropDatabase();
+      } catch {
+        /* ignore */
+      }
+      await store.close();
+    }
+  });
+
+  async function claimViaApi(code, extra = {}) {
+    return httpJson(port, "POST", "/api/gotchibot/hub/pair/claim", {
+      body: { code, ...extra },
+    });
+  }
+
+  it("mint desk code w/o kind -> claim -> kind desk; whoami + listDesks", async () => {
+    const { code, kind } = await store.mintPairingCode({ name: "mbp" });
+    assert.equal(kind, "desk");
+    const claim = await claimViaApi(code, { name: "desk-a" });
+    assert.equal(claim.status, 200);
+    assert.equal(claim.json.kind, "desk");
+    const who = await httpJson(port, "GET", "/api/gotchibot/hub/whoami", {
+      headers: { "X-GotchiBot-Desk-Token": claim.json.deskToken },
+    });
+    assert.equal(who.status, 200);
+    assert.equal(who.json.kind, "desk");
+    const desks = await httpJson(port, "GET", "/api/gotchibot/hub/desks", {
+      headers: { "X-GotchiBot-Desk-Token": claim.json.deskToken },
+    });
+    assert.equal(desks.status, 200);
+    const row = desks.json.desks.find((d) => d.deskId === claim.json.deskId);
+    assert.ok(row);
+    assert.equal(row.kind, "desk");
+  });
+
+  it("mint phone code -> claim -> kind phone", async () => {
+    const { code } = await store.mintPairingCode({ name: "iphone", kind: "phone" });
+    const claim = await claimViaApi(code, { name: "phone-p" });
+    assert.equal(claim.status, 200);
+    assert.equal(claim.json.kind, "phone");
+  });
+
+  it("phone code claimed with kind:desk -> 403; code still claimable as phone", async () => {
+    const { code } = await store.mintPairingCode({ kind: "phone" });
+    const bad = await claimViaApi(code, { name: "nope", kind: "desk" });
+    assert.equal(bad.status, 403);
+    assert.match(bad.json.error, /kind mismatch/i);
+    const ok = await claimViaApi(code, { name: "phone-ok" });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.json.kind, "phone");
+  });
+
+  it("desk code claimed with kind:phone -> phone desk (downgrade)", async () => {
+    const { code } = await store.mintPairingCode({ kind: "desk" });
+    const claim = await claimViaApi(code, { name: "down", kind: "phone" });
+    assert.equal(claim.status, 200);
+    assert.equal(claim.json.kind, "phone");
+  });
+
+  it("invalid kind at mint throws; at claim -> 400", async () => {
+    await assert.rejects(
+      () => store.mintPairingCode({ kind: "tablet" }),
+      (e) => e.status === 400,
+    );
+    const { code } = await store.mintPairingCode({ kind: "desk" });
+    const bad = await claimViaApi(code, { kind: "tablet" });
+    assert.equal(bad.status, 400);
+  });
+
+  it("phone scoping: hide unshared, share/unshare, own thread, push deny, routes, revoke, legacy", async () => {
+    // Desk A
+    const mintA = await store.mintPairingCode({ name: "desk-a", kind: "desk" });
+    const claimA = await claimViaApi(mintA.code, { name: "desk-a" });
+    assert.equal(claimA.status, 200);
+    const tokenA = claimA.json.deskToken;
+    const deskAId = claimA.json.deskId;
+
+    // Phone P
+    const mintP = await store.mintPairingCode({ name: "phone-p", kind: "phone" });
+    const claimP = await claimViaApi(mintP.code, { name: "phone-p" });
+    assert.equal(claimP.status, 200);
+    const tokenP = claimP.json.deskToken;
+    const deskPId = claimP.json.deskId;
+
+    // Desk A pushes T1
+    const pushT1 = await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": tokenA },
+      body: {
+        threadId: "T1",
+        title: "Desk thread",
+        messages: [
+          {
+            messageId: "t1m1",
+            role: "user",
+            text: "secret",
+            ts: "2026-06-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(pushT1.status, 200);
+
+    // Phone P: T1 absent
+    let threadsP = await httpJson(port, "GET", "/api/gotchibot/chats/threads", {
+      headers: { "X-GotchiBot-Desk-Token": tokenP },
+    });
+    assert.equal(threadsP.status, 200);
+    assert.equal(
+      threadsP.json.threads.some((t) => t.threadId === "T1"),
+      false,
+    );
+    const pullT1 = await httpJson(
+      port,
+      "GET",
+      "/api/gotchibot/chats/pull?threadId=T1&after=0",
+      { headers: { "X-GotchiBot-Desk-Token": tokenP } },
+    );
+    assert.equal(pullT1.status, 404);
+    const pullAll = await httpJson(
+      port,
+      "GET",
+      "/api/gotchibot/chats/pull?after=0",
+      { headers: { "X-GotchiBot-Desk-Token": tokenP } },
+    );
+    assert.equal(pullAll.status, 200);
+    assert.equal(
+      pullAll.json.messages.some((m) => m.threadId === "T1"),
+      false,
+    );
+
+    // share T1 with P
+    const shared = await store.shareThread("T1", deskPId);
+    assert.equal(shared.ok, true);
+    assert.equal(shared.changed, true);
+    assert.equal(shared.deskKind, "phone");
+
+    threadsP = await httpJson(port, "GET", "/api/gotchibot/chats/threads", {
+      headers: { "X-GotchiBot-Desk-Token": tokenP },
+    });
+    assert.ok(threadsP.json.threads.some((t) => t.threadId === "T1"));
+    const sharedEntry = threadsP.json.threads.find((t) => t.threadId === "T1");
+    assert.equal(sharedEntry.shared, true);
+    assert.equal(sharedEntry.createdByDeskId, undefined);
+    assert.equal(sharedEntry.sharedWithDeskIds, undefined);
+
+    const pullShared = await httpJson(
+      port,
+      "GET",
+      "/api/gotchibot/chats/pull?threadId=T1&after=0",
+      { headers: { "X-GotchiBot-Desk-Token": tokenP } },
+    );
+    assert.equal(pullShared.status, 200);
+    assert.ok(pullShared.json.messages.length >= 1);
+    const firstSeq = pullShared.json.messages[0].seq;
+    const pullInc = await httpJson(
+      port,
+      "GET",
+      `/api/gotchibot/chats/pull?threadId=T1&after=${firstSeq}`,
+      { headers: { "X-GotchiBot-Desk-Token": tokenP } },
+    );
+    assert.equal(pullInc.status, 200);
+
+    // unshare -> hidden
+    const un = await store.unshareThread("T1", deskPId);
+    assert.equal(un.changed, true);
+    const pullGone = await httpJson(
+      port,
+      "GET",
+      "/api/gotchibot/chats/pull?threadId=T1&after=0",
+      { headers: { "X-GotchiBot-Desk-Token": tokenP } },
+    );
+    assert.equal(pullGone.status, 404);
+
+    // phone pushes new T2
+    const pushT2 = await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": tokenP },
+      body: {
+        threadId: "T2",
+        title: "Phone thread",
+        messages: [
+          {
+            messageId: "t2m1",
+            role: "user",
+            text: "from phone",
+            ts: "2026-06-01T00:01:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(pushT2.status, 200);
+    threadsP = await httpJson(port, "GET", "/api/gotchibot/chats/threads", {
+      headers: { "X-GotchiBot-Desk-Token": tokenP },
+    });
+    assert.ok(threadsP.json.threads.some((t) => t.threadId === "T2"));
+    const ownEntry = threadsP.json.threads.find((t) => t.threadId === "T2");
+    assert.equal(ownEntry.shared, false);
+
+    const threadsA = await httpJson(port, "GET", "/api/gotchibot/chats/threads", {
+      headers: { "X-GotchiBot-Desk-Token": tokenA },
+    });
+    assert.ok(threadsA.json.threads.some((t) => t.threadId === "T2"));
+    assert.ok(threadsA.json.threads.some((t) => t.threadId === "T1"));
+    const t1a = threadsA.json.threads.find((t) => t.threadId === "T1");
+    assert.equal(t1a.createdByDeskId, deskAId);
+    assert.ok(Array.isArray(t1a.sharedWithDeskIds));
+
+    // phone push into unshared T1 -> 403, no insert
+    const beforeCount = await store.db
+      .collection("chat_messages")
+      .countDocuments({ threadId: "T1" });
+    const deny = await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": tokenP },
+      body: {
+        threadId: "T1",
+        messages: [
+          {
+            messageId: "t1-deny",
+            role: "user",
+            text: "nope",
+            ts: "2026-06-01T00:02:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(deny.status, 403);
+    assert.match(deny.json.error, /not shared/i);
+    const afterCount = await store.db
+      .collection("chat_messages")
+      .countDocuments({ threadId: "T1" });
+    assert.equal(afterCount, beforeCount);
+
+    // phone forbidden routes
+    const desks403 = await httpJson(port, "GET", "/api/gotchibot/hub/desks", {
+      headers: { "X-GotchiBot-Desk-Token": tokenP },
+    });
+    assert.equal(desks403.status, 403);
+    assert.match(desks403.json.error, /not allowed for phone/i);
+    const snap403 = await httpJson(port, "POST", "/api/gotchibot/chats/snapshot", {
+      headers: { "X-GotchiBot-Desk-Token": tokenP },
+      body: {},
+    });
+    assert.equal(snap403.status, 403);
+
+    // shareThread errors
+    await assert.rejects(
+      () => store.shareThread("no-such-thread", deskPId),
+      (e) => e.status === 404 && /thread not found/i.test(e.message),
+    );
+    await assert.rejects(
+      () => store.shareThread("T1", "no-such-desk"),
+      (e) => e.status === 404 && /desk not found/i.test(e.message),
+    );
+
+    // revoke phone -> 401
+    assert.ok(await store.revokeDesk(deskPId));
+    const rev = await httpJson(port, "GET", "/api/gotchibot/hub/whoami", {
+      headers: { "X-GotchiBot-Desk-Token": tokenP },
+    });
+    assert.equal(rev.status, 401);
+
+    // legacy desk without kind still sees all
+    const legacyToken = newDeskToken();
+    const legacyId = ulid();
+    await store.db.collection("desks").insertOne({
+      deskId: legacyId,
+      name: "legacy",
+      tokenHash: hashToken(legacyToken),
+      createdAt: new Date(),
+      lastSeen: new Date(),
+      revokedAt: null,
+      // no kind field
+    });
+    const legacyThreads = await httpJson(
+      port,
+      "GET",
+      "/api/gotchibot/chats/threads",
+      { headers: { "X-GotchiBot-Desk-Token": legacyToken } },
+    );
+    assert.equal(legacyThreads.status, 200);
+    assert.ok(legacyThreads.json.threads.some((t) => t.threadId === "T1"));
+    assert.ok(legacyThreads.json.threads.some((t) => t.threadId === "T2"));
+    const legacyWho = await httpJson(port, "GET", "/api/gotchibot/hub/whoami", {
+      headers: { "X-GotchiBot-Desk-Token": legacyToken },
+    });
+    assert.equal(legacyWho.status, 200);
+    assert.equal(legacyWho.json.kind, "desk");
+  });
+});
+
 // ─── CLI helpers (run 3) ─────────────────────────────────────────────────────
 
 describe("hub-pair + gotchibot-api helpers", () => {

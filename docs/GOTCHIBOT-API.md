@@ -34,7 +34,33 @@ gotchibot chats snapshot
 gotchibot chats verify <snapshotId|gotchibot-hub://id>
 ```
 
-Mint more codes on the Hub: `gotchibot hub pair`. List / revoke: `gotchibot hub desks`, `gotchibot hub revoke <deskId>`.
+Mint more codes on the Hub: `gotchibot hub pair` (optional `--kind phone`). List / revoke: `gotchibot hub desks`, `gotchibot hub revoke <deskId>`. Share a thread with a phone desk: `gotchibot hub share <threadId> <deskId>` / `unshare` / `shares`.
+
+## Desk kinds and thread scoping
+
+Two desk kinds:
+
+| Kind | Meaning |
+|---|---|
+| `desk` (default) | Full Hub access — sees every thread, can list desks and take snapshots |
+| `phone` | Scoped — only threads it created or that were shared with it |
+
+Existing desk records with no `kind` field are treated as `desk` everywhere (no migration).
+
+**Pairing.** `hub pair --kind phone` mints a phone code. Claim uses the code’s kind. The claimer may pass `kind:"phone"` to **downgrade** a desk code to a phone desk; upgrading a phone code with `kind:"desk"` fails with `403` *kind mismatch* and **does not** consume the code. Invalid kind → `400`.
+
+**Phone visibility.** A phone desk can list/pull only threads where `createdByDeskId` is itself or `sharedWithDeskIds` contains it. Pulling an inaccessible `threadId` returns `404` *thread not found* (no existence leak). Pushing into an existing unshared thread → `403` *thread not shared with this desk*. Creating a new `threadId` owns that thread.
+
+**Phone-forbidden routes** (`403` *not allowed for phone desks*): `GET /hub/desks`, `POST /chats/snapshot`, `GET /chats/snapshot/:id`.
+
+**Hub CLI (Mongo-local, like revoke):**
+
+```bash
+gotchibot hub pair [--name NAME] [--kind desk|phone] [--json]
+gotchibot hub share <threadId> <deskId>
+gotchibot hub unshare <threadId> <deskId>
+gotchibot hub shares <threadId>
+```
 
 ## Run by hand
 
@@ -84,24 +110,24 @@ JSON in/out. Body limit 2 MB. Unknown route → `404` `{ok:false,error}`. Errors
 | Method | Path | Auth | Response sketch |
 |---|---|---|---|
 | `GET` | `/health` | none | `{ok, service:"gotchibot-api", version, db:"ok"\|"down"}` — never reveals owner, tokens, or URIs |
-| `POST` | `/api/gotchibot/hub/pair/claim` | pairing code in body | `{ok, deskId, deskToken, name}` |
-| `GET` | `/api/gotchibot/hub/whoami` | desk token | `{ok, deskId, name}` |
-| `GET` | `/api/gotchibot/hub/desks` | desk token | `{ok, desks:[{deskId,name,createdAt,lastSeen,revokedAt}]}` — never hashes |
+| `POST` | `/api/gotchibot/hub/pair/claim` | pairing code in body (`kind` optional) | `{ok, deskId, deskToken, name, kind}` |
+| `GET` | `/api/gotchibot/hub/whoami` | desk token | `{ok, deskId, name, kind}` |
+| `GET` | `/api/gotchibot/hub/desks` | desk token (desk kind only) | `{ok, desks:[{deskId,name,kind,createdAt,lastSeen,revokedAt}]}` — never hashes; phone → `403` |
 | `POST` | `/api/gotchibot/chats/push` | desk token | `{ok, threadId, inserted, skipped, lastSeq, results:[…]}` |
 | `GET` | `/api/gotchibot/chats/pull?threadId=&after=&limit=` | desk token | `{ok, threadId\|null, messages:[…], nextAfter, hasMore}` — limit default 100, max 500 |
 | `GET` | `/api/gotchibot/chats/threads?limit=` | desk token | `{ok, threads:[…]}` sorted `updatedAt` desc |
-| `POST` | `/api/gotchibot/chats/snapshot` | desk token | `{ok, snapshotId, contentHash, stateUri, messageCount, threadIds, upToSeq, createdAt}` |
-| `GET` | `/api/gotchibot/chats/snapshot/:snapshotId` | desk token | `{ok, snapshotId, contentHash, stateUri, content, createdAt}` |
+| `POST` | `/api/gotchibot/chats/snapshot` | desk token (desk kind only) | `{ok, snapshotId, contentHash, stateUri, messageCount, threadIds, upToSeq, createdAt}` — phone → `403` |
+| `GET` | `/api/gotchibot/chats/snapshot/:snapshotId` | desk token (desk kind only) | `{ok, snapshotId, contentHash, stateUri, content, createdAt}` — phone → `403` |
 
 Install token alone on a chat/hub route → `401` *install token cannot unlock chat data — pair this desk: gotchibot hub join \<host\> \<code\>*.
 
 ## Auth
 
-**Desk tokens.** `gbd_` + base64url(32 random bytes). Hub stores only `sha256` hex as `tokenHash` in `desks` (`deskId` ULID, `name`, `createdAt`, `lastSeen`, `revokedAt`). Header: `X-GotchiBot-Desk-Token`. Missing/unknown → `401` *desk token required — run: gotchibot hub join \<host\> \<code\>*. Revoked → `401` *desk token revoked*. `lastSeen` updates at most once per minute.
+**Desk tokens.** `gbd_` + base64url(32 random bytes). Hub stores only `sha256` hex as `tokenHash` in `desks` (`deskId` ULID, `name`, `kind` (`desk`\|`phone`, default `desk`), `createdAt`, `lastSeen`, `revokedAt`). Header: `X-GotchiBot-Desk-Token`. Missing/unknown → `401` *desk token required — run: gotchibot hub join \<host\> \<code\>*. Revoked → `401` *desk token revoked*. `lastSeen` updates at most once per minute.
 
-**Pairing codes.** One-time, 8 Crockford base32 chars shown as `XXXX-XXXX`, 15 minutes. Stored as sha256 of normalized code (uppercase, no dash) in `pairing_codes`. Claim is atomic (`usedAt` null + not expired). More than 20 failed claims in 10 minutes → `429`.
+**Pairing codes.** One-time, 8 Crockford base32 chars shown as `XXXX-XXXX`, 15 minutes. Stored as sha256 of normalized code (uppercase, no dash) in `pairing_codes` with optional `kind`. Claim is atomic (`usedAt` null + not expired); kind-mismatch checks run before consume. More than 20 failed claims in 10 minutes → `429`.
 
-**Hub CLI** (talks to Mongo directly when there is no token yet): `hub pair`, `hub desks`, `hub revoke`. Desk: `hub join <host> <code>`.
+**Hub CLI** (talks to Mongo directly when there is no token yet): `hub pair [--kind]`, `hub desks`, `hub revoke`, `hub share` / `unshare` / `shares`. Desk: `hub join <host> <code>`.
 
 **Origin.** Direct loopback = socket is `127.0.0.1` / `::1` / `::ffff:127.0.0.1` **and** none of `x-forwarded-for`, `forwarded`, `x-forwarded-host`, `tailscale-user-login`, `tailscale-headers-info`, `tailscale-funnel-request`. Everything else is remote.
 
@@ -195,7 +221,7 @@ Then **Arcade metadata (optional)**: if `GOTCHIBOT_INFRA_TOKEN` is set, publish 
 | `scripts/chat-hub-client.mjs` | Desk HTTP client |
 | `scripts/chat-sync.mjs` | `gotchibot chats …` |
 | `scripts/hub-install.mjs` | Install / uninstall wizard |
-| `scripts/hub-pair.mjs` | pair / join / desks / revoke |
+| `scripts/hub-pair.mjs` | pair / join / desks / revoke / share / unshare / shares |
 | `scripts/gotchibot-api.mjs` | `gotchibot api start\|stop\|status` |
 
 Also: [GOTCHIBOT-HUB.md](./GOTCHIBOT-HUB.md) (Hub checklist), short package README at `services/gotchibot-api/README.md`.
