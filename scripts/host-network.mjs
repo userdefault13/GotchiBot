@@ -23,6 +23,7 @@ import { createServer } from "node:http";
 import { pipeline } from "node:stream/promises";
 import { isMainModule } from "./is-main.mjs";
 import { infraHeaders, soloApiBase, hasInstallToken } from "./infra-client.mjs";
+import { PORTS } from "./lib/ports.mjs";
 import { cpus, totalmem, freemem } from "node:os";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -113,7 +114,7 @@ async function cmdHostStatus() {
  * GET/PUT /a/:token
  */
 function ensureLocalArtifactServer() {
-  const port = Number(process.env.GOTCHIBOT_HOST_ARTIFACT_PORT || 8794);
+  const port = Number(process.env.GOTCHIBOT_HOST_ARTIFACT_PORT || PORTS.HOST_ARTIFACT);
   mkdirSync(ARTIFACT_ROOT, { recursive: true });
   const server = createServer(async (req, res) => {
     const u = new URL(req.url || "/", `http://127.0.0.1:${port}`);
