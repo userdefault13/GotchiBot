@@ -13,6 +13,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ulid } from "../../scripts/chat-canonical.mjs";
@@ -36,52 +37,59 @@ export const DEFAULT_SYSTEM_PROMPT = [
   "Plain chat only — no tools, no shell, no file edits.",
 ].join(" ");
 
-/** Verified against https://opencode.ai/config.json (AgentConfig.permission / PermissionConfig) for 1.18.x. */
+/**
+ * Built-in tools denied by name (defense in depth after `"*": "deny"`).
+ * Verified against https://opencode.ai/config.json PermissionConfig for 1.18.x.
+ */
+const HUB_REPLY_TOOL_DENIES = {
+  "*": "deny",
+  read: "deny",
+  edit: "deny",
+  glob: "deny",
+  grep: "deny",
+  list: "deny",
+  bash: "deny",
+  task: "deny",
+  external_directory: "deny",
+  todowrite: "deny",
+  question: "deny",
+  webfetch: "deny",
+  websearch: "deny",
+  lsp: "deny",
+  skill: "deny",
+  doom_loop: "deny",
+};
+
+/**
+ * Pure chat agent config for phone replies.
+ *
+ * OpenCode 1.18.x: agent `tools: { "*": false }` is normalized to
+ * `permission: { "*": "deny" }`, and `Permission.disabled` hides those tools
+ * from the model (deny-only lists still advertise tools and burn steps).
+ * Do not set `steps` — a low cap injects the "Max steps reached" notice as
+ * fake reply text when the model still tries tools.
+ *
+ * `mcp: {}` does not clear global MCP; per-server `{ enabled: false }` merges
+ * over globals (see `mcpDisableOverridesFromGlobal`). Tools wildcard also
+ * hides any MCP tools that still attach.
+ */
 export const HUB_REPLY_OPENCODE_JSON = {
   $schema: "https://opencode.ai/config.json",
   default_agent: "hub-reply",
+  tools: { "*": false },
   agent: {
     "hub-reply": {
       description: "Plain phone chat reply — no tools",
       mode: "primary",
-      steps: 1,
-      permission: {
-        read: "deny",
-        edit: "deny",
-        glob: "deny",
-        grep: "deny",
-        list: "deny",
-        bash: "deny",
-        task: "deny",
-        external_directory: "deny",
-        todowrite: "deny",
-        question: "deny",
-        webfetch: "deny",
-        websearch: "deny",
-        lsp: "deny",
-        skill: "deny",
-        doom_loop: "deny",
-      },
+      tools: { "*": false },
+      permission: { ...HUB_REPLY_TOOL_DENIES },
     },
   },
-  permission: {
-    read: "deny",
-    edit: "deny",
-    glob: "deny",
-    grep: "deny",
-    list: "deny",
-    bash: "deny",
-    task: "deny",
-    external_directory: "deny",
-    todowrite: "deny",
-    question: "deny",
-    webfetch: "deny",
-    websearch: "deny",
-    lsp: "deny",
-    skill: "deny",
-    doom_loop: "deny",
-  },
+  permission: { ...HUB_REPLY_TOOL_DENIES },
 };
+
+/** OpenCode injects this when agent `steps` is exhausted. Never store as a reply. */
+export const MAX_STEPS_NOTICE_RE = /Max steps reached/i;
 
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b[PX^_].*?\x1b\\/g;
 const HEADER_RE = /^\s*>\s+.+\s+[·•]\s+.+\s*$/;
@@ -284,15 +292,22 @@ export function preflightChecks(env = process.env) {
 
 /**
  * Ensure isolated scratch dir with no-tools opencode.json (not the repo root).
+ * Merges per-server `enabled: false` for any MCP named in the global OpenCode
+ * config so globals are not attached in the scratch dir.
  * @param {string} [workDir]
  */
 export function ensureHubReplyWorkDir(workDir) {
   const dir =
     workDir || join(ROOT, "sessions", "hub-runner", "work");
   mkdirSync(dir, { recursive: true });
+  const mcp = mcpDisableOverridesFromGlobal();
+  const config = {
+    ...HUB_REPLY_OPENCODE_JSON,
+    mcp,
+  };
   writeFileSync(
     join(dir, "opencode.json"),
-    `${JSON.stringify(HUB_REPLY_OPENCODE_JSON, null, 2)}\n`,
+    `${JSON.stringify(config, null, 2)}\n`,
   );
   return dir;
 }
@@ -397,6 +412,73 @@ export function looksLikeModelLimitFailure(text) {
 }
 
 /**
+ * True when OpenCode's max-steps forced text (never a real phone reply).
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function looksLikeMaxStepsNotice(text) {
+  return MAX_STEPS_NOTICE_RE.test(String(text || ""));
+}
+
+/**
+ * Strip line/block comments plus trailing commas so opencode.jsonc can be
+ * scanned for MCP server names. Does not evaluate secrets — names only.
+ * @param {string} raw
+ * @returns {unknown|null}
+ */
+function parseOpencodeConfigLoose(raw) {
+  try {
+    return JSON.parse(String(raw || ""));
+  } catch {
+    /* try jsonc-ish */
+  }
+  try {
+    const stripped = String(raw || "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "")
+      .replace(/,\s*([\]}])/g, "$1");
+    return JSON.parse(stripped);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Global MCP entries merge into project `opencode.json`; empty `mcp: {}` does
+ * not disable them. Build `{ name: { enabled: false } }` overrides for every
+ * server named in the user's global OpenCode config (names only; no URLs/keys).
+ * @returns {Record<string, { enabled: false }>}
+ */
+export function mcpDisableOverridesFromGlobal() {
+  /** @type {Record<string, { enabled: false }>} */
+  const overrides = {};
+  const xdg = String(process.env.XDG_CONFIG_HOME || "").trim();
+  const base = xdg || join(homedir(), ".config");
+  const candidates = [
+    join(base, "opencode", "opencode.json"),
+    join(base, "opencode", "opencode.jsonc"),
+    join(base, "opencode", "config.json"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (!existsSync(p)) continue;
+      const parsed = parseOpencodeConfigLoose(readFileSync(p, "utf8"));
+      const mcp =
+        parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? /** @type {Record<string, unknown>} */ (parsed).mcp
+          : null;
+      if (!mcp || typeof mcp !== "object" || Array.isArray(mcp)) continue;
+      for (const name of Object.keys(mcp)) {
+        if (name) overrides[name] = { enabled: false };
+      }
+    } catch {
+      /* ignore unreadable global config */
+    }
+  }
+  return overrides;
+}
+
+/**
  * Spawn one opencode run. stdin ignored (must be closed or opencode hangs).
  * @returns {{ ok: boolean, text?: string, reason?: string, stdout?: string, status?: number|null }}
  */
@@ -442,6 +524,16 @@ export function runOpencodeOnce({
 
   const jsonError = extractOpencodeJsonError(stdout);
   const text = parseOpencodeOutput(stdout, stderr);
+
+  // Never store OpenCode's max-steps notice as a phone reply.
+  if (text && looksLikeMaxStepsNotice(text)) {
+    return {
+      ok: false,
+      reason: "max-steps",
+      stdout: text.slice(0, 400),
+      status: r.status,
+    };
+  }
 
   // Successful JSON run: never apply limit heuristics to timestamps / ids.
   if (r.status === 0 && text && !jsonError) {

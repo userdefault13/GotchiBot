@@ -1575,6 +1575,35 @@ describe("hub-runner parsers", () => {
     );
     assert.equal(parseGotchiModelEnv("GOTCHIBOT_OPENCODE_MODEL=nope\n"), null);
   });
+
+  it("HUB_REPLY_OPENCODE_JSON is pure chat (no steps:1, tools disabled)", async () => {
+    const { HUB_REPLY_OPENCODE_JSON } = await import(
+      "../services/gotchibot-api/runner.mjs"
+    );
+    const agent = HUB_REPLY_OPENCODE_JSON.agent["hub-reply"];
+    assert.equal(Object.hasOwn(agent, "steps"), false);
+    assert.equal(Object.hasOwn(agent, "maxSteps"), false);
+    assert.equal(agent.tools?.["*"], false);
+    assert.equal(HUB_REPLY_OPENCODE_JSON.tools?.["*"], false);
+    assert.equal(agent.permission?.["*"], "deny");
+    assert.equal(HUB_REPLY_OPENCODE_JSON.permission?.["*"], "deny");
+    assert.equal(agent.permission?.bash, "deny");
+    assert.equal(HUB_REPLY_OPENCODE_JSON.permission?.bash, "deny");
+  });
+
+  it("looksLikeMaxStepsNotice detects OpenCode max-steps text", async () => {
+    const { looksLikeMaxStepsNotice } = await import(
+      "../services/gotchibot-api/runner.mjs"
+    );
+    assert.equal(
+      looksLikeMaxStepsNotice(
+        "Max steps reached for this session — tools are paused until your next message, so this is a text-only reply. **Done so far:** …",
+      ),
+      true,
+    );
+    assert.equal(looksLikeMaxStepsNotice("4"), false);
+    assert.equal(looksLikeMaxStepsNotice(""), false);
+  });
 });
 
 // ─── runOpencodeOnce model-limit classification (fake spawn, no real opencode) ─
@@ -1673,6 +1702,32 @@ describe("runOpencodeOnce model-limit heuristics", () => {
       });
       assert.equal(r.ok, false);
       assert.equal(r.reason, "model-limit");
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("exit 0 + Max steps reached text → max-steps failure (never stored as reply)", async () => {
+    const { runOpencodeOnce } = await import("../services/gotchibot-api/runner.mjs");
+    const workDir = mkdtempSync(join(tmpdir(), "hub-runner-once-"));
+    try {
+      const notice =
+        "Max steps reached for this session — tools are paused until your next message, so this is a text-only reply. **Done so far:** tried bash.";
+      const stdout = [
+        JSON.stringify({
+          type: "text",
+          part: { type: "text", text: notice },
+        }),
+      ].join("\n");
+      const r = runOpencodeOnce({
+        model: "opencode/big-pickle",
+        prompt: "what is 2+2?",
+        workDir,
+        spawn: fakeSpawn({ stdout, status: 0 }),
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.reason, "max-steps");
+      assert.equal(r.text, undefined);
     } finally {
       rmSync(workDir, { recursive: true, force: true });
     }
