@@ -112,6 +112,7 @@ JSON in/out. Body limit 2 MB. Unknown route → `404` `{ok:false,error}`. Errors
 
 | Method | Path | Auth | Response sketch |
 |---|---|---|---|
+| `GET`/`HEAD` | `/` | origin (same as `/app/`) | `302` `Location: /app/` — exact pathname `/` only |
 | `GET` | `/health` | none | `{ok, service:"gotchibot-api", version, db:"ok"\|"down"}` — never reveals owner, tokens, or URIs |
 | `POST` | `/api/gotchibot/hub/pair/claim` | pairing code in body (`kind` optional) | `{ok, deskId, deskToken, name, kind}` |
 | `GET` | `/api/gotchibot/hub/whoami` | desk token | `{ok, deskId, name, kind}` |

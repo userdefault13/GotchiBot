@@ -1316,6 +1316,32 @@ describe("static /app/ route", async () => {
     });
   }
 
+  it("GET / -> 302 Location /app/", async () => {
+    const r = await rawReq("GET", "/");
+    assert.equal(r.status, 302);
+    assert.equal(r.headers.location, "/app/");
+  });
+
+  it("HEAD / -> 302 Location /app/", async () => {
+    const r = await rawReq("HEAD", "/");
+    assert.equal(r.status, 302);
+    assert.equal(r.headers.location, "/app/");
+  });
+
+  it("GET /health still 200 (unaffected by root redirect)", async () => {
+    const r = await rawReq("GET", "/health");
+    assert.equal(r.status, 200);
+    const body = JSON.parse(r.body.toString("utf8"));
+    assert.equal(body.ok, true);
+    assert.equal(body.service, "gotchibot-api");
+  });
+
+  it("POST / is not redirected", async () => {
+    const r = await rawReq("POST", "/");
+    assert.notEqual(r.status, 302);
+    assert.equal(r.headers.location, undefined);
+  });
+
   it("GET /app -> 308 Location /app/", async () => {
     const r = await rawReq("GET", "/app");
     assert.equal(r.status, 308);

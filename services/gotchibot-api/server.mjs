@@ -183,8 +183,18 @@ export function createApiServer({ store, config }) {
         return json(res, origin.status, { ok: false, error: origin.error });
       }
 
-      // Phone PWA static files under /app/ (owner/tailnet only; after origin check)
+      // Exact "/" only (raw pathname — do not use trailing-slash-normalized `path`)
       const rawPath = url.pathname;
+      if (
+        (req.method === "GET" || req.method === "HEAD") &&
+        rawPath === "/"
+      ) {
+        res.writeHead(302, { Location: "/app/" });
+        res.end();
+        return;
+      }
+
+      // Phone PWA static files under /app/ (owner/tailnet only; after origin check)
       if (
         (req.method === "GET" || req.method === "HEAD") &&
         (rawPath === "/app" || rawPath.startsWith("/app/"))
