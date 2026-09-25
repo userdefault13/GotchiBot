@@ -39,7 +39,7 @@ mkdir -p "$SESSIONS"
 usage() {
   cat >&2 <<'EOF'
 usage:
-  opencode-dispatch.sh new [--model auto|flash|pro|local|<provider/model>] [--sandbox] "PROMPT"
+  opencode-dispatch.sh new [--model auto|flash|pro|sub|<provider/model>] [--sandbox] "PROMPT"
   opencode-dispatch.sh list
   opencode-dispatch.sh status <id>...
   opencode-dispatch.sh wait [<id>...]
@@ -98,9 +98,24 @@ model_for() {
         echo "opencode/nemotron-3.5-lightning-free"
       fi
       ;;
-    flash) echo "deepseek/deepseek-v4-flash" ;;
-    pro) echo "deepseek/deepseek-v4-pro" ;;
-    local) echo "ollama/qwen2.5:3b" ;;
+    flash)
+      if [ -n "${OPENCODE_API_KEY:-}" ]; then
+        echo "opencode-go/glm-5.3-flash"
+      else
+        echo "opencode/big-pickle"
+      fi
+      ;;
+    pro)
+      if [ -n "${OPENCODE_API_KEY:-}" ]; then
+        echo "opencode-go/kimi-k3"
+      else
+        echo "opencode/nemotron-3-ultra-free"
+      fi
+      ;;
+    local)
+      echo "model 'local' removed (no Ollama; hosted only) — using sub" >&2
+      node "$ROOT/scripts/model-auto.mjs" subagent
+      ;;
     sub) node "$ROOT/scripts/model-auto.mjs" subagent ;;
     *) echo "$1" ;;
   esac

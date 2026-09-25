@@ -3,6 +3,7 @@
  */
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "../../scripts/is-main.mjs";
@@ -10,8 +11,16 @@ import { isUlid } from "../../scripts/chat-canonical.mjs";
 import { resolveApiConfig } from "./config.mjs";
 import { checkOrigin } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
+import {
+  resolveStaticPath,
+  contentTypeFor,
+  isNoCacheShellFile,
+  STATIC_CSP,
+  STATIC_PERMISSIONS_POLICY,
+} from "./static.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const APP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "app");
 const BODY_LIMIT = 2 * 1024 * 1024;
 const DESK_TOKEN_HEADER = "x-gotchibot-desk-token";
 const INSTALL_TOKEN_HEADER = "x-gotchibot-install-token";
@@ -174,6 +183,61 @@ export function createApiServer({ store, config }) {
         return json(res, origin.status, { ok: false, error: origin.error });
       }
 
+      // Exact "/" only (raw pathname — do not use trailing-slash-normalized `path`)
+      const rawPath = url.pathname;
+      if (
+        (req.method === "GET" || req.method === "HEAD") &&
+        rawPath === "/"
+      ) {
+        res.writeHead(302, { Location: "/app/" });
+        res.end();
+        return;
+      }
+
+      // Phone PWA static files under /app/ (owner/tailnet only; after origin check)
+      if (
+        (req.method === "GET" || req.method === "HEAD") &&
+        (rawPath === "/app" || rawPath.startsWith("/app/"))
+      ) {
+        if (rawPath === "/app") {
+          res.writeHead(308, { Location: "/app/" });
+          res.end();
+          return;
+        }
+        const filePath = resolveStaticPath(APP_DIR, rawPath);
+        if (!filePath) {
+          return json(res, 404, { ok: false, error: "not found" });
+        }
+        let st;
+        try {
+          st = await stat(filePath);
+        } catch {
+          return json(res, 404, { ok: false, error: "not found" });
+        }
+        if (!st.isFile()) {
+          return json(res, 404, { ok: false, error: "not found" });
+        }
+        const body = req.method === "HEAD" ? null : await readFile(filePath);
+        const headers = {
+          "Content-Type": contentTypeFor(filePath),
+          "Content-Length": String(st.size),
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "no-referrer",
+          "Content-Security-Policy": STATIC_CSP,
+          "Permissions-Policy": STATIC_PERMISSIONS_POLICY,
+          "Cache-Control": isNoCacheShellFile(filePath)
+            ? "no-cache"
+            : "public, max-age=300",
+        };
+        res.writeHead(200, headers);
+        if (req.method === "HEAD") {
+          res.end();
+        } else {
+          res.end(body);
+        }
+        return;
+      }
+
       // POST /api/gotchibot/hub/pair/claim
       if (req.method === "POST" && path === "/api/gotchibot/hub/pair/claim") {
         if (claimRateLimited()) {
@@ -184,12 +248,16 @@ export function createApiServer({ store, config }) {
           const result = await store.claimPairingCode({
             code: body.code,
             name: body.name,
+            kind: body.kind,
           });
           return json(res, 200, { ok: true, ...result });
         } catch (err) {
           if (err.code === "INVALID_CODE") {
             recordClaimFailure();
             return json(res, 401, { ok: false, error: err.message });
+          }
+          if (err.status) {
+            return json(res, err.status, { ok: false, error: err.message });
           }
           throw err;
         }
@@ -199,16 +267,27 @@ export function createApiServer({ store, config }) {
       if (path.startsWith("/api/gotchibot/")) {
         const desk = await requireDesk(req, res);
         if (!desk) return;
+        const deskKind =
+          desk.kind != null && String(desk.kind).trim().toLowerCase() === "phone"
+            ? "phone"
+            : "desk";
 
         if (req.method === "GET" && path === "/api/gotchibot/hub/whoami") {
           return json(res, 200, {
             ok: true,
             deskId: desk.deskId,
             name: desk.name,
+            kind: deskKind,
           });
         }
 
         if (req.method === "GET" && path === "/api/gotchibot/hub/desks") {
+          if (deskKind === "phone") {
+            return json(res, 403, {
+              ok: false,
+              error: "not allowed for phone desks",
+            });
+          }
           const desks = await store.listDesks();
           return json(res, 200, { ok: true, desks });
         }
@@ -221,25 +300,64 @@ export function createApiServer({ store, config }) {
             thread: body.thread,
             messages: body.messages,
             deskId: desk.deskId,
+            desk,
           });
           return json(res, 200, result);
+        }
+
+        if (req.method === "POST" && path === "/api/gotchibot/chats/send") {
+          const body = await readBody(req);
+          const result = await store.sendMessage({
+            desk,
+            threadId: body.threadId,
+            clientMessageId: body.clientMessageId,
+            text: body.text,
+            title: body.title,
+          });
+          return json(res, 200, result);
+        }
+
+        if (req.method === "POST" && path === "/api/gotchibot/chats/retry") {
+          const body = await readBody(req);
+          const result = await store.retryReply({
+            desk,
+            threadId: body.threadId,
+            messageId: body.messageId,
+          });
+          return json(res, 200, result);
+        }
+
+        if (req.method === "GET" && path === "/api/gotchibot/hub/runner") {
+          const runner = await store.getRunnerStatus();
+          return json(res, 200, { ok: true, runner });
         }
 
         if (req.method === "GET" && path === "/api/gotchibot/chats/pull") {
           const threadId = url.searchParams.get("threadId") || undefined;
           const after = url.searchParams.get("after") || 0;
           const limit = url.searchParams.get("limit") || 100;
-          const result = await store.pullMessages({ threadId, after, limit });
+          const result = await store.pullMessages({
+            threadId,
+            after,
+            limit,
+            desk,
+          });
           return json(res, 200, result);
         }
 
         if (req.method === "GET" && path === "/api/gotchibot/chats/threads") {
           const limit = url.searchParams.get("limit") || 100;
-          const result = await store.listThreads({ limit });
+          const result = await store.listThreads({ limit, desk });
           return json(res, 200, result);
         }
 
         if (req.method === "POST" && path === "/api/gotchibot/chats/snapshot") {
+          if (deskKind === "phone") {
+            return json(res, 403, {
+              ok: false,
+              error: "not allowed for phone desks",
+            });
+          }
           const body = await readBody(req);
           const result = await store.createSnapshot({
             threadIds: body.threadIds,
@@ -252,6 +370,12 @@ export function createApiServer({ store, config }) {
 
         const snapMatch = path.match(/^\/api\/gotchibot\/chats\/snapshot\/([^/]+)$/);
         if (req.method === "GET" && snapMatch) {
+          if (deskKind === "phone") {
+            return json(res, 403, {
+              ok: false,
+              error: "not allowed for phone desks",
+            });
+          }
           const snapshotId = decodeURIComponent(snapMatch[1]);
           if (!isUlid(snapshotId)) {
             return json(res, 404, { ok: false, error: "snapshot not found" });

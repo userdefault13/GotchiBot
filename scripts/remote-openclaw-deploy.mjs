@@ -19,9 +19,6 @@ const OPENCODE_GO_DEFAULT_MODEL =
   process.env.GOTCHIBOT_OPENCLAW_MODEL?.trim() ||
   readPinnedOpencodeModel() ||
   "opencode-go/kimi-k3";
-const OPENROUTER_DEFAULT_MODEL =
-  process.env.GOTCHIBOT_OPENCLAW_OPENROUTER_MODEL?.trim() ||
-  "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free";
 const CF_FALLBACK_MODEL = "cloudflare-wai/@cf/zai-org/glm-4.7-flash";
 // Paid OpenCode Go model used only as a FALLBACK behind the free primary
 // (config/model-policy.json: preferZenFree, paidGoDefault=false). OpenClaw walks
@@ -29,7 +26,7 @@ const CF_FALLBACK_MODEL = "cloudflare-wai/@cf/zai-org/glm-4.7-flash";
 // the three ways the Hub has actually died. Override: GOTCHIBOT_OPENCLAW_FALLBACKS="a,b".
 const OPENCODE_GO_PAID_FALLBACK = "opencode-go/glm-5.2";
 
-function resolveFallbackModels({ primaryModel, opencodeKey, openrouterKey, cloudflareAccount, cloudflareToken }) {
+function resolveFallbackModels({ primaryModel, opencodeKey, cloudflareAccount, cloudflareToken }) {
   const explicit = process.env.GOTCHIBOT_OPENCLAW_FALLBACKS?.trim();
   const list = explicit
     ? explicit.split(",").map((m) => m.trim()).filter(Boolean)
@@ -37,7 +34,6 @@ function resolveFallbackModels({ primaryModel, opencodeKey, openrouterKey, cloud
         opencodeKey ? OPENCODE_GO_PAID_FALLBACK : null,
         opencodeKey ? "opencode/big-pickle" : null,
         cloudflareAccount && cloudflareToken ? CF_FALLBACK_MODEL : null,
-        openrouterKey ? OPENROUTER_DEFAULT_MODEL : null,
       ];
   return [...new Set(list.filter(Boolean))].filter((m) => m !== primaryModel);
 }
@@ -88,10 +84,6 @@ function resolveProviderSecrets(localEnv = readLocalOpenclawEnv()) {
     primaryModel = explicitModel;
   } else if (opencodeKey) {
     primaryModel = OPENCODE_GO_DEFAULT_MODEL;
-  } else if (openrouterKey) {
-    primaryModel = OPENROUTER_DEFAULT_MODEL;
-  } else if (cloudflareToken && cloudflareAccount) {
-    primaryModel = CF_FALLBACK_MODEL;
   }
   return {
     gatewayToken,
@@ -221,13 +213,13 @@ async function main() {
       primaryModel,
     } = secrets;
     const fallbackModels = resolveFallbackModels(secrets);
-    if (opencodeKey) {
+    if (process.env.GOTCHIBOT_OPENCLAW_MODEL?.trim()) {
+      console.log(`→ OpenClaw primary model: ${primaryModel} (GOTCHIBOT_OPENCLAW_MODEL)`);
+    } else if (opencodeKey) {
       console.log(`→ OpenClaw primary model: ${primaryModel} (OpenCode Go)`);
-    } else if (openrouterKey) {
-      console.log(`→ OpenClaw primary model: ${primaryModel} (OpenRouter)`);
     } else {
       console.warn(
-        `⚠ OPENCODE_API_KEY / OPENROUTER_API_KEY missing — gateway stays on ${CF_FALLBACK_MODEL}. Run: abra set gotchibot OPENCODE_API_KEY`,
+        `⚠ OPENCODE_API_KEY missing — gateway stays on ${CF_FALLBACK_MODEL} (Cloudflare Workers AI). Run: abra set gotchibot OPENCODE_API_KEY`,
       );
     }
     console.log(`→ OpenClaw fallbacks: ${fallbackModels.length ? fallbackModels.join(" → ") : "(none)"}`);
@@ -329,7 +321,7 @@ echo wrote "$OC/.env"
       if (r.stdout) process.stdout.write(r.stdout);
       if (r.stderr) process.stderr.write(r.stderr);
     } else {
-      console.warn("⚠ No provider credentials — set OPENCODE_API_KEY and/or OPENROUTER_API_KEY in abra");
+      console.warn("⚠ No provider credentials — set OPENCODE_API_KEY and/or CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN in abra");
     }
 
     // Docker extra mount + bootstrap openclaw repo if needed, then restart gateway.

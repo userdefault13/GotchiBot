@@ -60,7 +60,7 @@ adds:
 ```jsonc
 {
   "id": "owned-{tokenId}",           // or starter-{collateral}-h{n}
-  "role": "orchestrator" | "sub-coder" | "sub-hard" | "sub-local",
+  "role": "orchestrator" | "sub-coder" | "sub-hard",
   "owner": "0x…",                    // your wallet
   "traits": [n,n,n,n,n,n],          // 6 numericTraits, Aavegotchi ranges
   "collateral": "…",

@@ -21,7 +21,7 @@ const GROUPS = `${SESSIONS}/.multitask`;
 
 function usage() {
   console.error(`usage:
-  gotchi-multitask.mjs run [--model sub|nim|pro|local] [--wait] [--merge] [--max N] "request"
+  gotchi-multitask.mjs run [--model sub|nim|pro] [--wait] [--merge] [--max N] "request"
   gotchi-multitask.mjs run --tasks "task one" "task two" [--model sub]
   gotchi-multitask.mjs status <groupId>
   gotchi-multitask.mjs wait <groupId>`);
@@ -71,8 +71,8 @@ function splitHeuristic(text) {
 function decomposeViaOpencode(text, max) {
   const system = `Break this compound dev request into ${max} or fewer parallel sub-agent tasks.
 Reply with ONLY valid JSON (no markdown):
-{"tasks":[{"prompt":"self-contained task with definition of done","model":"nim|pro|local"}]}
-Use pro only for architecture/hard bugs; local for private/offline. Default nim.
+{"tasks":[{"prompt":"self-contained task with definition of done","model":"nim|pro"}]}
+Use pro only for architecture/hard bugs. Default nim.
 If one coherent task, return a single-element array.`;
   const r = spawnSync(
     "opencode",
@@ -97,7 +97,7 @@ If one coherent task, return a single-element array.`;
     if (!tasks?.length) return null;
     return tasks.slice(0, max).map((t) => ({
       prompt: String(t.prompt || t.task || "").trim(),
-      model: ["sub", "nim", "pro", "local"].includes(t.model) ? t.model : "sub",
+      model: ["sub", "nim", "pro"].includes(t.model) ? t.model : "sub",
     })).filter((t) => t.prompt);
   } catch {
     return null;

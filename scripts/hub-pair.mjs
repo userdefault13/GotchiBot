@@ -2,12 +2,16 @@
 /**
  * Hub pairing CLI — mint codes on the Hub, join from a desk.
  *
- *   gotchibot hub pair [--name NAME] [--json]
+ *   gotchibot hub pair [--name NAME] [--kind desk|phone] [--qr] [--app-url URL] [--json]
  *   gotchibot hub desks [--json] [--via-api]
  *   gotchibot hub revoke <deskId>
+ *   gotchibot hub share <threadId> <deskId>
+ *   gotchibot hub unshare <threadId> <deskId>
+ *   gotchibot hub shares <threadId>
  *   gotchibot hub join <host> <code> [--name NAME]
  *
  * Dispatcher keeps the subcommand in argv (process.argv[2] = pair|join|…).
+ * --qr prints a deep-link QR for the phone PWA (defaults kind to phone).
  */
 import { spawnSync } from "node:child_process";
 import {
@@ -19,6 +23,7 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import os from "node:os";
+import { renderUnicodeCompact } from "uqr";
 import { isMainModule } from "./is-main.mjs";
 import { hubPinPath, isArcadeSharedChatBase } from "./infra-client.mjs";
 import { hubRequest } from "./chat-hub-client.mjs";
@@ -28,14 +33,27 @@ import { connectStore } from "../services/gotchibot-api/store.mjs";
 function usage() {
   console.log(`Hub pairing — one-time codes so a desk can talk to YOUR Hub.
 
-  gotchibot hub pair [--name NAME] [--json]
+  gotchibot hub pair [--name NAME] [--kind desk|phone] [--qr] [--app-url URL] [--json]
       On the Hub: make a short code. Give it to a desk. It works once.
+      --kind phone mints a scoped phone-desk code (default: desk).
+      --qr prints a terminal QR of the PWA deep link (#pair=CODE); defaults
+      kind to phone when --kind is omitted. --app-url overrides the PWA base
+      (else GOTCHIBOT_HUB_APP_URL / config.appUrl / https://<host>/app/).
 
   gotchibot hub desks [--json] [--via-api]
       On the Hub: list paired desks (no secrets). --via-api uses the desk API.
 
   gotchibot hub revoke <deskId>
       On the Hub: turn off a desk's token.
+
+  gotchibot hub share <threadId> <deskId>
+      On the Hub: share a thread with a phone desk.
+
+  gotchibot hub unshare <threadId> <deskId>
+      On the Hub: remove a thread share.
+
+  gotchibot hub shares <threadId>
+      On the Hub: list desk ids a thread is shared with.
 
   gotchibot hub join <host> <code> [--name NAME]
       On a desk: use the code from the Hub. Saves your desk token locally.
@@ -48,11 +66,127 @@ function parseFlags(argv) {
     const a = argv[i];
     if (a === "--json") out.json = true;
     else if (a === "--via-api") out.viaApi = true;
+    else if (a === "--qr") out.qr = true;
     else if (a === "--name") out.name = argv[++i];
+    else if (a === "--kind") out.kind = argv[++i];
+    else if (a === "--app-url") out.appUrl = argv[++i];
     else if (a === "-h" || a === "--help" || a === "help") out.help = true;
     else out._.push(a);
   }
   return out;
+}
+
+/**
+ * Resolve pairing kind. With --qr and no explicit --kind → phone.
+ * Explicit --kind always wins. Default without qr → desk.
+ * @param {{ kind?: string|null, qr?: boolean }} opts
+ * @returns {"desk"|"phone"}
+ */
+function resolvePairKind({ kind, qr } = {}) {
+  if (kind != null && String(kind).trim() !== "") {
+    const k = String(kind).trim().toLowerCase();
+    if (k !== "desk" && k !== "phone") {
+      throw new Error(`invalid kind: ${kind} (expected desk or phone)`);
+    }
+    return k;
+  }
+  if (qr) return "phone";
+  return "desk";
+}
+
+function validateKindFlag(kind, { qr = false } = {}) {
+  try {
+    return resolvePairKind({ kind, qr });
+  } catch (e) {
+    console.error(e.message || e);
+    process.exit(2);
+  }
+}
+
+/**
+ * PWA base URL ending in `/app/`.
+ * Precedence: explicit appUrl → env GOTCHIBOT_HUB_APP_URL → config.appUrl →
+ * `https://<host>/app/` (MagicDNS host, no port).
+ * @param {{ appUrl?: string|null, env?: NodeJS.ProcessEnv, config?: { appUrl?: string|null }, host?: string|null }} opts
+ */
+function resolveAppBase({ appUrl, env = process.env, config, host } = {}) {
+  const fromFlag = appUrl != null && String(appUrl).trim() ? String(appUrl).trim() : null;
+  const fromEnv =
+    env?.GOTCHIBOT_HUB_APP_URL != null && String(env.GOTCHIBOT_HUB_APP_URL).trim()
+      ? String(env.GOTCHIBOT_HUB_APP_URL).trim()
+      : null;
+  const fromConfig =
+    config?.appUrl != null && String(config.appUrl).trim()
+      ? String(config.appUrl).trim()
+      : null;
+  let raw = fromFlag || fromEnv || fromConfig;
+  if (!raw) {
+    const h = String(host || "").trim() || "<your-hub-MagicDNS>";
+    raw = `https://${h}/app/`;
+  }
+  return normalizeAppBase(raw);
+}
+
+/** Strip trailing slashes; ensure path ends with `/app/` if bare origin; one trailing slash. */
+function normalizeAppBase(raw) {
+  let s = String(raw || "").trim();
+  if (!s) return "https://<your-hub-MagicDNS>/app/";
+  // strip trailing slashes
+  s = s.replace(/\/+$/, "");
+  try {
+    const u = new URL(s.includes("://") ? s : `https://${s}`);
+    const path = (u.pathname || "/").replace(/\/+$/, "") || "";
+    if (!path || path === "/") {
+      u.pathname = "/app/";
+    } else if (!path.endsWith("/app")) {
+      // keep explicit path; ensure trailing slash
+      u.pathname = `${path}/`;
+    } else {
+      u.pathname = `${path}/`;
+    }
+    // URL.toString() may drop trailing slash on some paths — force it
+    let out = u.toString();
+    if (!out.endsWith("/")) out += "/";
+    return out;
+  } catch {
+    // Fallback without URL parser
+    if (!/\/app(\/|$)/i.test(s) && !s.includes("/", s.indexOf("://") >= 0 ? s.indexOf("://") + 3 : 0)) {
+      return `${s}/app/`;
+    }
+    return `${s}/`;
+  }
+}
+
+/** @param {string} appBase @param {string} code display form XXXX-XXXX */
+function pairDeepLink(appBase, code) {
+  const base = String(appBase || "").replace(/\/+$/, "") + "/";
+  return `${base}#pair=${encodeURIComponent(code)}`;
+}
+
+/** Terminal QR via uqr (compact unicode blocks). */
+function renderPairQr(text) {
+  return renderUnicodeCompact(String(text || ""), { border: 1 });
+}
+
+/**
+ * Pure JSON/human payload for `hub pair` (no Mongo).
+ * @param {{ code: string, kind: string, expiresAt: Date|string, host: string, port?: number|string|null, appBase: string }} input
+ */
+function buildPairOutput({ code, kind, expiresAt, host, port, appBase }) {
+  const joinHost = formatJoinHost(host, port);
+  const expiresIso =
+    expiresAt instanceof Date ? expiresAt.toISOString() : String(expiresAt);
+  const pairUrl = pairDeepLink(appBase, code);
+  return {
+    ok: true,
+    code,
+    kind,
+    expiresAt: expiresIso,
+    host,
+    joinHost,
+    joinCommand: `gotchibot hub join ${joinHost} ${code}`,
+    pairUrl,
+  };
 }
 
 function magicDnsFromTailscale() {
@@ -123,7 +257,7 @@ function writeHubPinMerge(patch) {
   return next;
 }
 
-async function cmdPair(opts) {
+async function withStore(fn) {
   const config = resolveApiConfig();
   const store = await connectStore({
     mongoUri: config.mongoUri,
@@ -131,41 +265,75 @@ async function cmdPair(opts) {
   });
   try {
     await store.ensureIndexes();
-    const { code, expiresAt } = await store.mintPairingCode({ name: opts.name });
+    return await fn(store, config);
+  } finally {
+    await store.close();
+  }
+}
+
+async function cmdPair(opts) {
+  const kind = validateKindFlag(opts.kind, { qr: !!opts.qr });
+  return withStore(async (store, config) => {
+    const { code, expiresAt } = await store.mintPairingCode({
+      name: opts.name,
+      kind,
+    });
     const host =
       config.tailscaleHost || magicDnsFromTailscale() || "<your-hub-MagicDNS>";
-    const joinHost = formatJoinHost(host, config.port);
-    const expiresLocal = expiresAt.toLocaleString();
-    const out = {
-      ok: true,
-      code,
-      expiresAt: expiresAt.toISOString(),
+    const appBase = resolveAppBase({
+      appUrl: opts.appUrl,
+      env: process.env,
+      config,
       host,
-      joinHost,
-      joinCommand: `gotchibot hub join ${joinHost} ${code}`,
-    };
+    });
+    const out = buildPairOutput({
+      code,
+      kind,
+      expiresAt,
+      host,
+      port: config.port,
+      appBase,
+    });
     if (opts.json) {
       console.log(JSON.stringify(out));
       return out;
     }
+    const expiresLocal = expiresAt.toLocaleString();
     console.log("");
     console.log(`Pairing code:  ${code}`);
+    console.log(`Kind:          ${kind}`);
     console.log(`Expires:       ${expiresLocal} (in 15 minutes)`);
     console.log(`This code works once — after a desk uses it, make a new one.`);
     console.log("");
+    if (opts.qr) {
+      console.log(out.pairUrl);
+      console.log("");
+      console.log(renderPairQr(out.pairUrl));
+      console.log("");
+      console.log(
+        "Scan this inside the GotchiBot app (Pair → Scan QR), not with the iOS Camera app. Or type the code.",
+      );
+      if (/^https:\/\//i.test(appBase)) {
+        const httpFallback = `http://${formatJoinHost(host, config.port)}/app/`;
+        console.log(
+          `Needs HTTPS on the Hub (tailscale serve --https) — not enabled yet? open ${httpFallback} on the phone and type the code instead.`,
+        );
+      }
+      console.log("");
+      return out;
+    }
     console.log(`On the other computer, run:`);
-    console.log(`  gotchibot hub join ${joinHost} ${code}`);
+    console.log(`  ${out.joinCommand}`);
     console.log("");
     return out;
-  } finally {
-    await store.close();
-  }
+  });
 }
 
 function formatDeskRow(d) {
   return {
     deskId: d.deskId,
     name: d.name,
+    kind: d.kind || "desk",
     created: d.createdAt || d.created,
     lastSeen: d.lastSeen,
     revoked: d.revokedAt ?? null,
@@ -187,19 +355,13 @@ async function cmdDesks(opts) {
     for (const d of desks) {
       const rev = d.revoked ? " (revoked)" : "";
       console.log(
-        `${d.deskId}\t${d.name || "—"}\tcreated=${d.created || "—"}\tlastSeen=${d.lastSeen || "—"}${rev}`,
+        `${d.deskId}\t${d.name || "—"}\tkind=${d.kind || "desk"}\tcreated=${d.created || "—"}\tlastSeen=${d.lastSeen || "—"}${rev}`,
       );
     }
     return;
   }
 
-  const config = resolveApiConfig();
-  const store = await connectStore({
-    mongoUri: config.mongoUri,
-    dbName: config.dbName,
-  });
-  try {
-    await store.ensureIndexes();
+  return withStore(async (store) => {
     const rows = await store.listDesks();
     const desks = rows.map(formatDeskRow);
     if (opts.json) {
@@ -213,12 +375,10 @@ async function cmdDesks(opts) {
     for (const d of desks) {
       const rev = d.revoked ? " (revoked)" : "";
       console.log(
-        `${d.deskId}\t${d.name || "—"}\tcreated=${d.created || "—"}\tlastSeen=${d.lastSeen || "—"}${rev}`,
+        `${d.deskId}\t${d.name || "—"}\tkind=${d.kind || "desk"}\tcreated=${d.created || "—"}\tlastSeen=${d.lastSeen || "—"}${rev}`,
       );
     }
-  } finally {
-    await store.close();
-  }
+  });
 }
 
 async function cmdRevoke(deskId) {
@@ -227,13 +387,7 @@ async function cmdRevoke(deskId) {
     console.error("usage: gotchibot hub revoke <deskId>");
     process.exit(2);
   }
-  const config = resolveApiConfig();
-  const store = await connectStore({
-    mongoUri: config.mongoUri,
-    dbName: config.dbName,
-  });
-  try {
-    await store.ensureIndexes();
+  return withStore(async (store) => {
     const rows = await store.listDesks();
     const found = rows.find((d) => d.deskId === id);
     if (!found) {
@@ -250,9 +404,78 @@ async function cmdRevoke(deskId) {
     } else {
       console.log(`Desk ${id} was already revoked.`);
     }
-  } finally {
-    await store.close();
+  });
+}
+
+async function cmdShare(threadId, deskId) {
+  const tid = String(threadId || "").trim();
+  const did = String(deskId || "").trim();
+  if (!tid || !did) {
+    console.error("usage: gotchibot hub share <threadId> <deskId>");
+    process.exit(2);
   }
+  return withStore(async (store) => {
+    try {
+      const r = await store.shareThread(tid, did);
+      if (r.changed) {
+        console.log(`Shared thread ${tid} with desk ${did} (kind=${r.deskKind}).`);
+      } else {
+        console.log(`Thread ${tid} was already shared with desk ${did}.`);
+      }
+      if (r.deskKind === "desk") {
+        console.log(
+          "Note: desk-kind desks already see every thread; sharing is mainly for phone desks.",
+        );
+      }
+    } catch (e) {
+      console.error(e.message || e);
+      process.exit(1);
+    }
+  });
+}
+
+async function cmdUnshare(threadId, deskId) {
+  const tid = String(threadId || "").trim();
+  const did = String(deskId || "").trim();
+  if (!tid || !did) {
+    console.error("usage: gotchibot hub unshare <threadId> <deskId>");
+    process.exit(2);
+  }
+  return withStore(async (store) => {
+    try {
+      const r = await store.unshareThread(tid, did);
+      if (r.changed) {
+        console.log(`Unshared thread ${tid} from desk ${did}.`);
+      } else {
+        console.log(`Thread ${tid} was not shared with desk ${did}.`);
+      }
+    } catch (e) {
+      console.error(e.message || e);
+      process.exit(1);
+    }
+  });
+}
+
+async function cmdShares(threadId) {
+  const tid = String(threadId || "").trim();
+  if (!tid) {
+    console.error("usage: gotchibot hub shares <threadId>");
+    process.exit(2);
+  }
+  return withStore(async (store) => {
+    try {
+      const ids = await store.listThreadShares(tid);
+      if (!ids.length) {
+        console.log(`Thread ${tid} is not shared with any desk.`);
+        return;
+      }
+      console.log(`Thread ${tid} shared with:`);
+      for (const id of ids) console.log(`  ${id}`);
+    } catch (e) {
+      console.error(e.message || e);
+      process.exit(1);
+    }
+  });
 }
 
 async function cmdJoin(host, code, opts) {
@@ -356,6 +579,9 @@ async function main(argv = process.argv.slice(2)) {
     if (cmd === "pair") await cmdPair(opts);
     else if (cmd === "desks") await cmdDesks(opts);
     else if (cmd === "revoke") await cmdRevoke(opts._[0]);
+    else if (cmd === "share") await cmdShare(opts._[0], opts._[1]);
+    else if (cmd === "unshare") await cmdUnshare(opts._[0], opts._[1]);
+    else if (cmd === "shares") await cmdShares(opts._[0]);
     else if (cmd === "join") await cmdJoin(opts._[0], opts._[1], opts);
     else {
       usage();
@@ -381,4 +607,9 @@ export {
   hostWithoutSchemePort,
   magicDnsFromTailscale,
   usage,
+  resolveAppBase,
+  pairDeepLink,
+  renderPairQr,
+  buildPairOutput,
+  resolvePairKind,
 };

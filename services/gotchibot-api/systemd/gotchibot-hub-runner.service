@@ -1,0 +1,43 @@
+# GotchiBot Hub phone-reply runner (systemd user unit template)
+#
+# Install on the Linux Hub host only — do not install from a Mac desk.
+# Replace placeholders, then:
+#   mkdir -p ~/.config/systemd/user
+#   cp gotchibot-hub-runner.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now gotchibot-hub-runner.service
+#
+# Placeholders:
+#   @REPO@   absolute path to the GotchiBot checkout (WorkingDirectory)
+#   @NODE@   absolute path to node (e.g. /usr/bin/node)
+#   @ABRA@   absolute path to abra (e.g. /home/you/.local/bin/abra)
+#   @HOME@   hub user home (for PATH + abra config)
+#   @NODE_DIR@ directory containing node (abra is a `#!/usr/bin/env node` script)
+#   @MODEL@  optional pinned model (same as the desk pin, e.g. opencode-go/glm-5.3-flash);
+#            delete the GOTCHIBOT_HUB_RUNNER_MODEL line to use the model-policy chat chain
+#
+# ExecStart runs under abra so provider keys (OPENCODE_API_KEY, …) are
+# injected — never put secrets in this unit file.
+#
+# Mirror of conventions in scripts/hub-install.mjs renderSystemdUnit().
+
+[Unit]
+Description=GotchiBot Hub phone-reply runner (hub-runner)
+After=network-online.target
+# Prefer starting after the Hub API when both are user units:
+After=gotchibot-api.service
+Wants=gotchibot-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+Environment=GOTCHIBOT_HUB_CONFIG=@REPO@/sessions/.hub-api.json
+Environment=HOME=@HOME@
+Environment=PATH=@HOME@/.local/bin:@NODE_DIR@:/usr/local/bin:/usr/bin:/bin
+Environment=GOTCHIBOT_HUB_RUNNER_MODEL=@MODEL@
+ExecStart=@ABRA@ run -p gotchibot -- @NODE@ @REPO@/scripts/hub-runner.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
