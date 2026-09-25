@@ -19,6 +19,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { isMainModule } from "./is-main.mjs";
 import { resolveMeetingsRoot } from "./project-context.mjs";
 import { isProfLinkCubeId } from "./gotchi-art.mjs";
+import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PENDING = `${ROOT}/sessions/.meet-pending.json`;
@@ -37,12 +38,14 @@ const EDIT_LABEL = "[edit]";
 const COPY_FLASH_MS = 1400;
 const EDIT_REQUEST = `${ROOT}/sessions/.meet-edit-request.json`;
 
+const _tui = renderMode();
+
 function meetingsRoot() {
   return resolveMeetingsRoot().root;
 }
 
 
-const C = {
+const C_RAW = {
   reset: "\x1b[0m",
   dim: "\x1b[38;5;245m",
   user: "\x1b[38;5;117m",
@@ -52,6 +55,10 @@ const C = {
   bar: "\x1b[38;5;240m",
   body: "\x1b[38;5;252m",
 };
+
+const C = Object.fromEntries(
+  Object.entries(C_RAW).map(([k, v]) => [k, downgradeAnsi(v, _tui.color)]),
+);
 
 const SCROLL_TRACK = `${C.bar}│${C.reset}`;
 const SCROLL_THUMB = `${C.chair}█${C.reset}`;
@@ -200,7 +207,22 @@ function wrapLines(text, width) {
 const thumbCache = new Map();
 
 function thumbDiskPath(heroId) {
-  return `${THUMB_CACHE_DIR}/${String(heroId).replace(/[^\w.-]+/g, "_")}.ansi`;
+  const safe = String(heroId).replace(/[^\w.-]+/g, "_");
+  return `${THUMB_CACHE_DIR}/${safe}.${_tui.color}-${_tui.glyphs}.txt`;
+}
+
+function gotchiArtThumbArgs(heroId) {
+  const args = [
+    `${ROOT}/scripts/gotchi-art.mjs`,
+    "--thumb",
+    "--hero",
+    heroId,
+    "--color",
+    "--color-mode",
+    _tui.color,
+  ];
+  if (_tui.glyphs === "ascii") args.push("--ascii");
+  return args;
 }
 
 function plainLen(s) {
@@ -230,7 +252,7 @@ function thumbForHero(heroId) {
   } catch {
     /* regenerate */
   }
-  const r = spawnSync(process.execPath, [`${ROOT}/scripts/gotchi-art.mjs`, "--thumb", "--hero", heroId, "--color"], {
+  const r = spawnSync(process.execPath, gotchiArtThumbArgs(heroId), {
     cwd: ROOT,
     encoding: "utf8",
     timeout: 8000,
@@ -278,7 +300,7 @@ export function warmThumbs(ids, done) {
     if (thumbCache.has(id) || existsSync(disk)) return next();
     let child;
     try {
-      child = spawn(process.execPath, [`${ROOT}/scripts/gotchi-art.mjs`, "--thumb", "--hero", id, "--color"], {
+      child = spawn(process.execPath, gotchiArtThumbArgs(id), {
         cwd: ROOT,
         stdio: ["ignore", "pipe", "ignore"],
       });
@@ -485,13 +507,15 @@ export function maxScrollFromBottom({ cols = 80, rows = 40, meeting = loadCurren
 export function renderMeetChannel({ cols = 80, rows = 40, scrollFromBottom = 0 } = {}) {
   const meeting = loadCurrentMeeting();
   if (!meeting) {
-    return [
-      `${C.dim}No open meeting${C.reset}`,
-      "",
-      "Open meet menu or:",
-      '  /meet start "topic"',
-      "",
-    ].join("\n");
+    return finalizeChannelFrame(
+      [
+        `${C.dim}No open meeting${C.reset}`,
+        "",
+        "Open meet menu or:",
+        '  /meet start "topic"',
+        "",
+      ].join("\n"),
+    );
   }
 
   const contentCols = Math.max(24, cols - SCROLLBAR_COLS);
@@ -508,7 +532,7 @@ export function renderMeetChannel({ cols = 80, rows = 40, scrollFromBottom = 0 }
   const bar = buildScrollbar(total, viewport, fromBottom, rows);
 
   if (total <= viewport) {
-    return attachScrollbar(allLines, bar, cols);
+    return finalizeChannelFrame(attachScrollbar(allLines, bar, cols));
   }
 
   const maxScroll = total - viewport;
@@ -526,7 +550,11 @@ export function renderMeetChannel({ cols = 80, rows = 40, scrollFromBottom = 0 }
   while (visible.length < rows) visible.push("");
   if (visible.length > rows) visible.length = rows;
 
-  return attachScrollbar(visible, bar, cols);
+  return finalizeChannelFrame(attachScrollbar(visible, bar, cols));
+}
+
+function finalizeChannelFrame(frame) {
+  return _tui.glyphs === "ascii" ? toAsciiGlyphs(frame) : frame;
 }
 
 /** Slack-style turn output for OpenCode stdout (no thumbs — channel pane has those). */

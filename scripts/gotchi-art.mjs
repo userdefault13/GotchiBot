@@ -14,9 +14,14 @@
  *        node scripts/gotchi-art.mjs --roster --hero owned-954 --color
  *        node scripts/gotchi-art.mjs --roster --color --collateral wbtc
  *        node scripts/gotchi-art.mjs --thumb --npc prof-link-cube --color
+ *        node scripts/gotchi-art.mjs --color --color-mode 256 --hero owned-954
+ *        node scripts/gotchi-art.mjs --thumb --ascii --color-mode 16 --collateral wbtc
  *   --thumb / --kanban = large thumb, plain recolor, regular ▄▄/▀▀ eyes (iMessage + kanban)
  *   --roster           = same art + doubled forehead collateral, eyes left alone (sub-agents)
  *   --npc prof-link-cube = Prof. Link-Cube meeting thumb (assets/prof-link-cube.ascii)
+ *   --color-mode truecolor|256|16|none  (also GOTCHIBOT_TUI_COLOR / term-caps)
+ *   --ascii            fold block/box glyphs to ASCII (also GOTCHIBOT_TUI_ASCII=1)
+ *   --color-mode none  same as --no-color
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -33,6 +38,7 @@ import {
   starterSpiritFromHeroId,
   tokenIdFromHeroId,
 } from "./collateral-resolve.mjs";
+import { fg, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** Large thumb tombstone shared by iMessage, kanban seats, and avatar roster. */
@@ -58,7 +64,7 @@ export function isProfLinkCubeId(id) {
 }
 
 /** Meeting thumb for Prof. Link-Cube — LINK-blue recolor of the cube glyph. */
-export function renderProfLinkCubeAscii(colors = null, { useColor = true } = {}) {
+export function renderProfLinkCubeAscii(colors = null, { useColor = true, mode = "truecolor" } = {}) {
   const raw = existsSync(PROF_LINK_CUBE_ASCII)
     ? readFileSync(PROF_LINK_CUBE_ASCII, "utf8").replace(/\n+$/, "")
     : "     ▄▄\n   ▄▀  ▀▄\n ▄▀  ▄▀  ▀▄\n█▀▄ ▀▄   ▄▀█\n█▒▒▀▄  ▄▀░░█\n█▒▒▒▒▀▀░░░░█\n ▀▄▒▒▒░░░▄▀\n   ▀▄▒░▄▀\n    ▀▀";
@@ -71,7 +77,7 @@ export function renderProfLinkCubeAscii(colors = null, { useColor = true } = {})
   const primary = colors?.primary || link.primary || "0000b9";
   const secondary = colors?.secondary || link.secondary || "d4def8";
   if (useColor && (primary || secondary)) {
-    return recolorAscii(base, { primary, secondary, useColor: true });
+    return recolorAscii(base, { primary, secondary, useColor: true, mode });
   }
   return base;
 }
@@ -101,24 +107,34 @@ function rarityBand(traits) {
   return "common";
 }
 
-function colorEnabled() {
-  if (process.argv.includes("--no-color")) return false;
-  if (process.argv.includes("--color")) return true;
+function colorEnabled(args = process.argv, colorMode = "truecolor") {
+  if (colorMode === "none" || args.includes("--no-color")) return false;
+  if (args.includes("--color")) return true;
   if (process.env.NO_COLOR) return false;
   return Boolean(process.stdout.isTTY);
 }
 
-export function paint(text, hex) {
+/**
+ * Paint text with a hex color. Optional mode defaults to truecolor so importers
+ * keep byte-identical output.
+ * @param {string} text
+ * @param {string} hex
+ * @param {string} [mode]
+ */
+export function paint(text, hex, mode = "truecolor") {
+  if (mode === "none") return text;
   const h = hexNormalize(hex);
   if (!h) return text;
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `\x1b[38;2;${r};${g};${b}m${text}\x1b[0m`;
+  const seq = fg(h, mode);
+  if (!seq) return text;
+  return `${seq}${text}\x1b[0m`;
 }
 
-export function recolorAscii(art, { primary, secondary, useColor, markHex = null, markChars = "" }) {
-  if (!useColor || (!primary && !secondary && !markHex)) return art;
+export function recolorAscii(
+  art,
+  { primary, secondary, useColor, markHex = null, markChars = "", mode = "truecolor" },
+) {
+  if (!useColor || mode === "none" || (!primary && !secondary && !markHex)) return art;
   const primarySet = new Set([...PRIMARY_CHARS]);
   const secondarySet = new Set([...SECONDARY_CHARS]);
   const markSet = new Set([...(markChars || "")]);
@@ -128,9 +144,9 @@ export function recolorAscii(art, { primary, secondary, useColor, markHex = null
     .map((line) => {
       let out = "";
       for (const ch of line) {
-        if (markHex && markSet.has(ch)) out += paint(ch, markHex);
-        else if (primary && primarySet.has(ch)) out += paint(ch, primary);
-        else if (secondary && secondarySet.has(ch)) out += paint(ch, secondary);
+        if (markHex && markSet.has(ch)) out += paint(ch, markHex, mode);
+        else if (primary && primarySet.has(ch)) out += paint(ch, primary, mode);
+        else if (secondary && secondarySet.has(ch)) out += paint(ch, secondary, mode);
         else out += ch;
       }
       return out;
@@ -151,7 +167,7 @@ export function applyCollateralChar(art, character) {
  * Regular ▄▄ / ▀▀ eyes — no trait digits, no forehead spirit.
  * Extra opts (eyeColor/eyeShape) are ignored so older callers stay safe.
  */
-export function renderThumbAscii(colors = null, { useColor = true } = {}) {
+export function renderThumbAscii(colors = null, { useColor = true, mode = "truecolor" } = {}) {
   const base = existsSync(THUMB_ASCII)
     ? readFileSync(THUMB_ASCII, "utf8").replace(/\s+$/, "")
     : THUMB_FALLBACK;
@@ -160,6 +176,7 @@ export function renderThumbAscii(colors = null, { useColor = true } = {}) {
       primary: colors.primary,
       secondary: colors.secondary,
       useColor: true,
+      mode,
     });
   }
   return base;
@@ -175,7 +192,7 @@ export function renderKanbanAscii(colors = null, opts = {}) {
  * iMessage, regular ▄▄/▀▀ eyes (left alone), doubled forehead collateral
  * for symmetry (░░ → UU / ₿₿ / …).
  */
-export function renderRosterAscii(colors = null, { useColor = true } = {}) {
+export function renderRosterAscii(colors = null, { useColor = true, mode = "truecolor" } = {}) {
   const base = existsSync(THUMB_ASCII)
     ? readFileSync(THUMB_ASCII, "utf8").replace(/\s+$/, "")
     : THUMB_FALLBACK;
@@ -193,6 +210,7 @@ export function renderRosterAscii(colors = null, { useColor = true } = {}) {
       primary: colors.primary,
       secondary: colors.secondary,
       useColor: true,
+      mode,
       markHex: colors.primary || colors.cheek || colors.secondary,
       markChars: pair,
     });
@@ -283,9 +301,9 @@ function eyeInnerThree(content) {
   return String(content || "").padEnd(3, "·").slice(0, 3);
 }
 
-function eyeBlockFive(innerContent, primary, useColor) {
+function eyeBlockFive(innerContent, primary, useColor, mode = "truecolor") {
   const innerStr = eyeInnerThree(innerContent);
-  const mid = useColor && primary ? paint(innerStr, primary) : innerStr;
+  const mid = useColor && primary ? paint(innerStr, primary, mode) : innerStr;
   return `█${mid}█`;
 }
 
@@ -319,10 +337,15 @@ function applyCheekGlyphs(art, { eyeColor = 50, eyeShape = 50, primary = null, u
 }
 
 /** Swap cheek placeholders for painted eyeShape / eyeColor digit pairs. */
-function paintFramedCheekDigits(art, leftCheek, rightCheek, primary, useColor) {
-  const L = useColor && primary ? paint(leftCheek, primary) : leftCheek;
-  const R = useColor && primary ? paint(rightCheek, primary) : rightCheek;
+function paintFramedCheekDigits(art, leftCheek, rightCheek, primary, useColor, mode = "truecolor") {
+  const L = useColor && primary ? paint(leftCheek, primary, mode) : leftCheek;
+  const R = useColor && primary ? paint(rightCheek, primary, mode) : rightCheek;
   return art.replaceAll(CHEEK_PH_L, L).replaceAll(CHEEK_PH_R, R);
+}
+
+/** Apply ascii glyph fold when requested; color already quantized at paint time. */
+function finalizeArt(art, glyphs) {
+  return glyphs === "ascii" ? toAsciiGlyphs(art) : art;
 }
 
 /** @deprecated eyes no longer carry traits — cheeks do. Kept as cheek alias. */
@@ -480,12 +503,22 @@ function colorsFromCli(args) {
 
 async function main() {
   const args = process.argv.slice(2);
+  // An explicit --color still beats NO_COLOR (as before); --color-mode wins over both.
+  const modeInfo = renderMode({
+    colorMode: argValue(args, "--color-mode"),
+    ascii: args.includes("--ascii"),
+    noColor: args.includes("--no-color"),
+    env: args.includes("--color") ? { ...process.env, NO_COLOR: "" } : process.env,
+  });
+  const colorMode = modeInfo.color;
+  const glyphs = modeInfo.glyphs;
   const useColor =
-    colorEnabled() ||
-    args.includes("--color") ||
-    args.includes("--thumb") ||
-    args.includes("--kanban") ||
-    args.includes("--roster");
+    colorEnabled(args, colorMode) ||
+    ((args.includes("--color") ||
+      args.includes("--thumb") ||
+      args.includes("--kanban") ||
+      args.includes("--roster")) &&
+      colorMode !== "none");
 
   if (args.includes("--thumb") || args.includes("--kanban") || args.includes("--roster")) {
     // --thumb / --kanban = plain recolor (iMessage + kanban seats)
@@ -497,7 +530,8 @@ async function main() {
       args.find((a) => /^owned-|starter-|prof/i.test(a)) ||
       null;
     if (isProfLinkCubeId(npcArg) || isProfLinkCubeId(heroId) || args.includes("--prof-link-cube")) {
-      const art = renderProfLinkCubeAscii(null, { useColor });
+      let art = renderProfLinkCubeAscii(null, { useColor, mode: colorMode });
+      art = finalizeArt(art, glyphs);
       process.stdout.write(art.endsWith("\n") ? art : `${art}\n`);
       return;
     }
@@ -511,9 +545,10 @@ async function main() {
         colors = resolveHeroColors(enriched, heroId);
       }
     }
-    const art = isRoster
-      ? renderRosterAscii(colors, { useColor })
-      : renderThumbAscii(colors, { useColor });
+    let art = isRoster
+      ? renderRosterAscii(colors, { useColor, mode: colorMode })
+      : renderThumbAscii(colors, { useColor, mode: colorMode });
+    art = finalizeArt(art, glyphs);
     process.stdout.write(art.endsWith("\n") ? art : `${art}\n`);
     return;
   }
@@ -525,13 +560,17 @@ async function main() {
     const colors = findCollateralColors(key, hauntId);
     const hex = colors?.primary;
     if (!hex) {
+      // Fallback dim: respect target mode (38;5;252 → 16/none when needed).
+      if (colorMode === "none") return;
+      if (colorMode === "16") {
+        process.stdout.write("\x1b[37m");
+        return;
+      }
       process.stdout.write("\x1b[38;5;252m");
       return;
     }
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    process.stdout.write(`\x1b[38;2;${r};${g};${b}m`);
+    const seq = fg(hex, colorMode);
+    if (seq) process.stdout.write(seq);
     return;
   }
 
@@ -562,19 +601,21 @@ async function main() {
         primary: id.primary,
         secondary: id.secondary,
         useColor,
+        mode: colorMode,
         markHex: id.primary || id.cheek || id.secondary,
         markChars: pair,
       });
-      art = paintFramedCheekDigits(art, leftCheek, rightCheek, id.primary, useColor);
+      art = paintFramedCheekDigits(art, leftCheek, rightCheek, id.primary, useColor, colorMode);
       if (useColor && id.rarity && !process.argv.includes("--no-rarity")) {
         const label = id.collateralName
           ? `${id.rarity.toUpperCase()} · ${id.collateralName}`
           : id.rarity.toUpperCase();
-        art += `\n${paint(label, RARITY_COLOR[id.rarity] || id.primary)}`;
+        art += `\n${paint(label, RARITY_COLOR[id.rarity] || id.primary, colorMode)}`;
       }
     }
   } catch {}
 
+  art = finalizeArt(art, glyphs);
   process.stdout.write(art.endsWith("\n") ? art : `${art}\n`);
 }
 

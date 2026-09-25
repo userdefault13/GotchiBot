@@ -13,6 +13,98 @@ ASCII_THUMB="$ROOT/assets/gotchi-thumb.ascii"
 INTERVAL="${GOTCHIBOT_AVATAR_INTERVAL:-8}"
 mkdir -p "$SESSIONS"
 
+# Terminal color/glyph step-down (pure bash). Children get explicit --color-mode /
+# --ascii so they do not re-probe tmux.
+# shellcheck source=scripts/lib/term-caps.sh
+. "$ROOT/scripts/lib/term-caps.sh"
+gotchibot_term_caps
+
+# Pane chrome: keep 38;5 for truecolor/256; map to basic 16 SGR; empty for none.
+case "${TUI_COLOR}" in
+  none)
+    AV_DIM=""
+    AV_LIT=""
+    AV_NUM=""
+    AV_ROSTER=""
+    AV_MUTED=""
+    AV_ST_WORKING=""
+    AV_ST_ACTIVE=""
+    AV_ST_IDLE=""
+    AV_ST_WATCH=""
+    AV_ST_ASSIGN=""
+    AV_ST_AVAIL=""
+    AV_ST_DEFAULT=""
+    AV_ROLE_ORCH=""
+    AV_ROLE_SUB=""
+    AV_ROLE_GAL=""
+    AV_RST=$'\033[0m'
+    ;;
+  16)
+    AV_DIM=$'\033[90m'
+    AV_LIT=$'\033[95m'
+    AV_NUM=$'\033[37m'
+    AV_ROSTER=$'\033[90m'
+    AV_MUTED=$'\033[90m'
+    AV_ST_WORKING=$'\033[91m'
+    AV_ST_ACTIVE=$'\033[94m'
+    AV_ST_IDLE=$'\033[93m'
+    AV_ST_WATCH=$'\033[95m'
+    AV_ST_ASSIGN=$'\033[93m'
+    AV_ST_AVAIL=$'\033[92m'
+    AV_ST_DEFAULT=$'\033[37m'
+    AV_ROLE_ORCH=$'\033[94m'
+    AV_ROLE_SUB=$'\033[95m'
+    AV_ROLE_GAL=$'\033[96m'
+    AV_RST=$'\033[0m'
+    ;;
+  *)
+    AV_DIM=$'\033[38;5;240m'
+    AV_LIT=$'\033[38;5;213m'
+    AV_NUM=$'\033[38;5;245m'
+    AV_ROSTER=$'\033[38;5;245m'
+    AV_MUTED=$'\033[38;5;240m'
+    AV_ST_WORKING=$'\033[38;5;208m'
+    AV_ST_ACTIVE=$'\033[38;5;39m'
+    AV_ST_IDLE=$'\033[38;5;184m'
+    AV_ST_WATCH=$'\033[38;5;141m'
+    AV_ST_ASSIGN=$'\033[38;5;220m'
+    AV_ST_AVAIL=$'\033[38;5;40m'
+    AV_ST_DEFAULT=$'\033[38;5;250m'
+    AV_ROLE_ORCH=$'\033[38;5;39m'
+    AV_ROLE_SUB=$'\033[38;5;213m'
+    AV_ROLE_GAL=$'\033[38;5;51m'
+    AV_RST=$'\033[0m'
+    ;;
+esac
+
+if [ "${TUI_GLYPHS}" = "ascii" ]; then
+  AV_ARROW_L="<"
+  AV_ARROW_R=">"
+  AV_RULE="--"
+else
+  AV_ARROW_L="←"
+  AV_ARROW_R="→"
+  AV_RULE="──"
+fi
+
+# chafa (optional SVG path): same flags as before for truecolor/unicode;
+# otherwise step colors down and use ascii symbols.
+AV_CHAFA_SYMBOLS="block"
+[ "${TUI_GLYPHS}" = "ascii" ] && AV_CHAFA_SYMBOLS="ascii"
+AV_CHAFA_COLORS=""
+case "${TUI_COLOR}" in
+  256|16|none) AV_CHAFA_COLORS="--colors ${TUI_COLOR}" ;;
+esac
+
+# Run gotchi-art with explicit color/glyph flags (bash 3.2 — no arrays needed).
+gotchi_art() {
+  if [ "${TUI_GLYPHS}" = "ascii" ]; then
+    node "$ROOT/scripts/gotchi-art.mjs" "$@" --color-mode "$TUI_COLOR" --ascii
+  else
+    node "$ROOT/scripts/gotchi-art.mjs" "$@" --color-mode "$TUI_COLOR"
+  fi
+}
+
 ART_CACHE=""
 ART_CACHE_STATUS=""
 
@@ -578,7 +670,7 @@ load_roster_json() {
 mini_chafa() {
   local svg="$1" w="$2" h="$3"
   if [ -f "$svg" ] && command -v chafa >/dev/null; then
-    chafa --size "${w}x${h}" --symbols block --animate off "$svg" 2>/dev/null \
+    chafa --size "${w}x${h}" --symbols "$AV_CHAFA_SYMBOLS" $AV_CHAFA_COLORS --animate off "$svg" 2>/dev/null \
       | sed -e 's/\x1b\[[?][0-9;]*[hl]//g' || true
   fi
 }
@@ -631,13 +723,13 @@ thumb_art() {
   if command -v node >/dev/null && [ -f "$ROOT/scripts/gotchi-art.mjs" ]; then
     # Prefer --hero so cartridge traits (eyeColor / eyeShape) load with the glyph.
     if [ -n "$id" ]; then
-      art="$(node "$ROOT/scripts/gotchi-art.mjs" --roster --hero "$id" --color 2>/dev/null)" || art=""
+      art="$(gotchi_art --roster --hero "$id" --color 2>/dev/null)" || art=""
     fi
     if [ -z "$art" ] && [ -n "$collateral" ]; then
       if [ -n "$haunt" ]; then
-        art="$(node "$ROOT/scripts/gotchi-art.mjs" --roster --collateral "$collateral" --haunt "$haunt" --color 2>/dev/null)" || art=""
+        art="$(gotchi_art --roster --collateral "$collateral" --haunt "$haunt" --color 2>/dev/null)" || art=""
       else
-        art="$(node "$ROOT/scripts/gotchi-art.mjs" --roster --collateral "$collateral" --color 2>/dev/null)" || art=""
+        art="$(gotchi_art --roster --collateral "$collateral" --color 2>/dev/null)" || art=""
       fi
     fi
   fi
@@ -757,32 +849,32 @@ cell_block() {
   local art label status_color
   case "$status" in
     working)
-      status_color=$'\033[38;5;208m'
+      status_color="$AV_ST_WORKING"
       label="working"
       ;;
     active)
-      status_color=$'\033[38;5;39m'
+      status_color="$AV_ST_ACTIVE"
       label="active"
       ;;
     idle)
-      status_color=$'\033[38;5;184m'
+      status_color="$AV_ST_IDLE"
       label="idle"
       ;;
     watching)
-      status_color=$'\033[38;5;141m'
+      status_color="$AV_ST_WATCH"
       label="watching"
       ;;
     assigned)
-      status_color=$'\033[38;5;220m'
+      status_color="$AV_ST_ASSIGN"
       label="assigned"
       ;;
     occupied)
       # legacy alias → working
-      status_color=$'\033[38;5;208m'
+      status_color="$AV_ST_WORKING"
       label="working"
       ;;
     *)
-      status_color=$'\033[38;5;40m'
+      status_color="$AV_ST_AVAIL"
       label="available"
       ;;
   esac
@@ -800,9 +892,9 @@ cell_block() {
       printf '\n'
     done < <(printf '%s' "$art")
   fi
-  printf '%b%s%b\n' "$status_color" "$(center_pad "$label" "$cell_w")" $'\033[0m'
+  printf '%b%s%b\n' "$status_color" "$(center_pad "$label" "$cell_w")" "$AV_RST"
   id_show="${id:0:$cell_w}"
-  printf '\033[38;5;245m%s\033[0m\n' "$(center_pad "$id_show" "$cell_w")"
+  printf '%b%s%b\n' "$AV_ROSTER" "$(center_pad "$id_show" "$cell_w")" "$AV_RST"
 }
 
 render_main_art() {
@@ -829,11 +921,11 @@ render_main_art() {
       node "$ROOT/scripts/gotchi-svg.mjs" --refresh "$hero_id" >/dev/null 2>&1 || true
     fi
     if [ -f "$svg_path" ]; then
-      body="$(chafa --size "${chafa_w}x${chafa_h}" --symbols block --animate off "$svg_path" 2>/dev/null \
+      body="$(chafa --size "${chafa_w}x${chafa_h}" --symbols "$AV_CHAFA_SYMBOLS" $AV_CHAFA_COLORS --animate off "$svg_path" 2>/dev/null \
         | sed -e 's/\x1b\[[?][0-9;]*[hl]//g')" || body=""
       if [ -n "$body" ]; then
         ART_CACHE="$body"
-        ART_CACHE_STATUS="svg:$hero_id"
+        ART_CACHE_STATUS="svg:$hero_id:${TUI_COLOR}/${TUI_GLYPHS}"
       fi
     fi
   fi
@@ -846,15 +938,15 @@ render_main_art() {
     if [ -n "$art_hero" ] && command -v node >/dev/null && [ -f "$ROOT/scripts/collateral-resolve.mjs" ]; then
       art_coll="$(node "$ROOT/scripts/collateral-resolve.mjs" --hero "$art_hero" 2>/dev/null | awk -F'\t' '{print $1}')" || art_coll=""
     fi
-    local art_key="ascii:hero:${art_hero:-pin}:${art_coll:-}"
+    local art_key="ascii:hero:${art_hero:-pin}:${art_coll:-}:${TUI_COLOR}/${TUI_GLYPHS}"
     if [ -n "$art_hero" ] && [ "$ART_CACHE_STATUS" = "$art_key" ] && [ -n "$ART_CACHE" ]; then
       body="$ART_CACHE"
     elif [ -f "$ROOT/scripts/gotchi-art.mjs" ] && command -v node >/dev/null; then
       [ -z "$art_hero" ] && art_hero="$hero_id"
       if [ -n "$art_hero" ]; then
-        body="$(node "$ROOT/scripts/gotchi-art.mjs" --color --no-rarity --hero "$art_hero" 2>/dev/null)" || body=""
+        body="$(gotchi_art --color --no-rarity --hero "$art_hero" 2>/dev/null)" || body=""
       else
-        body="$(node "$ROOT/scripts/gotchi-art.mjs" --color --no-rarity 2>/dev/null)" || body=""
+        body="$(gotchi_art --color --no-rarity 2>/dev/null)" || body=""
       fi
       if [ -n "$body" ]; then
         ART_CACHE="$body"
@@ -952,7 +1044,7 @@ warm_other_cells() {
   local i v
   dbg "warm: $WARM_N tiles @ ${WARM_W}x${WARM_H}"
   for ((i = 0; i < WARM_N; i++)); do
-    memo_call v "r|cell|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|$WARM_W|$WARM_H" \
+    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|$WARM_W|$WARM_H" \
       cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}"
   done
   WARM_DONE=1
@@ -1005,32 +1097,32 @@ render_body() {
   # Pinned header from row 0 — orch face never moves. Pagination swaps the 3-col row.
   # (main art + ── orchestrator ── caption + roster label)
   local main
-  memo_call main "art|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget" \
+  memo_call main "art|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget" \
     render_main_art "$status" "$cols" "$main_budget"
 
-  local role_color=$'\033[38;5;39m'
-  [ "$role" = "sub-agent" ] && role_color=$'\033[38;5;213m'
-  [ "$gallery" = 1 ] && role_color=$'\033[38;5;51m'
-  local status_color=$'\033[38;5;250m'
+  local role_color="$AV_ROLE_ORCH"
+  [ "$role" = "sub-agent" ] && role_color="$AV_ROLE_SUB"
+  [ "$gallery" = 1 ] && role_color="$AV_ROLE_GAL"
+  local status_color="$AV_ST_DEFAULT"
   case "$status" in
-    working|running|occupied) status_color=$'\033[38;5;208m' ;;
-    active|pinned) status_color=$'\033[38;5;39m' ;;
-    watching) status_color=$'\033[38;5;141m' ;;
-    assigned) status_color=$'\033[38;5;220m' ;;
-    idle) status_color=$'\033[38;5;184m' ;;
-    available) status_color=$'\033[38;5;40m' ;;
+    working|running|occupied) status_color="$AV_ST_WORKING" ;;
+    active|pinned) status_color="$AV_ST_ACTIVE" ;;
+    watching) status_color="$AV_ST_WATCH" ;;
+    assigned) status_color="$AV_ST_ASSIGN" ;;
+    idle) status_color="$AV_ST_IDLE" ;;
+    available) status_color="$AV_ST_AVAIL" ;;
   esac
   local pin_id=""
   pin_id="$(focus_hero)"
   [ -z "$pin_id" ] && [ -f "$PIN" ] && pin_id="$(tr -d '[:space:]' < "$PIN")"
   [ -z "$pin_id" ] && pin_id="$(orch_id)"
   local caption
-  caption="$(printf '%b── %s ──%b  %b%s%b  %s' "$role_color" "$role" $'\033[0m' "$status_color" "$status" $'\033[0m' "${pin_id}")"
+  caption="$(printf '%b%s %s %s%b  %b%s%b  %s' "$role_color" "$AV_RULE" "$role" "$AV_RULE" "$AV_RST" "$status_color" "$status" "$AV_RST" "${pin_id}")"
 
   # Framed orch (art + caption) padded once per (art, caption, width); a page
   # flip or a repaint only replays the lines. Do not clip the face.
   local hdr
-  memo_call hdr "hdr|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_id" \
+  memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_id" \
     render_header_block "$main" "$caption" "$cols" "$main_budget"
   while IFS= read -r line || [ -n "$line" ]; do
     put_line "$row" "$line"
@@ -1045,7 +1137,7 @@ render_body() {
   put_line "$row" ""
   row=$((row + 1))
 
-  put_line "$row" $'\033[38;5;245mroster\033[0m'
+  put_line "$row" "$(printf '%broster%b' "$AV_ROSTER" "$AV_RST")"
   row=$((row + 1))
 
   roster_raw="$(load_roster_json)"
@@ -1054,7 +1146,7 @@ render_body() {
   memo_call ids "ids" roster_ids "$roster_raw"
 
   if [ -z "$(printf '%s' "$ids" | tr -d '[:space:]')" ]; then
-    put_line "$row" $'\033[38;5;240m(none else on cartridge)\033[0m'
+    put_line "$row" "$(printf '%b(none else on cartridge)%b' "$AV_MUTED" "$AV_RST")"
     printf '\033[1;1H'
     return
   fi
@@ -1103,21 +1195,21 @@ render_body() {
   right=""
   if [ "$i" -lt "$n_ids" ]; then
     # r| = roster traits on large thumb; bump if roster tile art format changes
-    k1="r|cell|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|$cell_w|$cell_h"
+    k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|$cell_w|$cell_h"
     memo_call left "$k1" \
       cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}"
   fi
   if [ $((i + 1)) -lt "$n_ids" ]; then
-    k2="r|cell|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|$cell_w|$cell_h"
+    k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|$cell_w|$cell_h"
     memo_call mid "$k2" \
       cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}"
   fi
   if [ $((i + 2)) -lt "$n_ids" ]; then
-    k3="r|cell|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|$cell_w|$cell_h"
+    k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|$cell_w|$cell_h"
     memo_call right "$k3" \
       cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}"
   fi
-  memo_call pair "row|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
+  memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
   while IFS= read -r line || [ -n "$line" ]; do
     [ -z "$line" ] && continue
     put_line "$row" "$line"
@@ -1134,20 +1226,20 @@ render_body() {
   CTRL_COLS="$cols"
   save_page_env
 
-  local dim=$'\033[38;5;240m' lit=$'\033[38;5;213m' num=$'\033[38;5;245m' rst=$'\033[0m'
+  local dim="$AV_DIM" lit="$AV_LIT" num="$AV_NUM" rst="$AV_RST"
   local prev_s next_s mid_s vis_s pad ctrl
   if [ "$PAGE" -le 0 ]; then
-    prev_s="${dim}[ ← ]${rst}"
+    prev_s="${dim}[ ${AV_ARROW_L} ]${rst}"
   else
-    prev_s="${lit}[ ← ]${rst}"
+    prev_s="${lit}[ ${AV_ARROW_L} ]${rst}"
   fi
   if [ "$PAGE" -ge $((NPAGES - 1)) ]; then
-    next_s="${dim}[ → ]${rst}"
+    next_s="${dim}[ ${AV_ARROW_R} ]${rst}"
   else
-    next_s="${lit}[ → ]${rst}"
+    next_s="${lit}[ ${AV_ARROW_R} ]${rst}"
   fi
   mid_s="$(printf '%s%d / %d%s' "$num" "$((PAGE + 1))" "$NPAGES" "$rst")"
-  vis_s="$(printf '[ ← ]     %d / %d     [ → ]' "$((PAGE + 1))" "$NPAGES")"
+  vis_s="$(printf '[ %s ]     %d / %d     [ %s ]' "$AV_ARROW_L" "$((PAGE + 1))" "$NPAGES" "$AV_ARROW_R")"
   pad=$(( (cols - ${#vis_s}) / 2 ))
   [ "$pad" -lt 0 ] && pad=0
   ctrl="$(printf '%*s' "$pad" '')${prev_s}     ${mid_s}     ${next_s}"

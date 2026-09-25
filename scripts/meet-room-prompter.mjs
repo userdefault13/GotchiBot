@@ -32,6 +32,7 @@ import {
 } from "./lib/meet-pardon.mjs"; // pardon-me-v1
 import { runLayout } from "./tmux-layout.mjs";
 import { isMainModule } from "./is-main.mjs";
+import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STAMP = `${ROOT}/sessions/.meet-room.stamp`;
@@ -44,8 +45,10 @@ const PROMPT_PANEL_ROWS = PROMPT_INPUT_ROWS + PROMPT_FOOTER_ROWS;
 /** Gutter bar + one space before text (matches OpenCode prompt). */
 const INPUT_LEFT = 2;
 
+const _tui = renderMode();
+
 // Gotchi / OpenCode theme (.opencode/themes/gotchi.json + opencode-palette.ts)
-const T = {
+const T_RAW = {
   reset: "\x1b[0m",
   panel: "\x1b[48;2;45;31;66m",
   accentBar: "\x1b[48;2;182;80;255m \x1b[0m",
@@ -57,6 +60,10 @@ const T = {
   mention: "\x1b[38;5;51m",
   menu: "\x1b[38;5;184m",
 };
+
+const T = Object.fromEntries(
+  Object.entries(T_RAW).map(([k, v]) => [k, downgradeAnsi(v, _tui.color)]),
+);
 
 const MODEL_LABELS = {
   "kimi-k3": "Kimi K3",
@@ -747,7 +754,8 @@ function drawInputPanel(top, cols) {
 }
 
 function writeAt(row, col, text) {
-  stdout.write(`\x1b[${row};${col}H\x1b[K${text}`);
+  const t = _tui.glyphs === "ascii" ? toAsciiGlyphs(text) : text;
+  stdout.write(`\x1b[${row};${col}H\x1b[K${t}`);
 }
 
 class Prompter {

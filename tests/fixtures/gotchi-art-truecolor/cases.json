@@ -1,0 +1,9 @@
+{
+  "main-wbtc": ["--color", "--hero", "starter-wbtc-h1-1", "--eye-color", "30", "--eye-shape", "70"],
+  "main-dai-norarity": ["--color", "--no-rarity", "--hero", "starter-dai-h1-1"],
+  "thumb-wbtc": ["--thumb", "--collateral", "wbtc", "--color"],
+  "roster-wbtc": ["--roster", "--collateral", "wbtc", "--color"],
+  "thumb-prof": ["--thumb", "--npc", "prof-link-cube", "--color"],
+  "kanban-dai": ["--kanban", "--hero", "starter-dai-h1-1", "--color"],
+  "ansi-primary-wbtc": ["--ansi-primary", "wbtc"]
+}

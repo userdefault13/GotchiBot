@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { loadCurrentMeeting, participantInfo, getThumb, orderMeetingParticipants } from "./meet-channel.mjs";
 import { loadMeetStatus, statusFor, statusLabel } from "./meet-status.mjs";
 import { isMainModule } from "./is-main.mjs";
+import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PAGE_FILE = `${ROOT}/sessions/.meet-room-page`;
@@ -20,7 +21,9 @@ const PER_PAGE = Math.max(1, Number(process.env.GOTCHIBOT_MEET_ROOM_PER_PAGE || 
 /** Blank lines between seat rows (role label of row above vs thumb of row below). */
 const ROW_GAP = Math.max(1, Number(process.env.GOTCHIBOT_MEET_ROOM_ROW_GAP || 5) || 5);
 
-const C = {
+const _tui = renderMode();
+
+const C_RAW = {
   reset: "\x1b[0m",
   dim: "\x1b[38;5;245m",
   topic: "\x1b[38;5;184m",
@@ -35,6 +38,10 @@ const C = {
   responding: "\x1b[38;5;120m",
   idle: "\x1b[38;5;240m",
 };
+
+const C = Object.fromEntries(
+  Object.entries(C_RAW).map(([k, v]) => [k, downgradeAnsi(v, _tui.color)]),
+);
 
 function stripAnsi(s) {
   return String(s || "").replace(/\x1b\[[0-9;]*m/g, "");
@@ -175,9 +182,9 @@ function renderGrid(members, cols, gridCols = GRID_COLS, gridRows = GRID_ROWS, s
 }
 
 function renderPager(cur, pages, cols) {
-  const dim = "\x1b[38;5;240m";
-  const lit = "\x1b[38;5;213m";
-  const num = "\x1b[38;5;245m";
+  const dim = downgradeAnsi("\x1b[38;5;240m", _tui.color);
+  const lit = downgradeAnsi("\x1b[38;5;213m", _tui.color);
+  const num = downgradeAnsi("\x1b[38;5;245m", _tui.color);
   const prevS = cur <= 0 ? `${dim}[ ◀ prev ]${C.reset}` : `${lit}[ ◀ prev ]${C.reset}`;
   const nextS = cur >= pages - 1 ? `${dim}[ next ▶ ]${C.reset}` : `${lit}[ next ▶ ]${C.reset}`;
   const midS = `${num}${cur + 1} / ${pages}${C.reset}`;
@@ -189,12 +196,14 @@ function renderPager(cur, pages, cols) {
 export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includeHint = true } = {}) {
   const meeting = loadCurrentMeeting();
   if (!meeting) {
-    return [
-      `${C.dim}No open room — gotchibot meet open${C.reset}`,
-      "",
-      "Start from cockpit or: ./scripts/gotchi-meet.mjs start",
-      "",
-    ].join("\n");
+    return finalizeMeetFrame(
+      [
+        `${C.dim}No open room — gotchibot meet open${C.reset}`,
+        "",
+        "Start from cockpit or: ./scripts/gotchi-meet.mjs start",
+        "",
+      ].join("\n"),
+    );
   }
 
   const members = listMeetMembers(meeting);
@@ -236,9 +245,13 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
       .filter((_, i) => i !== pagerIdx)
       .slice(0, budget);
     if (pagerLine) prefix.push(pagerLine);
-    return prefix.join("\n");
+    return finalizeMeetFrame(prefix.join("\n"));
   }
-  return lines.join("\n");
+  return finalizeMeetFrame(lines.join("\n"));
+}
+
+function finalizeMeetFrame(frame) {
+  return _tui.glyphs === "ascii" ? toAsciiGlyphs(frame) : frame;
 }
 
 
