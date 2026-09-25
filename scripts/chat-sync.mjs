@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { isMainModule } from "./is-main.mjs";
-import { infraHeaders, deskApiBase, hasInstallToken } from "./infra-client.mjs";
+import { infraHeaders, hasInstallToken, assertChatDeskAllowed } from "./infra-client.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -36,10 +36,10 @@ function saveCursor(obj) {
 }
 
 async function api(method, path, { query, body } = {}) {
+  const { base } = assertChatDeskAllowed();
   if (!hasInstallToken()) {
     throw new Error("GOTCHIBOT_INFRA_TOKEN required — abra run gotchibot -- ./scripts/gotchibot chats …");
   }
-  const base = deskApiBase();
   const url = new URL(`${base}${path}`);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -167,7 +167,7 @@ async function cmdSnapshot(opts) {
   const result = await api("POST", "/api/gotchibot/chats/snapshot", {
     body: { gitCommit, gitBranch },
   });
-  const base = deskApiBase();
+  const { base } = assertChatDeskAllowed();
   const stateUri = `${base}${result.stateUriPath}`;
   if (opts.json) console.log(JSON.stringify({ ...result, stateUri }));
   else {
@@ -336,8 +336,11 @@ async function main() {
       process.exit(2);
     }
   } catch (e) {
+    // NO_HUB_PINNED / SHARED_ARCADE_CHAT: message only (no stack)
     console.error(e.message || e);
-    if (e.body) console.error(JSON.stringify(e.body));
+    if (e.body && e.code !== "NO_HUB_PINNED" && e.code !== "SHARED_ARCADE_CHAT") {
+      console.error(JSON.stringify(e.body));
+    }
     process.exit(1);
   }
 }

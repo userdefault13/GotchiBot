@@ -2,13 +2,17 @@
 /**
  * Outbound auth for Solo infra (install token) vs legacy operator secrets.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ENDPOINTS = JSON.parse(readFileSync(`${ROOT}/config/subgraph.endpoints.json`, "utf8"));
 const AUTH_CFG = JSON.parse(readFileSync(`${ROOT}/config/infra.auth.json`, "utf8"));
+
+const ARCADE_CHAT_HOSTS = new Set(
+  ["gotchibot.aarcadeghst.com", "www.aarcadeghst.com"].map((h) => h.toLowerCase()),
+);
 
 export function hasInstallToken(env = process.env) {
   return Boolean(String(env.GOTCHIBOT_INFRA_TOKEN || "").trim());
@@ -58,11 +62,109 @@ export function soloApiBase(env = process.env) {
   );
 }
 
-/** Chat sync + Hub enable/status — home tunnel (not Vercel serverless). */
+function readJsonSafe(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** Local chat-store pin (never commit) — sessions/.mongo.json */
+export function readMongoPin(root = ROOT) {
+  return readJsonSafe(`${root}/sessions/.mongo.json`);
+}
+
+/** Hub Tailscale pin — sessions/.hub.json */
+export function readHubPin(root = ROOT) {
+  return readJsonSafe(`${root}/sessions/.hub.json`);
+}
+
+/**
+ * Prefer Hub MagicDNS + desk API port over Arcade shared home.
+ * Override: GOTCHIBOT_DESK_API_BASE.
+ */
+export function deskApiBaseFromHubPin(hub, env = process.env) {
+  if (!hub?.tailscaleHost) return null;
+  const host = String(hub.tailscaleHost).trim();
+  if (!host) return null;
+  const port = String(env.GOTCHIBOT_API_PORT || AUTH_CFG.deskApiPort || "8793").replace(/^:/, "");
+  const proto = env.GOTCHIBOT_DESK_API_PROTO || AUTH_CFG.deskApiProto || "http";
+  // Tailscale Serve / HTTPS override
+  if (hub.deskApiBase) return String(hub.deskApiBase).replace(/\/$/, "");
+  if (/^https?:\/\//i.test(host)) return host.replace(/\/$/, "");
+  return `${proto}://${host}:${port}`;
+}
+
+function hostnameOf(url) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+export function isArcadeSharedChatBase(base) {
+  if (!base) return false;
+  const host = hostnameOf(base);
+  return ARCADE_CHAT_HOSTS.has(host);
+}
+
+/**
+ * Chat sync + Hub desk API — user's Hub only, never Arcade shared Mongo.
+ * Resolution order:
+ *   1. GOTCHIBOT_DESK_API_BASE
+ *   2. sessions/.hub.json deskApiBase / MagicDNS:8793
+ * Else null (never Arcade).
+ */
 export function deskApiBase(env = process.env) {
-  return String(
-    env.GOTCHIBOT_DESK_API_BASE || AUTH_CFG.deskApiBase || "https://gotchibot.aarcadeghst.com",
-  ).replace(/\/$/, "");
+  const fromEnv = String(env.GOTCHIBOT_DESK_API_BASE || "").trim().replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+
+  const hub = readHubPin();
+  const fromHub = deskApiBaseFromHubPin(hub, env);
+  if (fromHub) return fromHub;
+
+  return null;
+}
+
+/**
+ * Guard for chat push/pull/snapshot — require pinned Hub; refuse shared Arcade outright.
+ * @throws {Error} with code NO_HUB_PINNED | SHARED_ARCADE_CHAT
+ * @returns {{ ok: true, base: string }}
+ */
+export function assertChatDeskAllowed(env = process.env) {
+  const base = deskApiBase(env);
+  if (!base) {
+    const err = new Error(
+      [
+        "No Hub pinned for chat sync — chats only go to YOUR Hub.",
+        "Run: ./scripts/gotchibot db wizard",
+        "Then: ./scripts/gotchibot db pin-desk  (or ./scripts/gotchibot hub enable)",
+        "Or set GOTCHIBOT_DESK_API_BASE=http://<MagicDNS>:8793",
+      ].join("\n"),
+    );
+    err.code = "NO_HUB_PINNED";
+    throw err;
+  }
+
+  if (isArcadeSharedChatBase(base)) {
+    const mongo = readMongoPin();
+    const err = new Error(
+      [
+        "Chat sync must use YOUR Hub desk API (BYO Mongo), not Arcade shared home.",
+        "Run: ./scripts/gotchibot db wizard",
+        "Then: ./scripts/gotchibot db pin-desk",
+        "Or set GOTCHIBOT_DESK_API_BASE=http://<MagicDNS>:8793",
+        mongo?.kind ? `(local pin kind=${mongo.kind})` : "(no sessions/.mongo.json yet)",
+      ].join("\n"),
+    );
+    err.code = "SHARED_ARCADE_CHAT";
+    err.base = base;
+    throw err;
+  }
+
+  return { ok: true, base };
 }
 
 export function resolveSubgraphUrl(subgraphName = "aavegotchi-core-base", env = process.env) {
@@ -94,4 +196,4 @@ export function authMode(env = process.env) {
   return "none";
 }
 
-export { AUTH_CFG, ENDPOINTS };
+export { AUTH_CFG, ENDPOINTS, ROOT as INFRA_ROOT };

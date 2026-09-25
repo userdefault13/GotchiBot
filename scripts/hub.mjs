@@ -3,9 +3,12 @@
  * Enable / status for user-owned Hub (Tailscale MagicDNS on install record).
  * Writes sessions/.hub.json for remote-lib.
  *
+ * Hub metadata (enable / arcade-status / chat-store) → www (soloApiBase).
+ * Chat bodies → deskApiBase (user Hub), not this script.
+ *
  *   gotchibot hub enable <tailscaleHost>
- *   gotchibot hub status
- *   gotchibot hub pin          # rewrite .hub.json from Arcade status
+ *   gotchibot hub pin | arcade-status
+ *   gotchibot hub chat-store --kind local|atlas|none [--db-name GotchiBot] [--atlas-host …]
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -13,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import http from "node:http";
 import { isMainModule } from "./is-main.mjs";
-import { infraHeaders, deskApiBase, hasInstallToken } from "./infra-client.mjs";
+import { infraHeaders, soloApiBase, hasInstallToken } from "./infra-client.mjs";
 import {
   hasAbra,
   resolveCastBin,
@@ -52,13 +55,16 @@ function buildEnableMessage(wallet, installId, tailscaleHost) {
   ].join("\n");
 }
 
-function writeHubPin(hub, installId) {
+function writeHubPin(hub, installId, extras = {}) {
   mkdirSync(SESSIONS, { recursive: true });
+  const prev = readHubPin() || {};
   const pin = {
     kind: hub.kind || "owned",
     enabled: Boolean(hub.enabled),
     tailscaleHost: hub.tailscaleHost,
     enabledAt: hub.enabledAt,
+    chatStore: hub.chatStore || prev.chatStore || null,
+    deskApiBase: extras.deskApiBase || prev.deskApiBase || null,
     installId,
     writtenAt: new Date().toISOString(),
   };
@@ -74,8 +80,9 @@ function readHubPin() {
   }
 }
 
+/** Arcade metadata — www (may rewrite to home for hub routes). */
 async function api(method, path, { body } = {}) {
-  const base = deskApiBase();
+  const base = soloApiBase();
   const headers = { ...infraHeaders(), "Content-Type": "application/json" };
   const res = await fetch(`${base}${path}`, {
     method,
@@ -191,7 +198,8 @@ async function cmdEnable(host) {
   const pin = writeHubPin(result.hub, installId);
   console.log(`Hub enabled (owned): ${pin.tailscaleHost}`);
   console.log(`  pin → sessions/.hub.json`);
-  console.log(`  Tip: set REMOTE_HOST to this host (or rely on .hub.json via remote-lib)`);
+  console.log(`  Next: ./scripts/gotchibot db wizard   # BYO Mongo`);
+  console.log(`  Then: ./scripts/gotchibot db pin-desk # deskApiBase → this Hub`);
   return result;
 }
 
@@ -212,10 +220,50 @@ async function cmdPin() {
   return cmdStatus();
 }
 
+function parseChatStoreArgs(argv) {
+  const out = { kind: null, dbName: null, atlasHost: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--kind" || a === "-k") out.kind = argv[++i];
+    else if (a === "--db-name" || a === "--dbName") out.dbName = argv[++i];
+    else if (a === "--atlas-host" || a === "--atlasHostHint") out.atlasHost = argv[++i];
+    else if (!a.startsWith("-") && !out.kind) out.kind = a;
+    else if (a.startsWith("-")) throw new Error(`unknown flag ${a}`);
+  }
+  return out;
+}
+
+async function cmdChatStore(argv) {
+  if (!hasInstallToken()) {
+    throw new Error("GOTCHIBOT_INFRA_TOKEN required — abra run gotchibot -- …");
+  }
+  const args = parseChatStoreArgs(argv);
+  const kind = String(args.kind || "").toLowerCase();
+  if (!["local", "atlas", "none"].includes(kind)) {
+    throw new Error("usage: gotchibot hub chat-store --kind local|atlas|none [--db-name …] [--atlas-host …]");
+  }
+  const chatStore = {
+    kind,
+    dbName: args.dbName || (kind === "none" ? null : "GotchiBot"),
+    atlasHostHint: args.atlasHost || null,
+  };
+  const result = await api("POST", "/api/gotchibot/hub/chat-store", {
+    body: { chatStore },
+  });
+  if (result.hub) {
+    writeHubPin(result.hub, result.installId || readInstallId());
+  }
+  console.log(JSON.stringify(result, null, 2));
+  console.log("Arcade chatStore metadata updated (no URI stored).");
+  return result;
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd || cmd === "help") {
-    console.log("usage: gotchibot hub enable <tailscaleHost>|status|pin");
+    console.log(
+      "usage: gotchibot hub enable <tailscaleHost>|pin|arcade-status|chat-store --kind local|atlas|none",
+    );
     process.exit(cmd ? 0 : 2);
   }
   try {
@@ -223,9 +271,11 @@ async function main() {
       const host = rest[0];
       if (!host) throw new Error("usage: gotchibot hub enable <MagicDNS|100.x>");
       await cmdEnable(host);
-    } else if (cmd === "status") await cmdStatus();
-    else if (cmd === "pin") await cmdPin();
-    else {
+    } else if (cmd === "status" || cmd === "arcade-status" || cmd === "pin") {
+      await cmdStatus();
+    } else if (cmd === "chat-store" || cmd === "chatstore") {
+      await cmdChatStore(rest);
+    } else {
       console.error(`unknown hub command: ${cmd}`);
       process.exit(2);
     }

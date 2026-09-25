@@ -2609,10 +2609,10 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "checkpoint-chat") {
       title("Checkpoint chat sync to Sepolia");
-      console.log("  1) Arcade snapshot (gotchibot.aarcadeghst.com)");
+      console.log("  1) Snapshot on your Hub");
       console.log("  2) Desk identity checkpoint (local / SIM)");
       console.log("  3) Optional MetaMask checkpointSave on Base Sepolia\n");
-      console.log("  Needs GOTCHIBOT_INFRA_TOKEN + home gotchibot-api healthy.\n");
+      console.log("  Needs GOTCHIBOT_INFRA_TOKEN + your pinned Hub's gotchibot-api healthy.\n");
       const r = spawnSync(
         process.execPath,
         [`${ROOT}/scripts/chat-sync.mjs`, "checkpoint-prompt", "--onchain"],

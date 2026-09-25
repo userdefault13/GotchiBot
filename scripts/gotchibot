@@ -78,8 +78,11 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot update [--check|--apply|--force]  check/install GotchiBot updates (CDN or git)
   gotchibot infra register|status   Solo install token (GOTCHIBOT_INFRA_TOKEN via abra)
   gotchibot chats push|pull|threads|snapshot|checkpoint-prompt|onchain|hook
-                                  Arcade chat sync + optional Sepolia checkpointSave
-  gotchibot hub enable <host>|status|pin   own Hub Tailscale host → sessions/.hub.json
+                                  BYO Hub chat sync + optional Sepolia checkpointSave
+  gotchibot db wizard|local|atlas|none|status|pin-desk
+                                  BYO Mongo (local Docker / Atlas / skip) → sessions/.mongo.json
+  gotchibot hub enable <host>|pin|chat-store|arcade-status
+                                  own Hub Tailscale pin → sessions/.hub.json (Arcade metadata)
   gotchibot infra schedule status|install|uninstall|run-now  YFI 15-min supervisor LaunchAgent (run on the iMac)
   gotchibot desk-terminals status|open|close|use|install|uninstall [hero…] [--host imac|local]
                                   driven desks stay up; workers: use → tool → close (ephemeral)
@@ -442,22 +445,27 @@ cmd_remote_setup() {
   cat <<'EOF'
 GotchiBot — Fleet / own Hub (Tailscale)
 
-  Desk MBP ──Tailscale──→ Hub Mac (OpenClaw + gotchibot)
-  Arcade (aarcadeghst) holds install + chat sync + hub.tailscaleHost
+  Desk MBP ──Tailscale──→ Hub Mac (OpenClaw + gotchibot-api + BYO Mongo)
+  Arcade (www) holds install token + hub.tailscaleHost + chatStore.kind only
+  Chat bodies live on YOUR Hub Mongo (local Docker or Atlas) — not Arcade
 
 1) Register install:  ./scripts/gotchibot infra register
 2) Enable Hub:        ./scripts/gotchibot hub enable <MagicDNS|100.x>
                       → writes sessions/.hub.json (remote-lib reads it)
-3) Vault:             abra set gotchibot REMOTE_USER + SSH key
-4) From Desk:
+3) BYO Mongo:         ./scripts/gotchibot db wizard
+                      → local Docker | Atlas URI (abra) | skip
+4) Desk API base:     ./scripts/gotchibot db pin-desk
+                      → deskApiBase = http://<MagicDNS>:8793 (not gotchibot.aarcadeghst.com)
+5) Vault:             abra set gotchibot REMOTE_USER + SSH key
+6) From Desk:
    abra run gotchibot -- ./scripts/gotchibot remote-push
    abra run gotchibot -- ./scripts/gotchibot attach
 
-Chat sync (orch thread):
+Chat sync (orch thread → your Hub):
    abra run gotchibot -- ./scripts/gotchibot chats push --text "…"
    abra run gotchibot -- ./scripts/gotchibot chats pull
 
-See docs/GOTCHIBOT-HUB.md + Aarcade GOTCHIBOT-INSTALL-AUTH.md.
+See docs/GOTCHIBOT-HUB.md + Aarcade GOTCHIBOT-HOME-API.md.
 EOF
 }
 
@@ -751,8 +759,8 @@ case "$cmd" in
       *) echo "usage: gotchibot infra register|status" >&2; exit 2 ;;
     esac
     ;;
-  hub) exec node "$ROOT/scripts/hub.mjs" "$@" ;;
   chats|chat-sync) exec node "$ROOT/scripts/chat-sync.mjs" "$@" ;;
+  db) exec node "$ROOT/scripts/mongo-byo.mjs" "$@" ;;
   infra-usage|usage-report) exec node "$ROOT/scripts/infra-usage-report.mjs" "$@" ;;
   desk-terminals|terminals) abra_or_node "$ROOT/scripts/desk-terminals.mjs" "$@" ;;
   aseprite) exec node "$ROOT/scripts/aseprite-tool.mjs" "$@" ;;
@@ -818,9 +826,12 @@ case "$cmd" in
   remote-setup) cmd_remote_setup ;;
   remote-status) abra_or_node "$ROOT/scripts/remote-status.mjs" ;;
   hub)
-    # Hub SOP: status (default) or restart-gateway / doctor / vscode / bridge / tunnel
+    # Arcade pin (enable/pin/chat-store) vs Hub SOP (status/ops/monitor)
     sub="${1:-status}"
     case "$sub" in
+      enable|pin|chat-store|chatstore|arcade-status)
+        exec node "$ROOT/scripts/hub.mjs" "$@"
+        ;;
       ""|status|--json|--infra|--live|-h|--help)
         abra_or_node "$ROOT/scripts/hub-status.mjs" "$@"
         ;;

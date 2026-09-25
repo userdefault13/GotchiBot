@@ -1,0 +1,13 @@
+# GotchiBot BYO chat Mongo — bind 127.0.0.1 only (Hub Mac).
+# Desk reaches chats via gotchibot-api (:8793) over Tailscale, never mongod.
+services:
+  gotchibot-chat-mongo:
+    image: mongo:7
+    container_name: gotchibot-chat-mongo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - gotchibot_chat_mongo_data:/data/db
+volumes:
+  gotchibot_chat_mongo_data:
