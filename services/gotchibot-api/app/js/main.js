@@ -35,6 +35,43 @@ let desk = null;
 /** @type {ReturnType<typeof createPoller>|null} */
 let activePoller = null;
 let bootOnce = false;
+/** In-memory threadId → title (not persisted; filled when Threads list loads). */
+const threadTitles = new Map();
+
+function rememberThreadTitles(threads) {
+  for (const t of threads || []) {
+    if (!t?.threadId) continue;
+    const id = String(t.threadId);
+    threadTitles.set(id, t.title ? String(t.title) : id);
+  }
+}
+
+function shortThreadId(threadId) {
+  const id = String(threadId || "");
+  return id.length > 24 ? `${id.slice(0, 20)}…` : id;
+}
+
+/**
+ * Resolve a display title for the thread header.
+ * Uses the in-memory map first; on miss (deep link / reload) fetches the
+ * threads list once, then falls back to a shortened threadId.
+ * @param {string} threadId
+ * @returns {Promise<string>}
+ */
+async function resolveThreadTitle(threadId) {
+  const id = String(threadId || "");
+  if (threadTitles.has(id)) return threadTitles.get(id);
+  try {
+    if (desk?.deskToken) {
+      const data = await listThreads(desk.deskToken, 100);
+      rememberThreadTitles(data?.threads);
+      if (threadTitles.has(id)) return threadTitles.get(id);
+    }
+  } catch {
+    /* fall through to short id */
+  }
+  return shortThreadId(id);
+}
 
 function $(sel, root = document) {
   return root.querySelector(sel);
@@ -324,6 +361,7 @@ async function renderThreadsView(root) {
     try {
       const data = await listThreads(desk.deskToken, 100);
       const threads = data?.threads || [];
+      rememberThreadTitles(threads);
       if (!threads.length) {
         emptyEl.hidden = false;
         emptyEl.replaceChildren();
@@ -400,7 +438,10 @@ async function renderThreadView(root, threadId) {
     clearPoller();
     navigate("#/threads");
   });
-  root.appendChild(topNav({ title: "Thread", left: back }));
+  const initialTitle = threadTitles.has(threadId)
+    ? threadTitles.get(threadId)
+    : "Thread";
+  root.appendChild(topNav({ title: initialTitle, left: back }));
 
   const wrap = el("div", "messages-wrap");
   const messagesEl = el("div", "messages");
@@ -412,7 +453,12 @@ async function renderThreadView(root, threadId) {
   root.appendChild(wrap);
 
   const model = createThreadModel();
-  let titleSet = false;
+
+  async function setThreadHeaderTitle() {
+    const title = await resolveThreadTitle(threadId);
+    const h1 = root.querySelector(".brand-title h1");
+    if (h1) h1.textContent = title;
+  }
 
   function nearBottom(elNode) {
     const slack = 80;
@@ -472,13 +518,7 @@ async function renderThreadView(root, threadId) {
   }
 
   try {
-    await pullAll(true);
-    // Prefer a title from first paint — Hub list may have had one; keep "Thread" or use id short
-    if (!titleSet) {
-      const h1 = root.querySelector(".brand-title h1");
-      if (h1) h1.textContent = threadId.length > 24 ? `${threadId.slice(0, 20)}…` : threadId;
-      titleSet = true;
-    }
+    await Promise.all([pullAll(true), setThreadHeaderTitle()]);
   } catch (err) {
     if (err instanceof ApiError && err.kind === "unpaired") {
       await handleUnpaired("This phone was unpaired on the Hub");
@@ -590,11 +630,15 @@ async function renderSettingsView(root) {
   verRow.appendChild(el("small", null, APP_VERSION));
   panel.appendChild(verRow);
 
+  const revokeCmd = desk?.deskId
+    ? `gotchibot hub revoke ${desk.deskId}`
+    : "gotchibot hub revoke <deskId>";
+
   const unpairBtn = el("button", "btn-danger", "Unpair this phone");
   unpairBtn.type = "button";
   unpairBtn.addEventListener("click", async () => {
     const ok = confirm(
-      "Unpair this phone? Local credentials will be cleared. The Hub owner should also run gotchibot hub revoke <deskId> to kill the token server-side.",
+      `Unpair this phone? Local credentials will be cleared. The Hub owner should also run ${revokeCmd} to kill the token server-side.`,
     );
     if (!ok) return;
     await clearDesk();
@@ -603,13 +647,16 @@ async function renderSettingsView(root) {
   });
   panel.appendChild(unpairBtn);
 
-  panel.appendChild(
-    el(
-      "p",
-      "subtle settings-note",
-      "Unpairing here only clears this device. On the Hub, also run: gotchibot hub revoke <deskId>",
+  const unpairNote = el("p", "subtle settings-note");
+  unpairNote.appendChild(
+    document.createTextNode(
+      "Unpairing here only clears this device. On the Hub, also run:",
     ),
   );
+  const revokeCode = el("code", "cmd-block");
+  revokeCode.textContent = revokeCmd;
+  unpairNote.appendChild(revokeCode);
+  panel.appendChild(unpairNote);
 
   const licenses = el("p", "subtle licenses-links");
   const a1 = el("a", null, "NOTICE");
