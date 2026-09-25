@@ -29,8 +29,10 @@
     "keyEnv": "CLOUDFLARE_WORKERS_AI_TOKEN + CLOUDFLARE_ACCOUNT_ID (abracadabra project 'gotchibot')",
     "note": "commsies currently runs @cf/meta/llama-3.1-8b-instruct-fast (dated); deprecated-model refresh announced 2026-05-08 - avoid llama-3.x"
   },
+  "$fallbacksNote": "No local Ollama/llama and no Gemini (decision 2026-09-25). Hosted providers only: OpenCode, NVIDIA NIM, Cloudflare Workers AI.",
   "fallbacks": [
-    "ollama/deepseek-r1 on hub Ollama :11434 (private/offline)",
-    "google gemini flash free tier (prompts may train)"
+    "opencode-go/glm-5.3-flash (OpenCode Go; hub-runner pin)",
+    "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b (NVIDIA NIM; needs NVIDIA_API_KEY)",
+    "cloudflare-workers-ai @cf/zai-org/glm-5.2 (interim; free tier)"
   ]
 }

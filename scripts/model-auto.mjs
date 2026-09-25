@@ -75,7 +75,6 @@ function oc(id) {
     s.startsWith("openrouter/") ||
     s.startsWith("opencode-go/") ||
     s.startsWith("opencode/") ||
-    s.startsWith("ollama/") ||
     s.startsWith("nvidia-nim/") ||
     s.startsWith("deepseek/")
   ) return s;
@@ -136,15 +135,6 @@ async function probeChat(model) {
   return { ok: false, reason: `http-${r.status}` };
 }
 
-async function ollamaUp() {
-  try {
-    const r = await fetch("http://127.0.0.1:11434/api/tags", { signal: AbortSignal.timeout(1500) });
-    return r.ok;
-  } catch {
-    return false;
-  }
-}
-
 function hasOpencodeKey() {
   return !!(process.env.OPENCODE_API_KEY || process.env.OPENCODE_ZEN_API_KEY);
 }
@@ -175,7 +165,6 @@ function aliases() {
     pickle: "opencode/big-pickle",
     flash: "deepseek/deepseek-v4-flash",
     pro: "deepseek/deepseek-v4-pro",
-    local: "ollama/qwen2.5:3b",
     claudemode: "claudemode/@claudemode",
     "@claudemode": "claudemode/@claudemode",
     "claude-mode": "claudemode/@claudemode",
@@ -342,14 +331,6 @@ export async function pickModel({ probe = false, json = false } = {}) {
     }
     saveCache({ pick: model, at: now, dailyLimit: false, reason: probe ? "probed" : catalogOk ? "catalog" : "prefer", cooldown: cache.cooldown || {} });
     const out = { model, reason: probe ? "probed" : catalogOk ? "in-catalog" : "offline-prefer", catalogCount: listed.size, report };
-    if (json) return out;
-    return out.model;
-  }
-
-  if (await ollamaUp()) {
-    const local = "ollama/qwen2.5:3b";
-    saveCache({ pick: local, at: now, reason: "ollama" });
-    const out = { model: local, reason: "ollama" };
     if (json) return out;
     return out.model;
   }

@@ -39,7 +39,7 @@ mkdir -p "$SESSIONS"
 usage() {
   cat >&2 <<'EOF'
 usage:
-  opencode-dispatch.sh new [--model auto|flash|pro|local|<provider/model>] [--sandbox] "PROMPT"
+  opencode-dispatch.sh new [--model auto|flash|pro|sub|<provider/model>] [--sandbox] "PROMPT"
   opencode-dispatch.sh list
   opencode-dispatch.sh status <id>...
   opencode-dispatch.sh wait [<id>...]
@@ -100,7 +100,10 @@ model_for() {
       ;;
     flash) echo "deepseek/deepseek-v4-flash" ;;
     pro) echo "deepseek/deepseek-v4-pro" ;;
-    local) echo "ollama/qwen2.5:3b" ;;
+    local)
+      echo "model 'local' removed (no Ollama; hosted only) — using sub" >&2
+      node "$ROOT/scripts/model-auto.mjs" subagent
+      ;;
     sub) node "$ROOT/scripts/model-auto.mjs" subagent ;;
     *) echo "$1" ;;
   esac

@@ -22,7 +22,6 @@ export const GOTCHI_MODEL_TIER_ALIASES: Record<string, string> = {
   nimlightning: "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b",
   flash: "deepseek/deepseek-v4-flash",
   pro: "deepseek/deepseek-v4-pro",
-  local: "ollama/qwen2.5:3b",
 };
 
 export const GOTCHI_MODEL_CATALOG: GotchiModelPickerItem[] = [
@@ -60,11 +59,6 @@ export const GOTCHI_MODEL_CATALOG: GotchiModelPickerItem[] = [
     value: "deepseek/deepseek-v4-pro",
     label: "deepseek/deepseek-v4-pro",
     description: "Hard reasoning · needs DEEPSEEK_API_KEY",
-  },
-  {
-    value: "ollama/qwen2.5:3b",
-    label: "ollama/qwen2.5:3b",
-    description: "Local offline fallback",
   },
 ];
 

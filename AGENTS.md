@@ -150,7 +150,6 @@ Route instead of DIY: laws/proofs → bend crew; skills/rules/policies/tools/MCP
 | task talk | Nemotron Lightning / Ultra free (`opencode/nemotron-*`) | talk/route/task only; `/model heavy` = Ultra free |
 | **all work** (Cursor (cursor-cli) → Claude → Codex) | Hub Claude / `claude` · `./scripts/cursor-cli.mjs` → `cursor-agent` · `./scripts/codex-cli.mjs` → `codex exec` | edits, debug, patches, investigation, desk deliverables — mandatory; Cursor (cursor-cli) first |
 | legacy escalation | `deepseek/deepseek-v4-pro` | **override-only** (Julius must ask); still prefer a work tool for edits |
-| offline talk | `ollama/qwen2.5:3b` | offline/private talk only |
 | sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | spawn chat/route model; the worker then runs a **work tool** (Cursor-first / cursor-cli applies) for the actual work |
 
 
@@ -220,5 +219,5 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 - Bot task / routing / talk: `opencode/big-pickle` (`nim`, default free Zen). Lightning/Ultra free remain available. `/model heavy` → `opencode/nemotron-3-ultra-free`. Do not switch OpenCode to a Cursor provider.
 - **All work** (edits / debug / investigation / desk deliverables): `./scripts/cursor-cli.mjs run "…"` → `cursor-agent` (UserDefault's logged-in Cursor Pro+ on **MBP or iMac**). Never `--api-key`. Mandatory — do not DIY on the chat model.
 - Paid OpenCode fallback: `deepseek/deepseek-v4-pro` (needs `DEEPSEEK_API_KEY` via abra)
-- Private/offline: local Ollama on the iMac
+- No local Ollama/llama and no Gemini (decision 2026-09-25). Hosted providers only: OpenCode, NVIDIA NIM, Cloudflare Workers AI.
 - **Tab:** cycles agents **in the OpenCode TUI** (`config/tui-policy.json`) including **Project**. tmux must not steal Tab. No pane restart. `./scripts/gotchibot tui-policy show|enforce|apply`

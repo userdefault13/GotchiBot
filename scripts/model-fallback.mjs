@@ -10,7 +10,7 @@ const LIMIT_RE =
   /(?:rate[\s-]?limit|too many requests|quota exceeded|usage limit|token limit|credit balance|insufficient (?:quota|credits|balance)|billing|payment required|overloaded|capacity|resource exhausted|requests per (?:minute|day|hour)|\b429\b|\b402\b|\btpm\b|\brpm\b)/i;
 
 const FREE_MODEL_RE =
-  /(?:^opencode\/big-pickle$|^opencode\/.*-free$|^openrouter\/.*:free$|^ollama\/)/i;
+  /(?:^opencode\/big-pickle$|^opencode\/.*-free$|^openrouter\/.*:free$)/i;
 
 export function isModelLimitError(text) {
   const s = String(text || "").trim();

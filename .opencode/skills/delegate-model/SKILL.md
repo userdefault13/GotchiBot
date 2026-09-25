@@ -38,7 +38,7 @@ The `sub` model alias resolves the chain via `node scripts/model-auto.mjs subage
 
 - **`--model sub`** (spawn default): walk `subagentPrefer` (free Zen). Skip
   `opencode-go/*` unless an OpenCode Go key is present.
-- **Explicit `--model <id>`** (e.g. `--model nim`, `--model pro`, `--model local`,
+- **Explicit `--model <id>`** (e.g. `--model nim`, `--model pro`,
   or a full provider/model ID) bypasses the chain.
 - **`--model nim` / `pickle` / `fast`** → `opencode/big-pickle`
 - **`--model auto`** uses the free `prefer` list (also Zen-first).

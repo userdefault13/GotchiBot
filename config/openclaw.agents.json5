@@ -24,12 +24,6 @@
       "model": "opencode-go/glm-5.2",
       "role": "escalation: hard reasoning / architecture / gnarly bugs",
       "sandbox": "workspace-only"
-    },
-    "sub-local": {
-      "model": "opencode-go/glm-5.2",
-      "endpoint": "http://127.0.0.1:11434",
-      "role": "offline/private fallback (hub Ollama; override endpoint for remote hub)",
-      "sandbox": "workspace-only"
     }
   },
   "rulesFile": "AGENTS.md",
