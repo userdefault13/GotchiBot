@@ -33,6 +33,7 @@ import {
 import { runLayout } from "./tmux-layout.mjs";
 import { isMainModule } from "./is-main.mjs";
 import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
+import { mouseEnabled } from "./lib/term-caps.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STAMP = `${ROOT}/sessions/.meet-room.stamp`;
@@ -1109,8 +1110,9 @@ function teardown() {
     /* ok */
   }
   stdin.pause();
-  // Disable mouse + alt screen
-  stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?7h\x1b[?1049l");
+  // Disable mouse (if enabled) + alt screen
+  if (mouseEnabled()) stdout.write("\x1b[?1006l\x1b[?1000l");
+  stdout.write("\x1b[?25h\x1b[?7h\x1b[?1049l");
 }
 
 function setup() {
@@ -1118,8 +1120,9 @@ function setup() {
     console.error("Meet room needs an interactive terminal (attach the tmux chat pane).");
     process.exit(1);
   }
-  // Alt screen, no wrap, mouse click (SGR + X10) for pager prev/next.
-  stdout.write("\x1b[?1049h\x1b[?7l\x1b[?25h\x1b[?1000h\x1b[?1006h");
+  // Alt screen, no wrap; mouse click (SGR + X10) for pager prev/next when mouse on.
+  stdout.write("\x1b[?1049h\x1b[?7l\x1b[?25h");
+  if (mouseEnabled()) stdout.write("\x1b[?1000h\x1b[?1006h");
   try {
     stdin.setRawMode(true);
   } catch (e) {

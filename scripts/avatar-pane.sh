@@ -1239,10 +1239,20 @@ render_body() {
     next_s="${lit}[ ${AV_ARROW_R} ]${rst}"
   fi
   mid_s="$(printf '%s%d / %d%s' "$num" "$((PAGE + 1))" "$NPAGES" "$rst")"
-  vis_s="$(printf '[ %s ]     %d / %d     [ %s ]' "$AV_ARROW_L" "$((PAGE + 1))" "$NPAGES" "$AV_ARROW_R")"
-  pad=$(( (cols - ${#vis_s}) / 2 ))
-  [ "$pad" -lt 0 ] && pad=0
-  ctrl="$(printf '%*s' "$pad" '')${prev_s}     ${mid_s}     ${next_s}"
+  if [ "${TUI_MOUSE:-on}" = "off" ]; then
+    # No mouse (plain / linux console): show the keyboard paging keys instead
+    # of clickable-looking buttons. Mouse layout below is unchanged so the
+    # left-third / right-third click hitboxes still line up.
+    vis_s="$(printf '[ %s ]   %d / %d   [ %s ]  ^Space P/N' "$AV_ARROW_L" "$((PAGE + 1))" "$NPAGES" "$AV_ARROW_R")"
+    pad=$(( (cols - ${#vis_s}) / 2 ))
+    [ "$pad" -lt 0 ] && pad=0
+    ctrl="$(printf '%*s' "$pad" '')${prev_s}   ${mid_s}   ${next_s}  ${dim}^Space P/N${rst}"
+  else
+    vis_s="$(printf '[ %s ]     %d / %d     [ %s ]' "$AV_ARROW_L" "$((PAGE + 1))" "$NPAGES" "$AV_ARROW_R")"
+    pad=$(( (cols - ${#vis_s}) / 2 ))
+    [ "$pad" -lt 0 ] && pad=0
+    ctrl="$(printf '%*s' "$pad" '')${prev_s}     ${mid_s}     ${next_s}"
+  fi
   if [ "$row" -lt "$pane_h" ]; then
     put_line "$row" "$ctrl"
   fi

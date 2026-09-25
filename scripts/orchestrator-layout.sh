@@ -2,6 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Terminal caps (TUI_COLOR / TUI_GLYPHS / TUI_MOUSE) — plain / linux / GOTCHIBOT_TUI_PLAIN=1.
+# shellcheck source=scripts/lib/term-caps.sh
+. "$ROOT/scripts/lib/term-caps.sh"
+gotchibot_term_caps
 # Bare session name for set-option / pane targets (tmux 3.7c rejects -t =name for set-option).
 # Use =name only in session_exists — plain "gotchibot" prefix-matches "gotchibot-hubmon".
 sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
@@ -176,8 +180,10 @@ install_meet_gallery_mouse() {
   local scroll_down="cd '$ROOT' && GOTCHIBOT_TMUX_SESSION='$sess_name' '$ROOT/scripts/meet-channel-scroll.sh' down"
   local def_drag='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
 
-  tmux set-option -g mouse on 2>/dev/null || true
-  tmux set-option -t "$sess" mouse on 2>/dev/null || true
+  if [ "${TUI_MOUSE}" = "on" ]; then
+    tmux set-option -g mouse on 2>/dev/null || true
+    tmux set-option -t "$sess" mouse on 2>/dev/null || true
+  fi
 
   tmux unbind-key -n WheelUpPane 2>/dev/null || true
   tmux unbind-key -n WheelDownPane 2>/dev/null || true
@@ -207,6 +213,7 @@ install_meet_gallery_mouse() {
 
   # Ensure channel pane is tagged for the wheel if-shell.
   tmux set-option -p -t "$sess:work.2" @gotchibot-meet-channel 1 2>/dev/null || true
+  install_avatar_page_keys
 }
 
 # Chat/files/cockpit/pstack keep default (OpenCode / app mouse / send-keys -M).
@@ -223,8 +230,10 @@ install_avatar_mouse() {
   local av_if='#{==:#{@gotchibot-avatar},1}'
   local focus_hook="$ROOT/scripts/tmux-chat-focus-hook.sh"
 
-  tmux set-option -g mouse on 2>/dev/null || true
-  tmux set-option -t "$sess" mouse on 2>/dev/null || true
+  if [ "${TUI_MOUSE}" = "on" ]; then
+    tmux set-option -g mouse on 2>/dev/null || true
+    tmux set-option -t "$sess" mouse on 2>/dev/null || true
+  fi
   mark_avatar_pane
 
   tmux unbind-key -n WheelUpPane 2>/dev/null || true
@@ -256,6 +265,20 @@ install_avatar_mouse() {
   # ← / → ONLY in gotchi-avatar key-table (focus hook). Never root -n.
   tmux bind-key -T gotchi-avatar Left "run-shell \"$ru\"" 2>/dev/null || true
   tmux bind-key -T gotchi-avatar Right "run-shell \"$rd\"" 2>/dev/null || true
+  install_avatar_page_keys
+}
+
+# Avatar roster paging from any pane (no mouse, no avatar focus).
+# prefix P/N = Ctrl+Space then Shift+P / Shift+N; Alt+, / Alt+. = same without prefix.
+# sb-wheel omits pid — sb_click_wake finds the avatar pane via pid file / @gotchibot-avatar.
+install_avatar_page_keys() {
+  local rpu="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel up"
+  local rpd="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel down"
+  local sess_if="#{==:#{session_name},$sess_name}"
+  tmux bind-key -T prefix P if-shell -F "$sess_if" "run-shell \"$rpu\"" 2>/dev/null || true
+  tmux bind-key -T prefix N if-shell -F "$sess_if" "run-shell \"$rpd\"" 2>/dev/null || true
+  tmux bind-key -n M-, if-shell -F "$sess_if" "run-shell \"$rpu\"" "send-keys M-," 2>/dev/null || true
+  tmux bind-key -n M-. if-shell -F "$sess_if" "run-shell \"$rpd\"" "send-keys M-." 2>/dev/null || true
 }
 
 start_pane_commands() {
@@ -1010,6 +1033,7 @@ install_agent_keys() {
   tmux bind-key -T gotchi-chat F2 run-shell "cd $ROOT && node $cycle >/dev/null" 2>/dev/null || true
   # Layout — Ctrl+F files · Ctrl+A avatar-max · Ctrl+G show avatar · Ctrl+B chat
   # Fallback: Alt+F/A/G/B · F6 show avatar · F7 avatar-max · prefix: Ctrl+Space then f/a/b
+  # Avatar roster page (any pane): Ctrl+Space then P/N · Alt+, / Alt+.
   install_layout_keys root
   install_layout_keys gotchi-chat
   install_layout_keys gotchi-files
@@ -1026,6 +1050,8 @@ install_agent_keys() {
   else
     install_avatar_mouse
   fi
+  # Keyboard avatar paging (also installed from install_*_mouse for relayout).
+  install_avatar_page_keys
   # Orchestrator focus — F3 / prefix o / Option+O
   tmux bind-key -T gotchi-chat F3 run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T prefix o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
@@ -1064,16 +1090,19 @@ install_agent_keys() {
 install_ui_theme() {
   # Mouse ON so prev/next on the unfocused avatar pane are clickable.
   # Wheel over avatar pages roster; chat/files keep default (OpenCode / send-keys -M).
-  tmux set-option -g mouse on 2>/dev/null || true
-  tmux set-option -t "$sess" mouse on 2>/dev/null || true
+  # Plain / linux (TUI_MOUSE=off): leave the user's tmux mouse setting alone.
+  if [ "${TUI_MOUSE}" = "on" ]; then
+    tmux set-option -g mouse on 2>/dev/null || true
+    tmux set-option -t "$sess" mouse on 2>/dev/null || true
+  fi
   tmux set-option -t "$sess" set-clipboard on 2>/dev/null || true
   # Let OSC 52 from OpenClaw TUI (/copy) reach Terminal/iTerm pasteboard.
   tmux set-option -g allow-passthrough on 2>/dev/null || true
   tmux set-option -t "$sess" allow-passthrough on 2>/dev/null || true
   install_avatar_mouse
-  # Truecolor for Gotchi message backgrounds (chalk bgHex needs Tc in tmux).
-  tmux set-option -g terminal-overrides ",tmux-256color:Tc" 2>/dev/null || true
-  tmux set-option -g terminal-overrides ",xterm-256color:Tc" 2>/dev/null || true
+  # Truecolor for Gotchi message backgrounds (chalk bgHex needs Tc/RGB in tmux).
+  # Append idempotently — bare set-option -g terminal-overrides replaces the whole list.
+  install_truecolor_terminal
   install_agent_keys
   # Active pane: bright gotchi-pink border + ● label. Inactive: dim charcoal.
   # Users complained they couldn't tell focus — make the contrast obvious.
@@ -1091,6 +1120,42 @@ install_ui_theme() {
   tmux set-option -t "$sess" status-left '#[fg=white,bold] GotchiBot ' 2>/dev/null || true
   tmux set-option -t "$sess" status-right "#[fg=colour252]#($status_bar) #[fg=colour238]|#[default] #[fg=colour250]#S " 2>/dev/null || true
   apply_window_policy
+}
+
+# Idempotent truecolor: terminal-features RGB (tmux >= 3.2) + terminal-overrides Tc fallback.
+# Do NOT add linux / vt* / screen* / blanket *:RGB — Linux console cannot do truecolor.
+install_truecolor_terminal() {
+  local tf to pat ver major minor
+  ver="$(tmux -V 2>/dev/null | tr -cd '0-9.' || true)"
+  major="${ver%%.*}"
+  minor="${ver#*.}"
+  minor="${minor%%.*}"
+  case "$major" in ''|*[!0-9]*) major=0 ;; esac
+  case "$minor" in ''|*[!0-9]*) minor=0 ;; esac
+
+  if [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 2 ]; }; then
+    tf="$(tmux show-options -s terminal-features 2>/dev/null || true)"
+    for pat in xterm-256color tmux-256color '*-direct' xterm-kitty alacritty 'foot*' xterm-ghostty wezterm; do
+      case "$tf" in
+        *"${pat}:RGB"*) ;;
+        *)
+          tmux set-option -sa terminal-features ",${pat}:RGB" 2>/dev/null || true
+          tf="$(tmux show-options -s terminal-features 2>/dev/null || true)"
+          ;;
+      esac
+    done
+  fi
+
+  to="$(tmux show-options -g terminal-overrides 2>/dev/null || true)"
+  for pat in xterm-256color tmux-256color; do
+    case "$to" in
+      *"${pat}:Tc"*) ;;
+      *)
+        tmux set-option -ga terminal-overrides ",${pat}:Tc" 2>/dev/null || true
+        to="$(tmux show-options -g terminal-overrides 2>/dev/null || true)"
+        ;;
+    esac
+  done
 }
 
 # Mode-aware titles; active pane gets a ● so focus is obvious at a glance.

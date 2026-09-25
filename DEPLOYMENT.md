@@ -141,6 +141,7 @@ gotchibot tmux     # mc left | right pane: your gotchi (top), active sub-agent (
 - F3 on any `.svg` in mc renders it via chafa
 - The avatar pane auto-switches to whichever sub-agent is active
 - Pin an agent: `gotchibot avatar <agentId>`
+- Page the avatar roster from any pane (no mouse): **Ctrl+Space** then **P** / **N**, or **Alt+,** / **Alt+.**
 
 Apple Terminal renders chafa output as ANSI half-blocks — flat Aavegotchi art
 looks good; no graphics protocol needed.

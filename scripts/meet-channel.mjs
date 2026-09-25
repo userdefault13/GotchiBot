@@ -20,6 +20,7 @@ import { isMainModule } from "./is-main.mjs";
 import { resolveMeetingsRoot } from "./project-context.mjs";
 import { isProfLinkCubeId } from "./gotchi-art.mjs";
 import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
+import { mouseEnabled } from "./lib/term-caps.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PENDING = `${ROOT}/sessions/.meet-pending.json`;
@@ -332,10 +333,14 @@ export function warmThumbs(ids, done) {
 function renderHeader(meeting, cols, interactive = false) {
   const topic = meeting.topic || "Untitled meeting";
   const agents = (meeting.participants || []).filter((p) => p.role !== "user").length;
-  const clickHint = interactive ? " · click [copy] · [edit]" : "";
+  const mouse = mouseEnabled();
+  const clickHint = interactive && mouse ? " · click [copy] · [edit]" : "";
+  const nav = mouse
+    ? `↑↓ wheel · j/k · PgUp/Dn · scrollbar${clickHint}`
+    : `j/k · PgUp/Dn`;
   return [
     `${C.topic}# ${topic}${C.reset}`,
-    `${C.dim}${agents} gotchi${agents === 1 ? "" : "s"} · ↑↓ wheel · j/k · PgUp/Dn · scrollbar${clickHint}${C.reset}`,
+    `${C.dim}${agents} gotchi${agents === 1 ? "" : "s"} · ${nav}${C.reset}`,
     `${C.bar}${"─".repeat(Math.max(8, Math.min(cols - 2, 56)))}${C.reset}`,
   ];
 }
@@ -651,8 +656,9 @@ function copyTurnText(text) {
 export async function runMeetChannelLive() {
   mkdirSync(`${ROOT}/sessions`, { recursive: true });
   output.write("\x1b[?1049h\x1b[?7l\x1b[?25l");
-  // Button events only — no 1002 motion flood.
-  output.write("\x1b[?1000h\x1b[?1006h");
+  // Button events only — no 1002 motion flood. Skip when mouse is off (plain / linux).
+  const useMouse = mouseEnabled();
+  if (useMouse) output.write("\x1b[?1000h\x1b[?1006h");
 
   let cachedLines = null;
   let cacheKey = "";
@@ -672,7 +678,8 @@ export async function runMeetChannelLive() {
     destroyed = true;
     if (paintTimer) clearTimeout(paintTimer);
     try {
-      output.write("\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?7h\x1b[?1049l");
+      if (useMouse) output.write("\x1b[?1006l\x1b[?1000l");
+      output.write("\x1b[?25h\x1b[?7h\x1b[?1049l");
     } catch {
       /* ok */
     }
