@@ -3,10 +3,18 @@
  * Meet room TUI — gallery + OpenCode-style prompter.
  *
  *   node scripts/meet-room-prompter.mjs
+ *   node scripts/meet-room-prompter.mjs --inline   # single terminal (no tmux)
  */
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import {
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+  existsSync,
+  statSync,
+  watch,
+} from "node:fs";
+import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin, stdout } from "node:process";
 import {
@@ -17,8 +25,19 @@ import {
   listMeetMembers,
   clampPage,
 } from "./meet-room.mjs";
-import { setMeetStatus } from "./meet-status.mjs";
-import { warmThumbs, readTranscript, loadCurrentMeeting } from "./meet-channel.mjs";
+import {
+  setMeetStatus,
+  loadMeetStatus,
+  statusFor,
+  statusLabel,
+} from "./meet-status.mjs";
+import {
+  warmThumbs,
+  readTranscript,
+  loadCurrentMeeting,
+  renderMeetChannel,
+  maxScrollFromBottom,
+} from "./meet-channel.mjs";
 import {
   stripPardonPrefix,
   isPardonTrigger,
@@ -31,6 +50,7 @@ import {
   stackFromRound,
 } from "./lib/meet-pardon.mjs"; // pardon-me-v1
 import { runLayout } from "./tmux-layout.mjs";
+import { resolveMeetingsRoot } from "./project-context.mjs";
 import { isMainModule } from "./is-main.mjs";
 import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
 import { mouseEnabled } from "./lib/term-caps.mjs";
@@ -40,11 +60,16 @@ const STAMP = `${ROOT}/sessions/.meet-room.stamp`;
 const LEAVE = `${ROOT}/sessions/.meet-leave`;
 const PENDING = `${ROOT}/sessions/.meet-pending.json`;
 const EDIT_REQUEST = `${ROOT}/sessions/.meet-edit-request.json`;
+const STATUS_FILE = `${ROOT}/sessions/.meet-status.json`;
 const PROMPT_INPUT_ROWS = 3;
 const PROMPT_FOOTER_ROWS = 1;
 const PROMPT_PANEL_ROWS = PROMPT_INPUT_ROWS + PROMPT_FOOTER_ROWS;
 /** Gutter bar + one space before text (matches OpenCode prompt). */
 const INPUT_LEFT = 2;
+
+/** Single-terminal mode: no tmux gallery / poke / leave-file. */
+const INLINE =
+  process.argv.includes("--inline") || process.env.GOTCHIBOT_MEET_INLINE === "1";
 
 const _tui = renderMode();
 
@@ -85,9 +110,87 @@ function visLen(s) {
 }
 
 function paneSize() {
+  // Inline (and default) use the process TTY — never ask tmux for size here.
   const cols = stdout.columns || 80;
   const rows = stdout.rows || 24;
   return { cols, rows };
+}
+
+/**
+ * Pure layout math for --inline mode (1-line strip + transcript + prompt).
+ * @param {number} cols
+ * @param {number} rows
+ * @returns {{ cols: number, rows: number, stripRow: number, transcriptTop: number, transcriptRows: number, promptTop: number, promptRows: number, mentionRow: number }}
+ */
+export function inlineLayout(cols, rows) {
+  const c = Math.max(1, Math.floor(Number(cols) || 80));
+  const r = Math.max(1, Math.floor(Number(rows) || 24));
+  const stripRow = 1;
+  const promptRows = Math.min(PROMPT_PANEL_ROWS, Math.max(1, r - 2));
+  const promptTop = r - promptRows + 1;
+  const transcriptTop = Math.min(stripRow + 1, promptTop);
+  const transcriptRows = Math.max(1, promptTop - transcriptTop);
+  const mentionRow = Math.max(transcriptTop, promptTop - 1);
+  return {
+    cols: c,
+    rows: r,
+    stripRow,
+    transcriptTop,
+    transcriptRows,
+    promptTop,
+    promptRows,
+    mentionRow,
+  };
+}
+
+function truncatePlain(s, cols) {
+  const plain = String(s || "");
+  if (plain.length <= cols) return plain;
+  if (cols <= 1) return plain.slice(0, cols);
+  const ell = _tui.glyphs === "ascii" ? "..." : "…";
+  const keep = Math.max(0, cols - ell.length);
+  return plain.slice(0, keep) + ell;
+}
+
+function renderRoomStripLine(cols, meeting) {
+  const m = meeting || loadCurrentMeeting();
+  const topic = m?.topic || "no meeting";
+  const status = loadMeetStatus();
+  const members = listMeetMembers(m);
+  const parts = members.map((mem) => {
+    const st = statusFor(mem.id, status);
+    if (st.status === "idle") return mem.label;
+    return `${mem.label}:${statusLabel(st.status, st.since)}`;
+  });
+  const body =
+    parts.length > 0 ? `${topic} · ${parts.join(" · ")}` : String(topic);
+  return truncatePlain(body, cols);
+}
+
+/**
+ * Top-of-screen frame for inline mode (strip + transcript), as a string.
+ * Input panel is drawn separately via drawInputPanel.
+ */
+export function renderInlineFrame({
+  cols = 80,
+  rows = 24,
+  meeting = null,
+  scrollFromBottom = 0,
+} = {}) {
+  const layout = inlineLayout(cols, rows);
+  const m = meeting || loadCurrentMeeting();
+  const strip = renderRoomStripLine(layout.cols, m);
+  const stripStyled = `${T.brand}${strip}${T.reset}`;
+  const foldedStrip =
+    _tui.glyphs === "ascii" ? toAsciiGlyphs(stripStyled) : stripStyled;
+  const channel = renderMeetChannel({
+    cols: layout.cols,
+    rows: layout.transcriptRows,
+    scrollFromBottom,
+  });
+  const pad = Math.max(0, layout.cols - stripAnsi(foldedStrip).length);
+  const stripLine = `${foldedStrip}${" ".repeat(pad)}`;
+  return `${stripLine}\n${channel}`;
 }
 
 function mentionTags() {
@@ -155,6 +258,11 @@ function pokeChannel() {
   } catch {
     /* ok */
   }
+  if (INLINE) {
+    // Local redraw only — do not poke another checkout's tmux panes.
+    draw();
+    return;
+  }
   spawnSync("bash", [`${ROOT}/scripts/poke-meet-channel.sh`], { stdio: "ignore" });
 }
 
@@ -164,6 +272,10 @@ function pokeGallery() {
     writeFileSync(STAMP, now);
   } catch {
     /* ok */
+  }
+  if (INLINE) {
+    draw();
+    return;
   }
   spawnSync("bash", [`${ROOT}/scripts/poke-meet-room.sh`], { stdio: "ignore" });
 }
@@ -180,6 +292,11 @@ let sendDots = 1;
 let drawing = false;
 let redrawPending = false;
 let statusAnimTimer = null;
+/** Inline transcript scroll: lines from bottom (0 = pinned to latest). */
+let scrollFromBottom = 0;
+let inlineWatchTimer = null;
+let inlineWatchers = [];
+let lastInlineWatchKey = "";
 
 /** When set, the next submit edits this user turn instead of saying. */
 let editTargetTs = null;
@@ -586,13 +703,17 @@ function handleCtrlC() {
 
 function requestLeave(kind) {
   const mode = kind === "cockpit" ? "cockpit" : kind === "chat" ? "chat" : "end";
-  try {
-    writeFileSync(LEAVE, `${mode}\n`);
-  } catch {
-    /* ok */
+  // Inline has no tmux layout consumer for the leave file — skip it.
+  if (!INLINE) {
+    try {
+      writeFileSync(LEAVE, `${mode}\n`);
+    } catch {
+      /* ok */
+    }
   }
   stopSendTimer();
   clearPending();
+  stopInlineWatch();
   teardown();
   process.exit(0);
 }
@@ -747,7 +868,9 @@ function drawInputPanel(top, cols) {
   } else {
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
-      `${T.panel}${T.muted} · ←→ page · /edit · /cockpit · /start · /end · /help${T.reset}`;
+      (INLINE
+        ? `${T.panel}${T.muted} · PgUp/PgDn scroll · q quit · /edit · /end · /help${T.reset}`
+        : `${T.panel}${T.muted} · ←→ page · /edit · /cockpit · /start · /end · /help${T.reset}`);
   }
   writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols, visLen(footerCore)), cols));
 
@@ -921,6 +1044,10 @@ class Prompter {
       editTargetTs = null;
       return "chat";
     }
+    if (INLINE && (line === "q" || line === "/q")) {
+      editTargetTs = null;
+      return "chat";
+    }
     if (line === "/cockpit" || line === "/menu") {
       editTargetTs = null;
       return "cockpit";
@@ -1018,7 +1145,70 @@ class Prompter {
 
 const editor = new Prompter();
 
+function clampInlineScroll(cols, transcriptRows) {
+  const max = maxScrollFromBottom({ cols, rows: transcriptRows });
+  scrollFromBottom = Math.max(0, Math.min(max, scrollFromBottom));
+}
+
+function drawBodyInline() {
+  consumeEditRequest();
+  const { cols, rows } = paneSize();
+  const layout = inlineLayout(cols, rows);
+  clampInlineScroll(layout.cols, layout.transcriptRows);
+
+  const meeting = loadCurrentMeeting();
+  const frame = renderInlineFrame({
+    cols: layout.cols,
+    rows: layout.rows,
+    meeting,
+    scrollFromBottom,
+  });
+  const frameLines = String(frame).split("\n");
+  // Home + clear-to-EOL per line (same flash-free pattern as gallery draw).
+  stdout.write(`\x1b[H${frameLines.map((l) => `${l}\x1b[K`).join("\n")}\n\x1b[J`);
+
+  const slashQ = activeSlashQuery(editor.buffer);
+  const slashMatches = slashQ != null ? matchingSlashCmds(slashQ) : [];
+  const mentionQ = slashQ == null ? activeMentionQuery(editor.buffer) : null;
+  const mentionMatches = mentionQ != null ? matchingMentions(mentionQ) : [];
+  const mentionRow = layout.mentionRow;
+
+  if (slashMatches.length && slashQ != null) {
+    const n = slashMatches.length;
+    const menu = slashMatches
+      .slice(0, 8)
+      .map((c, i) => {
+        const on = i === editor.menuIdx % n;
+        const tag = `${on ? T.menu : T.mention}${c.tag}${T.reset}`;
+        const hint = on ? `${T.muted} ${c.hint}${T.reset}` : "";
+        return `${tag}${hint}`;
+      })
+      .join(`${T.muted} · ${T.reset}`);
+    writeAt(
+      Math.max(1, mentionRow),
+      1,
+      padPanelLine(`${T.accentBar}${T.panel} ${menu}`, cols),
+    );
+  } else if (mentionMatches.length && mentionQ != null) {
+    const menu = mentionMatches
+      .slice(0, 6)
+      .map((m, i) => `${i === editor.menuIdx % mentionMatches.length ? T.menu : T.mention}${m.tag}${T.reset}`)
+      .join(`${T.muted}  ${T.reset}`);
+    writeAt(
+      Math.max(1, mentionRow),
+      1,
+      padPanelLine(`${T.accentBar}${T.panel} ${T.muted}${menu}${T.reset}`, cols),
+    );
+  }
+
+  drawInputPanel(layout.promptTop, cols);
+}
+
 function drawBody() {
+  if (INLINE) {
+    drawBodyInline();
+    return;
+  }
   consumeEditRequest();
   const { cols, rows } = paneSize();
   const mentionRow = rows - PROMPT_PANEL_ROWS;
@@ -1104,20 +1294,33 @@ function draw() {
 
 function teardown() {
   clearPending();
+  stopInlineWatch();
   try {
     stdin.setRawMode(false);
   } catch {
     /* ok */
   }
-  stdin.pause();
-  // Disable mouse (if enabled) + alt screen
-  if (mouseEnabled()) stdout.write("\x1b[?1006l\x1b[?1000l");
-  stdout.write("\x1b[?25h\x1b[?7h\x1b[?1049l");
+  try {
+    stdin.pause();
+  } catch {
+    /* ok */
+  }
+  // Disable mouse (if enabled) + show cursor + wrap on + leave alt screen
+  try {
+    if (mouseEnabled()) stdout.write("\x1b[?1006l\x1b[?1000l");
+    stdout.write("\x1b[?25h\x1b[?7h\x1b[?1049l");
+  } catch {
+    /* ok */
+  }
 }
 
 function setup() {
   if (!stdin.isTTY || !stdout.isTTY) {
-    console.error("Meet room needs an interactive terminal (attach the tmux chat pane).");
+    console.error(
+      INLINE
+        ? "Meet room --inline needs an interactive terminal (try: ssh -t …)."
+        : "Meet room needs an interactive terminal (attach the tmux chat pane).",
+    );
     process.exit(1);
   }
   // Alt screen, no wrap; mouse click (SGR + X10) for pager prev/next when mouse on.
@@ -1217,6 +1420,12 @@ function handleKey(chunk) {
       return "noop";
     case "\x03":
       return handleCtrlC();
+    case "\x04":
+      // Ctrl+D on empty buffer → leave (inline); non-inline unchanged.
+      if (INLINE && bufferEmpty() && !editTargetTs) {
+        return "chat";
+      }
+      return "noop";
     case "\x0c":
       return "redraw";
     default:
@@ -1230,7 +1439,18 @@ function handleKey(chunk) {
 }
 
 function handleEsc(seq) {
-  // PageUp / PageDown — always page the seat carousel.
+  // Inline: PgUp/PgDn (and Shift+Up/Down) scroll the transcript.
+  if (INLINE) {
+    if (seq === "\x1b[5~" || seq === "\x1b[1;2A") {
+      scrollFromBottom += seq === "\x1b[5~" ? 5 : 1;
+      return "redraw";
+    }
+    if (seq === "\x1b[6~" || seq === "\x1b[1;2B") {
+      scrollFromBottom = Math.max(0, scrollFromBottom - (seq === "\x1b[6~" ? 5 : 1));
+      return "redraw";
+    }
+  }
+  // PageUp / PageDown — always page the seat carousel (gallery mode).
   if (seq === "\x1b[5~" || seq === "\x1b[6~") {
     if (seq === "\x1b[5~") pagePrev();
     else pageNext();
@@ -1281,6 +1501,7 @@ function handleEsc(seq) {
 }
 
 function ensureMeetGalleryLayout() {
+  if (INLINE) return;
   if (!process.env.TMUX) return;
   runLayout("refresh-meet-gallery", {
     env: { GOTCHIBOT_MEET_LAYOUT_ONLY: "1" },
@@ -1288,6 +1509,7 @@ function ensureMeetGalleryLayout() {
 }
 
 function markTmuxPane() {
+  if (INLINE) return;
   if (!process.env.TMUX) return;
   const tgt = process.env.TMUX_PANE || "";
   if (!tgt) return;
@@ -1298,17 +1520,118 @@ function markTmuxPane() {
   });
 }
 
+function mtimeKey(path) {
+  try {
+    const st = statSync(path);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return "";
+  }
+}
+
+function inlineWatchPaths() {
+  // Same root meet-channel uses (project-scoped when a project is selected).
+  let root = join(ROOT, "sessions", "meetings");
+  try {
+    root = resolveMeetingsRoot().root || root;
+  } catch {
+    /* default */
+  }
+  const currentPtr = join(root, ".current");
+  const paths = [currentPtr, STATUS_FILE];
+  try {
+    if (existsSync(currentPtr)) {
+      const id = String(readFileSync(currentPtr, "utf8")).trim();
+      if (id) {
+        const dir = join(root, id);
+        paths.push(join(dir, "meeting.json"), join(dir, "transcript.jsonl"));
+      }
+    }
+  } catch {
+    /* ok */
+  }
+  return paths;
+}
+
+function inlineWatchSnapshot() {
+  return inlineWatchPaths().map((p) => `${p}=${mtimeKey(p)}`).join("|");
+}
+
+function stopInlineWatch() {
+  if (inlineWatchTimer) {
+    clearInterval(inlineWatchTimer);
+    inlineWatchTimer = null;
+  }
+  for (const w of inlineWatchers) {
+    try {
+      w.close();
+    } catch {
+      /* ok */
+    }
+  }
+  inlineWatchers = [];
+}
+
+function startInlineWatch() {
+  if (!INLINE) return;
+  stopInlineWatch();
+  lastInlineWatchKey = inlineWatchSnapshot();
+
+  const onChange = () => {
+    const key = inlineWatchSnapshot();
+    if (key === lastInlineWatchKey) return;
+    lastInlineWatchKey = key;
+    // New messages: stay pinned only when already at bottom (scrollFromBottom===0).
+    // When scrolled up, clampInlineScroll keeps the offset within range.
+    ensureStatusAnim();
+    draw();
+  };
+
+  // Cheap mtime poll (unref so it won't keep the process alive alone).
+  inlineWatchTimer = setInterval(onChange, 750);
+  if (typeof inlineWatchTimer.unref === "function") inlineWatchTimer.unref();
+
+  // Best-effort fs.watch; fall back is the poll above.
+  for (const p of inlineWatchPaths()) {
+    try {
+      if (!existsSync(p) && !p.endsWith(".current") && !p.endsWith(".meet-status.json")) {
+        continue;
+      }
+      const w = watch(p, { persistent: false }, () => onChange());
+      inlineWatchers.push(w);
+    } catch {
+      /* poll covers it */
+    }
+  }
+}
+
+function restoreTerminalAndExit(code = 0) {
+  try {
+    stopSendTimer();
+    stopStatusAnim();
+    stopInlineWatch();
+    teardown();
+  } catch {
+    /* ok */
+  }
+  process.exit(code);
+}
+
 function main() {
   ensureMeetGalleryLayout();
   markTmuxPane();
   setup();
   draw();
-  // Pre-render every member's thumb to disk in the background so the first
-  // visit to each room page is a file read, not a gotchi-art spawn per tile.
-  try {
-    warmThumbs(listMeetMembers().map((m) => m.id));
-  } catch {
-    /* ok */
+  if (!INLINE) {
+    // Pre-render every member's thumb to disk in the background so the first
+    // visit to each room page is a file read, not a gotchi-art spawn per tile.
+    try {
+      warmThumbs(listMeetMembers().map((m) => m.id));
+    } catch {
+      /* ok */
+    }
+  } else {
+    startInlineWatch();
   }
 
   process.on("SIGUSR1", () => {
@@ -1316,15 +1639,28 @@ function main() {
     draw();
   });
   process.on("SIGWINCH", () => draw());
-  process.on("SIGTERM", () => {
-    stopSendTimer();
-    stopStatusAnim();
-    teardown();
-    process.exit(0);
+  process.on("SIGTERM", () => restoreTerminalAndExit(0));
+  process.on("SIGHUP", () => restoreTerminalAndExit(0));
+  process.on("uncaughtException", (err) => {
+    try {
+      stopSendTimer();
+      stopStatusAnim();
+      stopInlineWatch();
+      teardown();
+    } catch {
+      /* ok */
+    }
+    try {
+      console.error(err?.stack || err);
+    } catch {
+      /* ok */
+    }
+    process.exit(1);
   });
   process.on("exit", () => {
     stopSendTimer();
     stopStatusAnim();
+    stopInlineWatch();
     teardown();
   });
   // Keep status dots alive if a turn is already in flight when we open.

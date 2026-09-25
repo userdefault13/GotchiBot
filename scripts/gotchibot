@@ -53,7 +53,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot inbox send|list|read|archive|digest|unread|tui   internal bot mail (not AgentMail)
   gotchibot graph …                 graph-state init|get|set|next|stop|list (sessions/graph)
   gotchibot jev ask|smoke|models    TypeSafe Jev System One decisions (not chat)
-  gotchibot meet start|open|invite|status|say|morning|colabo|end   persistent room (/meet); start/end = record
+  gotchibot meet start|open|room [--inline]|invite|status|say|morning|colabo|end   persistent room (/meet); --inline = single terminal (no tmux)
   gotchibot model-policy [show|pick|candidates|enforce]  working-models-only policy
   gotchibot tui-policy [show|enforce|apply]  Tab cycles in OpenCode TUI (no tmux steal)
   gotchibot layout-check [check|desk|meet]  verify tmux panes (non-destructive)

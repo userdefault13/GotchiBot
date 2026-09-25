@@ -2175,7 +2175,7 @@ function usage() {
   console.error(`usage:
   gotchi-meet.mjs start ["topic"]
   gotchi-meet.mjs start --morning ["topic"]
-  gotchi-meet.mjs open|room          enter meet-gallery UI (tmux)
+  gotchi-meet.mjs open|room|ui [--inline]  enter meet UI (tmux gallery, or --inline single terminal)
   gotchi-meet.mjs invite <n|id|name>
   gotchi-meet.mjs invite all
   gotchi-meet.mjs status [--json]
@@ -2254,13 +2254,31 @@ async function main() {
   }
 
   if (cmd === "open" || cmd === "room" || cmd === "ui") {
+    const inline =
+      rest.includes("--inline") || process.env.GOTCHIBOT_MEET_INLINE === "1";
     const m = loadCurrentMeeting();
     if (!m) {
       console.error("no open meeting — start one: gotchibot meet start");
       process.exit(1);
     }
+    // --inline: single-terminal room over plain ssh -t (no tmux desk).
+    // Must run before the tmux-session check — print nothing before takeover.
+    if (inline) {
+      const r = spawnSync(
+        process.execPath,
+        [join(ROOT, "scripts/meet-room-prompter.mjs"), "--inline"],
+        {
+          cwd: ROOT,
+          stdio: "inherit",
+          env: { ...process.env, GOTCHIBOT_MEET_INLINE: "1" },
+        },
+      );
+      process.exit(r.status ?? 1);
+    }
     if (!tmuxSessionName()) {
-      console.error("no gotchibot tmux session — run: gotchibot tmux");
+      console.error(
+        "no gotchibot tmux session — run: gotchibot tmux (or: gotchibot meet room --inline)",
+      );
       process.exit(1);
     }
     ensureMeetGallery();

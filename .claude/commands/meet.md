@@ -21,6 +21,7 @@ No arguments → `status` (the open meeting, or none).
 | `/meet colabo "ship or hold?"` | every invited agent answers |
 | `/meet invite LINK` / `invite all` | add participants |
 | `/meet end` | minutes + handoff |
+| `/meet room --inline` | single-terminal room (works over `ssh -t host 'cd ~/dev/GotchiBot && ./scripts/gotchibot meet room --inline'`; no tmux desk; q / Ctrl+C / Ctrl+D leave; PgUp/PgDn scroll) |
 
 `say` and `colabo` **wake real agents and spend quota** — they are outward
 actions. Run them when Julius asks for them; do not fire one to "check if it
