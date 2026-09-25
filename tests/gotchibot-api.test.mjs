@@ -730,6 +730,7 @@ describe("desk kinds + phone scoping", async () => {
     assert.ok(threadsP.json.threads.some((t) => t.threadId === "T1"));
     const sharedEntry = threadsP.json.threads.find((t) => t.threadId === "T1");
     assert.equal(sharedEntry.shared, true);
+    assert.equal(sharedEntry.deskId, undefined);
     assert.equal(sharedEntry.createdByDeskId, undefined);
     assert.equal(sharedEntry.sharedWithDeskIds, undefined);
 
@@ -784,6 +785,7 @@ describe("desk kinds + phone scoping", async () => {
     assert.ok(threadsP.json.threads.some((t) => t.threadId === "T2"));
     const ownEntry = threadsP.json.threads.find((t) => t.threadId === "T2");
     assert.equal(ownEntry.shared, false);
+    assert.equal(ownEntry.deskId, undefined);
 
     const threadsA = await httpJson(port, "GET", "/api/gotchibot/chats/threads", {
       headers: { "X-GotchiBot-Desk-Token": tokenA },
@@ -792,6 +794,7 @@ describe("desk kinds + phone scoping", async () => {
     assert.ok(threadsA.json.threads.some((t) => t.threadId === "T1"));
     const t1a = threadsA.json.threads.find((t) => t.threadId === "T1");
     assert.equal(t1a.createdByDeskId, deskAId);
+    assert.ok(t1a.deskId);
     assert.ok(Array.isArray(t1a.sharedWithDeskIds));
 
     // phone push into unshared T1 -> 403, no insert
@@ -901,6 +904,98 @@ describe("hub-pair + gotchibot-api helpers", () => {
     const { hostWithoutSchemePort } = await import("../scripts/hub-pair.mjs");
     assert.equal(hostWithoutSchemePort("h.ts.net:8794"), "h.ts.net");
     assert.equal(hostWithoutSchemePort("http://h.ts.net:8794"), "h.ts.net");
+  });
+
+  it("resolveAppBase: flag > env > config > https://host/app/", async () => {
+    const { resolveAppBase } = await import("../scripts/hub-pair.mjs");
+    assert.equal(
+      resolveAppBase({
+        appUrl: "https://flag.example/app/",
+        env: { GOTCHIBOT_HUB_APP_URL: "https://env.example/app/" },
+        config: { appUrl: "https://cfg.example/app/" },
+        host: "host.ts.net",
+      }),
+      "https://flag.example/app/",
+    );
+    assert.equal(
+      resolveAppBase({
+        env: { GOTCHIBOT_HUB_APP_URL: "https://env.example/app/" },
+        config: { appUrl: "https://cfg.example/app/" },
+        host: "host.ts.net",
+      }),
+      "https://env.example/app/",
+    );
+    assert.equal(
+      resolveAppBase({
+        env: {},
+        config: { appUrl: "https://cfg.example/app/" },
+        host: "host.ts.net",
+      }),
+      "https://cfg.example/app/",
+    );
+    assert.equal(
+      resolveAppBase({ env: {}, config: {}, host: "host.ts.net" }),
+      "https://host.ts.net/app/",
+    );
+    assert.equal(
+      resolveAppBase({ appUrl: "https://bare.example", env: {}, config: {} }),
+      "https://bare.example/app/",
+    );
+    assert.equal(
+      resolveAppBase({ appUrl: "https://bare.example/", env: {}, config: {} }),
+      "https://bare.example/app/",
+    );
+    assert.equal(
+      resolveAppBase({ appUrl: "https://x.example/custom", env: {}, config: {} }),
+      "https://x.example/custom/",
+    );
+    assert.equal(
+      resolveAppBase({ appUrl: "https://x.example/app", env: {}, config: {} }),
+      "https://x.example/app/",
+    );
+  });
+
+  it("pairDeepLink builds #pair= hash URL", async () => {
+    const { pairDeepLink } = await import("../scripts/hub-pair.mjs");
+    assert.equal(
+      pairDeepLink("https://h.ts.net/app/", "ABCD-EFGH"),
+      "https://h.ts.net/app/#pair=ABCD-EFGH",
+    );
+  });
+
+  it("renderPairQr returns multi-line block QR", async () => {
+    const { renderPairQr } = await import("../scripts/hub-pair.mjs");
+    const qr = renderPairQr("https://h.ts.net/app/#pair=ABCD-EFGH");
+    assert.ok(typeof qr === "string" && qr.length > 0);
+    const lines = qr.split("\n").filter((l) => l.length > 0);
+    assert.ok(lines.length > 10, `expected >10 lines, got ${lines.length}`);
+    assert.match(qr, /[█▀▄]/);
+  });
+
+  it("resolvePairKind: qr defaults phone; explicit wins; else desk", async () => {
+    const { resolvePairKind } = await import("../scripts/hub-pair.mjs");
+    assert.equal(resolvePairKind({ qr: true }), "phone");
+    assert.equal(resolvePairKind({ qr: true, kind: "desk" }), "desk");
+    assert.equal(resolvePairKind({ kind: "phone" }), "phone");
+    assert.equal(resolvePairKind({}), "desk");
+  });
+
+  it("buildPairOutput includes pairUrl + joinCommand", async () => {
+    const { buildPairOutput } = await import("../scripts/hub-pair.mjs");
+    const out = buildPairOutput({
+      code: "ABCD-EFGH",
+      kind: "phone",
+      expiresAt: "2026-06-01T12:00:00.000Z",
+      host: "h.ts.net",
+      port: 8793,
+      appBase: "https://h.ts.net/app/",
+    });
+    assert.equal(out.ok, true);
+    assert.equal(out.code, "ABCD-EFGH");
+    assert.equal(out.kind, "phone");
+    assert.equal(out.pairUrl, "https://h.ts.net/app/#pair=ABCD-EFGH");
+    assert.equal(out.joinCommand, "gotchibot hub join h.ts.net ABCD-EFGH");
+    assert.equal(out.joinHost, "h.ts.net");
   });
 
   it("deskApiBaseFromHubPin prefers pinned deskApiBase over env port", async () => {

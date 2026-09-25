@@ -645,8 +645,9 @@ export async function connectStore({ mongoUri, dbName }) {
         };
         if (!desk) return base;
         if (isPhone) {
+          const { deskId: _omitDeskId, ...phoneBase } = base;
           return {
-            ...base,
+            ...phoneBase,
             shared:
               t.createdByDeskId !== callerId && sharedIds.includes(callerId),
           };

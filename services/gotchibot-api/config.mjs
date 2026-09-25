@@ -54,6 +54,12 @@ export function resolveApiConfig(env = process.env) {
       ? String(ownerLoginRaw).trim()
       : null;
 
+  const appUrlRaw = env.GOTCHIBOT_HUB_APP_URL ?? file.appUrl;
+  const appUrl =
+    appUrlRaw != null && String(appUrlRaw).trim()
+      ? String(appUrlRaw).trim()
+      : null;
+
   return {
     host,
     port,
@@ -62,5 +68,6 @@ export function resolveApiConfig(env = process.env) {
     ownerLogin,
     configPath,
     tailscaleHost: file.tailscaleHost ? String(file.tailscaleHost) : null,
+    appUrl,
   };
 }

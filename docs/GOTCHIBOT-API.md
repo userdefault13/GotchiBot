@@ -34,7 +34,7 @@ gotchibot chats snapshot
 gotchibot chats verify <snapshotId|gotchibot-hub://id>
 ```
 
-Mint more codes on the Hub: `gotchibot hub pair` (optional `--kind phone`). List / revoke: `gotchibot hub desks`, `gotchibot hub revoke <deskId>`. Share a thread with a phone desk: `gotchibot hub share <threadId> <deskId>` / `unshare` / `shares`.
+Mint more codes on the Hub: `gotchibot hub pair` (optional `--kind phone`, or `--qr` for a phone PWA deep-link QR). List / revoke: `gotchibot hub desks`, `gotchibot hub revoke <deskId>`. Share a thread with a phone desk: `gotchibot hub share <threadId> <deskId>` / `unshare` / `shares`.
 
 ## Desk kinds and thread scoping
 
@@ -49,14 +49,16 @@ Existing desk records with no `kind` field are treated as `desk` everywhere (no 
 
 **Pairing.** `hub pair --kind phone` mints a phone code. Claim uses the code’s kind. The claimer may pass `kind:"phone"` to **downgrade** a desk code to a phone desk; upgrading a phone code with `kind:"desk"` fails with `403` *kind mismatch* and **does not** consume the code. Invalid kind → `400`.
 
-**Phone visibility.** A phone desk can list/pull only threads where `createdByDeskId` is itself or `sharedWithDeskIds` contains it. Pulling an inaccessible `threadId` returns `404` *thread not found* (no existence leak). Pushing into an existing unshared thread → `403` *thread not shared with this desk*. Creating a new `threadId` owns that thread.
+**Phone PWA QR.** `gotchibot hub pair --qr` (optional `--app-url URL`) mints a phone code by default (explicit `--kind` still wins) and prints a terminal QR of the deep link `https://<host>/app/#pair=CODE`. Scan it inside the GotchiBot app (Pair → Scan QR), not with the iOS Camera app — or type the code. App base precedence: `--app-url`, then `GOTCHIBOT_HUB_APP_URL`, then `appUrl` in `sessions/.hub-api.json`, else `https://<MagicDNS>/app/` (HTTPS via `tailscale serve --https` once enabled). `--json` includes `pairUrl` (not the QR art).
+
+**Phone visibility.** A phone desk can list/pull only threads where `createdByDeskId` is itself or `sharedWithDeskIds` contains it. Thread list entries for phone callers omit `deskId` (another desk’s id) but include `shared`. Pulling an inaccessible `threadId` returns `404` *thread not found* (no existence leak). Pushing into an existing unshared thread → `403` *thread not shared with this desk*. Creating a new `threadId` owns that thread.
 
 **Phone-forbidden routes** (`403` *not allowed for phone desks*): `GET /hub/desks`, `POST /chats/snapshot`, `GET /chats/snapshot/:id`.
 
 **Hub CLI (Mongo-local, like revoke):**
 
 ```bash
-gotchibot hub pair [--name NAME] [--kind desk|phone] [--json]
+gotchibot hub pair [--name NAME] [--kind desk|phone] [--qr] [--app-url URL] [--json]
 gotchibot hub share <threadId> <deskId>
 gotchibot hub unshare <threadId> <deskId>
 gotchibot hub shares <threadId>
@@ -86,6 +88,7 @@ Prefer the install wizard’s service unit for always-on. Manual start is for de
 | `MONGO_DB_NAME` | `GotchiBot` | Hub | Database name |
 | `GOTCHIBOT_HUB_OWNER_LOGIN` | (from config file) | Hub | Tailscale login required for non-loopback / proxied requests |
 | `GOTCHIBOT_HUB_CONFIG` | `sessions/.hub-api.json` | Hub | Install-wizard JSON path |
+| `GOTCHIBOT_HUB_APP_URL` | (from config `appUrl`) | Hub | PWA base for `hub pair --qr` deep links (else `https://<MagicDNS>/app/`) |
 | `GOTCHIBOT_DESK_API_BASE` | (from pin) | Desk | Hub API base, e.g. `http://<MagicDNS>:8793` |
 | `GOTCHIBOT_DESK_TOKEN` | (from pin) | Desk | Desk token override |
 | `GOTCHIBOT_HUB_PIN` | `sessions/.hub.json` | Desk | Absolute path override for the pin file |
@@ -100,7 +103,7 @@ Hub API default bind is **8793**. The live Hub host often runs the API on **8794
 
 | Path | Where | Notes |
 |---|---|---|
-| `sessions/.hub-api.json` | Hub | `{ownerLogin, host, port, dbName, mongoUri, tailscaleHost, installedAt}` — mode `0600`, under `sessions/` (gitignored) |
+| `sessions/.hub-api.json` | Hub | `{ownerLogin, host, port, dbName, mongoUri, tailscaleHost, appUrl?, installedAt}` — mode `0600`, under `sessions/` (gitignored) |
 | `sessions/.hub.json` | Desk | Pin: MagicDNS / `deskApiBase` / `deskToken` / pairing fields — mode `0600`, gitignored |
 
 ## Routes
@@ -127,7 +130,7 @@ Install token alone on a chat/hub route → `401` *install token cannot unlock c
 
 **Pairing codes.** One-time, 8 Crockford base32 chars shown as `XXXX-XXXX`, 15 minutes. Stored as sha256 of normalized code (uppercase, no dash) in `pairing_codes` with optional `kind`. Claim is atomic (`usedAt` null + not expired); kind-mismatch checks run before consume. More than 20 failed claims in 10 minutes → `429`.
 
-**Hub CLI** (talks to Mongo directly when there is no token yet): `hub pair [--kind]`, `hub desks`, `hub revoke`, `hub share` / `unshare` / `shares`. Desk: `hub join <host> <code>`.
+**Hub CLI** (talks to Mongo directly when there is no token yet): `hub pair [--kind] [--qr] [--app-url]`, `hub desks`, `hub revoke`, `hub share` / `unshare` / `shares`. Desk: `hub join <host> <code>`.
 
 **Origin.** Direct loopback = socket is `127.0.0.1` / `::1` / `::ffff:127.0.0.1` **and** none of `x-forwarded-for`, `forwarded`, `x-forwarded-host`, `tailscale-user-login`, `tailscale-headers-info`, `tailscale-funnel-request`. Everything else is remote.
 
