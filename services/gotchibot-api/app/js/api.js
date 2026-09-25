@@ -116,6 +116,47 @@ export function pullMessages(token, { threadId, after = 0, limit = 500 }) {
   return apiFetch(`/api/gotchibot/chats/pull?${q}`, { token });
 }
 
+/**
+ * Phone send (new thread when threadId omitted).
+ * @param {string} token
+ * @param {{ threadId?: string, clientMessageId?: string, text: string, title?: string }} body
+ */
+export function sendMessage(token, body) {
+  /** @type {Record<string, unknown>} */
+  const payload = { text: body.text };
+  if (body.threadId != null && String(body.threadId).trim() !== "") {
+    payload.threadId = String(body.threadId).trim();
+  }
+  if (body.clientMessageId) payload.clientMessageId = body.clientMessageId;
+  if (body.title != null) payload.title = body.title;
+  return apiFetch("/api/gotchibot/chats/send", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+/**
+ * Re-queue a phone message whose reply.status is error (or stale claimed).
+ * @param {string} token
+ * @param {{ threadId: string, messageId: string }} body
+ */
+export function retryReply(token, body) {
+  return apiFetch("/api/gotchibot/chats/retry", {
+    method: "POST",
+    token,
+    body: {
+      threadId: body.threadId,
+      messageId: body.messageId,
+    },
+  });
+}
+
+/** Hub-runner heartbeat status (any paired desk). */
+export function runnerStatus(token) {
+  return apiFetch("/api/gotchibot/hub/runner", { token });
+}
+
 export function hubHealth() {
   return apiFetch("/health");
 }

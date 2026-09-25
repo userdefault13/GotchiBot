@@ -64,3 +64,15 @@ export const iconQr = (size) =>
     `<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3z"/><path d="M20 14v6h-6"/><path d="M14 20h2"/>`,
     size,
   );
+
+/** Plus — new thread; Lucide-style stroke matching Icons.tsx conventions. */
+export const iconPlus = (size) =>
+  svg("New", `<path d="M12 5v14"/><path d="M5 12h14"/>`, size);
+
+/** Send — composer submit; Lucide-style paper plane. */
+export const iconSend = (size) =>
+  svg(
+    "Send",
+    `<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>`,
+    size,
+  );

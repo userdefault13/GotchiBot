@@ -1,5 +1,5 @@
 /**
- * GotchiBot phone PWA — hash router + views (read-only).
+ * GotchiBot phone PWA — hash router + views (S2: reply from phone).
  * Browser entry: registers SW, routes #/pair | #/threads | #/thread/… | #/settings.
  */
 
@@ -9,6 +9,8 @@ import {
   iconRefresh,
   iconChevronLeft,
   iconQr,
+  iconPlus,
+  iconSend,
 } from "./icons.js";
 import {
   formatCode,
@@ -18,6 +20,14 @@ import {
 } from "./pair.js";
 import { renderMarkdown } from "./markdown.js";
 import { createThreadModel, relativeTime, roleClass } from "./thread-model.js";
+import {
+  deriveComposeUi,
+  formatRunnerStatusLine,
+  newClientMessageId,
+  pullAfterForReplyWatch,
+  POLL_INTERVAL_NORMAL_MS,
+  RUNNER_CHECK_MIN_MS,
+} from "./compose-model.js";
 import { createPoller } from "./poller.js";
 import { getDesk, setDesk, clearDesk } from "./storage.js";
 import {
@@ -26,9 +36,15 @@ import {
   whoami,
   listThreads,
   pullMessages,
+  sendMessage,
+  retryReply,
+  runnerStatus,
   hubHealth,
 } from "./api.js";
 import { openScanner } from "./scan.js";
+
+/** Hash sentinel for draft (unsaved) thread — first send omits threadId. */
+const NEW_THREAD_ID = "new";
 
 /** @type {{deskId: string, deskToken: string, name: string, kind: string, pairedAt: string}|null} */
 let desk = null;
@@ -122,11 +138,13 @@ function parseRoute() {
   if (h === "settings") return { name: "settings" };
   const threadMatch = h.match(/^thread\/(.+)$/);
   if (threadMatch) {
+    let tid;
     try {
-      return { name: "thread", threadId: decodeURIComponent(threadMatch[1]) };
+      tid = decodeURIComponent(threadMatch[1]);
     } catch {
-      return { name: "thread", threadId: threadMatch[1] };
+      tid = threadMatch[1];
     }
+    return { name: "thread", threadId: tid || NEW_THREAD_ID };
   }
   return { name: "threads" };
 }
@@ -178,6 +196,7 @@ async function handleUnpaired(message) {
 function renderPairView(root, { prefills = null, banner = null } = {}) {
   clearPoller();
   root.replaceChildren();
+  root.classList.remove("has-composer");
   root.appendChild(
     topNav({
       title: "GotchiBot",
@@ -334,14 +353,19 @@ function renderPairView(root, { prefills = null, banner = null } = {}) {
 async function renderThreadsView(root) {
   clearPoller();
   root.replaceChildren();
+  root.classList.remove("has-composer");
 
   const right = el("div", "nav-actions");
+  const newBtn = iconButton(iconPlus(20), "New thread", () => {
+    navigate(`#/thread/${NEW_THREAD_ID}`);
+  });
   const refreshBtn = iconButton(iconRefresh(20), "Refresh", () => {
     void load();
   });
   const settingsBtn = iconButton(iconSettings(20), "Settings", () => {
     navigate("#/settings");
   });
+  right.appendChild(newBtn);
   right.appendChild(refreshBtn);
   right.appendChild(settingsBtn);
   root.appendChild(topNav({ title: "Threads", right }));
@@ -369,11 +393,11 @@ async function renderThreadsView(root) {
           el(
             "p",
             null,
-            "No threads yet. This phone only sees threads shared with it.",
+            "No threads yet. Tap + to start one, or ask the Hub owner to share an existing thread.",
           ),
         );
         const cmd = el("p", "subtle empty-cmd");
-        cmd.appendChild(document.createTextNode("On the Hub, run:"));
+        cmd.appendChild(document.createTextNode("On the Hub, share with:"));
         const code = el("code", "cmd-block");
         code.textContent = `gotchibot hub share <threadId> ${desk.deskId}`;
         emptyEl.appendChild(cmd);
@@ -430,32 +454,97 @@ async function renderThreadsView(root) {
 
 /* ── Thread view ───────────────────────────────────────────────────── */
 
-async function renderThreadView(root, threadId) {
+/**
+ * Keep fixed composer above the iOS on-screen keyboard via visualViewport.
+ * @param {HTMLElement} composerEl
+ * @returns {() => void} cleanup
+ */
+function bindComposerViewport(composerEl) {
+  const vv = window.visualViewport;
+  if (!vv) return () => {};
+  const sync = () => {
+    const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    composerEl.style.bottom = inset > 0 ? `${inset}px` : "";
+  };
+  vv.addEventListener("resize", sync);
+  vv.addEventListener("scroll", sync);
+  sync();
+  return () => {
+    vv.removeEventListener("resize", sync);
+    vv.removeEventListener("scroll", sync);
+    composerEl.style.bottom = "";
+  };
+}
+
+async function renderThreadView(root, routeThreadId) {
   clearPoller();
   root.replaceChildren();
+  root.classList.add("has-composer");
+
+  /** @type {string|null} */
+  let currentThreadId =
+    !routeThreadId || routeThreadId === NEW_THREAD_ID ? null : String(routeThreadId);
+  const isDraft = () => !currentThreadId;
+
+  /** @type {import("./compose-model.js").PendingSend[]} */
+  let pendingSends = [];
+  /** @type {{ status?: string, detail?: string|null, model?: string|null }|null} */
+  let runner = null;
+  let lastRunnerCheckAt = 0;
+  let forceScrollBottom = false;
 
   const back = iconButton(iconChevronLeft(22), "Back", () => {
     clearPoller();
+    root.classList.remove("has-composer");
     navigate("#/threads");
   });
-  const initialTitle = threadTitles.has(threadId)
-    ? threadTitles.get(threadId)
-    : "Thread";
+  const initialTitle = isDraft()
+    ? "New thread"
+    : threadTitles.has(currentThreadId)
+      ? threadTitles.get(currentThreadId)
+      : "Thread";
   root.appendChild(topNav({ title: initialTitle, left: back }));
 
-  const wrap = el("div", "messages-wrap");
+  const wrap = el("div", "messages-wrap has-composer");
   const messagesEl = el("div", "messages");
   wrap.appendChild(messagesEl);
-
-  const footer = el("footer", "readonly-footer");
-  footer.textContent = "Read-only — sending comes later";
-  wrap.appendChild(footer);
   root.appendChild(wrap);
 
+  const composer = el("div", "composer");
+  const textarea = el("textarea", "composer-input");
+  textarea.rows = 1;
+  textarea.placeholder = "Message GotchiBot…";
+  textarea.setAttribute("enterkeyhint", "enter");
+  textarea.setAttribute("aria-label", "Message");
+  const sendBtn = el("button", "composer-send");
+  sendBtn.type = "button";
+  sendBtn.setAttribute("aria-label", "Send");
+  sendBtn.innerHTML = iconSend(18);
+  sendBtn.disabled = true;
+  composer.appendChild(textarea);
+  composer.appendChild(sendBtn);
+  root.appendChild(composer);
+
+  const unbindViewport = bindComposerViewport(composer);
   const model = createThreadModel();
 
+  function syncSendEnabled() {
+    sendBtn.disabled = !textarea.value.trim();
+  }
+
+  function autosize() {
+    textarea.style.height = "auto";
+    const max = Math.round(1.45 * 16 * 6 + 20);
+    textarea.style.height = `${Math.min(textarea.scrollHeight, max)}px`;
+  }
+
   async function setThreadHeaderTitle() {
-    const title = await resolveThreadTitle(threadId);
+    if (isDraft()) {
+      const h1 = root.querySelector(".brand-title h1");
+      if (h1) h1.textContent = "New thread";
+      return;
+    }
+    const title = await resolveThreadTitle(currentThreadId);
     const h1 = root.querySelector(".brand-title h1");
     if (h1) h1.textContent = title;
   }
@@ -465,15 +554,44 @@ async function renderThreadView(root, threadId) {
     return elNode.scrollHeight - elNode.scrollTop - elNode.clientHeight < slack;
   }
 
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+  }
+
+  function applyPollInterval(ui) {
+    if (activePoller && typeof activePoller.setIntervalMs === "function") {
+      activePoller.setIntervalMs(ui.pollIntervalMs);
+    }
+  }
+
   function renderMessages() {
-    const stick = nearBottom(document.documentElement) || nearBottom(document.body);
-    // Prefer scrolling the window; also check messages wrap
-    const wasNear =
-      stick ||
+    const stick =
+      forceScrollBottom ||
+      nearBottom(document.documentElement) ||
+      nearBottom(document.body) ||
       (wrap.scrollHeight > 0 &&
         wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 80);
+    forceScrollBottom = false;
+
+    const ui = deriveComposeUi({
+      messages: model.list(),
+      pendingSends,
+      runner,
+    });
+    applyPollInterval(ui);
 
     messagesEl.replaceChildren();
+
+    if (isDraft() && !model.list().length && !ui.optimistic.length) {
+      const empty = el("div", "empty-state");
+      empty.appendChild(
+        el("p", null, "Say something to start a thread owned by this phone."),
+      );
+      messagesEl.appendChild(empty);
+    }
+
     for (const m of model.list()) {
       const cls = roleClass(m.role);
       const article = el("article", `message ${cls}`);
@@ -489,22 +607,134 @@ async function renderThreadView(root, threadId) {
       const content = el("div", "message-content");
       content.innerHTML = renderMarkdown(m.text || "");
       article.appendChild(content);
+
+      const via =
+        m.messageId && ui.viaModelByMessageId.get(String(m.messageId));
+      if (via && cls === "assistant") {
+        const meta = el("div", "message-meta");
+        meta.appendChild(el("span", "msg-via", `via ${via}`));
+        article.appendChild(meta);
+      }
+
       messagesEl.appendChild(article);
     }
 
-    if (wasNear) {
-      requestAnimationFrame(() => {
-        window.scrollTo(0, document.documentElement.scrollHeight);
+    for (const p of ui.optimistic) {
+      const article = el("article", "message user pending");
+      const header = el("header");
+      header.appendChild(el("strong", null, "user"));
+      article.appendChild(header);
+      const content = el("div", "message-content");
+      content.innerHTML = renderMarkdown(p.text || "");
+      article.appendChild(content);
+      const meta = el("div", "message-meta");
+      if (p.status === "sending") {
+        meta.appendChild(el("span", "msg-status", "sending…"));
+      } else if (p.forbidden) {
+        meta.appendChild(
+          el(
+            "span",
+            "msg-error",
+            "This thread isn't shared with this phone",
+          ),
+        );
+        const discard = el("button", "link-btn danger", "Discard");
+        discard.type = "button";
+        discard.addEventListener("click", () => {
+          pendingSends = pendingSends.filter(
+            (x) => x.clientMessageId !== p.clientMessageId,
+          );
+          renderMessages();
+        });
+        meta.appendChild(discard);
+      } else {
+        meta.appendChild(
+          el("span", "msg-error", p.error || "Send failed"),
+        );
+        const retry = el("button", "link-btn", "Retry");
+        retry.type = "button";
+        retry.addEventListener("click", () => {
+          void doSend({
+            text: p.text,
+            clientMessageId: p.clientMessageId,
+            isRetry: true,
+          });
+        });
+        const discard = el("button", "link-btn danger", "Discard");
+        discard.type = "button";
+        discard.addEventListener("click", () => {
+          pendingSends = pendingSends.filter(
+            (x) => x.clientMessageId !== p.clientMessageId,
+          );
+          renderMessages();
+        });
+        meta.appendChild(retry);
+        meta.appendChild(discard);
+      }
+      article.appendChild(meta);
+      messagesEl.appendChild(article);
+    }
+
+    if (ui.waitingForReply) {
+      const row = el("div", "thinking-row");
+      const label = el("span", "thinking-label");
+      label.appendChild(document.createTextNode("gotchi is thinking"));
+      const dots = el("span", "thinking-dots");
+      dots.appendChild(el("span", null, "."));
+      dots.appendChild(el("span", null, "."));
+      dots.appendChild(el("span", null, "."));
+      label.appendChild(dots);
+      row.appendChild(label);
+      if (ui.runnerNotice) {
+        row.appendChild(el("div", "runner-notice", ui.runnerNotice));
+      }
+      messagesEl.appendChild(row);
+    }
+
+    if (ui.replyError) {
+      const row = el("div", "reply-error-row");
+      row.appendChild(el("span", "msg-error", ui.replyError.error));
+      const retry = el("button", "link-btn", "Retry");
+      retry.type = "button";
+      retry.addEventListener("click", () => {
+        void doRetryReply(ui.replyError.messageId);
       });
+      row.appendChild(retry);
+      messagesEl.appendChild(row);
+    }
+
+    if (stick) scrollToBottom();
+  }
+
+  async function maybeCheckRunner(force = false) {
+    const ui = deriveComposeUi({
+      messages: model.list(),
+      pendingSends,
+      runner,
+    });
+    if (!ui.shouldCheckRunner && !force) return;
+    const now = Date.now();
+    if (!force && now - lastRunnerCheckAt < RUNNER_CHECK_MIN_MS) return;
+    lastRunnerCheckAt = now;
+    try {
+      const data = await runnerStatus(desk.deskToken);
+      runner = data?.runner || null;
+      renderMessages();
+    } catch {
+      /* non-blocking */
     }
   }
 
   async function pullAll(initial) {
+    if (isDraft()) {
+      renderMessages();
+      return;
+    }
     let after = initial ? 0 : model.lastSeq;
     let guard = 0;
     do {
       const data = await pullMessages(desk.deskToken, {
-        threadId,
+        threadId: currentThreadId,
         after,
         limit: 500,
       });
@@ -517,6 +747,246 @@ async function renderThreadView(root, threadId) {
     renderMessages();
   }
 
+  async function ensurePoller() {
+    if (isDraft()) return;
+    if (activePoller?.__isThreadPoller) return;
+    // Drop draft-only stub without teardown (composer still mounted)
+    if (activePoller?.__isDraftStub) {
+      activePoller = null;
+    } else if (activePoller) {
+      return;
+    }
+
+    const poller = createPoller({
+      intervalMs: POLL_INTERVAL_NORMAL_MS,
+      isVisible: () => document.visibilityState === "visible",
+      tick: async () => {
+        if (isDraft() || !currentThreadId) return;
+        try {
+          const after = pullAfterForReplyWatch(model.list(), model.lastSeq);
+          const data = await pullMessages(desk.deskToken, {
+            threadId: currentThreadId,
+            after,
+            limit: 500,
+          });
+          const msgs = data?.messages || [];
+          if (msgs.length) {
+            model.applyMessages(msgs);
+            // Drop optimistic rows once Hub confirms same clientMessageId
+            const confirmed = new Set(
+              msgs.map((m) => m?.messageId).filter(Boolean).map(String),
+            );
+            if (confirmed.size) {
+              pendingSends = pendingSends.filter(
+                (p) => !confirmed.has(String(p.clientMessageId)),
+              );
+            }
+            renderMessages();
+          } else {
+            // Still refresh interval / runner while waiting
+            const ui = deriveComposeUi({
+              messages: model.list(),
+              pendingSends,
+              runner,
+            });
+            applyPollInterval(ui);
+          }
+          await maybeCheckRunner(false);
+        } catch (err) {
+          if (err instanceof ApiError && err.kind === "unpaired") {
+            await handleUnpaired("This phone was unpaired on the Hub");
+          }
+          if (err instanceof ApiError && err.kind === "not-found") {
+            clearPoller();
+          }
+        }
+      },
+    });
+    poller.__isThreadPoller = true;
+    activePoller = poller;
+
+    function onVis() {
+      if (activePoller !== poller) return;
+      if (document.visibilityState === "visible") {
+        if (!poller.running) poller.start();
+      } else if (poller.running) {
+        poller.stop();
+      }
+    }
+    document.addEventListener("visibilitychange", onVis);
+    poller._cleanup = () => {
+      document.removeEventListener("visibilitychange", onVis);
+      unbindViewport();
+      root.classList.remove("has-composer");
+    };
+
+    if (document.visibilityState === "visible") poller.start();
+  }
+
+  /**
+   * @param {{ text: string, clientMessageId?: string, isRetry?: boolean }} opts
+   */
+  async function doSend({ text, clientMessageId, isRetry = false }) {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return;
+
+    const id = clientMessageId || newClientMessageId();
+    if (!isRetry) {
+      pendingSends = [
+        ...pendingSends.filter((p) => p.clientMessageId !== id),
+        { clientMessageId: id, text: trimmed, status: "sending" },
+      ];
+      textarea.value = "";
+      syncSendEnabled();
+      autosize();
+    } else {
+      pendingSends = pendingSends.map((p) =>
+        p.clientMessageId === id
+          ? { clientMessageId: id, text: trimmed, status: "sending" }
+          : p,
+      );
+    }
+    forceScrollBottom = true;
+    renderMessages();
+
+    try {
+      /** @type {{ threadId?: string, clientMessageId: string, text: string }} */
+      const body = { clientMessageId: id, text: trimmed };
+      if (currentThreadId) body.threadId = currentThreadId;
+
+      const result = await sendMessage(desk.deskToken, body);
+      if (!result?.ok) {
+        throw new ApiError("http", 500, "Send failed");
+      }
+
+      // Promote draft → real thread without remounting
+      if (!currentThreadId && result.threadId) {
+        currentThreadId = String(result.threadId);
+        threadTitles.set(
+          currentThreadId,
+          threadTitles.get(currentThreadId) || shortThreadId(currentThreadId),
+        );
+        history.replaceState(
+          null,
+          "",
+          `#/thread/${encodeURIComponent(currentThreadId)}`,
+        );
+        void setThreadHeaderTitle();
+        await ensurePoller();
+      }
+
+      pendingSends = pendingSends.filter((p) => p.clientMessageId !== id);
+      // Seed optimistic confirmed row until pull fills originKind/reply
+      if (result.messageId) {
+        model.applyMessages([
+          {
+            messageId: String(result.messageId),
+            seq: result.seq != null ? Number(result.seq) : model.lastSeq + 1,
+            role: "user",
+            text: trimmed,
+            originKind: "phone",
+            reply: result.reply || { status: "pending" },
+            ts: new Date().toISOString(),
+            op: "message",
+          },
+        ]);
+      }
+      forceScrollBottom = true;
+      renderMessages();
+      await maybeCheckRunner(true);
+      // Immediate pull to sync
+      if (currentThreadId) {
+        try {
+          const data = await pullMessages(desk.deskToken, {
+            threadId: currentThreadId,
+            after: pullAfterForReplyWatch(model.list(), model.lastSeq),
+            limit: 500,
+          });
+          model.applyMessages(data?.messages || []);
+          forceScrollBottom = true;
+          renderMessages();
+        } catch {
+          /* poller will catch up */
+        }
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.kind === "unpaired") {
+        await handleUnpaired("This phone was unpaired on the Hub");
+        return;
+      }
+      const forbidden = err instanceof ApiError && err.status === 403;
+      pendingSends = pendingSends.map((p) =>
+        p.clientMessageId === id
+          ? {
+              clientMessageId: id,
+              text: trimmed,
+              status: "failed",
+              forbidden,
+              error: forbidden
+                ? "This thread isn't shared with this phone"
+                : err?.message || "Send failed",
+            }
+          : p,
+      );
+      forceScrollBottom = true;
+      renderMessages();
+    }
+  }
+
+  async function doRetryReply(messageId) {
+    if (!currentThreadId || !messageId) return;
+    try {
+      await retryReply(desk.deskToken, {
+        threadId: currentThreadId,
+        messageId,
+      });
+      model.patchMessage(messageId, { reply: { status: "pending" } });
+      forceScrollBottom = true;
+      renderMessages();
+      await maybeCheckRunner(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.kind === "unpaired") {
+        await handleUnpaired("This phone was unpaired on the Hub");
+        return;
+      }
+      // Leave reply.error as-is; user can try again
+    }
+  }
+
+  textarea.addEventListener("input", () => {
+    syncSendEnabled();
+    autosize();
+  });
+  textarea.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if (!sendBtn.disabled) void doSend({ text: textarea.value });
+    }
+    // Plain Enter → newline (default); do not send on mobile
+  });
+  sendBtn.addEventListener("click", () => {
+    if (!sendBtn.disabled) void doSend({ text: textarea.value });
+  });
+
+  if (isDraft()) {
+    renderMessages();
+    // Composer-only session: cleanup viewport on leave; real poller starts after first send
+    activePoller = {
+      __isDraftStub: true,
+      stop() {},
+      start() {},
+      setIntervalMs() {},
+      get running() {
+        return false;
+      },
+      _cleanup: () => {
+        unbindViewport();
+        root.classList.remove("has-composer");
+      },
+    };
+    return;
+  }
+
   try {
     await Promise.all([pullAll(true), setThreadHeaderTitle()]);
   } catch (err) {
@@ -527,59 +997,52 @@ async function renderThreadView(root, threadId) {
     if (err instanceof ApiError && err.kind === "not-found") {
       messagesEl.replaceChildren();
       const empty = el("div", "empty-state");
-      empty.appendChild(el("p", null, "This thread isn't shared with this phone"));
+      empty.appendChild(
+        el("p", null, "This thread isn't shared with this phone"),
+      );
       messagesEl.appendChild(empty);
+      sendBtn.disabled = true;
+      textarea.disabled = true;
+      activePoller = {
+        stop() {},
+        start() {},
+        setIntervalMs() {},
+        get running() {
+          return false;
+        },
+        _cleanup: () => {
+          unbindViewport();
+          root.classList.remove("has-composer");
+        },
+      };
       return;
     }
     messagesEl.replaceChildren();
     messagesEl.appendChild(
       el("div", "notice error", err?.message || "Couldn't load messages"),
     );
+    activePoller = {
+      stop() {},
+      start() {},
+      setIntervalMs() {},
+      get running() {
+        return false;
+      },
+      _cleanup: () => {
+        unbindViewport();
+        root.classList.remove("has-composer");
+      },
+    };
     return;
   }
 
-  const poller = createPoller({
-    intervalMs: 4000,
-    isVisible: () => document.visibilityState === "visible",
-    tick: async () => {
-      try {
-        const data = await pullMessages(desk.deskToken, {
-          threadId,
-          after: model.lastSeq,
-          limit: 500,
-        });
-        const msgs = data?.messages || [];
-        if (msgs.length) {
-          model.applyMessages(msgs);
-          renderMessages();
-        }
-      } catch (err) {
-        if (err instanceof ApiError && err.kind === "unpaired") {
-          await handleUnpaired("This phone was unpaired on the Hub");
-        }
-        // 404 mid-poll: leave messages, stop polling
-        if (err instanceof ApiError && err.kind === "not-found") {
-          clearPoller();
-        }
-      }
-    },
+  await ensurePoller();
+  const ui0 = deriveComposeUi({
+    messages: model.list(),
+    pendingSends,
+    runner,
   });
-  activePoller = poller;
-
-  function onVis() {
-    if (activePoller !== poller) return;
-    if (document.visibilityState === "visible") {
-      if (!poller.running) poller.start();
-    } else if (poller.running) {
-      poller.stop();
-    }
-  }
-  document.addEventListener("visibilitychange", onVis);
-  poller._cleanup = () => {
-    document.removeEventListener("visibilitychange", onVis);
-  };
-
-  if (document.visibilityState === "visible") poller.start();
+  if (ui0.shouldCheckRunner) await maybeCheckRunner(true);
 }
 
 /* ── Settings view ─────────────────────────────────────────────────── */
@@ -587,6 +1050,7 @@ async function renderThreadView(root, threadId) {
 async function renderSettingsView(root) {
   clearPoller();
   root.replaceChildren();
+  root.classList.remove("has-composer");
 
   const back = iconButton(iconChevronLeft(22), "Back", () => {
     navigate("#/threads");
@@ -607,6 +1071,12 @@ async function renderSettingsView(root) {
   const hubStatus = el("small", null, "…");
   hubVer.appendChild(hubStatus);
   panel.appendChild(hubVer);
+
+  const runnerRow = el("div", "settings-row");
+  runnerRow.appendChild(el("strong", null, "Runner"));
+  const runnerLine = el("small", null, "…");
+  runnerRow.appendChild(runnerLine);
+  panel.appendChild(runnerRow);
 
   // Phone
   panel.appendChild(el("h2", "view-title", "This phone"));
@@ -680,6 +1150,16 @@ async function renderSettingsView(root) {
     hubStatus.textContent = bits.join(" · ") || (health?.ok ? "ok" : "unknown");
   } catch {
     hubStatus.textContent = "unreachable";
+  }
+
+  try {
+    const data = await runnerStatus(desk.deskToken);
+    runnerLine.textContent = formatRunnerStatusLine(data?.runner);
+  } catch (err) {
+    runnerLine.textContent =
+      err instanceof ApiError && err.kind === "unpaired"
+        ? "unpaired"
+        : "unreachable";
   }
 }
 

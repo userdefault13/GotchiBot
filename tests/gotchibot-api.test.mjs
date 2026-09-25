@@ -2296,6 +2296,201 @@ describe("phone app modules", () => {
     assert.equal(maxOverlap, 0);
   });
 
+  it("poller: setIntervalMs reschedules while running", async () => {
+    const { createPoller } = await import(
+      "../services/gotchibot-api/app/js/poller.js"
+    );
+    /** @type {Map<number, { fn: Function, ms: number }>} */
+    const timers = new Map();
+    let nextId = 1;
+    const setTimeoutFn = (fn, ms) => {
+      const id = nextId++;
+      timers.set(id, { fn, ms });
+      return id;
+    };
+    const clearTimeoutFn = (id) => {
+      timers.delete(id);
+    };
+    let ticks = 0;
+    const poller = createPoller({
+      intervalMs: 4000,
+      isVisible: () => true,
+      setTimeoutFn,
+      clearTimeoutFn,
+      tick: async () => {
+        ticks += 1;
+      },
+    });
+    poller.start();
+    await Promise.resolve();
+    assert.equal(ticks, 1);
+    assert.equal([...timers.values()][0]?.ms, 4000);
+    poller.setIntervalMs(1750);
+    assert.equal(poller.intervalMs, 1750);
+    assert.equal([...timers.values()][0]?.ms, 1750);
+    poller.stop();
+  });
+
+  it("compose-model: ids, runner lines, pullAfter, deriveComposeUi", async () => {
+    const {
+      newClientMessageId,
+      isValidClientMessageId,
+      CLIENT_MESSAGE_ID_RE,
+      formatRunnerStatusLine,
+      formatRunnerNotice,
+      latestPhoneUserMessage,
+      pullAfterForReplyWatch,
+      deriveComposeUi,
+      POLL_INTERVAL_FAST_MS,
+      POLL_INTERVAL_NORMAL_MS,
+    } = await import("../services/gotchibot-api/app/js/compose-model.js");
+
+    const id = newClientMessageId();
+    assert.equal(isValidClientMessageId(id), true);
+    assert.match(id, CLIENT_MESSAGE_ID_RE);
+    assert.equal(isValidClientMessageId("bad id!"), false);
+    assert.equal(isValidClientMessageId("x".repeat(129)), false);
+
+    assert.equal(
+      formatRunnerStatusLine({ status: "ok", model: "gpt" }),
+      "ok · gpt",
+    );
+    assert.equal(
+      formatRunnerStatusLine({ status: "offline", detail: "no beat" }),
+      "offline · no beat",
+    );
+    assert.equal(
+      formatRunnerNotice({ status: "offline" }),
+      "Hub runner offline — reply will arrive when it's back",
+    );
+    assert.equal(
+      formatRunnerNotice({ status: "error", detail: "missing key" }),
+      "missing key",
+    );
+    assert.equal(formatRunnerNotice({ status: "ok" }), null);
+
+    const msgs = [
+      { messageId: "a", seq: 1, role: "user", originKind: "desk", text: "x" },
+      {
+        messageId: "b",
+        seq: 2,
+        role: "user",
+        originKind: "phone",
+        text: "hi",
+        reply: { status: "pending" },
+      },
+      {
+        messageId: "c",
+        seq: 3,
+        role: "assistant",
+        text: "yo",
+        deskId: "hub-runner",
+      },
+    ];
+    assert.equal(latestPhoneUserMessage(msgs)?.messageId, "b");
+    assert.equal(pullAfterForReplyWatch(msgs, 3), 1);
+    assert.equal(pullAfterForReplyWatch([{ seq: 5 }], 5), 5);
+
+    const pending = deriveComposeUi({
+      messages: [
+        {
+          messageId: "m1",
+          seq: 1,
+          role: "user",
+          originKind: "phone",
+          reply: { status: "pending" },
+        },
+      ],
+      pendingSends: [
+        { clientMessageId: "opt1", text: "hi", status: "sending" },
+        { clientMessageId: "m1", text: "dup", status: "sending" },
+      ],
+      runner: { status: "offline" },
+    });
+    assert.equal(pending.optimistic.length, 1);
+    assert.equal(pending.optimistic[0].clientMessageId, "opt1");
+    assert.equal(pending.waitingForReply, true);
+    assert.equal(pending.pollIntervalMs, POLL_INTERVAL_FAST_MS);
+    assert.ok(pending.runnerNotice);
+    assert.equal(pending.shouldCheckRunner, true);
+    assert.equal(pending.replyError, null);
+
+    const erred = deriveComposeUi({
+      messages: [
+        {
+          messageId: "m2",
+          seq: 2,
+          role: "user",
+          originKind: "phone",
+          reply: { status: "error", error: "boom" },
+        },
+      ],
+    });
+    assert.equal(erred.waitingForReply, false);
+    assert.deepEqual(erred.replyError, { messageId: "m2", error: "boom" });
+    assert.equal(erred.pollIntervalMs, POLL_INTERVAL_NORMAL_MS);
+
+    const replied = deriveComposeUi({
+      messages: [
+        {
+          messageId: "m3",
+          seq: 3,
+          role: "user",
+          originKind: "phone",
+          reply: {
+            status: "replied",
+            model: "claude",
+            replyMessageId: "a1",
+          },
+        },
+        { messageId: "a1", seq: 4, role: "assistant", text: "ok" },
+      ],
+    });
+    assert.equal(replied.viaModelByMessageId.get("a1"), "claude");
+    assert.equal(replied.viaModelByMessageId.get("m3"), "claude");
+    assert.equal(replied.waitingForReply, false);
+  });
+
+  it("thread-model: merges originKind/reply on re-apply + patchMessage", async () => {
+    const { createThreadModel } = await import(
+      "../services/gotchibot-api/app/js/thread-model.js"
+    );
+    const m = createThreadModel();
+    m.applyMessages([
+      {
+        messageId: "p1",
+        seq: 1,
+        role: "user",
+        text: "hi",
+        originKind: "phone",
+        reply: { status: "pending" },
+      },
+    ]);
+    m.applyMessages([
+      {
+        messageId: "p1",
+        seq: 1,
+        role: "user",
+        text: "hi",
+        originKind: "phone",
+        reply: { status: "claimed" },
+      },
+    ]);
+    assert.equal(m.list()[0].reply.status, "claimed");
+    assert.equal(m.patchMessage("p1", { reply: { status: "pending" } }), true);
+    assert.equal(m.list()[0].reply.status, "pending");
+    assert.equal(m.patchMessage("missing", { reply: { status: "error" } }), false);
+  });
+
+  it("APP_VERSION matches between sw.js and js/version.js", async () => {
+    const sw = readFileSync(resolve(APP_DIR, "sw.js"), "utf8");
+    const verMod = await import("../services/gotchibot-api/app/js/version.js");
+    const swMatch = sw.match(/const APP_VERSION = ["']([^"']+)["']/);
+    assert.ok(swMatch, "sw.js APP_VERSION");
+    assert.equal(swMatch[1], verMod.APP_VERSION);
+    assert.equal(verMod.APP_VERSION, "0.2.0");
+  });
+
   it("sw.js SHELL lists every app/js/*.js and has no api/vendor entries", () => {
     const sw = readFileSync(resolve(APP_DIR, "sw.js"), "utf8");
     const shellMatch = sw.match(/const SHELL = \[([\s\S]*?)\];/);

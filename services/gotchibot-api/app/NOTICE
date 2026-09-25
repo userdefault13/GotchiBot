@@ -3,7 +3,8 @@ GotchiBot phone app (/app/)
 This product includes software adapted from Mobilecode-open
 (Copyright 2026 OpenCode Remote contributors), licensed under the Apache
 License, Version 2.0. See THIRD_PARTY/Mobilecode-open-LICENSE.txt and
-THIRD_PARTY/README.md.
+THIRD_PARTY/README.md. Adapted surfaces include design tokens, session cards,
+message bubbles, and the S2 composer / input-bar chrome (not Capacitor / SSE).
 
 Upstream: https://github.com/elkir0/Mobilecode-open (commit b2ea0d5),
 itself derived from giuliastro/opencode-remote-android (Apache-2.0).

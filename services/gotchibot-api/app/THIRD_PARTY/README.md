@@ -4,8 +4,8 @@
 
 | Our file | Upstream | Notes |
 |---|---|---|
-| `app.css` | `web/src/styles.css` | Modified: trimmed to viewer subset; GotchiBot purple/pink palette; dropped Matrix rain / CRT scan FX |
-| `js/icons.js` | `web/src/Icons.tsx` | Modified: React components → SVG string exports; added unlink / camera / QR originals in the same stroke style |
+| `app.css` | `web/src/styles.css` | Modified: trimmed to viewer subset; GotchiBot purple/pink palette; dropped Matrix rain / CRT scan FX; S2 composer / thinking / runner notice rows in the same token language |
+| `js/icons.js` | `web/src/Icons.tsx` | Modified: React components → SVG string exports; added unlink / camera / QR / plus / send originals in the same stroke style |
 
 - Upstream repo: https://github.com/elkir0/Mobilecode-open
 - Commit adapted: `b2ea0d5`
@@ -35,10 +35,10 @@ Regenerate with `app/scripts/vendor-jsqr.sh`.
 ## Original GotchiBot files
 
 `index.html`, `manifest.webmanifest`, `sw.js`, `js/main.js`, `js/version.js`,
-`js/pair.js`, `js/markdown.js`, `js/thread-model.js`, `js/poller.js`,
-`js/storage.js`, `js/api.js`, `js/scan.js`, `icons/*`, `scripts/make-icons.mjs`,
-`NOTICE`, `README.md`, and Hub static serving (`../static.mjs`, `../server.mjs`
-`/app/` route) are original to GotchiBot.
+`js/pair.js`, `js/markdown.js`, `js/thread-model.js`, `js/compose-model.js`,
+`js/poller.js`, `js/storage.js`, `js/api.js`, `js/scan.js`, `icons/*`,
+`scripts/make-icons.mjs`, `NOTICE`, `README.md`, and Hub static serving
+(`../static.mjs`, `../server.mjs` `/app/` route) are original to GotchiBot.
 
 `js/markdown.js` matches Mobilecode-open `.message-content` conventions
 visually but does **not** copy react-markdown / remark-gfm code.

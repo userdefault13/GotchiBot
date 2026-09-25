@@ -22,6 +22,7 @@ export function createPoller({
   if (typeof tick !== "function") throw new Error("createPoller: tick required");
   if (typeof isVisible !== "function") throw new Error("createPoller: isVisible required");
 
+  let _intervalMs = Math.max(100, Number(intervalMs) || 4000);
   let timerId = null;
   let _running = false;
   let inFlight = false;
@@ -41,7 +42,7 @@ export function createPoller({
     timerId = setTimeoutFn(() => {
       timerId = null;
       void runTick(gen);
-    }, intervalMs);
+    }, _intervalMs);
   }
 
   async function runTick(gen) {
@@ -72,6 +73,22 @@ export function createPoller({
       _running = false;
       generation += 1;
       clearTimer();
+    },
+    /**
+     * Change poll interval (e.g. faster while waiting for hub-runner).
+     * Reschedules the next tick when already running.
+     * @param {number} ms
+     */
+    setIntervalMs(ms) {
+      const n = Math.max(100, Number(ms) || 0);
+      if (!Number.isFinite(n) || n === _intervalMs) return;
+      _intervalMs = n;
+      if (_running && isVisible()) {
+        schedule(generation);
+      }
+    },
+    get intervalMs() {
+      return _intervalMs;
     },
     get running() {
       return _running;

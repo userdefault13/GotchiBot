@@ -15,6 +15,14 @@
  *   targetMessageId?: string,
  *   deskId?: string,
  *   heroId?: string,
+ *   originKind?: string,
+ *   reply?: {
+ *     status?: string,
+ *     error?: string,
+ *     model?: string,
+ *     replyMessageId?: string,
+ *     [key: string]: unknown,
+ *   },
  *   edited?: boolean,
  *   deleted?: boolean,
  * }} ThreadMessage
@@ -72,15 +80,18 @@ export function createThreadModel() {
       // op "message" (default): append, de-dupe by messageId / seq
       const k = keyOf(raw);
       if (byKey.has(k)) {
+        mergeReplyFields(byKey.get(k), raw);
         touchSeq(raw.seq);
         continue;
       }
       // Also skip if same messageId already stored under another key shape
       if (raw.messageId && byKey.has(`id:${raw.messageId}`)) {
+        mergeReplyFields(byKey.get(`id:${raw.messageId}`), raw);
         touchSeq(raw.seq);
         continue;
       }
       if (raw.seq != null && byKey.has(`seq:${raw.seq}`) && !raw.messageId) {
+        mergeReplyFields(byKey.get(`seq:${raw.seq}`), raw);
         touchSeq(raw.seq);
         continue;
       }
@@ -97,9 +108,51 @@ export function createThreadModel() {
         edited: false,
         deleted: false,
       };
+      if (raw.originKind) entry.originKind = String(raw.originKind);
+      if (raw.reply && typeof raw.reply === "object") {
+        entry.reply = { ...raw.reply };
+      }
       byKey.set(k, entry);
       touchSeq(entry.seq);
     }
+  }
+
+  /**
+   * Merge originKind / reply onto an existing row (in-place Hub updates).
+   * @param {ThreadMessage|null|undefined} existing
+   * @param {ThreadMessage} raw
+   */
+  function mergeReplyFields(existing, raw) {
+    if (!existing || !raw) return;
+    if (raw.originKind) existing.originKind = String(raw.originKind);
+    if (raw.reply && typeof raw.reply === "object") {
+      // Replace (Hub may drop error/model keys when status resets)
+      existing.reply = { ...raw.reply };
+    }
+  }
+
+  /**
+   * Patch a message by id (e.g. optimistic reply.status after /chats/retry).
+   * @param {string} messageId
+   * @param {{ reply?: object, [key: string]: unknown }} patch
+   * @returns {boolean}
+   */
+  function patchMessage(messageId, patch) {
+    if (!messageId || !patch || typeof patch !== "object") return false;
+    const existing = byKey.get(`id:${messageId}`);
+    if (!existing) return false;
+    if (Object.prototype.hasOwnProperty.call(patch, "reply")) {
+      if (patch.reply && typeof patch.reply === "object") {
+        existing.reply = { ...patch.reply };
+      } else if (patch.reply == null) {
+        delete existing.reply;
+      }
+    }
+    for (const [k, v] of Object.entries(patch)) {
+      if (k === "reply") continue;
+      existing[k] = v;
+    }
+    return true;
   }
 
   /** Visible messages in seq order (deleted hidden). */
@@ -111,6 +164,7 @@ export function createThreadModel() {
 
   return {
     applyMessages,
+    patchMessage,
     list,
     get lastSeq() {
       return lastSeq;
