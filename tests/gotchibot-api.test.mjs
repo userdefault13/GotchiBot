@@ -1363,7 +1363,12 @@ describe("static /app/ route", async () => {
     const src = r.body.toString("utf8");
     const m = src.match(/const SHELL\s*=\s*\[([\s\S]*?)\];/);
     assert.ok(m, "SHELL array present");
-    assert.equal(/api/i.test(m[1]), false);
+    const entries = [...m[1].matchAll(/["']([^"']+)["']/g)].map((x) => x[1]);
+    // Never precache Hub /api/ routes or vendor/ (js/api.js module name is fine)
+    for (const e of entries) {
+      assert.equal(/(^|\/)api(\/|$)/.test(e), false, e);
+      assert.equal(e.includes("vendor"), false, e);
+    }
   });
 
   it("serves app.css and js/main.js", async () => {
@@ -1424,5 +1429,227 @@ describe("static /app/ route", async () => {
     assert.match(lic, /Apache License/);
     const notice = readFileSync(resolve(APP_ROOT, "NOTICE"), "utf8");
     assert.match(notice, /Mobilecode-open/);
+  });
+});
+
+// ─── phone app pure modules (S1 part B) ──────────────────────────────────────
+
+describe("phone app modules", () => {
+  const APP_DIR = resolve(
+    fileURLToPath(new URL(".", import.meta.url)),
+    "../services/gotchibot-api/app",
+  );
+  it("pair: normalize/format/isValid + parsePairHash + extractCodeFromScan", async () => {
+    const {
+      normalizeCode,
+      formatCode,
+      isValidCode,
+      parsePairHash,
+      extractCodeFromScan,
+    } = await import("../services/gotchibot-api/app/js/pair.js");
+
+    assert.equal(normalizeCode("ab cd-efgh"), "ABCDEFGH");
+    assert.equal(normalizeCode("OILO"), "0110");
+    assert.equal(formatCode("abcdefgh"), "ABCD-EFGH");
+    assert.equal(isValidCode("ABCD-EFGH"), true);
+    assert.equal(isValidCode("ABCDIOUU"), false); // I O U invalid alphabet after normalize → 1,0 stay but U invalid
+    assert.equal(isValidCode("ABCD-EFG"), false);
+
+    assert.equal(parsePairHash("#pair=abcd-efgh"), "ABCD-EFGH");
+    assert.equal(parsePairHash("#/threads"), null);
+
+    assert.equal(
+      extractCodeFromScan("https://h.ts.net/app/#pair=ABCD-EFGH"),
+      "ABCD-EFGH",
+    );
+    assert.equal(extractCodeFromScan("abcdefgh"), "ABCD-EFGH");
+    assert.equal(extractCodeFromScan("not a code!!!"), null);
+  });
+
+  it("pair deep link end-to-end with hub-pair.mjs", async () => {
+    const { extractCodeFromScan } = await import(
+      "../services/gotchibot-api/app/js/pair.js"
+    );
+    const { pairDeepLink, resolveAppBase } = await import("../scripts/hub-pair.mjs");
+    const base = resolveAppBase({ host: "h.ts.net", env: {}, config: {} });
+    const url = pairDeepLink(base, "ABCD-EFGH");
+    assert.equal(extractCodeFromScan(url), "ABCD-EFGH");
+  });
+
+  it("markdown: escapes XSS, fences, links, headings, lists", async () => {
+    const { renderMarkdown } = await import(
+      "../services/gotchibot-api/app/js/markdown.js"
+    );
+
+    const xss = renderMarkdown('<script>alert(1)</script><img onerror="x">');
+    assert.equal(xss.includes("<script>"), false);
+    assert.equal(xss.includes("<img"), false);
+    assert.match(xss, /&lt;script&gt;/);
+
+    const badLink = renderMarkdown("[x](javascript:alert(1))");
+    assert.equal(badLink.includes("javascript:"), false);
+    assert.match(badLink, /x/);
+
+    const fence = renderMarkdown("```html\n<script>\n```");
+    assert.match(fence, /<pre><code/);
+    assert.match(fence, /&lt;script&gt;/);
+    assert.equal(fence.includes("<script>"), false);
+
+    const link = renderMarkdown("[hi](https://example.com)");
+    assert.match(link, /rel="noopener noreferrer"/);
+    assert.match(link, /target="_blank"/);
+    assert.match(link, /href="https:\/\/example.com"/);
+
+    const blocks = renderMarkdown("# Title\n\n- a\n- b\n\n1. one\n2. two");
+    assert.match(blocks, /<h1>/);
+    assert.match(blocks, /<ul>/);
+    assert.match(blocks, /<ol>/);
+  });
+
+  it("thread-model: dedupe, edit, delete, ordering, lastSeq", async () => {
+    const { createThreadModel, roleClass, relativeTime } = await import(
+      "../services/gotchibot-api/app/js/thread-model.js"
+    );
+    const m = createThreadModel();
+    m.applyMessages([
+      { messageId: "a", seq: 2, role: "assistant", text: "two", op: "message" },
+      { messageId: "b", seq: 1, role: "user", text: "one", op: "message" },
+      { messageId: "a", seq: 2, role: "assistant", text: "dup", op: "message" },
+    ]);
+    assert.equal(m.list().length, 2);
+    assert.equal(m.list()[0].text, "one");
+    assert.equal(m.lastSeq, 2);
+
+    m.applyMessages([
+      { op: "edit", targetMessageId: "b", text: "one!", seq: 3 },
+    ]);
+    assert.equal(m.list()[0].text, "one!");
+    assert.equal(m.list()[0].edited, true);
+    assert.equal(m.lastSeq, 3);
+
+    m.applyMessages([{ op: "delete", targetMessageId: "a", seq: 4 }]);
+    assert.equal(m.list().length, 1);
+    assert.equal(m.list()[0].messageId, "b");
+    assert.equal(m.lastSeq, 4);
+
+    assert.equal(roleClass("user"), "user");
+    assert.equal(roleClass("assistant"), "assistant");
+    assert.equal(roleClass("tool"), "tool");
+    assert.equal(roleClass("system"), "system");
+    assert.equal(relativeTime(new Date(Date.now() - 1000).toISOString(), Date.now()), "just now");
+  });
+
+  it("poller: ticks while visible, pauses, no overlap, stop cancels", async () => {
+    const { createPoller } = await import(
+      "../services/gotchibot-api/app/js/poller.js"
+    );
+
+    /** @type {Map<number, Function>} */
+    const timers = new Map();
+    let nextId = 1;
+    let visible = true;
+    let ticks = 0;
+    let inTick = false;
+    let maxOverlap = 0;
+    let tickRelease = null;
+
+    const setTimeoutFn = (fn) => {
+      const id = nextId++;
+      timers.set(id, fn);
+      return id;
+    };
+    const clearTimeoutFn = (id) => {
+      timers.delete(id);
+    };
+    const flushOne = () => {
+      const [id, fn] = timers.entries().next().value || [];
+      if (id == null) return false;
+      timers.delete(id);
+      fn();
+      return true;
+    };
+
+    const poller = createPoller({
+      intervalMs: 10,
+      isVisible: () => visible,
+      setTimeoutFn,
+      clearTimeoutFn,
+      tick: async () => {
+        if (inTick) maxOverlap += 1;
+        inTick = true;
+        ticks += 1;
+        await new Promise((r) => {
+          tickRelease = r;
+        });
+        inTick = false;
+      },
+    });
+
+    poller.start();
+    assert.equal(poller.running, true);
+    // First tick started immediately (async); release it
+    await Promise.resolve();
+    assert.equal(ticks, 1);
+    tickRelease();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Next tick scheduled
+    assert.equal(timers.size, 1);
+    flushOne();
+    await Promise.resolve();
+    assert.equal(ticks, 2);
+
+    // Overlap: start second tick while first still in flight — shouldn't happen via schedule
+    // Hold tick 2, try to flush another timer (none until release)
+    assert.equal(timers.size, 0);
+    tickRelease();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(timers.size, 1);
+
+    visible = false;
+    flushOne();
+    await Promise.resolve();
+    // Should not tick while invisible
+    assert.equal(ticks, 2);
+
+    visible = true;
+    poller.stop();
+    assert.equal(poller.running, false);
+    assert.equal(timers.size, 0);
+    // Flush any stray
+    while (flushOne()) {
+      /* drain */
+    }
+    assert.equal(ticks, 2);
+    assert.equal(maxOverlap, 0);
+  });
+
+  it("sw.js SHELL lists every app/js/*.js and has no api/vendor entries", () => {
+    const sw = readFileSync(resolve(APP_DIR, "sw.js"), "utf8");
+    const shellMatch = sw.match(/const SHELL = \[([\s\S]*?)\];/);
+    assert.ok(shellMatch, "SHELL array present");
+    const shellBody = shellMatch[1];
+    const entries = [...shellBody.matchAll(/["']([^"']+)["']/g)].map((m) => m[1]);
+    const jsFiles = readdirSync(resolve(APP_DIR, "js")).filter((f) =>
+      f.endsWith(".js"),
+    );
+    for (const f of jsFiles) {
+      assert.ok(
+        entries.includes(`js/${f}`),
+        `SHELL missing js/${f}`,
+      );
+    }
+    // Never precache Hub API routes or vendor/ (jsQR is on-demand)
+    for (const e of entries) {
+      assert.equal(e.includes("vendor"), false, e);
+      assert.equal(/(^|\/)api(\/|$)/.test(e), false, e);
+    }
+  });
+
+  it("index.html has no inline style= attributes", () => {
+    const html = readFileSync(resolve(APP_DIR, "index.html"), "utf8");
+    assert.equal(/\sstyle\s*=/.test(html), false);
   });
 });

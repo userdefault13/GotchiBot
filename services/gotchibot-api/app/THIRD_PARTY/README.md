@@ -29,8 +29,16 @@ We did **not** adapt Capacitor/native code, SSE, or anything that talks to `open
 | `vendor/jsQR.min.js` | [cozmo/jsQR](https://github.com/cozmo/jsQR) 1.4.0 `dist/jsQR.js` | Minified with esbuild; UMD global `jsQR` preserved |
 | `vendor/LICENSE-jsQR.txt` | package LICENSE | Exact copy |
 
+jsQR 1.4.0 by Cosmo Wolfe and contributors (https://github.com/cozmo/jsQR).
 Regenerate with `app/scripts/vendor-jsqr.sh`.
 
 ## Original GotchiBot files
 
-`index.html`, `manifest.webmanifest`, `sw.js`, `js/main.js`, `js/version.js`, `icons/*`, `scripts/make-icons.mjs`, `NOTICE`, `README.md`, and Hub static serving (`../static.mjs`, `../server.mjs` `/app/` route) are original to GotchiBot.
+`index.html`, `manifest.webmanifest`, `sw.js`, `js/main.js`, `js/version.js`,
+`js/pair.js`, `js/markdown.js`, `js/thread-model.js`, `js/poller.js`,
+`js/storage.js`, `js/api.js`, `js/scan.js`, `icons/*`, `scripts/make-icons.mjs`,
+`NOTICE`, `README.md`, and Hub static serving (`../static.mjs`, `../server.mjs`
+`/app/` route) are original to GotchiBot.
+
+`js/markdown.js` matches Mobilecode-open `.message-content` conventions
+visually but does **not** copy react-markdown / remark-gfm code.

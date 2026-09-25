@@ -385,3 +385,61 @@ input::placeholder { color: var(--muted); }
 }
 .notice.error { color: #ff6b60; border-left-color: var(--danger); background: var(--danger-soft); }
 .notice.success { color: var(--primary-strong); border-left-color: var(--primary); background: var(--primary-soft); }
+
+/* ── GotchiBot additions (S1 read-only viewer) ───────────────────────── */
+.nav-actions { display: flex; align-items: center; gap: var(--s-1); }
+.view-title {
+  margin: 0 0 var(--s-3); font-family: var(--font-mono); font-size: var(--fs-lg);
+  color: var(--primary); text-shadow: var(--glow-soft); text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.pair-lead { margin-bottom: var(--s-4); line-height: 1.5; }
+.pair-form { display: flex; flex-direction: column; gap: var(--s-2); }
+.field-label {
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted-strong);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-top: var(--s-2);
+}
+.pair-actions {
+  display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-4);
+}
+.form-error {
+  color: #ff6b60; font-family: var(--font-mono); font-size: var(--fs-sm); margin: var(--s-2) 0 0;
+}
+.badge {
+  flex-shrink: 0; padding: 3px 8px; border-radius: var(--r-pill);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+  text-transform: uppercase; border: 1px solid var(--glass-stroke-strong);
+  color: var(--cyan); background: var(--cyan-soft);
+}
+.badge.shared { color: var(--primary); border-color: var(--primary-border); background: var(--primary-soft); }
+.cmd-block {
+  display: block; margin-top: var(--s-3); padding: 10px 12px; text-align: left;
+  background: var(--code-bg); border: 1px solid var(--code-border); border-radius: var(--r-sm);
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--code-text);
+  overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+}
+.readonly-footer {
+  max-width: 760px; margin: var(--s-4) auto 0; padding: var(--s-3) var(--s-4);
+  text-align: center; font-family: var(--font-mono); font-size: var(--fs-xs);
+  color: var(--muted); border-top: 1px dashed rgba(255, 107, 203, 0.12);
+}
+.settings-note, .licenses-links { margin-top: var(--s-4); line-height: 1.5; }
+.licenses-links a { color: var(--cyan); }
+.scanner-title {
+  display: flex; align-items: center; gap: 8px; margin-bottom: var(--s-4);
+  color: var(--primary); font-family: var(--font-mono); font-size: var(--fs-md);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.scanner-cancel { margin-top: var(--s-4); }
+.scanner-canvas-hidden {
+  position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+  overflow: hidden;
+}
+.message.system .message-content {
+  border-left-color: var(--muted-strong);
+  color: var(--text-soft);
+}
+.message-content hr {
+  border: 0; border-top: 1px solid var(--glass-stroke); margin: 12px 0;
+}
+.message-content del { opacity: 0.75; }

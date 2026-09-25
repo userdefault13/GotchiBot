@@ -8,5 +8,6 @@ THIRD_PARTY/README.md.
 Upstream: https://github.com/elkir0/Mobilecode-open (commit b2ea0d5),
 itself derived from giuliastro/opencode-remote-android (Apache-2.0).
 
-This product also includes jsQR 1.4.0 (Copyright Cordio / cozmo/jsQR
-contributors), Apache License 2.0. See vendor/LICENSE-jsQR.txt.
+This product also includes jsQR 1.4.0 by Cosmo Wolfe and contributors
+(https://github.com/cozmo/jsQR), Apache License 2.0. See
+vendor/LICENSE-jsQR.txt.

@@ -17,10 +17,17 @@ See [`NOTICE`](./NOTICE) and [`THIRD_PARTY/`](./THIRD_PARTY/).
 | `index.html` | Shell + iOS PWA meta (relative URLs) |
 | `manifest.webmanifest` | Standalone install under `/app/` |
 | `app.css` | Viewer design system (adapted) |
-| `sw.js` | App-shell service worker (never caches `/api/`) |
-| `js/main.js` | Boot + SW register |
+| `sw.js` | App-shell service worker (never caches `/api/` or `vendor/`) |
+| `js/main.js` | Hash router + Pair / Threads / Thread / Settings views |
 | `js/version.js` | `APP_VERSION` |
 | `js/icons.js` | SVG icon strings (adapted) |
+| `js/pair.js` | Pairing-code normalize / format / deep-link parse (pure) |
+| `js/markdown.js` | Safe markdown → HTML for `.message-content` (pure) |
+| `js/thread-model.js` | In-memory message apply/edit/delete (pure) |
+| `js/poller.js` | Visibility-aware poll loop (pure) |
+| `js/storage.js` | IndexedDB desk credentials only |
+| `js/api.js` | Same-origin Hub fetch + typed errors |
+| `js/scan.js` | In-app QR scanner (lazy-loads `vendor/jsQR.min.js`) |
 | `icons/` | Generated PNGs |
 | `vendor/jsQR.min.js` | On-demand QR decoder (not precached) |
 | `scripts/make-icons.mjs` | PNG generator (not served) |
@@ -41,4 +48,5 @@ node services/gotchibot-api/app/scripts/make-icons.mjs
 ## CSP
 
 The Hub sets a strict CSP on static responses (`default-src 'self'`, no inline
-scripts/styles). Keep all assets as separate files with relative URLs.
+scripts/styles). Keep all assets as separate files with relative URLs. No
+`style=""` attributes in HTML strings — use classes or `element.style` via JS.
