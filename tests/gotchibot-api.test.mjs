@@ -545,6 +545,33 @@ describe("hub-pair + gotchibot-api helpers", () => {
     assert.equal(resolveJoinBase("https://hub.example.ts.net"), "https://hub.example.ts.net");
     assert.equal(resolveJoinBase("100.64.1.2:9000"), "http://100.64.1.2:9000");
     assert.equal(resolveJoinBase("hub.tailnet.ts.net"), "http://hub.tailnet.ts.net:8793");
+    assert.equal(resolveJoinBase("h.ts.net:8794"), "http://h.ts.net:8794");
+    assert.equal(resolveJoinBase("h.ts.net"), "http://h.ts.net:8793");
+  });
+
+  it("formatJoinHost omits default 8793 and appends otherwise", async () => {
+    const { formatJoinHost } = await import("../scripts/hub-pair.mjs");
+    assert.equal(formatJoinHost("h.ts.net", 8793), "h.ts.net");
+    assert.equal(formatJoinHost("h.ts.net", 8794), "h.ts.net:8794");
+    assert.equal(formatJoinHost("h.ts.net", undefined), "h.ts.net");
+    assert.equal(formatJoinHost("<MagicDNS>", 8794), "<MagicDNS>:8794");
+  });
+
+  it("hostWithoutSchemePort strips port for bare hostname pin", async () => {
+    const { hostWithoutSchemePort } = await import("../scripts/hub-pair.mjs");
+    assert.equal(hostWithoutSchemePort("h.ts.net:8794"), "h.ts.net");
+    assert.equal(hostWithoutSchemePort("http://h.ts.net:8794"), "h.ts.net");
+  });
+
+  it("deskApiBaseFromHubPin prefers pinned deskApiBase over env port", async () => {
+    const { deskApiBaseFromHubPin } = await import("../scripts/infra-client.mjs");
+    assert.equal(
+      deskApiBaseFromHubPin(
+        { tailscaleHost: "h.ts.net", deskApiBase: "http://h.ts.net:8794" },
+        {},
+      ),
+      "http://h.ts.net:8794",
+    );
   });
 
   it("service unit paths are stable", async () => {

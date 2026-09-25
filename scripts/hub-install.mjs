@@ -39,6 +39,7 @@ import {
 } from "../services/gotchibot-api/config.mjs";
 import { connectStore } from "../services/gotchibot-api/store.mjs";
 import { hasInstallToken } from "./infra-client.mjs";
+import { formatJoinHost } from "./hub-pair.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER_PATH = resolve(ROOT, "services/gotchibot-api/server.mjs");
@@ -865,7 +866,7 @@ volumes:
       "[dry run] I would connect to Mongo, list desks, and mint a pairing code only if none exist.",
     );
     say(
-      `[dry run] Join hint would look like: gotchibot hub join ${dnsName || "<MagicDNS>"} <CODE>`,
+      `[dry run] Join hint would look like: gotchibot hub join ${formatJoinHost(dnsName || "<MagicDNS>", port)} <CODE>`,
     );
   } else {
     try {
@@ -880,7 +881,7 @@ volumes:
         if (active.length === 0) {
           const name = opts.name || "first desk";
           const { code, expiresAt } = await store.mintPairingCode({ name });
-          const host = dnsName || "<MagicDNS>";
+          const host = formatJoinHost(dnsName || "<MagicDNS>", port);
           say("");
           say("  ┌──────────────────────────────────────────────────────────");
           say(`  │  On your desk computer, run:`);

@@ -79,6 +79,16 @@ function resolveJoinBase(host) {
   return `http://${h}:8793`;
 }
 
+/** Host for `hub join` hints: bare when port is default 8793 / missing, else host:port. */
+function formatJoinHost(host, port) {
+  const h = String(host || "").trim();
+  if (!h) return h;
+  if (port == null || port === "") return h;
+  const n = Number(port);
+  if (!Number.isFinite(n) || n === 8793) return h;
+  return `${h}:${n}`;
+}
+
 function hostWithoutSchemePort(hostOrBase) {
   let s = String(hostOrBase || "").trim();
   s = s.replace(/^https?:\/\//i, "");
@@ -124,13 +134,15 @@ async function cmdPair(opts) {
     const { code, expiresAt } = await store.mintPairingCode({ name: opts.name });
     const host =
       config.tailscaleHost || magicDnsFromTailscale() || "<your-hub-MagicDNS>";
+    const joinHost = formatJoinHost(host, config.port);
     const expiresLocal = expiresAt.toLocaleString();
     const out = {
       ok: true,
       code,
       expiresAt: expiresAt.toISOString(),
       host,
-      joinCommand: `gotchibot hub join ${host} ${code}`,
+      joinHost,
+      joinCommand: `gotchibot hub join ${joinHost} ${code}`,
     };
     if (opts.json) {
       console.log(JSON.stringify(out));
@@ -142,7 +154,7 @@ async function cmdPair(opts) {
     console.log(`This code works once — after a desk uses it, make a new one.`);
     console.log("");
     console.log(`On the other computer, run:`);
-    console.log(`  gotchibot hub join ${host} ${code}`);
+    console.log(`  gotchibot hub join ${joinHost} ${code}`);
     console.log("");
     return out;
   } finally {
@@ -365,6 +377,7 @@ if (isMainModule(import.meta.url)) {
 export {
   main,
   resolveJoinBase,
+  formatJoinHost,
   hostWithoutSchemePort,
   magicDnsFromTailscale,
   usage,
