@@ -51,7 +51,19 @@ Existing desk records with no `kind` field are treated as `desk` everywhere (no 
 
 **Phone PWA QR.** `gotchibot hub pair --qr` (optional `--app-url URL`) mints a phone code by default (explicit `--kind` still wins) and prints a terminal QR of the deep link `https://<host>/app/#pair=CODE`. Scan it inside the GotchiBot app (Pair → Scan QR), not with the iOS Camera app — or type the code. App base precedence: `--app-url`, then `GOTCHIBOT_HUB_APP_URL`, then `appUrl` in `sessions/.hub-api.json`, else `https://<MagicDNS>/app/` (HTTPS via `tailscale serve --https` once enabled). `--json` includes `pairUrl` (not the QR art).
 
-**Phone visibility.** A phone desk can list/pull only threads where `createdByDeskId` is itself or `sharedWithDeskIds` contains it. Thread list entries for phone callers omit `deskId` (another desk’s id) but include `shared`. Pulling an inaccessible `threadId` returns `404` *thread not found* (no existence leak). Pushing into an existing unshared thread → `403` *thread not shared with this desk*. Creating a new `threadId` owns that thread.
+**Phone visibility.** A phone desk can list/pull only threads where `createdByDeskId` is itself or `sharedWithDeskIds` contains it. Thread list entries for phone callers omit `deskId` (another desk’s id) but include `shared`. Pulling an inaccessible `threadId` returns `404` *thread not found* (no existence leak). Pushing into an existing unshared thread → `403` *thread not shared with this desk*. Creating a new `threadId` owns that thread (race-safe: the phone inserts the thread row before messages).
+
+**Phone write hardening** (server-side in `pushMessages`, not just UI):
+
+- Role forced to `user` (a phone cannot write assistant/system).
+- Only `op: "message"` — edit/delete → `403` *phone desks may only push op message*.
+- Empty / whitespace-only text → `400` *text required* (32k char cap unchanged).
+- Phone-originated user messages are stamped for the future `hub-runner`:
+  - `originKind: "phone"`
+  - `reply: { status: "pending"|"claimed"|"replied"|"error", requestedAt, … }`
+- Desk (non-phone) pushes are unchanged — no `originKind` / `reply` fields.
+
+**Phone reply UX routes:** `POST /chats/send`, `POST /chats/retry`, `GET /hub/runner` (any paired desk). Pull includes `originKind` + `reply` when present so the PWA can show thinking / error+retry.
 
 **Phone-forbidden routes** (`403` *not allowed for phone desks*): `GET /hub/desks`, `POST /chats/snapshot`, `GET /chats/snapshot/:id`.
 
@@ -117,8 +129,11 @@ JSON in/out. Body limit 2 MB. Unknown route → `404` `{ok:false,error}`. Errors
 | `POST` | `/api/gotchibot/hub/pair/claim` | pairing code in body (`kind` optional) | `{ok, deskId, deskToken, name, kind}` |
 | `GET` | `/api/gotchibot/hub/whoami` | desk token | `{ok, deskId, name, kind}` |
 | `GET` | `/api/gotchibot/hub/desks` | desk token (desk kind only) | `{ok, desks:[{deskId,name,kind,createdAt,lastSeen,revokedAt}]}` — never hashes; phone → `403` |
-| `POST` | `/api/gotchibot/chats/push` | desk token | `{ok, threadId, inserted, skipped, lastSeq, results:[…]}` |
-| `GET` | `/api/gotchibot/chats/pull?threadId=&after=&limit=` | desk token | `{ok, threadId\|null, messages:[…], nextAfter, hasMore}` — limit default 100, max 500 |
+| `GET` | `/api/gotchibot/hub/runner` | desk token | `{ok, runner:{status:"ok"\|"error"\|"offline", detail, model?, lastBeatAt}}` — offline if no beat or `lastBeatAt` older than ~90s; `detail` never holds secrets |
+| `POST` | `/api/gotchibot/chats/push` | desk token | `{ok, threadId, inserted, skipped, lastSeq, results:[…]}` — phone hardening above |
+| `POST` | `/api/gotchibot/chats/send` | desk token | body `{threadId?, clientMessageId?, text, title?}` → `{ok, threadId, messageId, seq, reply:{status}}` — creates thread (ULID) when `threadId` omitted; uses `pushMessages` |
+| `POST` | `/api/gotchibot/chats/retry` | desk token | body `{threadId, messageId}` — resets phone `reply.status` to `pending` when `error` or stale `claimed` (>~5m); inaccessible → `404` |
+| `GET` | `/api/gotchibot/chats/pull?threadId=&after=&limit=` | desk token | `{ok, threadId\|null, messages:[…], nextAfter, hasMore}` — messages may include `originKind` + `reply`; limit default 100, max 500 |
 | `GET` | `/api/gotchibot/chats/threads?limit=` | desk token | `{ok, threads:[…]}` sorted `updatedAt` desc |
 | `POST` | `/api/gotchibot/chats/snapshot` | desk token (desk kind only) | `{ok, snapshotId, contentHash, stateUri, messageCount, threadIds, upToSeq, createdAt}` — phone → `403` |
 | `GET` | `/api/gotchibot/chats/snapshot/:snapshotId` | desk token (desk kind only) | `{ok, snapshotId, contentHash, stateUri, content, createdAt}` — phone → `403` |
@@ -143,10 +158,11 @@ Install token alone on a chat/hub route → `401` *install token cannot unlock c
 
 ## Sync model
 
-- **Append-only** `chat_messages`. Unique `{threadId, messageId}`. Indexes on `{seq}` and `{threadId, seq}`.
+- **Append-only** `chat_messages`. Unique `{threadId, messageId}`. Indexes on `{seq}`, `{threadId, seq}`, and claim index `{originKind, reply.status, reply.requestedAt, seq}`.
 - Push is **idempotent**: existing `(threadId, messageId)` → `duplicate` with existing `seq`; else allocate `seq` via `counters` (`_id: "chat_seq"`) and insert. `E11000` race → duplicate (seq gaps are fine).
 - `messageId` / ULID-friendly ids: 1–128 of `[A-Za-z0-9_-]`. Max 200 messages per push; text max 32000 chars.
-- **Edit / delete** are new tombstone rows (`op: "edit"` with new text / `op: "delete"` with empty text) referencing `targetMessageId` — never mutate or remove old docs.
+- **Edit / delete** are new tombstone rows (`op: "edit"` with new text / `op: "delete"` with empty text) referencing `targetMessageId` — never mutate or remove old docs. Phones cannot push edit/delete.
+- **Phone reply tracking** (phone user messages only): `originKind:"phone"`, `reply.status` lifecycle `pending` → `claimed` → `replied` | `error`. Store helpers for the future hub-runner process: `claimNextPendingReply`, `getThreadMessagesForContext`, `completeReply`, `failReply`, `writeRunnerHeartbeat` / `getRunnerStatus` (`hub_runner` collection). Assistant replies are inserted via `pushMessages` with deskId `hub-runner` (trusted non-phone writer).
 - **Pull** with `after=<seq>` (cursor). Messages sorted by `seq` ascending.
 - **Threads** last-writer-wins on `(updatedAt, deskId)`: apply incoming title only when incoming `updatedAt` is greater, or equal and incoming `deskId` is greater (string compare). Always `$max` `lastSeq` / `lastMessageAt`.
 

@@ -885,6 +885,425 @@ describe("desk kinds + phone scoping", async () => {
   });
 });
 
+// ─── S2: phone send / reply tracking / hub-runner store (Mongo) ─────────────
+
+describe("S2 phone send + reply tracking", async () => {
+  const uri =
+    process.env.GOTCHIBOT_TEST_MONGODB_URI || "mongodb://127.0.0.1:27017";
+  const reachable = await mongoReachable(uri);
+  if (!reachable) {
+    it("skips when Mongo unreachable", { skip: "Mongo not reachable within 1.5s" }, () => {});
+    return;
+  }
+
+  const dbName = `gotchibot_test_${randomBytes(6).toString("hex")}`;
+  const ownerLogin = "testowner@example.com";
+  let store;
+  let server;
+  let port;
+
+  before(async () => {
+    store = await connectStore({ mongoUri: uri, dbName });
+    await store.ensureIndexes();
+    server = createApiServer({
+      store,
+      config: {
+        host: "127.0.0.1",
+        port: 0,
+        mongoUri: uri,
+        dbName,
+        ownerLogin,
+      },
+    });
+    port = await listen(server);
+  });
+
+  after(async () => {
+    if (server) await closeServer(server);
+    if (store) {
+      try {
+        await store.db.dropDatabase();
+      } catch {
+        /* ignore */
+      }
+      await store.close();
+    }
+  });
+
+  async function claim(kind, name) {
+    const { code } = await store.mintPairingCode({ name, kind });
+    const claim = await httpJson(port, "POST", "/api/gotchibot/hub/pair/claim", {
+      body: { code, name },
+    });
+    assert.equal(claim.status, 200);
+    return claim.json;
+  }
+
+  it("phone send new thread → user + originKind phone + reply pending", async () => {
+    const phone = await claim("phone", "s2-phone-a");
+    const send = await httpJson(port, "POST", "/api/gotchibot/chats/send", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { text: "hello from phone", title: "Phone chat" },
+    });
+    assert.equal(send.status, 200);
+    assert.equal(send.json.ok, true);
+    assert.ok(send.json.threadId);
+    assert.ok(send.json.messageId);
+    assert.equal(send.json.reply.status, "pending");
+
+    const stored = await store.db.collection("chat_messages").findOne({
+      threadId: send.json.threadId,
+      messageId: send.json.messageId,
+    });
+    assert.equal(stored.role, "user");
+    assert.equal(stored.originKind, "phone");
+    assert.equal(stored.reply.status, "pending");
+    assert.ok(stored.reply.requestedAt);
+
+    const pull = await httpJson(
+      port,
+      "GET",
+      `/api/gotchibot/chats/pull?threadId=${send.json.threadId}&after=0`,
+      { headers: { "X-GotchiBot-Desk-Token": phone.deskToken } },
+    );
+    assert.equal(pull.status, 200);
+    const msg = pull.json.messages.find((m) => m.messageId === send.json.messageId);
+    assert.ok(msg);
+    assert.equal(msg.originKind, "phone");
+    assert.equal(msg.reply.status, "pending");
+
+    const thread = await store.db.collection("chat_threads").findOne({
+      threadId: send.json.threadId,
+    });
+    assert.equal(thread.createdByDeskId, phone.deskId);
+  });
+
+  it("phone send into shared thread → 200", async () => {
+    const desk = await claim("desk", "s2-desk-share");
+    const phone = await claim("phone", "s2-phone-share");
+    const push = await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": desk.deskToken },
+      body: {
+        threadId: "S2-SHARE",
+        title: "Shared",
+        messages: [
+          {
+            messageId: "s2-share-m1",
+            role: "user",
+            text: "desk seed",
+            ts: "2026-06-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(push.status, 200);
+    await store.shareThread("S2-SHARE", phone.deskId);
+
+    const send = await httpJson(port, "POST", "/api/gotchibot/chats/send", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { threadId: "S2-SHARE", text: "phone on shared" },
+    });
+    assert.equal(send.status, 200);
+    assert.equal(send.json.threadId, "S2-SHARE");
+    assert.equal(send.json.reply.status, "pending");
+  });
+
+  it("phone send/push into unshared foreign thread → 403, no insert", async () => {
+    const desk = await claim("desk", "s2-desk-deny");
+    const phone = await claim("phone", "s2-phone-deny");
+    await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": desk.deskToken },
+      body: {
+        threadId: "S2-DENY",
+        messages: [
+          {
+            messageId: "s2-deny-seed",
+            role: "user",
+            text: "private",
+            ts: "2026-06-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const before = await store.db
+      .collection("chat_messages")
+      .countDocuments({ threadId: "S2-DENY" });
+
+    const denySend = await httpJson(port, "POST", "/api/gotchibot/chats/send", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { threadId: "S2-DENY", text: "nope" },
+    });
+    assert.equal(denySend.status, 403);
+
+    const denyPush = await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: {
+        threadId: "S2-DENY",
+        messages: [
+          {
+            messageId: "s2-deny-push",
+            role: "user",
+            text: "nope",
+            ts: "2026-06-01T00:01:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(denyPush.status, 403);
+
+    const after = await store.db
+      .collection("chat_messages")
+      .countDocuments({ threadId: "S2-DENY" });
+    assert.equal(after, before);
+  });
+
+  it("phone push role assistant coerced to user; edit/delete 403; empty 400", async () => {
+    const phone = await claim("phone", "s2-phone-harden");
+    const push = await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: {
+        threadId: "S2-HARDEN",
+        messages: [
+          {
+            messageId: "s2-as-asst",
+            role: "assistant",
+            text: "still user",
+            ts: "2026-06-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(push.status, 200);
+    const stored = await store.db.collection("chat_messages").findOne({
+      threadId: "S2-HARDEN",
+      messageId: "s2-as-asst",
+    });
+    assert.equal(stored.role, "user");
+    assert.equal(stored.originKind, "phone");
+
+    const edit = await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: {
+        threadId: "S2-HARDEN",
+        messages: [
+          {
+            messageId: "s2-edit",
+            op: "edit",
+            targetMessageId: "s2-as-asst",
+            text: "hack",
+            ts: "2026-06-01T00:01:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(edit.status, 403);
+
+    const del = await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: {
+        threadId: "S2-HARDEN",
+        messages: [
+          {
+            messageId: "s2-del",
+            op: "delete",
+            targetMessageId: "s2-as-asst",
+            ts: "2026-06-01T00:02:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(del.status, 403);
+
+    const empty = await httpJson(port, "POST", "/api/gotchibot/chats/send", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { threadId: "S2-HARDEN", text: "   " },
+    });
+    assert.equal(empty.status, 400);
+  });
+
+  it("desk push unchanged — no reply / originKind", async () => {
+    const desk = await claim("desk", "s2-desk-plain");
+    const push = await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": desk.deskToken },
+      body: {
+        threadId: "S2-DESK",
+        messages: [
+          {
+            messageId: "s2-desk-m1",
+            role: "assistant",
+            text: "from desk",
+            ts: "2026-06-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(push.status, 200);
+    const stored = await store.db.collection("chat_messages").findOne({
+      threadId: "S2-DESK",
+      messageId: "s2-desk-m1",
+    });
+    assert.equal(stored.role, "assistant");
+    assert.equal(stored.originKind, undefined);
+    assert.equal(stored.reply, undefined);
+    assert.equal(push.json.results[0].reply, undefined);
+  });
+
+  it("claim / complete / fail / retry + runner heartbeat", async () => {
+    const desk = await claim("desk", "s2-desk-runner");
+    const phone = await claim("phone", "s2-phone-runner");
+
+    // Drain pending replies left by earlier tests in this suite DB.
+    for (let i = 0; i < 50; i++) {
+      const leftover = await store.claimNextPendingReply({ runnerId: "drain" });
+      if (!leftover) break;
+      await store.completeReply({
+        threadId: leftover.threadId,
+        messageId: leftover.messageId,
+        replyMessageId: "drain",
+      });
+    }
+
+    const send = await httpJson(port, "POST", "/api/gotchibot/chats/send", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { text: "need reply" },
+    });
+    assert.equal(send.status, 200);
+    const { threadId, messageId } = send.json;
+
+    const offline = await httpJson(port, "GET", "/api/gotchibot/hub/runner", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+    });
+    assert.equal(offline.status, 200);
+    assert.equal(offline.json.runner.status, "offline");
+
+    await store.writeRunnerHeartbeat({
+      runnerId: "hub-runner",
+      status: "ok",
+      detail: "idle",
+      model: "test-model",
+    });
+    const online = await httpJson(port, "GET", "/api/gotchibot/hub/runner", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+    });
+    assert.equal(online.json.runner.status, "ok");
+    assert.equal(online.json.runner.model, "test-model");
+    assert.ok(online.json.runner.lastBeatAt);
+
+    const claimed = await store.claimNextPendingReply({ runnerId: "hub-runner" });
+    assert.ok(claimed);
+    assert.equal(claimed.messageId, messageId);
+    assert.equal(claimed.reply.status, "claimed");
+    assert.equal(claimed.reply.attempts, 1);
+
+    const ctx = await store.getThreadMessagesForContext(threadId, { limit: 10 });
+    assert.ok(ctx.some((m) => m.messageId === messageId));
+
+    const replyId = ulid();
+    const asst = await store.pushMessages({
+      threadId,
+      messages: [
+        {
+          messageId: replyId,
+          role: "assistant",
+          text: "gotchi says hi",
+          op: "message",
+        },
+      ],
+      deskId: store.HUB_RUNNER_DESK_ID,
+    });
+    assert.equal(asst.inserted, 1);
+
+    await store.completeReply({
+      threadId,
+      messageId,
+      replyMessageId: replyId,
+      model: "test-model",
+    });
+    const done = await store.db.collection("chat_messages").findOne({
+      threadId,
+      messageId,
+    });
+    assert.equal(done.reply.status, "replied");
+    assert.equal(done.reply.replyMessageId, replyId);
+
+    // Desk pull sees assistant like any message
+    const pullDesk = await httpJson(
+      port,
+      "GET",
+      `/api/gotchibot/chats/pull?threadId=${threadId}&after=0`,
+      { headers: { "X-GotchiBot-Desk-Token": desk.deskToken } },
+    );
+    assert.ok(pullDesk.json.messages.some((m) => m.messageId === replyId && m.role === "assistant"));
+
+    // fail + retry path
+    const send2 = await httpJson(port, "POST", "/api/gotchibot/chats/send", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { text: "will fail" },
+    });
+    const mid2 = send2.json.messageId;
+    const tid2 = send2.json.threadId;
+    await store.claimNextPendingReply({ runnerId: "hub-runner" });
+    await store.failReply({
+      threadId: tid2,
+      messageId: mid2,
+      error: "boom gbd_secrettoken123",
+    });
+    const failed = await store.db.collection("chat_messages").findOne({
+      threadId: tid2,
+      messageId: mid2,
+    });
+    assert.equal(failed.reply.status, "error");
+    assert.match(failed.reply.error, /gbd_\*\*\*/);
+    assert.doesNotMatch(failed.reply.error, /secrettoken/);
+
+    const retry = await httpJson(port, "POST", "/api/gotchibot/chats/retry", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { threadId: tid2, messageId: mid2 },
+    });
+    assert.equal(retry.status, 200);
+    assert.equal(retry.json.reply.status, "pending");
+
+    // retry on unshared foreign thread → 404
+    await httpJson(port, "POST", "/api/gotchibot/chats/push", {
+      headers: { "X-GotchiBot-Desk-Token": desk.deskToken },
+      body: {
+        threadId: "S2-FOREIGN",
+        messages: [
+          {
+            messageId: "foreign-m1",
+            role: "user",
+            text: "x",
+            ts: "2026-06-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    // plant a phone-looking message via raw insert (not reachable by phone)
+    await store.db.collection("chat_messages").insertOne({
+      threadId: "S2-FOREIGN",
+      messageId: "foreign-phone-like",
+      seq: await store.db.collection("counters").findOneAndUpdate(
+        { _id: "chat_seq" },
+        { $inc: { seq: 1 } },
+        { upsert: true, returnDocument: "after" },
+      ).then((d) => d.seq),
+      role: "user",
+      text: "hidden",
+      ts: new Date(),
+      op: "message",
+      deskId: phone.deskId,
+      originKind: "phone",
+      reply: { status: "error", error: "x", failedAt: new Date() },
+      createdAt: new Date(),
+    });
+    const retryForbidden = await httpJson(port, "POST", "/api/gotchibot/chats/retry", {
+      headers: { "X-GotchiBot-Desk-Token": phone.deskToken },
+      body: { threadId: "S2-FOREIGN", messageId: "foreign-phone-like" },
+    });
+    assert.equal(retryForbidden.status, 404);
+  });
+});
+
 // ─── CLI helpers (run 3) ─────────────────────────────────────────────────────
 
 describe("hub-pair + gotchibot-api helpers", () => {

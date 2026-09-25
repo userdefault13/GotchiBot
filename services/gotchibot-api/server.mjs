@@ -305,6 +305,33 @@ export function createApiServer({ store, config }) {
           return json(res, 200, result);
         }
 
+        if (req.method === "POST" && path === "/api/gotchibot/chats/send") {
+          const body = await readBody(req);
+          const result = await store.sendMessage({
+            desk,
+            threadId: body.threadId,
+            clientMessageId: body.clientMessageId,
+            text: body.text,
+            title: body.title,
+          });
+          return json(res, 200, result);
+        }
+
+        if (req.method === "POST" && path === "/api/gotchibot/chats/retry") {
+          const body = await readBody(req);
+          const result = await store.retryReply({
+            desk,
+            threadId: body.threadId,
+            messageId: body.messageId,
+          });
+          return json(res, 200, result);
+        }
+
+        if (req.method === "GET" && path === "/api/gotchibot/hub/runner") {
+          const runner = await store.getRunnerStatus();
+          return json(res, 200, { ok: true, runner });
+        }
+
         if (req.method === "GET" && path === "/api/gotchibot/chats/pull") {
           const threadId = url.searchParams.get("threadId") || undefined;
           const after = url.searchParams.get("after") || 0;

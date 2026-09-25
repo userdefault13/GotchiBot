@@ -38,6 +38,13 @@ from [`app/`](./app/) at `/app/`. Same origin as the Hub API; shell only (no Rea
 build). See [`app/README.md`](./app/README.md) and [`app/NOTICE`](./app/NOTICE) for
 licensing (Mobilecode-open + jsQR, Apache-2.0).
 
+## Phone send / reply tracking (S2)
+
+- `POST /api/gotchibot/chats/send` — `{ threadId?, clientMessageId?, text, title? }` → creates a thread when `threadId` omitted; stamps phone messages with `originKind:"phone"` and `reply:{status:"pending",…}`.
+- `POST /api/gotchibot/chats/retry` — re-queue a phone user message whose `reply.status` is `error` (or stale `claimed`).
+- `GET /api/gotchibot/hub/runner` — runner heartbeat (`ok` / `error` / `offline`).
+- Phone `push` hardens role/`op`/empty text server-side; desks unchanged. Runner helpers live on the store object (`claimNextPendingReply`, `completeReply`, …) for a later hub-runner process.
+
 ## Docs
 
 See [`docs/GOTCHIBOT-API.md`](../../docs/GOTCHIBOT-API.md) (and Hub overview in [`docs/GOTCHIBOT-HUB.md`](../../docs/GOTCHIBOT-HUB.md)).
