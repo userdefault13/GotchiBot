@@ -5,7 +5,8 @@
  *   node scripts/model-auto.mjs list [--json]
  *   node scripts/model-auto.mjs resolve <alias>
  *
- * Never prints API keys. Live completion probes are opt-in (--probe).
+ * Never prints API keys. Hosted providers only (OpenCode Zen / Go); no network
+ * calls on the pick path. --probe is accepted for compatibility (no-op).
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -15,9 +16,6 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CFG_PATH = `${ROOT}/config/models.auto.json`;
 const CACHE_PATH = `${ROOT}/sessions/.model-auto.json`;
 const PIN_PATH = `${ROOT}/sessions/.gotchi-model.env`;
-const CATALOG_URL = "https://openrouter.ai/api/v1/models";
-const KEY_URL = "https://openrouter.ai/api/v1/key";
-const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 const DEFAULT_CFG = {
   goPrefer: [
@@ -29,19 +27,12 @@ const DEFAULT_CFG = {
     "opencode-go/grok-4.6",
   ],
   prefer: [
-    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-    "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-    "openrouter/nvidia/nemotron-3.5-lightning:free",
-    "openrouter/z-ai/glm-5.2:free",
-    "openrouter/google/gemma-4-31b-it:free",
-    "openrouter/google/gemma-4-26b-a4b-it:free",
-    "openrouter/minimax/minimax-m2.7:free",
+    "opencode/big-pickle",
+    "opencode/mimo-v2.5-free",
+    "opencode/nemotron-3.5-lightning-free",
+    "opencode/nemotron-3-ultra-free",
   ],
-  skip: [
-    "opencode/hy3-free",
-    "openrouter/nvidia/nemotron-3.5-content-safety:free",
-    "openrouter/openrouter/free",
-  ],
+  skip: ["opencode/hy3-free"],
   lastResort: "opencode/big-pickle",
   ttlOkSec: 0,
   ttlFailSec: 1800,
@@ -69,70 +60,7 @@ function saveCache(data) {
 }
 
 function oc(id) {
-  const s = String(id || "").trim();
-  if (!s) return "";
-  if (
-    s.startsWith("openrouter/") ||
-    s.startsWith("opencode-go/") ||
-    s.startsWith("opencode/") ||
-    s.startsWith("nvidia-nim/") ||
-    s.startsWith("deepseek/")
-  ) return s;
-  return `openrouter/${s}`;
-}
-
-function orBare(id) {
-  return String(id || "").replace(/^openrouter\//, "");
-}
-
-async function fetchCatalog() {
-  const r = await fetch(CATALOG_URL, { signal: AbortSignal.timeout(12000) });
-  if (!r.ok) throw new Error(`catalog http ${r.status}`);
-  const data = await r.json();
-  const listed = new Set();
-  for (const m of data.data || []) {
-    const id = String(m.id || "");
-    if (id.endsWith(":free")) listed.add(oc(id));
-  }
-  return listed;
-}
-
-async function keyStatus() {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) return { hasKey: false };
-  const r = await fetch(KEY_URL, {
-    headers: { Authorization: `Bearer ${key}` },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!r.ok) return { hasKey: true, ok: false, status: r.status };
-  const j = await r.json();
-  const d = j.data || j;
-  return {
-    hasKey: true,
-    ok: true,
-    limitRemaining: d.limit_remaining ?? d.limitRemaining ?? null,
-    usage: d.usage ?? null,
-  };
-}
-
-async function probeChat(model) {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) return { ok: true, reason: "no-key" };
-  const r = await fetch(CHAT_URL, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      model: orBare(model),
-      messages: [{ role: "user", content: "ping" }],
-      max_tokens: 1,
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
-  const text = await r.text();
-  if (r.ok) return { ok: true, reason: "probed" };
-  if (/free-models-per-day/i.test(text)) return { ok: false, reason: "daily-limit", skipAllOr: true };
-  if (r.status === 429 || r.status === 402) return { ok: false, reason: `http-${r.status}` };
-  return { ok: false, reason: `http-${r.status}` };
+  return String(id || "").trim();
 }
 
 function hasOpencodeKey() {
@@ -163,8 +91,8 @@ function aliases() {
     ultra: "opencode/nemotron-3-ultra-free",
     lightning: "opencode/nemotron-3.5-lightning-free",
     pickle: "opencode/big-pickle",
-    flash: "deepseek/deepseek-v4-flash",
-    pro: "deepseek/deepseek-v4-pro",
+    flash: hasOpencodeGoKey() ? "opencode-go/glm-5.3-flash" : "opencode/big-pickle",
+    pro: hasOpencodeGoKey() ? "opencode-go/kimi-k3" : "opencode/nemotron-3-ultra-free",
     claudemode: "claudemode/@claudemode",
     "@claudemode": "claudemode/@claudemode",
     "claude-mode": "claudemode/@claudemode",
@@ -268,75 +196,29 @@ export async function pickModel({ probe = false, json = false } = {}) {
   const cache = loadCache();
   const now = Date.now();
   const ttlOk = Number(cfg.ttlOkSec ?? 0) * 1000;
-  const ttlFail = (cfg.ttlFailSec || 1800) * 1000;
 
-  if (cache.dailyLimit && cache.dailyAt && now - cache.dailyAt < ttlFail) {
-    const out = { model: cfg.lastResort, reason: "openrouter-daily-limit", cached: true };
-    if (json) return out;
-    return out.model;
-  }
-  if (cache.pick && cache.at && now - cache.at < ttlOk && !cache.dailyLimit) {
+  if (cache.pick && cache.at && now - cache.at < ttlOk) {
     const out = { model: cache.pick, reason: cache.reason || "cache", cached: true };
     if (json) return out;
     return out.model;
   }
 
-  let listed = new Set();
-  let catalogOk = false;
-  try {
-    listed = await fetchCatalog();
-    catalogOk = true;
-  } catch {
-    listed = new Set();
-  }
-
   const skip = new Set((cfg.skip || []).map(oc));
-  const prefer = buildPrefer(cfg);
-  const extras = [...listed].filter((id) => !prefer.includes(id) && !skip.has(id));
-  extras.sort();
-  const candidates = [...prefer, ...extras, cfg.lastResort];
-
-  const ks = await keyStatus();
-  if (ks.hasKey && ks.ok && ks.limitRemaining === 0) {
-    saveCache({ pick: cfg.lastResort, at: now, dailyLimit: true, dailyAt: now, reason: "key-limit-remaining-0" });
-    const out = { model: cfg.lastResort, reason: "key-exhausted", cached: false };
-    if (json) return out;
-    return out.model;
-  }
-
   const report = [];
-  for (const model of candidates) {
+  for (const model of buildPrefer(cfg)) {
+    if (skip.has(model)) continue;
     if (cache.cooldown?.[model] && now < cache.cooldown[model]) {
       report.push({ model, skip: "cooldown" });
       continue;
     }
-    if (catalogOk && model.startsWith("openrouter/") && !listed.has(model)) {
-      report.push({ model, skip: "not-in-catalog" });
-      continue;
-    }
-    if (probe && model.startsWith("openrouter/")) {
-      const p = await probeChat(model);
-      if (p.skipAllOr) {
-        saveCache({ pick: cfg.lastResort, at: now, dailyLimit: true, dailyAt: now, reason: "daily-limit" });
-        const out = { model: cfg.lastResort, reason: "daily-limit", catalog: [...listed], report };
-        if (json) return out;
-        return out.model;
-      }
-      if (!p.ok) {
-        cache.cooldown = cache.cooldown || {};
-        cache.cooldown[model] = now + ttlFail;
-        report.push({ model, skip: p.reason });
-        continue;
-      }
-    }
-    saveCache({ pick: model, at: now, dailyLimit: false, reason: probe ? "probed" : catalogOk ? "catalog" : "prefer", cooldown: cache.cooldown || {} });
-    const out = { model, reason: probe ? "probed" : catalogOk ? "in-catalog" : "offline-prefer", catalogCount: listed.size, report };
+    saveCache({ pick: model, at: now, reason: "prefer", cooldown: cache.cooldown || {} });
+    const out = { model, reason: "prefer", report };
     if (json) return out;
     return out.model;
   }
 
-  saveCache({ pick: cfg.lastResort, at: now, reason: "last-resort" });
-  const out = { model: cfg.lastResort, reason: "last-resort" };
+  saveCache({ pick: cfg.lastResort, at: now, reason: "last-resort", cooldown: cache.cooldown || {} });
+  const out = { model: cfg.lastResort, reason: "last-resort", report };
   if (json) return out;
   return out.model;
 }
@@ -370,15 +252,12 @@ if (isCli) {
     }
     if (cmd === "list") {
       const cfg = loadCfg();
-      let listed = [];
-      try { listed = [...await fetchCatalog()].sort(); } catch { listed = []; }
       return {
         goPrefer: cfg.goPrefer,
         prefer: cfg.prefer,
         effectivePrefer: buildPrefer(cfg),
         opencodeKey: hasOpencodeKey(),
         lastResort: cfg.lastResort,
-        listed,
         cache: loadCache(),
       };
     }
@@ -388,7 +267,8 @@ if (cmd === "subagent") {
   if (argv.includes("--json")) {
     return r;
   } else {
-    return r.model;
+    // pickSubagentModel already wrote the model to stdout in non-json mode.
+    return r?.model ?? "";
   }
 }
     throw new Error("usage: model-auto.mjs pick|pin|list|resolve [alias] [--json] [--probe]");

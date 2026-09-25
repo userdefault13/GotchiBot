@@ -55,7 +55,7 @@ Julius resets preference. Do **not** DIY edits on chat/route models
 (big-pickle / Nemotron / etc.). Talk, route, and one-line answers stay on the
 chat model; the worker then runs a work tool for the actual work.
 
-Legacy OpenCode DeepSeek paths are **override-only** (Julius must ask).
+Paid OpenCode Go paths (`flash` → `opencode-go/glm-5.3-flash`, `pro` → `opencode-go/kimi-k3`) are **override-only** (Julius must ask).
 Local Ollama/llama and Gemini are removed (2026-09-25) — hosted providers only.
 They are not the default volume or escalation path.
 
@@ -162,7 +162,7 @@ GotchiBot/
 |---|---|---|
 | default talk/route | `opencode/big-pickle` (`--model nim`) | talk, route, spawn, summarize |
 | task talk | Nemotron Lightning / Ultra free | talk/route only |
-| legacy paid OpenCode | DeepSeek Pro (override-only) | Julius must ask; still prefer a work tool for edits |
+| paid OpenCode Go | `opencode-go/kimi-k3` (`pro`, override-only) | Julius must ask; still prefer a work tool for edits |
 
 NVIDIA / DeepSeek keys, when used, flow through abracadabra — never written to disk.
 

@@ -19,21 +19,12 @@
     "opencode/mimo-v2.5-free",
     "opencode/nemotron-3.5-lightning-free",
     "opencode/nemotron-3-ultra-free",
-    "opencode/ling-3.0-flash-fin-free",
-    "openrouter/nvidia/nemotron-3.5-lightning:free",
-    "openrouter/z-ai/glm-5.2:free",
-    "openrouter/google/gemma-4-31b-it:free",
-    "openrouter/google/gemma-4-26b-a4b-it:free",
-    "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-    "openrouter/minimax/minimax-m2.7:free",
-    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+    "opencode/ling-3.0-flash-fin-free"
   ],
   "skip": [
     "opencode/hy3-free",
     "opencode/muse-spark-1.2-contributor-free",
-    "opencode/deepseek-v4-flash-free",
-    "openrouter/nvidia/nemotron-3.5-content-safety:free",
-    "openrouter/openrouter/free"
+    "opencode/deepseek-v4-flash-free"
   ],
   "lastResort": "opencode/big-pickle",
   "ttlOkSec": 0,

@@ -5,30 +5,33 @@ export type GotchiModelPickerItem = {
   description: string;
 };
 
-/** OpenClaw gateway free default (iMac primary). OpenCode Zen hy3-free is NOT on the gateway. */
+/**
+ * OpenClaw gateway free default (Cloudflare Workers AI). OpenCode Zen ids (opencode/*) are NOT
+ * on the gateway; opencode-go/* and cloudflare-wai/* are. Override with GOTCHIBOT_FREE_MODEL.
+ */
 export const OPENCLAW_FREE_MODEL =
-  (process.env.GOTCHIBOT_FREE_MODEL || "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free").trim();
+  (process.env.GOTCHIBOT_FREE_MODEL || "cloudflare-wai/@cf/zai-org/glm-4.7-flash").trim();
 
 export const GOTCHI_MODEL_TIER_ALIASES: Record<string, string> = {
-  auto: "openrouter/nvidia/nemotron-3.5-lightning:free",
+  auto: "opencode-go/glm-5.3-flash",
   free: OPENCLAW_FREE_MODEL,
   nim: OPENCLAW_FREE_MODEL,
   hy3: OPENCLAW_FREE_MODEL,
-  ultra: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+  ultra: "opencode-go/kimi-k3",
   glm: "cloudflare-wai/@cf/zai-org/glm-4.7-flash",
   flashcf: "cloudflare-wai/@cf/zai-org/glm-4.7-flash",
-  fast: "openrouter/nvidia/nemotron-3.5-lightning:free",
-  lightning: "openrouter/nvidia/nemotron-3.5-lightning:free",
+  fast: "opencode-go/glm-5.3-flash",
+  lightning: "opencode-go/glm-5.3-flash",
   nimlightning: "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b",
-  flash: "deepseek/deepseek-v4-flash",
-  pro: "deepseek/deepseek-v4-pro",
+  flash: "opencode-go/glm-5.3-flash",
+  pro: "opencode-go/kimi-k3",
 };
 
-export const GOTCHI_MODEL_CATALOG: GotchiModelPickerItem[] = [
+const GOTCHI_MODEL_CATALOG_ITEMS: GotchiModelPickerItem[] = [
   {
     value: OPENCLAW_FREE_MODEL,
-    label: OPENCLAW_FREE_MODEL,
-    description: "Free default · OpenRouter (gateway)",
+    label: OPENCLAW_FREE_MODEL.replace("/@cf/zai-org/", "/"),
+    description: "Free default · Cloudflare Workers AI (gateway)",
   },
   {
     value: "cloudflare-wai/@cf/zai-org/glm-4.7-flash",
@@ -51,16 +54,21 @@ export const GOTCHI_MODEL_CATALOG: GotchiModelPickerItem[] = [
     description: "NIM lightning · needs NVIDIA_API_KEY",
   },
   {
-    value: "deepseek/deepseek-v4-flash",
-    label: "deepseek/deepseek-v4-flash",
-    description: "Volume coding · needs DEEPSEEK_API_KEY",
+    value: "opencode-go/glm-5.3-flash",
+    label: "opencode-go/glm-5.3-flash",
+    description: "Fast · OpenCode Go · needs OPENCODE_API_KEY",
   },
   {
-    value: "deepseek/deepseek-v4-pro",
-    label: "deepseek/deepseek-v4-pro",
-    description: "Hard reasoning · needs DEEPSEEK_API_KEY",
+    value: "opencode-go/kimi-k3",
+    label: "opencode-go/kimi-k3",
+    description: "Hard reasoning · OpenCode Go · needs OPENCODE_API_KEY",
   },
 ];
+
+/** First entry wins, so the free default never shows twice (e.g. when it is glm-4.7-flash). */
+export const GOTCHI_MODEL_CATALOG: GotchiModelPickerItem[] = GOTCHI_MODEL_CATALOG_ITEMS.filter(
+  (item, i, all) => all.findIndex((x) => x.value === item.value) === i,
+);
 
 /** Models OpenClaw gateway cannot resolve (OpenCode Zen ids, etc.). */
 export function isOpenClawUnknownModel(modelRef: string): boolean {

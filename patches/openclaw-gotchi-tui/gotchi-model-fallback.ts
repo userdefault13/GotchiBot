@@ -9,7 +9,7 @@ const LIMIT_RE =
 const UNKNOWN_MODEL_RE = /unknown model|model not found|invalid model|failed before reply/i;
 
 const FREE_MODEL_RE =
-  /(?:^openrouter\/.*:free$|^cloudflare-wai\/)/i;
+  /(?:^cloudflare-wai\/)/i;
 
 export function isModelLimitError(text: string): boolean {
   const s = String(text || "").trim();

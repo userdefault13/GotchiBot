@@ -16,7 +16,7 @@ fi
 
 # Persistent gotchi-mode default model (pinned fast tier)
 # sessions/.gotchi-model.env sets GOTCHIBOT_OPENCODE_MODEL so gotchi mode
-# doesn't auto-rotate through OpenRouter free models.
+# keeps one pinned model instead of auto-rotating through free models.
 if [ -f "$ROOT/sessions/.gotchi-model.env" ]; then
   # shellcheck source=/dev/null
   source "$ROOT/sessions/.gotchi-model.env"

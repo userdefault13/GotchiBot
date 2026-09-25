@@ -98,8 +98,20 @@ model_for() {
         echo "opencode/nemotron-3.5-lightning-free"
       fi
       ;;
-    flash) echo "deepseek/deepseek-v4-flash" ;;
-    pro) echo "deepseek/deepseek-v4-pro" ;;
+    flash)
+      if [ -n "${OPENCODE_API_KEY:-}" ]; then
+        echo "opencode-go/glm-5.3-flash"
+      else
+        echo "opencode/big-pickle"
+      fi
+      ;;
+    pro)
+      if [ -n "${OPENCODE_API_KEY:-}" ]; then
+        echo "opencode-go/kimi-k3"
+      else
+        echo "opencode/nemotron-3-ultra-free"
+      fi
+      ;;
     local)
       echo "model 'local' removed (no Ollama; hosted only) — using sub" >&2
       node "$ROOT/scripts/model-auto.mjs" subagent
