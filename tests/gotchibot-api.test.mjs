@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   canonicalJson,
@@ -35,6 +35,11 @@ import {
 } from "../services/gotchibot-api/auth.mjs";
 import { connectStore } from "../services/gotchibot-api/store.mjs";
 import { createApiServer } from "../services/gotchibot-api/server.mjs";
+import {
+  resolveStaticPath,
+  contentTypeFor,
+} from "../services/gotchibot-api/static.mjs";
+import { request as httpRequest } from "node:http";
 import { MongoClient } from "mongodb";
 
 // ─── pure: canonical / hash / ulid ───────────────────────────────────────────
@@ -1228,5 +1233,196 @@ describe("opencode-serve guard + port registry", () => {
       if (re.test(text)) hits.push(rel);
     }
     assert.deepEqual(hits, [], `unexpected Hub port defaults: ${hits.join(", ")}`);
+  });
+});
+
+// ─── static /app/ route (no Mongo) ───────────────────────────────────────────
+
+
+const APP_ROOT = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../services/gotchibot-api/app",
+);
+
+describe("resolveStaticPath / contentTypeFor", () => {
+  it("maps /app/ and /app/js/main.js; rejects unsafe segments and scripts/", () => {
+    const index = resolveStaticPath(APP_ROOT, "/app/");
+    assert.ok(index.endsWith(`${sep}index.html`.replace(/\\/g, sep)) || index.endsWith("/index.html"));
+    assert.equal(resolveStaticPath(APP_ROOT, "/app/js/main.js"), resolve(APP_ROOT, "js/main.js"));
+    assert.equal(resolveStaticPath(APP_ROOT, "/app/%2e%2e/package.json"), null);
+    assert.equal(resolveStaticPath(APP_ROOT, "/app/..%2fpackage.json"), null);
+    assert.equal(resolveStaticPath(APP_ROOT, "/app/.hidden"), null);
+    assert.equal(resolveStaticPath(APP_ROOT, "/app/scripts/make-icons.mjs"), null);
+    assert.equal(resolveStaticPath(APP_ROOT, "/elsewhere"), null);
+  });
+
+  it("contentTypeFor covers shell extensions", () => {
+    assert.equal(contentTypeFor("index.html"), "text/html; charset=utf-8");
+    assert.equal(contentTypeFor("main.js"), "text/javascript; charset=utf-8");
+    assert.equal(contentTypeFor("x.mjs"), "text/javascript; charset=utf-8");
+    assert.equal(contentTypeFor("app.css"), "text/css; charset=utf-8");
+    assert.equal(contentTypeFor("manifest.webmanifest"), "application/manifest+json");
+    assert.equal(contentTypeFor("icon.png"), "image/png");
+    assert.equal(contentTypeFor("NOTICE"), "text/plain; charset=utf-8");
+    assert.equal(contentTypeFor("blob.bin"), "application/octet-stream");
+  });
+});
+
+describe("static /app/ route", async () => {
+  const stubStore = {
+    db: { command: async () => ({ ok: 1 }) },
+    findDeskByToken: async () => null,
+  };
+  const ownerLogin = "testowner@example.com";
+  let server;
+  let port;
+
+  before(async () => {
+    server = createApiServer({
+      store: stubStore,
+      config: { host: "127.0.0.1", port: 0, ownerLogin },
+    });
+    port = await listen(server);
+  });
+
+  after(async () => {
+    if (server) await closeServer(server);
+  });
+
+  function rawReq(method, path, headers = {}) {
+    return new Promise((resolvePromise, reject) => {
+      const req = httpRequest(
+        {
+          host: "127.0.0.1",
+          port,
+          path,
+          method,
+          headers,
+        },
+        (res) => {
+          const chunks = [];
+          res.on("data", (c) => chunks.push(c));
+          res.on("end", () => {
+            resolvePromise({
+              status: res.statusCode,
+              headers: res.headers,
+              body: Buffer.concat(chunks),
+            });
+          });
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+  }
+
+  it("GET /app -> 308 Location /app/", async () => {
+    const r = await rawReq("GET", "/app");
+    assert.equal(r.status, 308);
+    assert.equal(r.headers.location, "/app/");
+  });
+
+  it("GET /app/ -> 200 html with PWA meta; no inline script without src", async () => {
+    const r = await rawReq("GET", "/app/");
+    assert.equal(r.status, 200);
+    assert.match(r.headers["content-type"], /^text\/html/);
+    const html = r.body.toString("utf8");
+    assert.match(html, /apple-mobile-web-app-capable/);
+    assert.match(html, /apple-touch-icon/);
+    assert.match(html, /manifest\.webmanifest/);
+    assert.equal(/<script(?![^>]*\bsrc=)/i.test(html), false);
+  });
+
+  it("manifest + icons are valid", async () => {
+    const r = await rawReq("GET", "/app/manifest.webmanifest");
+    assert.equal(r.status, 200);
+    assert.ok(r.headers["content-type"].startsWith("application/manifest+json"));
+    const man = JSON.parse(r.body.toString("utf8"));
+    assert.equal(man.start_url, "/app/");
+    assert.equal(man.scope, "/app/");
+    assert.equal(man.display, "standalone");
+    assert.ok(Array.isArray(man.icons) && man.icons.length >= 2);
+    assert.ok(man.icons.some((i) => String(i.purpose || "").includes("maskable")));
+    for (const icon of man.icons) {
+      const url = new URL(icon.src, "http://127.0.0.1/app/");
+      const ir = await rawReq("GET", url.pathname);
+      assert.equal(ir.status, 200, icon.src);
+      assert.match(ir.headers["content-type"], /^image\/png/);
+      assert.equal(ir.body[0], 0x89);
+      assert.equal(ir.body[1], 0x50);
+      assert.equal(ir.body[2], 0x4e);
+      assert.equal(ir.body[3], 0x47);
+    }
+  });
+
+  it("sw.js is javascript no-cache; precache list has no api", async () => {
+    const r = await rawReq("GET", "/app/sw.js");
+    assert.equal(r.status, 200);
+    assert.match(r.headers["content-type"], /^text\/javascript/);
+    assert.equal(r.headers["cache-control"], "no-cache");
+    const src = r.body.toString("utf8");
+    const m = src.match(/const SHELL\s*=\s*\[([\s\S]*?)\];/);
+    assert.ok(m, "SHELL array present");
+    assert.equal(/api/i.test(m[1]), false);
+  });
+
+  it("serves app.css and js/main.js", async () => {
+    const css = await rawReq("GET", "/app/app.css");
+    assert.equal(css.status, 200);
+    assert.match(css.headers["content-type"], /^text\/css/);
+    const js = await rawReq("GET", "/app/js/main.js");
+    assert.equal(js.status, 200);
+    assert.match(js.headers["content-type"], /^text\/javascript/);
+  });
+
+  it("security headers on static responses", async () => {
+    const r = await rawReq("GET", "/app/");
+    assert.equal(r.headers["x-content-type-options"], "nosniff");
+    assert.match(r.headers["content-security-policy"] || "", /default-src 'self'/);
+  });
+
+  it("rejects encoded parent segments and dotfiles with 404", async () => {
+    for (const path of [
+      "/app/%2e%2e/package.json",
+      "/app/..%2fpackage.json",
+      "/app/.hidden",
+    ]) {
+      const r = await rawReq("GET", path);
+      assert.equal(r.status, 404, path);
+    }
+  });
+
+  it("does not serve app/scripts/*", async () => {
+    const r = await rawReq("GET", "/app/scripts/make-icons.mjs");
+    assert.equal(r.status, 404);
+  });
+
+  it("HEAD /app/ -> 200 with empty body", async () => {
+    const r = await rawReq("HEAD", "/app/");
+    assert.equal(r.status, 200);
+    assert.equal(r.body.length, 0);
+    assert.ok(Number(r.headers["content-length"]) > 0);
+  });
+
+  it("owner check: x-forwarded-for without Tailscale login -> 403; with login -> 200", async () => {
+    const denied = await rawReq("GET", "/app/", {
+      "x-forwarded-for": "1.2.3.4",
+    });
+    assert.equal(denied.status, 403);
+    const ok = await rawReq("GET", "/app/", {
+      "x-forwarded-for": "1.2.3.4",
+      "tailscale-user-login": ownerLogin,
+    });
+    assert.equal(ok.status, 200);
+  });
+
+  it("THIRD_PARTY license + NOTICE attribution present", () => {
+    const lic = readFileSync(
+      resolve(APP_ROOT, "THIRD_PARTY/Mobilecode-open-LICENSE.txt"),
+      "utf8",
+    );
+    assert.match(lic, /Apache License/);
+    const notice = readFileSync(resolve(APP_ROOT, "NOTICE"), "utf8");
+    assert.match(notice, /Mobilecode-open/);
   });
 });

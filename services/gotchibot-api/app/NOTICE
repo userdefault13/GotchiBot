@@ -1,0 +1,12 @@
+GotchiBot phone app (/app/)
+
+This product includes software adapted from Mobilecode-open
+(Copyright 2026 OpenCode Remote contributors), licensed under the Apache
+License, Version 2.0. See THIRD_PARTY/Mobilecode-open-LICENSE.txt and
+THIRD_PARTY/README.md.
+
+Upstream: https://github.com/elkir0/Mobilecode-open (commit b2ea0d5),
+itself derived from giuliastro/opencode-remote-android (Apache-2.0).
+
+This product also includes jsQR 1.4.0 (Copyright Cordio / cozmo/jsQR
+contributors), Apache License 2.0. See vendor/LICENSE-jsQR.txt.

@@ -31,6 +31,12 @@ await close();
 
 Env wins over the config file. Prefer binding to loopback and exposing via `tailscale serve`.
 
+## Phone app (`/app/`)
+
+Owner/tailnet-only static PWA served from [`app/`](./app/) at `/app/`. Same
+origin as the Hub API; shell only (no React build). See [`app/README.md`](./app/README.md)
+and [`app/NOTICE`](./app/NOTICE) for licensing (Mobilecode-open + jsQR, Apache-2.0).
+
 ## Docs
 
 See [`docs/GOTCHIBOT-API.md`](../../docs/GOTCHIBOT-API.md) (and Hub overview in [`docs/GOTCHIBOT-HUB.md`](../../docs/GOTCHIBOT-HUB.md)).
