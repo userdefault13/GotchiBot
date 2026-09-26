@@ -65,7 +65,8 @@ Add `--project <slug>` to any command to target a specific sealed project.
 ## Desk pack
 
 ```bash
-gotchibot templates apply kanban-manager --hero <available> --yes
+gotchibot templates install kanban-manager   # free, no hero
+gotchibot templates apply kanban-manager --hero <available> --yes   # apply gate
 ```
 
 Skills: `project-kanban` (board) + `project-tickets` (request/submit protocol).

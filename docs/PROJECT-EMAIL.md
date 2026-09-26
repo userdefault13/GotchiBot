@@ -17,7 +17,8 @@ SDK env name is `AGENTMAIL_API_KEY`; vault name is `AGENT_MAIL_API_KEY` — map 
 ```bash
 ./scripts/project-context.mjs mail show
 ./scripts/project-context.mjs mail set --address you@agentmail.to --inbox-id <id>
-gotchibot templates apply mail-courier --hero <available> --yes
+gotchibot templates install mail-courier   # free, no hero
+gotchibot templates apply mail-courier --hero <available> --yes   # apply gate + available hero
 ```
 
 Other desks draft mail and **passoff to mail-courier**. They do not hold the project AgentMail key.

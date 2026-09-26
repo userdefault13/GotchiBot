@@ -60,6 +60,8 @@ Status: `./scripts/gotchibot link-cube status`.
 ./scripts/gotchibot templates apply <id> --hero <hero> [--yes] [--standing-duty <key>]
 ```
 
+**Apply gate:** `templates install` is free (no gotchi). `templates apply` needs a hero on your cartridge roster, status `available`, and (for `starter-*`) not already on another project’s crew. `--force` overrides with a warning. Offline roster → local cache fallback with warning. Omit `--hero` to list available heroes. See [`docs/GLOSSARY.md`](../../../docs/GLOSSARY.md).
+
 Underlying CLI: `./scripts/template-pack.mjs`. Pack authoring edits go through a work tool (`cursor-cli` default).
 
 Known packs UserDefault often asks for: `worker`, `game-art-director`, `security-engineer`, `auditor`, `dossier-ai-cron-site`, `data-ai-cron-site`, `central-bot`, `tool-maker`, `skill-maker`, `policy-maker`, `rule-maker`, `mcp-maker`, `roadblock-reviewer` — apply with `gotchibot templates apply <id> --hero <available> --yes`. Worker tool index: `node ./scripts/worker-index.mjs --text`.

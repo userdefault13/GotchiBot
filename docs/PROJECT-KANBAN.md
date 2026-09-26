@@ -15,7 +15,10 @@
 ## Desk pack
 
 ```bash
+# install is free (no hero). apply needs an available gotchi on your cartridge roster.
+gotchibot templates install kanban-manager
 gotchibot templates apply kanban-manager --hero <available> --yes
+# apply gate: roster + available + starter one-crew; --force overrides with WARNING
 ```
 
 Skill: `project-kanban`. Every other desk keeps a mini via `desk ensure` / AGENTS.common.

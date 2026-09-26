@@ -117,3 +117,4 @@ pattern — see the `cartridge-mint` skill for mint/bind workflows.
 | [COMMERCIAL.md](COMMERCIAL.md) | NFT entitlements & commercial licensing |
 | [ORCHESTRATOR.md](ORCHESTRATOR.md) | Orchestrator configuration |
 | [Gotchibot.md](Gotchibot.md) | GotchiBot abilities and agent skills list |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | Roster / crew / wallet gotchis (unminted) glossary + apply-gate rules |
