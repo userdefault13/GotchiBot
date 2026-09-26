@@ -182,13 +182,28 @@ const ERC20_APPROVE_ABI = Object.freeze({
   outputs: [{ name: "", type: "bool" }],
 });
 
-/** View fragments that exist in this repo (cartridge-sepolia CART_ABI + L1 ownerOf). */
+/**
+ * Fallback human-readable view ABIs when chain config lacks `views.*` fragments.
+ * Prefer config/cartridgeChain.*.json `views` (confirmed by Aarcadeghst CoS).
+ */
 const PREFLIGHT_CART_ABI = [
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function portalStatus(uint256 cartridgeId) view returns (uint8)",
   "function heroIds(uint256 cartridgeId) view returns (bytes32[])",
+  "function lineAPaid(uint256 cartridgeId) view returns (bool)",
 ];
 const PREFLIGHT_L1_ABI = ["function ownerOf(uint256 tokenId) view returns (address)"];
+
+/**
+ * Resolve a preflight view ABI from chain config `views.<name>` JSON fragment.
+ * Falls back to PREFLIGHT_CART_ABI strings only when the config lacks that fragment.
+ */
+function resolvePreflightViewAbi(cfg, functionName) {
+  const views = cfg?.views && typeof cfg.views === "object" ? cfg.views : null;
+  const frag = views?.[functionName];
+  if (frag && typeof frag === "object") return [frag];
+  return PREFLIGHT_CART_ABI;
+}
 
 function parseArgs(argv) {
   const out = {
@@ -884,8 +899,8 @@ function abiMissingResult(kind) {
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 /**
- * UNVERIFIED ASSUMPTION (confirm with Aarcadeghst CoS):
- * 0x-prefixed 32-byte hex → as-is; else encodeBytes32String(id).
+ * Confirmed by Aarcadeghst CoS from ChainCartridgeProvider.ts bindStarter:
+ * keccak256(toUtf8Bytes(lowercase name)); 0x+32-byte hex unchanged.
  * Re-exported from hero-mint-readback for a single encoding path.
  */
 export async function encodeTemplateId(id, ethersLib = null) {
@@ -926,6 +941,9 @@ export async function encodeBindCalldata(
     if (cartridgeId == null) {
       throw new Error("unsupported bind ABI fragment: cartridgeId required");
     }
+    // Collateral is not checked on-chain — only forwarded to FeeSplitter.
+    // AarcadeGh-t client defaults to address(0); this repo prefers a real collateral
+    // token address when available (fall back to address(0) when missing/invalid).
     const coll = collateral == null || collateral === "" ? ZERO_ADDR : String(collateral);
     if (typeof ethers.isAddress === "function" && !ethers.isAddress(coll)) {
       throw new Error(`unsupported bind ABI fragment: collateral must be a valid address (${coll})`);
@@ -1075,7 +1093,7 @@ export async function runBindPreflight(opts = {}) {
     const owner = String(
       await readContract({
         address: diamond,
-        abi: PREFLIGHT_CART_ABI,
+        abi: resolvePreflightViewAbi(cfg, "ownerOf"),
         functionName: "ownerOf",
         args: [BigInt(cartridgeId)],
       }),
@@ -1091,12 +1109,13 @@ export async function runBindPreflight(opts = {}) {
     return fail("ownerOf", `ownerOf failed: ${e?.message || e}`);
   }
 
-  // 2. portal open (1 = sealed)
+  // 2. portalStatus: 0 LEGACY / 2 OPEN ok; only 1 SEALED blocks bind
+  // (LibCartridgeAppStorage PORTAL_*; GotchiBotNestFacet open)
   try {
     const status = Number(
       await readContract({
         address: diamond,
-        abi: PREFLIGHT_CART_ABI,
+        abi: resolvePreflightViewAbi(cfg, "portalStatus"),
         functionName: "portalStatus",
         args: [BigInt(cartridgeId)],
       }),
@@ -1104,7 +1123,7 @@ export async function runBindPreflight(opts = {}) {
     if (status === 1) {
       return fail(
         "portalStatus",
-        `cartridge #${cartridgeId} is sealed (portalStatus=1) — open the sealed cart first`,
+        `cartridge #${cartridgeId} is SEALED — it must be opened (GotchiBotNestFacet open) first`,
       );
     }
     checks.push({
@@ -1116,12 +1135,28 @@ export async function runBindPreflight(opts = {}) {
     return fail("portalStatus", `portalStatus failed: ${e?.message || e}`);
   }
 
-  // 3. lineAPaid — fragment NOT in repo → skip
-  checks.push({
-    name: "lineAPaid",
-    status: "skipped",
-    message: "lineAPaid check skipped: view fragment not in repo",
-  });
+  // 3. lineAPaid — true when mint fee is 0 or Line A is paid (GameRulesFacet)
+  try {
+    const paid = await readContract({
+      address: diamond,
+      abi: resolvePreflightViewAbi(cfg, "lineAPaid"),
+      functionName: "lineAPaid",
+      args: [BigInt(cartridgeId)],
+    });
+    if (!paid) {
+      return fail(
+        "lineAPaid",
+        'Line A unpaid — bind would revert "Cartridge: LINE_A_UNPAID"',
+      );
+    }
+    checks.push({
+      name: "lineAPaid",
+      status: "passed",
+      message: "Line A paid (or mint fee is 0)",
+    });
+  } catch (e) {
+    return fail("lineAPaid", `lineAPaid failed: ${e?.message || e}`);
+  }
 
   // 4. bindOwned extras
   if (String(kind) === "owned") {
@@ -1159,7 +1194,7 @@ export async function runBindPreflight(opts = {}) {
     try {
       const ids = await readContract({
         address: diamond,
-        abi: PREFLIGHT_CART_ABI,
+        abi: resolvePreflightViewAbi(cfg, "heroIds"),
         functionName: "heroIds",
         args: [BigInt(cartridgeId)],
       });

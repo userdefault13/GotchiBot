@@ -39,15 +39,17 @@ export function onchainHeroIdsPath(sessionsOverride) {
 }
 
 /**
- * UNVERIFIED ASSUMPTION (confirm with Aarcadeghst CoS):
- * starter template ids that are already 0x + 32-byte hex are used as-is;
- * otherwise ethers.encodeBytes32String(id).
+ * Confirmed by Aarcadeghst CoS from ChainCartridgeProvider.ts bindStarter:
+ * templateId = keccak256(toUtf8Bytes(name)) where name = lowercase collateral id
+ * (dai, weth, wbtc, aave, usdc, tesla, …). Contract does not validate templateId;
+ * it only feeds the starter hero-id hash.
+ * 0x-prefixed 32-byte hex → return unchanged.
  */
 export function encodeTemplateId(id, ethersLib) {
   if (!ethersLib) throw new Error("encodeTemplateId requires ethers");
   const s = String(id ?? "").trim();
   if (/^0x[0-9a-fA-F]{64}$/.test(s)) return s;
-  return ethersLib.encodeBytes32String(s);
+  return ethersLib.keccak256(ethersLib.toUtf8Bytes(s.toLowerCase()));
 }
 
 /** On-chain owned heroId = keccak256(abi.encodePacked("owned-", uint256 sourceTokenId)) */

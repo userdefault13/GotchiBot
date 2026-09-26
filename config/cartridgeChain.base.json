@@ -10,7 +10,40 @@
   "bindSelectors": {
     "bindOwned": "0x75002762",
     "bindStarter": "0x1b33e284",
-    "heroIds": "0x614a4e44"
+    "heroIds": "0x614a4e44",
+    "lineAPaid": "0x184014a2",
+    "portalStatus": "0xf97b606a",
+    "ownerOf": "0x6352211e"
+  },
+  "views": {
+    "ownerOf": {
+      "type": "function",
+      "name": "ownerOf",
+      "stateMutability": "view",
+      "inputs": [{ "name": "tokenId", "type": "uint256" }],
+      "outputs": [{ "name": "", "type": "address" }]
+    },
+    "portalStatus": {
+      "type": "function",
+      "name": "portalStatus",
+      "stateMutability": "view",
+      "inputs": [{ "name": "cartridgeId", "type": "uint256" }],
+      "outputs": [{ "name": "", "type": "uint8" }]
+    },
+    "lineAPaid": {
+      "type": "function",
+      "name": "lineAPaid",
+      "stateMutability": "view",
+      "inputs": [{ "name": "cartridgeId", "type": "uint256" }],
+      "outputs": [{ "name": "", "type": "bool" }]
+    },
+    "heroIds": {
+      "type": "function",
+      "name": "heroIds",
+      "stateMutability": "view",
+      "inputs": [{ "name": "cartridgeId", "type": "uint256" }],
+      "outputs": [{ "name": "", "type": "bytes32[]" }]
+    }
   },
   "bindAbi": {
     "bindOwned": {

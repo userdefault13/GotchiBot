@@ -44,11 +44,16 @@ describe("config JSON + selectors", () => {
     assert.equal(sepoliaCfg.bindSelectors.bindStarter, "0x100cc61b");
     assert.equal(sepoliaCfg.events.topic0, "0x1827e5bd6f1d1f8b1db16accce3f4eaa3a7db62d925e97e9eb749276c400baa9");
     assert.ok(sepoliaCfg.l1AavegotchiDiamond.startsWith("0x"));
+    assert.ok(sepoliaCfg.views.lineAPaid);
+    assert.ok(sepoliaCfg.views.portalStatus);
+    assert.ok(sepoliaCfg.views.ownerOf);
+    assert.ok(sepoliaCfg.views.heroIds);
     assert.equal(mainnetCfg.chainId, 8453);
     assert.equal(mainnetCfg.signingEnabled, false);
     assert.equal(mainnetCfg.bindSelectors.bindStarter, "0x1b33e284");
     assert.equal(mainnetCfg.starterBindFee, "5000000");
     assert.equal(mainnetCfg.usdcToken.toLowerCase(), "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
+    assert.ok(mainnetCfg.views.lineAPaid);
   });
 
   it("calldata selectors match documented values", async () => {
@@ -87,11 +92,139 @@ describe("config JSON + selectors", () => {
     assert.equal(topic.toLowerCase(), sepoliaCfg.events.topic0.toLowerCase());
   });
 
+  it("recomputes every selector from config fragments (ethers)", async () => {
+    const ethers = await loadEthers();
+    const sel = (frag) => {
+      const iface = new ethers.Interface([frag]);
+      return iface.getFunction(frag.name).selector.toLowerCase();
+    };
+    const expect = {
+      bindOwned: "0x75002762",
+      bindStarterSepolia: "0x100cc61b",
+      bindStarterMainnet: "0x1b33e284",
+      heroIds: "0x614a4e44",
+      lineAPaid: "0x184014a2",
+      portalStatus: "0xf97b606a",
+      ownerOf: "0x6352211e",
+    };
+    assert.equal(sel(sepoliaCfg.bindAbi.bindOwned), expect.bindOwned);
+    assert.equal(sel(sepoliaCfg.bindAbi.bindStarter), expect.bindStarterSepolia);
+    assert.equal(sel(mainnetCfg.bindAbi.bindStarter), expect.bindStarterMainnet);
+    assert.equal(sel(sepoliaCfg.views.heroIds), expect.heroIds);
+    assert.equal(sel(sepoliaCfg.views.lineAPaid), expect.lineAPaid);
+    assert.equal(sel(sepoliaCfg.views.portalStatus), expect.portalStatus);
+    assert.equal(sel(sepoliaCfg.views.ownerOf), expect.ownerOf);
+    assert.equal(sel(mainnetCfg.views.heroIds), expect.heroIds);
+    assert.equal(sel(mainnetCfg.views.lineAPaid), expect.lineAPaid);
+    assert.equal(sel(mainnetCfg.views.portalStatus), expect.portalStatus);
+    assert.equal(sel(mainnetCfg.views.ownerOf), expect.ownerOf);
+
+    assert.equal(sepoliaCfg.bindSelectors.bindOwned.toLowerCase(), expect.bindOwned);
+    assert.equal(sepoliaCfg.bindSelectors.bindStarter.toLowerCase(), expect.bindStarterSepolia);
+    assert.equal(mainnetCfg.bindSelectors.bindStarter.toLowerCase(), expect.bindStarterMainnet);
+    assert.equal(sepoliaCfg.bindSelectors.heroIds.toLowerCase(), expect.heroIds);
+    assert.equal(sepoliaCfg.bindSelectors.lineAPaid.toLowerCase(), expect.lineAPaid);
+    assert.equal(sepoliaCfg.bindSelectors.portalStatus.toLowerCase(), expect.portalStatus);
+    assert.equal(sepoliaCfg.bindSelectors.ownerOf.toLowerCase(), expect.ownerOf);
+    assert.equal(mainnetCfg.bindSelectors.heroIds.toLowerCase(), expect.heroIds);
+    assert.equal(mainnetCfg.bindSelectors.lineAPaid.toLowerCase(), expect.lineAPaid);
+    assert.equal(mainnetCfg.bindSelectors.portalStatus.toLowerCase(), expect.portalStatus);
+    assert.equal(mainnetCfg.bindSelectors.ownerOf.toLowerCase(), expect.ownerOf);
+
+    const topic = ethers.id("CAavegotchiBound(uint256,bytes32,uint8,uint256)");
+    assert.equal(
+      topic.toLowerCase(),
+      "0x1827e5bd6f1d1f8b1db16accce3f4eaa3a7db62d925e97e9eb749276c400baa9",
+    );
+    assert.equal(sepoliaCfg.events.topic0.toLowerCase(), topic.toLowerCase());
+    assert.equal(mainnetCfg.events.topic0.toLowerCase(), topic.toLowerCase());
+  });
+
   it("loadChainConfig accepts injected cfg (no AarcadeGh-t)", async () => {
     const { loadChainConfig, resolveBindAbi } = await import(`${mintUrl}?${bust()}`);
     const cfg = loadChainConfig({ cfg: { chainId: 84532, bindAbi: {} } });
     assert.equal(cfg.chainId, 84532);
     assert.equal(resolveBindAbi("owned", { cfg }), null);
+  });
+});
+
+describe("templateId encoding (CoS-confirmed keccak256)", () => {
+  const DAI_VEC =
+    "0x9f08c71555a1be56230b2e2579fafe4777867e0a1b947f01073e934471de15c1";
+  const WBTC_VEC =
+    "0x59e50295208418569657dcdbf79b85731eff3be260696ead2b44b1c097916a6c";
+
+  it("encodeTemplateId vectors: dai / DAI / wbtc / passthrough hex", async () => {
+    const ethers = await loadEthers();
+    const { encodeTemplateId } = await import(`${rbUrl}?${bust()}`);
+    assert.equal(encodeTemplateId("dai", ethers).toLowerCase(), DAI_VEC);
+    assert.equal(encodeTemplateId("DAI", ethers).toLowerCase(), DAI_VEC);
+    assert.equal(encodeTemplateId("wbtc", ethers).toLowerCase(), WBTC_VEC);
+    assert.equal(
+      encodeTemplateId(DAI_VEC, ethers).toLowerCase(),
+      DAI_VEC,
+    );
+    assert.equal(
+      ethers.keccak256(ethers.toUtf8Bytes("dai")).toLowerCase(),
+      DAI_VEC,
+    );
+  });
+
+  it("starter deterministic id for dai n=3; matcher agrees; calldata carries dai vector", async () => {
+    const ethers = await loadEthers();
+    const {
+      encodeTemplateId,
+      starterHeroIdBytes32,
+      resolveHeroIdAfterReceipt,
+    } = await import(`${rbUrl}?${bust()}`);
+    const { matchSepoliaHeroBytes32 } = await import(`${gateUrl}?${bust()}`);
+    const { encodeBindCalldata, loadChainConfig } = await import(`${mintUrl}?${bust()}`);
+
+    const tid = encodeTemplateId("dai", ethers);
+    assert.equal(tid.toLowerCase(), DAI_VEC);
+    const starterVec = starterHeroIdBytes32(tid, 3, ethers);
+    const expected = ethers.solidityPackedKeccak256(
+      ["string", "bytes32", "string", "uint256"],
+      ["starter-", DAI_VEC, "-", 3n],
+    );
+    assert.equal(starterVec.toLowerCase(), expected.toLowerCase());
+
+    assert.equal(
+      matchSepoliaHeroBytes32(starterVec, "starter-dai-h1-1", ethers, {
+        onchainHeroIds: {
+          "starter-dai-h1-1": { heroIdBytes32: starterVec },
+        },
+      }),
+      true,
+    );
+
+    const det = await resolveHeroIdAfterReceipt({
+      receipt: { status: 1, logs: [] },
+      cartridgeDiamond: sepoliaCfg.cartridgeDiamond,
+      cartridgeId: "1",
+      bindKind: "starter",
+      templateId: "dai",
+      heroIdsBefore: [1, 2, 3],
+      readHeroIds: async () => [],
+      ethersLib: ethers,
+    });
+    assert.equal(det.source, "deterministic");
+    assert.equal(det.heroIdBytes32.toLowerCase(), starterVec.toLowerCase());
+
+    const cfg = loadChainConfig({ cfg: sepoliaCfg });
+    const coll = "0x" + "11".repeat(20);
+    const encoded = await encodeBindCalldata(
+      "starter",
+      cfg.bindAbi.bindStarter,
+      { cartridgeId: "1", templateId: "dai", collateral: coll },
+      ethers,
+    );
+    const iface = new ethers.Interface([cfg.bindAbi.bindStarter]);
+    const decoded = iface.decodeFunctionData("bindStarter", encoded.data);
+    assert.equal(String(decoded[0]), "1");
+    assert.equal(String(decoded[1]).toLowerCase(), DAI_VEC);
+    assert.equal(String(decoded[2]).toLowerCase(), coll.toLowerCase());
+    assert.equal(encoded.templateIdBytes32.toLowerCase(), DAI_VEC);
   });
 });
 
@@ -243,6 +376,7 @@ describe("preflight", () => {
         return wallet;
       }
       if (functionName === "portalStatus") return 0;
+      if (functionName === "lineAPaid") return true;
       if (functionName === "heroIds") return [];
       if (functionName === "ownerOf" && String(address).toLowerCase() === l1.toLowerCase()) {
         return wallet;
@@ -274,22 +408,116 @@ describe("preflight", () => {
     assert.ok(r.checks.some((c) => c.name === "ownerOf" && c.status === "failed"));
   });
 
-  it("sealed cart → PREFLIGHT", async () => {
+  it("portalStatus: 0 LEGACY and 2 OPEN pass; 1 SEALED → PREFLIGHT", async () => {
     const { runBindOwned } = await import(`${mintUrl}?${bust()}`);
+
+    for (const status of [0, 2]) {
+      let called = false;
+      const r = await runBindOwned({
+        cfg: sepoliaCfg,
+        expectWallet: wallet,
+        cartridgeId: "1",
+        sourceTokenId: "9",
+        readContract: mockRead({
+          [`${diamond.toLowerCase()}:portalStatus`]: status,
+        }),
+        signTx: async () => {
+          called = true;
+          return { ok: true, txHash: "0xok" };
+        },
+        printCost: false,
+        printPreflight: false,
+      });
+      assert.equal(r.ok, true, `portalStatus=${status} should pass`);
+      assert.equal(called, true);
+    }
+
+    let sealedCalled = false;
+    const sealed = await runBindOwned({
+      cfg: sepoliaCfg,
+      expectWallet: wallet,
+      cartridgeId: "42",
+      sourceTokenId: "9",
+      readContract: mockRead({
+        [`${diamond.toLowerCase()}:portalStatus`]: 1,
+      }),
+      signTx: async () => {
+        sealedCalled = true;
+        return { ok: true };
+      },
+      printCost: false,
+      printPreflight: false,
+    });
+    assert.equal(sealed.code, "PREFLIGHT");
+    assert.equal(sealedCalled, false);
+    assert.match(sealed.error, /SEALED/i);
+    assert.match(sealed.error, /GotchiBotNestFacet open/i);
+  });
+
+  it("lineAPaid false → PREFLIGHT, signer not called; true → passes", async () => {
+    const { runBindOwned } = await import(`${mintUrl}?${bust()}`);
+    let called = false;
+    const unpaid = await runBindOwned({
+      cfg: sepoliaCfg,
+      expectWallet: wallet,
+      cartridgeId: "1",
+      sourceTokenId: "9",
+      readContract: mockRead({
+        [`${diamond.toLowerCase()}:lineAPaid`]: false,
+      }),
+      signTx: async () => {
+        called = true;
+        return { ok: true };
+      },
+      printCost: false,
+      printPreflight: false,
+    });
+    assert.equal(unpaid.code, "PREFLIGHT");
+    assert.equal(called, false);
+    assert.match(unpaid.error, /LINE_A_UNPAID/);
+    assert.ok(unpaid.checks.some((c) => c.name === "lineAPaid" && c.status === "failed"));
+
+    let paidCalled = false;
+    const paid = await runBindOwned({
+      cfg: sepoliaCfg,
+      expectWallet: wallet,
+      cartridgeId: "1",
+      sourceTokenId: "9",
+      readContract: mockRead({
+        [`${diamond.toLowerCase()}:lineAPaid`]: true,
+      }),
+      signTx: async () => {
+        paidCalled = true;
+        return { ok: true, txHash: "0xpaid" };
+      },
+      printCost: false,
+      printPreflight: false,
+    });
+    assert.equal(paid.ok, true);
+    assert.equal(paidCalled, true);
+  });
+
+  it("lineAPaid read error → PREFLIGHT", async () => {
+    const { runBindOwned } = await import(`${mintUrl}?${bust()}`);
+    let called = false;
     const r = await runBindOwned({
       cfg: sepoliaCfg,
       expectWallet: wallet,
       cartridgeId: "1",
       sourceTokenId: "9",
       readContract: mockRead({
-        [`${diamond.toLowerCase()}:portalStatus`]: 1,
+        [`${diamond.toLowerCase()}:lineAPaid`]: new Error("rpc down"),
       }),
-      signTx: async () => ({ ok: true }),
+      signTx: async () => {
+        called = true;
+        return { ok: true };
+      },
       printCost: false,
       printPreflight: false,
     });
     assert.equal(r.code, "PREFLIGHT");
-    assert.match(r.error, /sealed/i);
+    assert.equal(called, false);
+    assert.match(r.error, /lineAPaid failed/i);
   });
 
   it("L1 owner mismatch → PREFLIGHT", async () => {
@@ -310,7 +538,7 @@ describe("preflight", () => {
     assert.match(r.error, /L1/i);
   });
 
-  it("already bound → PREFLIGHT; lineAPaid skipped", async () => {
+  it("already bound → PREFLIGHT; lineAPaid enforced (passed before alreadyBound)", async () => {
     const ethers = await loadEthers();
     const { runBindOwned } = await import(`${mintUrl}?${bust()}`);
     const { ownedHeroIdBytes32 } = await import(`${rbUrl}?${bust()}`);
@@ -330,7 +558,7 @@ describe("preflight", () => {
     });
     assert.equal(r.code, "PREFLIGHT");
     assert.match(r.error, /already bound/i);
-    assert.ok(r.checks.some((c) => c.name === "lineAPaid" && c.status === "skipped"));
+    assert.ok(r.checks.some((c) => c.name === "lineAPaid" && c.status === "passed"));
   });
 });
 

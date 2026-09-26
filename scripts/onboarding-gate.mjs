@@ -1082,6 +1082,9 @@ async function runCollateralGotchiMint(wallet, cartridgeId) {
   const haunt = option.hauntId || 1;
   const nestBefore = await fetchDeskHeroes(wallet, cartridgeId);
   const beforeIds = (nestBefore || []).map((h) => String(h.id || h));
+  // Collateral is not checked on-chain — only forwarded to FeeSplitter.
+  // AarcadeGh-t client defaults to address(0); we prefer the real token from
+  // loadBaseStarterCollaterals / assets/collateral-colors.json when present.
   const collateralAddr =
     option.collateralType && String(option.collateralType).startsWith("0x")
       ? String(option.collateralType)

@@ -99,12 +99,14 @@ export function normalizeRosterEntries(heroes) {
  * Pure Sepolia bytes32 ↔ hero-id matcher (no network).
  * On-chain formulas are authoritative:
  *   owned-<n> → solidityPackedKeccak256(["string","uint256"], ["owned-", n])
- *   starter-* → sessions/.onchain-hero-ids.json mapping (injectable via opts.onchainHeroIds)
- * encodeBytes32String / ethers.id remain as harmless fallbacks only.
+ *   starter-* → sessions/.onchain-hero-ids.json mapping (injectable via opts.onchainHeroIds);
+ *     on-chain starter heroId uses encodeTemplateId (keccak256 of lowercase collateral
+ *     name — confirmed by Aarcadeghst CoS from ChainCartridgeProvider.ts)
+ * encodeBytes32String / ethers.id remain as harmless desk-id fallbacks only.
  *
  * @param {string} entry hex/bytes32 or plain id
  * @param {string} heroId e.g. owned-123
- * @param {{ encodeBytes32String?: Function, decodeBytes32String?: Function, id?: Function, solidityPackedKeccak256?: Function } | null} [ethersLike]
+ * @param {{ encodeBytes32String?: Function, decodeBytes32String?: Function, id?: Function, solidityPackedKeccak256?: Function, keccak256?: Function, toUtf8Bytes?: Function } | null} [ethersLike]
  * @param {{ onchainHeroIds?: Record<string, {heroIdBytes32?: string}>, loadOnchainHeroIds?: Function }} [opts]
  * @returns {boolean}
  */
