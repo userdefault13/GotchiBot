@@ -45,9 +45,12 @@ topic0 `0x1827e5bd6f1d1f8b1db16accce3f4eaa3a7db62d925e97e9eb749276c400baa9`.
 `activeHeroId`.
 
 **Preflight** (read-only, before sign page; injectable `readContract`):
-1. `ownerOf(cartridgeId)` == expectWallet
-2. `portalStatus != 1` (1 = sealed — open the cart first)
-3. `lineAPaid` — **skipped** (view fragment not in this repo)
+1. `ownerOf(cartridgeId)` == expectWallet (selector `0x6352211e`)
+2. `portalStatus` enum: `0 LEGACY`, `1 SEALED`, `2 OPEN` — only **1** blocks bind
+   (message: must open via GotchiBotNestFacet `open` first)
+3. `lineAPaid(cartridgeId)` must be true (selector `0x184014a2`) — true when mint fee
+   is 0 or Line A is paid; on false → PREFLIGHT, no sign page
+   (`Cartridge: LINE_A_UNPAID`)
 4. bindOwned only: L1 `ownerOf(sourceTokenId)` on `l1AavegotchiDiamond` == sender;
    deterministic owned heroId not already in `heroIds(cartridgeId)`
 
@@ -61,10 +64,24 @@ topic0 `0x1827e5bd6f1d1f8b1db16accce3f4eaa3a7db62d925e97e9eb749276c400baa9`.
 Persist desk id → bytes32 in `sessions/.onchain-hero-ids.json` (bytes32 is
 source of truth for the roster matcher).
 
-**templateId encoding (UNVERIFIED ASSUMPTION — confirm with Aarcadeghst CoS):**
-`0x`-prefixed 32-byte hex as-is; otherwise `ethers.encodeBytes32String(id)`.
+**templateId encoding (confirmed by Aarcadeghst CoS from ChainCartridgeProvider.ts):**
+`0x`-prefixed 32-byte hex as-is; otherwise
+`keccak256(toUtf8Bytes(lowercase collateral id))` — e.g. `dai` /
+`DAI` → `0x9f08c71555a1be56230b2e2579fafe4777867e0a1b947f01073e934471de15c1`;
+`wbtc` → `0x59e50295208418569657dcdbf79b85731eff3be260696ead2b44b1c097916a6c`.
+Contract does not validate templateId; it only feeds the starter hero-id hash.
 
-**AarcadeGh-t source pointers:** `contracts/cartridge/facets/CAavegotchiFacet.sol`,
+**collateral address arg:** not checked on-chain — only forwarded to FeeSplitter.
+AarcadeGh-t client defaults to `address(0)`; this repo prefers the real collateral
+token from `assets/collateral-colors.json` / `loadBaseStarterCollaterals` when
+present, else `address(0)`. Either works.
+
+**AarcadeGh-t source pointers:** `src/cartridge-sdk/ChainCartridgeProvider.ts`
+(`bindStarter` templateId), `contracts/cartridge/facets/CAavegotchiFacet.sol`,
+`contracts/cartridge/facets/CartridgeModifiers.sol`,
+`contracts/cartridge/facets/GameRulesFacet.sol` (`lineAPaid`),
+`contracts/cartridge/facets/GotchiBotNestFacet.sol` (`portalStatus` / open),
+`contracts/libraries/LibCartridgeAppStorage.sol` (`PORTAL_*` constants),
 `contracts/cartridge/CartridgeEvents.sol`, `contracts/interfaces/IAarcadeCartridge.sol`,
 `out/CAavegotchiFacet.sol/CAavegotchiFacet.json` (after forge build). Sepolia facet
 stays the old payable version until a diamondCut (needs Julius's go via
