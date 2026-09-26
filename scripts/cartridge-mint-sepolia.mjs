@@ -887,6 +887,21 @@ export function resolveBindAbi(kind, opts = {}) {
   return null;
 }
 
+/** Finite positive ms for bind sign page; opts > env > 5 min. Pure, never throws. */
+export function resolveBindPageTimeoutMs(opts = {}, env = process.env) {
+  const asPositiveMs = (v) => {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n;
+  };
+  return (
+    asPositiveMs(opts.pageTimeoutMs) ??
+    asPositiveMs(env?.GOTCHIBOT_BIND_PAGE_TIMEOUT_MS) ??
+    5 * 60 * 1000
+  );
+}
+
 function abiMissingResult(kind) {
   const label = kind === "starter" ? "bindStarter" : "bindOwned";
   return {
@@ -1242,10 +1257,13 @@ async function openBindSignPage({
   costLine = null,
   chainId = CHAIN_ID,
   auto = true,
+  pageTimeoutMs,
 }) {
   freePort();
   const chainHex =
     Number(chainId) === 8453 ? "0x2105" : CHAIN_HEX;
+  const timeoutMs = resolveBindPageTimeoutMs({ pageTimeoutMs }, process.env);
+  const timeoutMin = Math.max(1, Math.round(timeoutMs / 60000));
   const plan = {
     expectWallet: String(expectWallet || "").toLowerCase(),
     diamond,
@@ -1308,8 +1326,8 @@ async function openBindSignPage({
     });
 
     setTimeout(() => {
-      if (!settled) finish({ ok: false, error: `${plan.label} timed out (5 min)` });
-    }, 5 * 60 * 1000);
+      if (!settled) finish({ ok: false, error: `${plan.label} timed out (${timeoutMin} min)` });
+    }, timeoutMs);
   });
 }
 
@@ -1503,6 +1521,7 @@ export async function runBindOwned(opts = {}) {
       value: null,
       costLine,
       chainId: plan.chainId,
+      pageTimeoutMs: opts.pageTimeoutMs,
     });
   } catch (e) {
     const msg = String(e?.message || e);
@@ -1590,6 +1609,7 @@ export async function runBindStarter(opts = {}) {
       value: feeWei,
       costLine,
       chainId: plan.chainId,
+      pageTimeoutMs: opts.pageTimeoutMs,
     });
   } catch (e) {
     const msg = String(e?.message || e);

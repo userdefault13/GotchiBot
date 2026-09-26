@@ -36,6 +36,33 @@ async function loadEthers() {
 
 const bust = () => `t=${Date.now()}-${Math.random()}`;
 
+describe("resolveBindPageTimeoutMs", () => {
+  it("option > env > default; invalid values fall through", async () => {
+    const { resolveBindPageTimeoutMs } = await import(`${mintUrl}?${bust()}`);
+    const envKey = "GOTCHIBOT_BIND_PAGE_TIMEOUT_MS";
+
+    assert.equal(
+      resolveBindPageTimeoutMs({ pageTimeoutMs: 600_000 }, { [envKey]: "120000" }),
+      600_000,
+    );
+    assert.equal(
+      resolveBindPageTimeoutMs({ pageTimeoutMs: "900000" }, { [envKey]: "120000" }),
+      900_000,
+    );
+    assert.equal(resolveBindPageTimeoutMs({}, { [envKey]: "120000" }), 120_000);
+    assert.equal(resolveBindPageTimeoutMs({ pageTimeoutMs: 0 }, { [envKey]: "180000" }), 180_000);
+    assert.equal(resolveBindPageTimeoutMs({ pageTimeoutMs: -1 }, { [envKey]: "180000" }), 180_000);
+    assert.equal(resolveBindPageTimeoutMs({ pageTimeoutMs: "abc" }, { [envKey]: "180000" }), 180_000);
+    assert.equal(resolveBindPageTimeoutMs({ pageTimeoutMs: null }, { [envKey]: "180000" }), 180_000);
+    assert.equal(resolveBindPageTimeoutMs({}, { [envKey]: "0" }), 300_000);
+    assert.equal(resolveBindPageTimeoutMs({}, { [envKey]: "-1" }), 300_000);
+    assert.equal(resolveBindPageTimeoutMs({}, { [envKey]: "abc" }), 300_000);
+    assert.equal(resolveBindPageTimeoutMs({}, {}), 300_000);
+    assert.equal(resolveBindPageTimeoutMs({}, { [envKey]: "" }), 300_000);
+    assert.equal(resolveBindPageTimeoutMs({}, { [envKey]: undefined }), 300_000);
+  });
+});
+
 describe("config JSON + selectors", () => {
   it("sepolia + mainnet configs parse and carry bind fragments", () => {
     assert.equal(sepoliaCfg.chainId, 84532);
