@@ -2,9 +2,21 @@
 /**
  * Project context — one sealed room per pstack program slug.
  *
- * A project owns its bots (roster), meetings, passoffs/notes. Desk-wide
+ * A project owns its bots (roster / crew), meetings, passoffs/notes. Desk-wide
  * sessions/meetings and sessions/passoff are legacy fallbacks only when no
  * project is selected.
+ *
+ * Definitions:
+ *   Roster = all of the user's minted cAavegotchis on the GotchiBot cartridge
+ *            (owned-* via bindOwned, starter-* via bindStarter). Source of truth
+ *            = cartridge hero list.
+ *   Crew   = the gotchis assigned to one project = sessions/pstack/<slug>/roster.json
+ *            (user-facing name "crew"; keep roster.json paths + loadRoster/saveRoster/rosterAdd).
+ *
+ * Crew rules:
+ *   1. owned-* may be in MANY project crews at once.
+ *   2. starter-* may be in only ONE project crew at a time (use --move to reassign).
+ *   3. unknown kinds: warn and allow (conservative).
  *
  *   sessions/.pstack-dossier-current  — pane/dossier pointer (canonical slug)
  *   sessions/.project-current         — alias kept in sync (passoff / intake)
@@ -14,8 +26,9 @@
  *   node scripts/project-context.mjs current [--json]
  *   node scripts/project-context.mjs set <slug>
  *   node scripts/project-context.mjs root [<slug>]
- *   node scripts/project-context.mjs roster [<slug>] [--json]
- *   node scripts/project-context.mjs roster-add <hero> [<slug>]
+ *   node scripts/project-context.mjs roster|crew [<slug>] [--json]
+ *   node scripts/project-context.mjs roster-add|crew-add <hero> [<slug>] [--move]
+ *   node scripts/project-context.mjs roster-remove|crew-remove <hero> [<slug>]
  *   node scripts/project-context.mjs mail show|set [<slug>] [--address …] [--inbox-id …]
  *   node scripts/project-context.mjs ensure [<slug>]
  */
@@ -29,18 +42,34 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { heroKind } from "./hero-kind.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SESSIONS = join(ROOT, "sessions");
-const PSTACK_ROOT = join(SESSIONS, "pstack");
-const DOSSIER_CURRENT = join(SESSIONS, ".pstack-dossier-current");
-const PROJECT_CURRENT = join(SESSIONS, ".project-current");
-const STORAGE_PREFS = join(SESSIONS, ".project-storage.json");
+
+/** Overridable for tests via GOTCHIBOT_SESSIONS_DIR (read lazily at call time). */
+export function sessionsDir() {
+  const o = process.env.GOTCHIBOT_SESSIONS_DIR;
+  return o ? resolve(o) : join(ROOT, "sessions");
+}
+
+export function pstackRoot() {
+  return join(sessionsDir(), "pstack");
+}
+
+function dossierCurrentPath() {
+  return join(sessionsDir(), ".pstack-dossier-current");
+}
+function projectCurrentPath() {
+  return join(sessionsDir(), ".project-current");
+}
+function storagePrefsPath() {
+  return join(sessionsDir(), ".project-storage.json");
+}
 
 /** Desk default: local only. IPFS is opt-in via cockpit Settings. */
 export function loadProjectStoragePrefs() {
   try {
-    const j = JSON.parse(readFileSync(STORAGE_PREFS, "utf8"));
+    const j = JSON.parse(readFileSync(storagePrefsPath(), "utf8"));
     return { ipfsEnabled: j.ipfsEnabled === true };
   } catch {
     return { ipfsEnabled: false };
@@ -48,11 +77,11 @@ export function loadProjectStoragePrefs() {
 }
 
 export function saveProjectStoragePrefs(patch = {}) {
-  mkdirSync(SESSIONS, { recursive: true });
+  mkdirSync(sessionsDir(), { recursive: true });
   const next = { ...loadProjectStoragePrefs(), ...patch };
   next.ipfsEnabled = next.ipfsEnabled === true;
   next.updatedAt = new Date().toISOString();
-  writeFileSync(STORAGE_PREFS, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  writeFileSync(storagePrefsPath(), `${JSON.stringify(next, null, 2)}\n`, "utf8");
   return next;
 }
 
@@ -65,7 +94,7 @@ export function slugOk(slug) {
 }
 
 export function currentProjectSlug() {
-  for (const path of [DOSSIER_CURRENT, PROJECT_CURRENT]) {
+  for (const path of [dossierCurrentPath(), projectCurrentPath()]) {
     try {
       const s = readFileSync(path, "utf8").trim();
       if (s && slugOk(s)) return s;
@@ -79,16 +108,16 @@ export function currentProjectSlug() {
 /** Keep both pointers identical so passoff / pstack / cockpit agree. */
 export function setCurrentProject(slug) {
   if (!slugOk(slug)) throw new Error(`invalid project slug: ${slug}`);
-  mkdirSync(SESSIONS, { recursive: true });
-  writeFileSync(DOSSIER_CURRENT, `${slug}\n`, "utf8");
-  writeFileSync(PROJECT_CURRENT, `${slug}\n`, "utf8");
+  mkdirSync(sessionsDir(), { recursive: true });
+  writeFileSync(dossierCurrentPath(), `${slug}\n`, "utf8");
+  writeFileSync(projectCurrentPath(), `${slug}\n`, "utf8");
   ensureProjectDirs(slug);
   return slug;
 }
 
 /** Clear desk project selection (new nest install / fresh onboard / cart transfer). */
 export function clearCurrentProject() {
-  for (const path of [DOSSIER_CURRENT, PROJECT_CURRENT]) {
+  for (const path of [dossierCurrentPath(), projectCurrentPath()]) {
     try {
       if (existsSync(path)) writeFileSync(path, "", "utf8");
     } catch {
@@ -120,7 +149,7 @@ export function emptyProjectCheckpointSlice(reason = "transfer") {
 
 export function projectRoot(slug = currentProjectSlug()) {
   if (!slug) return null;
-  return join(PSTACK_ROOT, slug);
+  return join(pstackRoot(), slug);
 }
 
 export function projectMeetingsDir(slug = currentProjectSlug()) {
@@ -269,12 +298,13 @@ export function ensureProjectDirs(slug = currentProjectSlug()) {
 }
 
 export function listProjectSlugsOnDisk() {
-  if (!existsSync(PSTACK_ROOT)) return [];
+  const root = pstackRoot();
+  if (!existsSync(root)) return [];
   try {
-    return readdirSync(PSTACK_ROOT)
+    return readdirSync(root)
       .filter((name) => {
         try {
-          return existsSync(join(PSTACK_ROOT, name, "dossier.json"));
+          return existsSync(join(root, name, "dossier.json"));
         } catch {
           return false;
         }
@@ -295,7 +325,7 @@ export function listProjectSlugsOnDisk() {
 export function projectStoragePaths(slug) {
   if (!slug || !slugOk(slug)) return null;
   const localRel = `sessions/pstack/${slug}`;
-  const localAbs = join(PSTACK_ROOT, slug);
+  const localAbs = join(pstackRoot(), slug);
   let ipfs = null;
   // IPFS pointers only surface when Settings → IPFS storage is on.
   if (isIpfsStorageEnabled()) {
@@ -327,7 +357,7 @@ export function setProjectIpfsUri(slug, ipfsUri) {
     );
   }
   ensureProjectDirs(slug);
-  const tip = join(PSTACK_ROOT, slug, "storage.json");
+  const tip = join(pstackRoot(), slug, "storage.json");
   let prev = {};
   try {
     if (existsSync(tip)) prev = JSON.parse(readFileSync(tip, "utf8"));
@@ -401,16 +431,166 @@ export function loadRoster(slug = currentProjectSlug()) {
   }
 }
 
-export function saveRoster(roster, slug = currentProjectSlug()) {
+/**
+ * Scan sessions/pstack/<slug>/roster.json for crews that include heroId.
+ * @param {string} heroId
+ * @param {{ exceptSlug?: string|null }} [opts]
+ * @returns {string[]} project slugs
+ */
+export function findCrewsForHero(heroId, { exceptSlug = null } = {}) {
+  const id = String(heroId || "").trim();
+  if (!id) return [];
+  const root = pstackRoot();
+  if (!existsSync(root)) return [];
+  const hits = [];
+  let names = [];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return [];
+  }
+  for (const name of names) {
+    if (!slugOk(name)) continue;
+    if (exceptSlug && name === exceptSlug) continue;
+    const rp = join(root, name, "roster.json");
+    if (!existsSync(rp)) continue;
+    try {
+      const j = JSON.parse(readFileSync(rp, "utf8"));
+      const heroes = Array.isArray(j.heroes) ? j.heroes.map(String) : [];
+      if (heroes.includes(id)) hits.push(name);
+    } catch {
+      /* skip bad roster */
+    }
+  }
+  return hits.sort();
+}
+
+/**
+ * Rule 1: owned → always ok (wallet gotchi may sit on many crews).
+ * Rule 2: starter → refuse if already on another project's crew.
+ * Unknown → ok with warning (conservative).
+ *
+ * @returns {{ ok: boolean, kind: string, conflicts: string[], warning?: string, message?: string }}
+ */
+export function checkCrewConflict(heroId, slug) {
+  const id = String(heroId || "").trim();
+  const kind = heroKind(id);
+  if (!id) {
+    return { ok: false, kind, conflicts: [], message: "hero id required" };
+  }
+
+  // Rule 1 — wallet gotchi (owned-*): explicit allow; may be in MANY crews.
+  if (kind === "owned") {
+    return { ok: true, kind, conflicts: [] };
+  }
+
+  // Rule 2 — base collateral starter: only ONE project crew at a time.
+  if (kind === "starter") {
+    const conflicts = findCrewsForHero(id, { exceptSlug: slug || null });
+    if (conflicts.length) {
+      const others = conflicts.join(", ");
+      const fixSlug = conflicts[0];
+      return {
+        ok: false,
+        kind,
+        conflicts,
+        message:
+          `starter ${id} is already on project crew(s): ${others}. ` +
+          `Remove first: node scripts/project-context.mjs crew-remove ${id} ${fixSlug} ` +
+          `or re-run with --move`,
+      };
+    }
+    return { ok: true, kind, conflicts: [] };
+  }
+
+  // Unknown kinds: conservative = warn and allow.
+  return {
+    ok: true,
+    kind,
+    conflicts: [],
+    warning: `unknown hero kind for ${id} — allowing crew assign (conservative)`,
+  };
+}
+
+/** Throws Error with code CREW_CONFLICT when starter is locked to another crew. */
+export function assertCrewAssignable(heroId, slug) {
+  const r = checkCrewConflict(heroId, slug);
+  if (!r.ok) {
+    const err = new Error(r.message || "crew conflict");
+    err.code = "CREW_CONFLICT";
+    err.conflicts = r.conflicts;
+    err.kind = r.kind;
+    throw err;
+  }
+  return r;
+}
+
+function removeHeroFromCrew(heroId, slug) {
+  const id = String(heroId);
+  const r = loadRoster(slug);
+  const next = r.heroes.filter((h) => h !== id);
+  if (next.length === r.heroes.length) return r;
+  // Direct write — do not re-enter saveRoster conflict checks for removals.
   ensureProjectDirs(slug);
+  const body = {
+    project: slug,
+    heroes: next,
+    updatedAt: new Date().toISOString(),
+    note: r.note || "Closed roster — only listed heroes meet, pass notes, and work this project.",
+  };
+  writeFileSync(rosterPath(slug), `${JSON.stringify(body, null, 2)}\n`, "utf8");
+  return body;
+}
+
+/**
+ * Persist project crew (roster.json). Enforces starter one-project lock for
+ * heroes being added so direct callers cannot bypass rosterAdd.
+ * @param {{ heroes?: string[], note?: string }} roster
+ * @param {string} [slug]
+ * @param {{ move?: boolean, force?: boolean }} [opts]
+ */
+export function saveRoster(roster, slug = currentProjectSlug(), opts = {}) {
+  const { move = false, force = false } = opts;
+  if (!slug) throw new Error("no project selected");
+  ensureProjectDirs(slug);
+  const prev = loadRoster(slug);
+  const prevSet = new Set(prev.heroes.map(String));
+  const heroes = [...new Set((roster.heroes || []).map(String))];
+  const warnings = [];
+
+  for (const id of heroes) {
+    if (prevSet.has(id)) continue; // already on this crew — not a new add
+    const kind = heroKind(id);
+    if (kind === "owned") continue; // Rule 1
+    if (kind === "unknown") {
+      warnings.push(`unknown hero kind for ${id} — allowing (conservative)`);
+      continue;
+    }
+    if (kind === "starter") {
+      const check = checkCrewConflict(id, slug);
+      if (!check.ok) {
+        if (move) {
+          for (const other of check.conflicts) removeHeroFromCrew(id, other);
+        } else if (!force) {
+          const err = new Error(check.message);
+          err.code = "CREW_CONFLICT";
+          err.conflicts = check.conflicts;
+          err.kind = check.kind;
+          throw err;
+        }
+      }
+    }
+  }
+
   const rp = rosterPath(slug);
   const body = {
     project: slug,
-    heroes: [...new Set((roster.heroes || []).map(String))],
+    heroes,
     updatedAt: new Date().toISOString(),
     note: roster.note || "Closed roster — only listed heroes meet, pass notes, and work this project.",
   };
   writeFileSync(rp, `${JSON.stringify(body, null, 2)}\n`, "utf8");
+  if (warnings.length) body._warnings = warnings;
   return body;
 }
 
@@ -421,12 +601,52 @@ export function rosterHas(heroId, slug = currentProjectSlug()) {
   return heroes.includes(String(heroId));
 }
 
-export function rosterAdd(heroId, slug = currentProjectSlug()) {
+/**
+ * Add hero to project crew. Starter locked to one crew unless {move:true}.
+ * @param {string} heroId
+ * @param {string} [slug]
+ * @param {{ move?: boolean, force?: boolean }} [opts]
+ */
+export function rosterAdd(heroId, slug = currentProjectSlug(), opts = {}) {
+  const { move = false, force = false } = opts;
   if (!heroId) throw new Error("hero id required");
+  if (!slug) throw new Error("no project selected");
   ensureProjectDirs(slug);
+  const id = String(heroId);
+  const check = checkCrewConflict(id, slug);
+  if (check.warning) {
+    console.error(`warning: ${check.warning}`);
+  }
+  if (!check.ok) {
+    if (move) {
+      for (const other of check.conflicts) removeHeroFromCrew(id, other);
+    } else if (!force) {
+      const err = new Error(check.message);
+      err.code = "CREW_CONFLICT";
+      err.conflicts = check.conflicts;
+      err.kind = check.kind;
+      throw err;
+    }
+  }
   const r = loadRoster(slug);
-  if (!r.heroes.includes(String(heroId))) r.heroes.push(String(heroId));
-  return saveRoster(r, slug);
+  if (!r.heroes.includes(id)) r.heroes.push(id);
+  // Already resolved conflicts / move — write without re-checking adds.
+  ensureProjectDirs(slug);
+  const body = {
+    project: slug,
+    heroes: [...new Set(r.heroes.map(String))],
+    updatedAt: new Date().toISOString(),
+    note: r.note || "Closed roster — only listed heroes meet, pass notes, and work this project.",
+  };
+  writeFileSync(rosterPath(slug), `${JSON.stringify(body, null, 2)}\n`, "utf8");
+  return body;
+}
+
+/** Remove hero from a project crew. */
+export function rosterRemove(heroId, slug = currentProjectSlug()) {
+  if (!heroId) throw new Error("hero id required");
+  if (!slug) throw new Error("no project selected");
+  return removeHeroFromCrew(String(heroId), slug);
 }
 
 export function requireProjectSlug() {
@@ -448,7 +668,7 @@ export function resolveMeetingsRoot() {
     ensureProjectDirs(slug);
     return { root: projectMeetingsDir(slug), project: slug, scoped: true };
   }
-  return { root: join(SESSIONS, "meetings"), project: null, scoped: false };
+  return { root: join(sessionsDir(), "meetings"), project: null, scoped: false };
 }
 
 export function resolvePassoffRoot() {
@@ -457,7 +677,7 @@ export function resolvePassoffRoot() {
     ensureProjectDirs(slug);
     return { root: projectPassoffDir(slug), project: slug, scoped: true };
   }
-  return { root: join(SESSIONS, "passoff"), project: null, scoped: false };
+  return { root: join(sessionsDir(), "passoff"), project: null, scoped: false };
 }
 
 /** Internal bot inbox (not AgentMail). Project-scoped when a project is selected. */
@@ -472,7 +692,7 @@ export function resolveInboxRoot() {
     ensureProjectDirs(slug);
     return { root: projectInboxDir(slug), project: slug, scoped: true };
   }
-  const fallback = join(SESSIONS, "inbox");
+  const fallback = join(sessionsDir(), "inbox");
   mkdirSync(fallback, { recursive: true });
   return { root: fallback, project: null, scoped: false };
 }
@@ -486,8 +706,9 @@ function usage() {
   project-context storage [<slug>] [--json]
   project-context storage-set <slug> <ipfsUri|cid>
   project-context ipfs [on|off|status]
-  project-context roster [<slug>] [--json]
-  project-context roster-add <hero> [<slug>]
+  project-context roster|crew [<slug>] [--json]
+  project-context roster-add|crew-add <hero> [<slug>] [--move]
+  project-context roster-remove|crew-remove <hero> [<slug>]
   project-context mail show [<slug>] [--json]
   project-context mail set [<slug>] --address <email> [--inbox-id <id>]
   project-context ensure [<slug>]`);
@@ -496,8 +717,10 @@ function usage() {
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
+  if (cmd === "--help" || cmd === "-h" || cmd === "help") usage();
   const json = rest.includes("--json");
-  const args = rest.filter((a) => a !== "--json");
+  const move = rest.includes("--move");
+  const args = rest.filter((a) => a !== "--json" && a !== "--move");
   if (!cmd) usage();
 
   if (cmd === "current") {
@@ -579,22 +802,38 @@ async function main() {
     console.log(`  ipfs   ${next.ipfsUri}`);
     return;
   }
-  if (cmd === "roster") {
+  if (cmd === "roster" || cmd === "crew") {
     const slug = args[0] || currentProjectSlug();
     const r = loadRoster(slug);
     if (json) console.log(JSON.stringify(r, null, 2));
     else {
-      console.log(`project ${r.project || "(none)"}`);
+      console.log(`project ${r.project || "(none)"} (crew)`);
       console.log(`heroes (${r.heroes.length}): ${r.heroes.join(", ") || "(empty)"}`);
     }
     return;
   }
-  if (cmd === "roster-add") {
+  if (cmd === "roster-add" || cmd === "crew-add") {
     const hero = args[0];
     const slug = args[1] || currentProjectSlug();
     if (!hero || !slug) usage();
-    const r = rosterAdd(hero, slug);
-    console.log(`roster ${slug}: ${r.heroes.join(", ")}`);
+    try {
+      const r = rosterAdd(hero, slug, { move });
+      console.log(`crew ${slug}: ${r.heroes.join(", ")}`);
+    } catch (e) {
+      if (e?.code === "CREW_CONFLICT") {
+        console.error(e.message);
+        process.exit(2);
+      }
+      throw e;
+    }
+    return;
+  }
+  if (cmd === "roster-remove" || cmd === "crew-remove") {
+    const hero = args[0];
+    const slug = args[1] || currentProjectSlug();
+    if (!hero || !slug) usage();
+    const r = rosterRemove(hero, slug);
+    console.log(`crew ${slug}: ${r.heroes.join(", ") || "(empty)"}`);
     return;
   }
   if (cmd === "mail") {
