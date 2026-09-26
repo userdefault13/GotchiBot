@@ -107,7 +107,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot aseprite check|export|init-tileset|init-sprite|script|info|svg-import|svg-export   Aseprite CLI (pixel art)
   gotchibot connect            open browser wallet-connect (MetaMask)
   gotchibot wallet             show connected wallet address
-  gotchibot roster --wallet    list your real on-chain gotchis
+  gotchibot roster --wallet    wallet gotchis (unminted) — Aavegotchis in your wallet, not yet on the cartridge roster
   gotchibot avatar [agentId]      show avatar pane, or pin an agent
   gotchibot handoff [oldId]       build HANDOFF.md and seed a new session
   gotchibot passoff send <to> [--from …] [--note "…"] [--next "…"] [--dry-run]
@@ -1004,7 +1004,7 @@ case "$cmd" in
     esac ;;
   model) abra_or_node "$ROOT/scripts/model-auto.mjs" "$@" ;;
   marketplace|market)
-    exec node "$ROOT/scripts/marketplace-menu.mjs" "$@"
+    exec node "$ROOT/scripts/template-pack.mjs" list --remote "$@"
     ;;
   templates)
     exec node "$ROOT/scripts/template-pack.mjs" "$@"

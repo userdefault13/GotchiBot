@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Wallet gotchi list — same path as cockpit / onboarding-gate.
+ * Wallet gotchis (unminted) — Aavegotchis in your wallet, not yet minted onto the cartridge roster.
+ * Same path as cockpit / onboarding-gate.
  * fetchWalletGotchis (onboarding-lib.mjs): Envio subgraph, then Base RPC.
  * Never Blockscout. Used by: gotchibot roster --wallet, spawn overlay.
  */
@@ -76,6 +77,7 @@ if (wantJson) {
   process.exit(0);
 }
 
+console.log(`wallet gotchis (unminted)`);
 console.log(`owner: ${owner}`);
 console.log(`${rows.length} gotchi(es) via ${gotchis.source || "subgraph"}`);
 for (const g of rows) {

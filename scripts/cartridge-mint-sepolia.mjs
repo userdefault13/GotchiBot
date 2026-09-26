@@ -778,6 +778,420 @@ export async function runOpenSealedCart({ expectWallet, cartridgeId, auto = true
   });
 }
 
+/**
+ * Resolve bindOwned / bindStarter function fragment from chain config or env.
+ * No ABI is inventable — missing → callers return ABI_MISSING without opening a page.
+ * @param {"owned"|"starter"|"bindOwned"|"bindStarter"} kind
+ * @returns {string|null} ethers function fragment e.g. "function bindOwned(uint256,uint256)"
+ */
+export function resolveBindAbi(kind) {
+  const k = String(kind || "").toLowerCase();
+  const cfg = loadChainConfig();
+  if (k === "owned" || k === "bindowned") {
+    const frag =
+      process.env.CARTRIDGE_BIND_OWNED_ABI ||
+      cfg.bindOwnedAbi ||
+      null;
+    const s = frag != null ? String(frag).trim() : "";
+    return s || null;
+  }
+  if (k === "starter" || k === "bindstarter") {
+    const frag =
+      process.env.CARTRIDGE_BIND_STARTER_ABI ||
+      cfg.bindStarterAbi ||
+      null;
+    const s = frag != null ? String(frag).trim() : "";
+    return s || null;
+  }
+  return null;
+}
+
+function abiMissingResult(kind) {
+  const label = kind === "starter" ? "bindStarter" : "bindOwned";
+  const key = kind === "starter" ? "bindStarterAbi" : "bindOwnedAbi";
+  return {
+    ok: false,
+    code: "ABI_MISSING",
+    error: `not available: ${label} ABI missing — add ${key} (function fragment) to config/cartridgeChain.base-sepolia.json or mint at ${CONCIERGE}`,
+  };
+}
+
+/** Map fragment input names → encodeBindCalldata value keys. No positional guessing. */
+const BIND_INPUT_NAME_TO_KEY = Object.freeze({
+  cartridgeid: "cartridgeId",
+  cartid: "cartridgeId",
+  sourcetokenid: "sourceTokenId",
+  tokenid: "sourceTokenId",
+  gotchiid: "sourceTokenId",
+  templateid: "templateId",
+  template: "templateId",
+  collateralid: "templateId",
+  collateral: "collateral",
+  collateraladdress: "collateral",
+  collateraltype: "collateral",
+});
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+function unsupportedBindAbi(fragment) {
+  throw new Error(
+    `unsupported bind ABI fragment: ${fragment} — inputs must be named ` +
+      `(cartridgeId|cartId, sourceTokenId|tokenId|gotchiId, ` +
+      `templateId|template|collateralId, collateral|collateralAddress|collateralType)`,
+  );
+}
+
+function coerceBindValue(solType, key, raw) {
+  let v = raw;
+  if (key === "collateral" && (v == null || v === "")) v = ZERO_ADDR;
+  if (v == null) return null;
+  const t = String(solType || "").toLowerCase();
+  if (t.startsWith("uint") || t.startsWith("int")) return BigInt(v);
+  if (t === "address") return String(v);
+  if (t === "bool") return Boolean(v);
+  return String(v);
+}
+
+/**
+ * Encode bind calldata from a configured function fragment.
+ * Arguments are mapped strictly by INPUT NAMES (see BIND_INPUT_NAME_TO_KEY).
+ * Unnamed / unrecognised inputs or missing required values → Error
+ * "unsupported bind ABI fragment: …" (callers map to code ABI_UNSUPPORTED).
+ */
+export async function encodeBindCalldata(kind, fragment, { cartridgeId, sourceTokenId, templateId, collateral } = {}, ethersLib = null) {
+  void kind; // kind selects which ABI config; encoding is name-driven only
+  const ethers = ethersLib || (await getEthers());
+  const iface = new ethers.Interface([fragment]);
+  const fn = iface.fragments.find((f) => f.type === "function");
+  if (!fn) throw new Error("ABI fragment has no function");
+  const values = { cartridgeId, sourceTokenId, templateId, collateral };
+  const args = [];
+  for (const input of fn.inputs || []) {
+    const inName = String(input?.name || "").trim();
+    if (!inName) unsupportedBindAbi(fragment);
+    const key = BIND_INPUT_NAME_TO_KEY[inName.toLowerCase()];
+    if (!key) unsupportedBindAbi(fragment);
+    const coerced = coerceBindValue(input.type, key, values[key]);
+    if (coerced == null) unsupportedBindAbi(fragment);
+    args.push(coerced);
+  }
+  return {
+    to: null,
+    data: iface.encodeFunctionData(fn.name, args),
+    functionName: fn.name,
+  };
+}
+
+async function openBindSignPage({ expectWallet, diamond, data, label, auto = true }) {
+  freePort();
+  const plan = {
+    expectWallet: String(expectWallet || "").toLowerCase(),
+    diamond,
+    data,
+    label: label || "bind",
+  };
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (out) => {
+      if (settled) return;
+      settled = true;
+      try {
+        server.close();
+      } catch {
+        /* ignore */
+      }
+      resolve(out);
+    };
+
+    const server = http.createServer((req, res) => {
+      const u = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+      if (u.pathname === "/" || u.pathname === "/bind") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderBindPage(plan));
+        return;
+      }
+      if (u.pathname === "/done" && req.method === "POST") {
+        let body = "";
+        req.on("data", (c) => {
+          body += c;
+        });
+        req.on("end", () => {
+          try {
+            const j = JSON.parse(body || "{}");
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true }));
+            finish({ ok: Boolean(j.ok), txHash: j.txHash || null, error: j.error || null });
+          } catch (e) {
+            res.writeHead(400);
+            res.end("bad json");
+            finish({ ok: false, error: String(e?.message || e) });
+          }
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end("not found");
+    });
+
+    server.listen(PORT, "127.0.0.1", () => {
+      const url = `http://127.0.0.1:${PORT}/bind`;
+      console.log(`\n  Opening MetaMask ${plan.label} page → ${url}`);
+      console.log("  Confirm in the browser, then return here.\n");
+      if (auto) openBrowser(url);
+    });
+
+    setTimeout(() => {
+      if (!settled) finish({ ok: false, error: `${plan.label} timed out (5 min)` });
+    }, 5 * 60 * 1000);
+  });
+}
+
+function renderBindPage(plan) {
+  const planJson = JSON.stringify(plan);
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>${plan.label} — GotchiBot</title>
+<style>
+  body{font-family:-apple-system,sans-serif;background:#141220;color:#eee;display:flex;
+       align-items:center;justify-content:center;min-height:100vh;margin:0;padding:1rem}
+  .card{background:#1e1b2e;padding:2rem 2.5rem;border-radius:16px;max-width:480px;width:100%}
+  h2{margin:0 0 .5rem}
+  .hint{color:#888;font-size:.85rem;line-height:1.4}
+  button{background:#8b5cf6;color:#fff;border:0;border-radius:10px;padding:.9rem 2rem;
+         font-size:1rem;cursor:pointer;width:100%;margin-top:.75rem}
+  button:hover{background:#7c3aed}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .status{margin-top:1rem;font-size:.9rem;line-height:1.4;color:#a78bfa;min-height:1.4em}
+  .ok{color:#4ade80}.err{color:#f87171}
+</style></head>
+<body><div class="card">
+  <h2>${plan.label}</h2>
+  <p class="hint">Base Sepolia · MetaMask will ask you to switch chain, then submit the bind tx.</p>
+  <button type="button" id="go">Connect &amp; sign</button>
+  <div class="status" id="status"></div>
+</div>
+<script type="module">
+const PLAN = ${planJson};
+const CHAIN_ID = ${CHAIN_ID};
+const CHAIN_HEX = '${CHAIN_HEX}';
+
+function friendlyError(e) {
+  const msg = String(e?.message || e || '');
+  if (/user rejected|rejected the request|4001/i.test(msg)) return 'Cancelled in wallet.';
+  if (/metamask extension not found/i.test(msg)) return 'Install MetaMask in Chrome/Brave, reload, retry.';
+  return msg || 'Unknown error';
+}
+
+function pickWallet() {
+  if (window.ethereum?.isMetaMask) return window.ethereum;
+  if (window.ethereum) return window.ethereum;
+  throw new Error('MetaMask extension not found');
+}
+
+async function ensureChain(eth) {
+  try {
+    await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_HEX }] });
+  } catch (e) {
+    if (e?.code === 4902) {
+      await eth.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: CHAIN_HEX,
+          chainName: 'Base Sepolia',
+          nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+          rpcUrls: ['https://sepolia.base.org'],
+          blockExplorerUrls: ['https://sepolia.basescan.org'],
+        }],
+      });
+    } else throw e;
+  }
+}
+
+async function postDone(payload) {
+  await fetch('/done', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+}
+
+document.getElementById('go').onclick = async () => {
+  const status = document.getElementById('status');
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Connecting…';
+  try {
+    const eth = pickWallet();
+    await ensureChain(eth);
+    const accounts = await eth.request({ method: 'eth_requestAccounts' });
+    const from = String(accounts[0] || '').toLowerCase();
+    if (PLAN.expectWallet && from !== PLAN.expectWallet) {
+      throw new Error('Wrong wallet — desk expects ' + PLAN.expectWallet + ', MetaMask has ' + from);
+    }
+    status.textContent = 'Confirm ' + PLAN.label + ' in MetaMask…';
+    const txHash = await eth.request({
+      method: 'eth_sendTransaction',
+      params: [{ from, to: PLAN.diamond, data: PLAN.data, chainId: CHAIN_HEX }],
+    });
+    status.className = 'status ok';
+    status.textContent = 'Submitted · ' + txHash;
+    await postDone({ ok: true, txHash });
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = friendlyError(e);
+    await postDone({ ok: false, error: friendlyError(e) });
+    btn.disabled = false;
+  }
+};
+</script></body></html>`;
+}
+
+/**
+ * MetaMask bindOwned on cartridgeDiamond (Base Sepolia). Never uses --private-key.
+ * Without bindOwnedAbi configured → { ok:false, code:"ABI_MISSING" } (no page).
+ * ok:true means MetaMask returned a tx hash (submitted), not mined; onboarding-gate
+ * confirms via hero-list readback.
+ *
+ * @param {{
+ *   expectWallet: string,
+ *   cartridgeId: string|number,
+ *   sourceTokenId: string|number,
+ *   signTx?: (plan: object) => Promise<{ok:boolean, txHash?:string, error?:string}>,
+ *   openSignPage?: Function,
+ * }} opts
+ */
+export async function runBindOwned(opts = {}) {
+  try {
+    const { expectWallet, cartridgeId, sourceTokenId, signTx = null, openSignPage = null } = opts;
+    const fragment = resolveBindAbi("owned");
+    if (!fragment) return abiMissingResult("owned");
+
+    const cfg = mintConfig();
+    const diamond = cfg.cartridgeDiamond;
+    if (!diamond) {
+      return { ok: false, code: "CONFIG", error: "cartridgeDiamond missing from chain config" };
+    }
+    if (cartridgeId == null || sourceTokenId == null) {
+      return { ok: false, code: "ARGS", error: "cartridgeId and sourceTokenId required" };
+    }
+
+    const encoded = await encodeBindCalldata(
+      "owned",
+      fragment,
+      { cartridgeId, sourceTokenId },
+    );
+    const plan = {
+      to: diamond,
+      chainId: CHAIN_ID,
+      data: encoded.data,
+      expectWallet: String(expectWallet || "").toLowerCase(),
+      label: "bindOwned",
+      functionName: encoded.functionName,
+    };
+
+    if (typeof signTx === "function") {
+      const out = await signTx(plan);
+      return {
+        ok: Boolean(out?.ok),
+        txHash: out?.txHash || null,
+        error: out?.error || null,
+        code: out?.ok ? null : out?.code || "SIGN",
+      };
+    }
+    if (typeof openSignPage === "function") {
+      const out = await openSignPage(plan);
+      return {
+        ok: Boolean(out?.ok),
+        txHash: out?.txHash || null,
+        error: out?.error || null,
+      };
+    }
+    return openBindSignPage({
+      expectWallet: plan.expectWallet,
+      diamond,
+      data: plan.data,
+      label: "bindOwned",
+    });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    const code = /unsupported bind ABI fragment/i.test(msg) ? "ABI_UNSUPPORTED" : "ERROR";
+    return { ok: false, code, error: msg };
+  }
+}
+
+/**
+ * MetaMask bindStarter on cartridgeDiamond (Base Sepolia). Never uses --private-key.
+ * Without bindStarterAbi configured → { ok:false, code:"ABI_MISSING" } (no page).
+ *
+ * bindStarter costs $5 USDC on-chain; this helper does NOT perform a USDC approve
+ * step. If the configured contract requires an allowance the tx will revert —
+ * approval flow is TODO (see docs/GLOSSARY.md).
+ *
+ * ok:true means MetaMask returned a tx hash (submitted), not mined; onboarding-gate
+ * confirms via hero-list readback.
+ */
+export async function runBindStarter(opts = {}) {
+  try {
+    const {
+      expectWallet,
+      cartridgeId,
+      templateId,
+      collateral,
+      signTx = null,
+      openSignPage = null,
+    } = opts;
+    const fragment = resolveBindAbi("starter");
+    if (!fragment) return abiMissingResult("starter");
+
+    const cfg = mintConfig();
+    const diamond = cfg.cartridgeDiamond;
+    if (!diamond) {
+      return { ok: false, code: "CONFIG", error: "cartridgeDiamond missing from chain config" };
+    }
+    if (cartridgeId == null) {
+      return { ok: false, code: "ARGS", error: "cartridgeId required" };
+    }
+
+    const encoded = await encodeBindCalldata("starter", fragment, {
+      cartridgeId,
+      templateId,
+      collateral,
+    });
+    const plan = {
+      to: diamond,
+      chainId: CHAIN_ID,
+      data: encoded.data,
+      expectWallet: String(expectWallet || "").toLowerCase(),
+      label: "bindStarter",
+      functionName: encoded.functionName,
+    };
+
+    if (typeof signTx === "function") {
+      const out = await signTx(plan);
+      return {
+        ok: Boolean(out?.ok),
+        txHash: out?.txHash || null,
+        error: out?.error || null,
+        code: out?.ok ? null : out?.code || "SIGN",
+      };
+    }
+    if (typeof openSignPage === "function") {
+      const out = await openSignPage(plan);
+      return {
+        ok: Boolean(out?.ok),
+        txHash: out?.txHash || null,
+        error: out?.error || null,
+      };
+    }
+    return openBindSignPage({
+      expectWallet: plan.expectWallet,
+      diamond,
+      data: plan.data,
+      label: "bindStarter",
+    });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    const code = /unsupported bind ABI fragment/i.test(msg) ? "ABI_UNSUPPORTED" : "ERROR";
+    return { ok: false, code, error: msg };
+  }
+}
+
 function renderOpenPage(plan) {
   const planJson = JSON.stringify(plan);
   return `<!doctype html>
@@ -886,6 +1300,7 @@ async function main() {
   if (args.help) {
     console.log(`usage: cartridge-mint-sepolia.mjs --product abra|gotchibot|bundle [--tier …] [--pay usdc|ghst] [--quote] [--json]
        cartridge-mint-sepolia.mjs --open [cartridgeId]
+bindOwned / bindStarter: exported helpers (need bindOwnedAbi / bindStarterAbi in chain config; otherwise ABI_MISSING)
 Concierge fallback: ${CONCIERGE}`);
     process.exit(0);
   }

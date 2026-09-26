@@ -359,21 +359,21 @@ function openMarketplace(extraNote = "") {
   console.log(`\n  Opening Marketplace…`);
   if (extraNote) console.log(`  ${extraNote}`);
   console.log(`  Pulling packs from ${MARKETPLACE_URL}\n`);
-  const r = spawnSync(
+  const listed = spawnSync(
     process.execPath,
-    [`${ROOT}/scripts/marketplace-menu.mjs`],
-    { cwd: ROOT, stdio: "inherit" },
+    [`${ROOT}/scripts/template-pack.mjs`, "list", "--remote"],
+    { cwd: ROOT, encoding: "utf8" },
   );
-  if (r.status !== 0 && r.status != null) {
-    console.log(`  · menu exited ${r.status} — falling back to catalog list`);
-    const listed = spawnSync(
-      process.execPath,
-      [`${ROOT}/scripts/template-pack.mjs`, "list", "--remote"],
-      { cwd: ROOT, encoding: "utf8" },
-    );
-    if (listed.stdout) process.stdout.write(listed.stdout);
-    if (listed.stderr) process.stderr.write(listed.stderr);
+  if (listed.stdout) process.stdout.write(listed.stdout);
+  if (listed.stderr) process.stderr.write(listed.stderr);
+  if (listed.status !== 0 && listed.status != null) {
+    console.log(`  · template-pack list exited ${listed.status}`);
   }
+  console.log(`
+  Next steps:
+    template-pack install <id>           — free, no gotchi needed
+    template-pack apply <id> --hero <h>  — needs an available gotchi on your roster
+`);
 }
 
 /**
@@ -776,46 +776,9 @@ async function runWalletGotchiMint(wallet, cartridgeId) {
   const gPick = await choose("Which wallet gotchi?", options);
   if (!gPick) return null;
   const tokenId = String(gPick.key);
-  const heroId = `owned-${tokenId}`;
+  const guessedHeroId = `owned-${tokenId}`;
 
-  try {
-    const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
-    const { libraryNameToSpiritId, fetchWalletGotchiById, walletGotchiTraits } = await import(
-      "./onboarding-lib.mjs"
-    );
-    let g = gPick.gotchi || {};
-    try {
-      const full = await fetchWalletGotchiById(wallet, tokenId);
-      if (full) g = { ...g, ...full };
-    } catch {
-      /* keep pick */
-    }
-    const hauntId = g.hauntId != null ? Number(g.hauntId) : null;
-    const colors = findCollateralColors(g.collateral || g.collateralName || "", hauntId || 2);
-    const spirit =
-      colors?.spirit || libraryNameToSpiritId(g.collateralName || g.collateral || "") || null;
-    const traits = walletGotchiTraits(g);
-    persistHeroCollateral(heroId, {
-      collateral: spirit,
-      collateralAddress: g.collateral || null,
-      collateralName: colors?.name || g.collateralName || null,
-      hauntId,
-      primary: colors?.primary,
-      secondary: colors?.secondary,
-      sourceTokenId: tokenId,
-      modifiedTraits: traits || undefined,
-      numericTraits: g.numericTraits || traits || undefined,
-    });
-    if (traits) {
-      const eyeShape = Number(traits[4]);
-      const eyeColor = Number(traits[5]);
-      console.log(
-        `  · cheeks  eyeShape ${String(eyeShape).padStart(2, "0")} · eyeColor ${String(eyeColor).padStart(2, "0")}`,
-      );
-    }
-  } catch {
-    /* optional */
-  }
+  // Cheek colors persist only after a confirmed mint (see below).
 
   if (preferSepoliaNest()) {
     if (!cartridgeId) {
@@ -823,10 +786,13 @@ async function runWalletGotchiMint(wallet, cartridgeId) {
       await pause();
       return null;
     }
+    const nestBefore = await fetchDeskHeroes(wallet, cartridgeId);
+    const beforeIds = (nestBefore || []).map((h) => String(h.id || h));
     const bar = new Progress();
     bar.set(5, `Minting wallet cAavegotchi #${tokenId}…`);
     try {
       const { runBindOwned, refreshDeskMeta } = await import("./cartridge-mint-sepolia.mjs");
+      const { pickNewHeroFromDiff, interpretBindResult } = await import("./hero-mint-readback.mjs");
       bar.set(15, `MetaMask bindOwned #${tokenId} — confirm in browser…`);
       let bound;
       try {
@@ -844,19 +810,47 @@ async function runWalletGotchiMint(wallet, cartridgeId) {
         bar.fail(`Mint #${tokenId} — failed`);
         throw bindErr;
       }
-      if (bound?.ok) {
+      const outcome = interpretBindResult(bound);
+      if (outcome.code === "ABI_MISSING") {
+        bar.fail(`Mint #${tokenId} — ABI missing`);
+        console.log(`  · Sepolia mint not available: ABI missing — ${outcome.error}`);
+        await pause();
+        return null;
+      }
+      if (outcome.ok) {
         try {
           await bar.pulse("Refreshing desk…", () => refreshDeskMeta(wallet), { nextPct: 95 });
         } catch {
           /* optional */
         }
-        bar.done(`minted ${heroId}${bound.txHash ? ` · ${String(bound.txHash).slice(0, 10)}…` : ""}`);
-        console.log(`  ✓ roster ${heroId}${bound.txHash ? ` · ${bound.txHash}` : ""}`);
+        let afterIds = beforeIds;
+        try {
+          const nestAfter = await fetchDeskHeroes(wallet, cartridgeId);
+          afterIds = (nestAfter || []).map((h) => String(h.id || h));
+        } catch {
+          /* readback optional */
+        }
+        const picked = pickNewHeroFromDiff({
+          beforeIds,
+          afterIds,
+          hintIncludes: `owned-${tokenId}`,
+          preferredId: guessedHeroId,
+        });
+        const heroId = picked.id || guessedHeroId;
+        if (picked.source === "guess" || picked.note) {
+          console.log(`  · ${picked.note || "using computed owned id"}`);
+        }
+        try {
+          await persistOwnedCheekColors(wallet, gPick, tokenId, heroId);
+        } catch {
+          /* optional */
+        }
+        bar.done(`minted ${heroId}${outcome.txHash ? ` · ${String(outcome.txHash).slice(0, 10)}…` : ""}`);
+        console.log(`  ✓ roster ${heroId}${outcome.txHash ? ` · ${outcome.txHash}` : ""}`);
         return heroId;
       }
-      bar.fail(`Mint #${tokenId} — ${bound?.error || "skipped"}`);
-      console.log(`  · Mint skipped/failed: ${bound?.error || "unknown"}`);
-      console.log(`  · Desk cheeks kept for ${heroId} — retry when ready`);
+      bar.fail(`Mint #${tokenId} — ${outcome.error || "skipped"}`);
+      console.log(`  · Mint skipped/failed: ${outcome.error || "unknown"}`);
       await pause();
       return null;
     } catch (e) {
@@ -884,7 +878,12 @@ async function runWalletGotchiMint(wallet, cartridgeId) {
       bar.fail(`Bind #${tokenId} — failed`);
       throw bindErr;
     }
-    const id = bound || heroId;
+    const id = bound || guessedHeroId;
+    try {
+      await persistOwnedCheekColors(wallet, gPick, tokenId, id);
+    } catch {
+      /* optional */
+    }
     bar.done(`bound ${id}`);
     console.log(`  ✓ bound ${id}`);
     return id;
@@ -892,6 +891,44 @@ async function runWalletGotchiMint(wallet, cartridgeId) {
     console.log(`  ✗ bind failed: ${String(e?.message || e).slice(0, 200)}`);
     await pause();
     return null;
+  }
+}
+
+/** Persist collateral cheek colors for a confirmed owned hero id (SIM or Sepolia). */
+async function persistOwnedCheekColors(wallet, gPick, tokenId, heroId) {
+  const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
+  const { libraryNameToSpiritId, fetchWalletGotchiById, walletGotchiTraits } = await import(
+    "./onboarding-lib.mjs"
+  );
+  let g = gPick.gotchi || {};
+  try {
+    const full = await fetchWalletGotchiById(wallet, tokenId);
+    if (full) g = { ...g, ...full };
+  } catch {
+    /* keep pick */
+  }
+  const hauntId = g.hauntId != null ? Number(g.hauntId) : null;
+  const colors = findCollateralColors(g.collateral || g.collateralName || "", hauntId || 2);
+  const spirit =
+    colors?.spirit || libraryNameToSpiritId(g.collateralName || g.collateral || "") || null;
+  const traits = walletGotchiTraits(g);
+  persistHeroCollateral(heroId, {
+    collateral: spirit,
+    collateralAddress: g.collateral || null,
+    collateralName: colors?.name || g.collateralName || null,
+    hauntId,
+    primary: colors?.primary,
+    secondary: colors?.secondary,
+    sourceTokenId: tokenId,
+    modifiedTraits: traits || undefined,
+    numericTraits: g.numericTraits || traits || undefined,
+  });
+  if (traits) {
+    const eyeShape = Number(traits[4]);
+    const eyeColor = Number(traits[5]);
+    console.log(
+      `  · cheeks  eyeShape ${String(eyeShape).padStart(2, "0")} · eyeColor ${String(eyeColor).padStart(2, "0")}`,
+    );
   }
 }
 
@@ -928,33 +965,21 @@ async function runCollateralGotchiMint(wallet, cartridgeId) {
   }
   const haunt = option.hauntId || 1;
   const nestBefore = await fetchDeskHeroes(wallet, cartridgeId);
+  const beforeIds = (nestBefore || []).map((h) => String(h.id || h));
   const n = nestBefore.filter((h) => String(h.id).includes(option.id)).length + 1;
-  const heroId = `starter-${option.id}-h${haunt}-${n}`;
+  const guessedHeroId = `starter-${option.id}-h${haunt}-${n}`;
   const collateralAddr =
     option.collateralType && String(option.collateralType).startsWith("0x")
       ? String(option.collateralType)
       : "0x0000000000000000000000000000000000000000";
 
   console.log(`\n  Roster mint — MetaMask bindStarter · ${option.libraryName} · $5 USDC\n`);
-  try {
-    const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
-    const colors = findCollateralColors(collateralAddr || option.id, haunt);
-    persistHeroCollateral(heroId, {
-      collateral: option.id,
-      collateralAddress: collateralAddr,
-      collateralName: colors?.name || option.libraryName,
-      hauntId: haunt,
-      primary: colors?.primary,
-      secondary: colors?.secondary,
-    });
-  } catch {
-    /* optional */
-  }
 
   const bar = new Progress();
   bar.set(5, `Minting base collateral · ${option.libraryName}…`);
   try {
     const { runBindStarter, refreshDeskMeta } = await import("./cartridge-mint-sepolia.mjs");
+    const { pickNewHeroFromDiff, interpretBindResult } = await import("./hero-mint-readback.mjs");
     bar.set(15, `MetaMask bindStarter — confirm in browser…`);
     let bound;
     try {
@@ -973,20 +998,57 @@ async function runCollateralGotchiMint(wallet, cartridgeId) {
       bar.fail(`Mint ${option.libraryName} — failed`);
       throw bindErr;
     }
-    if (bound?.ok) {
+    const outcome = interpretBindResult(bound);
+    if (outcome.code === "ABI_MISSING") {
+      bar.fail(`Mint ${option.libraryName} — ABI missing`);
+      console.log(`  · Sepolia mint not available: ABI missing — ${outcome.error}`);
+      await pause();
+      return null;
+    }
+    if (outcome.ok) {
       try {
         await bar.pulse("Refreshing desk…", () => refreshDeskMeta(wallet), { nextPct: 95 });
       } catch {
         /* optional */
       }
-      bar.done(`minted ${heroId}${bound.txHash ? ` · ${String(bound.txHash).slice(0, 10)}…` : ""}`);
-      console.log(`  ✓ roster starter ${option.id}${bound.txHash ? ` · ${bound.txHash}` : ""}`);
+      let afterIds = beforeIds;
+      try {
+        const nestAfter = await fetchDeskHeroes(wallet, cartridgeId);
+        afterIds = (nestAfter || []).map((h) => String(h.id || h));
+      } catch {
+        /* optional */
+      }
+      const picked = pickNewHeroFromDiff({
+        beforeIds,
+        afterIds,
+        hintIncludes: option.id,
+        preferredId: guessedHeroId,
+      });
+      const heroId = picked.id || guessedHeroId;
+      if (picked.source === "guess" || picked.note) {
+        console.log(`  · ${picked.note || "using computed starter id"}`);
+      }
+      try {
+        const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
+        const colors = findCollateralColors(collateralAddr || option.id, haunt);
+        persistHeroCollateral(heroId, {
+          collateral: option.id,
+          collateralAddress: collateralAddr,
+          collateralName: colors?.name || option.libraryName,
+          hauntId: haunt,
+          primary: colors?.primary,
+          secondary: colors?.secondary,
+        });
+      } catch {
+        /* optional */
+      }
+      bar.done(`minted ${heroId}${outcome.txHash ? ` · ${String(outcome.txHash).slice(0, 10)}…` : ""}`);
+      console.log(`  ✓ roster starter ${option.id}${outcome.txHash ? ` · ${outcome.txHash}` : ""}`);
       return heroId;
     }
-    bar.fail(`Mint ${option.libraryName} — ${bound?.error || "skipped"}`);
-    console.log(`  · Mint skipped/failed: ${bound?.error || "unknown"}`);
-    console.log(`  · Desk hero ${heroId} kept for cheek art / later orch`);
-    return heroId;
+    bar.fail(`Mint ${option.libraryName} — ${outcome.error || "skipped"}`);
+    console.log(`  · Mint skipped/failed: ${outcome.error || "unknown"}`);
+    return null;
   } catch (e) {
     try {
       bar.fail(`Mint ${option.libraryName} — failed`);
