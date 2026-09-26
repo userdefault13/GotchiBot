@@ -5,12 +5,57 @@
   "consoleDiamond": "0x4c4fa38420c457c5a5a33beebd6f340618e62f8a",
   "cartridgeDiamond": "0xbb44b67de78393a54bcda56707e6ffc719b3a645",
   "ghstToken": "0xe97f36a00058aa7dfc4e85d23532c3f70453a7ae",
-  "l1AavegotchiDiamond": "",
+  "l1AavegotchiDiamond": "0x92aE9134346A2A084c2Aa7b1EBe60e7e18Fc3457",
   "subgraphName": "aarcade-cartridge-base",
   "gotchiBotLicense": "0xfd576e01a60CF9F867c74eE01F01151D93a08bEf",
   "gotchiBotCartridgeMinter": "0x052387D6E0AB431643d7D20ec008619182377519",
   "nestFacetNote": "DiamondCut GotchiBotNestFacet onto cartridgeDiamond; setNestMinter + setGotchiBotLicense",
   "abraLicense": "0x55A310C560Cb1927Ae356aCFaC34BBACC501C264",
   "abraCartridgeMinter": "0xc9AaE7301719a6304bf7cb159B6C7a0ABB13e006",
-  "abraNestNote": "DiamondCut AbraNestFacet; soulbound; recoveryTransfer when compromised"
+  "abraNestNote": "DiamondCut AbraNestFacet; soulbound; recoveryTransfer when compromised",
+  "starterBindFeeWei": "5000000000000000000",
+  "signingEnabled": true,
+  "bindNote": "Sepolia bindStarter is the old Sep 4 payable facet (5 Sepolia test ETH placeholder) until a diamondCut. STARTER_BIND_FEE getter is NOT registered on this diamond.",
+  "bindSelectors": {
+    "bindOwned": "0x75002762",
+    "bindStarter": "0x100cc61b",
+    "heroIds": "0x614a4e44"
+  },
+  "bindAbi": {
+    "bindOwned": {
+      "type": "function",
+      "name": "bindOwned",
+      "stateMutability": "nonpayable",
+      "inputs": [
+        { "name": "cartridgeId", "type": "uint256" },
+        { "name": "sourceTokenId", "type": "uint256" }
+      ],
+      "outputs": []
+    },
+    "bindStarter": {
+      "type": "function",
+      "name": "bindStarter",
+      "stateMutability": "payable",
+      "inputs": [
+        { "name": "cartridgeId", "type": "uint256" },
+        { "name": "templateId", "type": "bytes32" },
+        { "name": "collateral", "type": "address" }
+      ],
+      "outputs": []
+    }
+  },
+  "events": {
+    "CAavegotchiBound": {
+      "type": "event",
+      "name": "CAavegotchiBound",
+      "anonymous": false,
+      "inputs": [
+        { "name": "cartridgeId", "type": "uint256", "indexed": true },
+        { "name": "heroId", "type": "bytes32", "indexed": true },
+        { "name": "bindType", "type": "uint8", "indexed": false },
+        { "name": "sourceTokenId", "type": "uint256", "indexed": false }
+      ]
+    },
+    "topic0": "0x1827e5bd6f1d1f8b1db16accce3f4eaa3a7db62d925e97e9eb749276c400baa9"
+  }
 }

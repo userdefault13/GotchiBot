@@ -97,16 +97,56 @@ export function normalizeRosterEntries(heroes) {
 
 /**
  * Pure Sepolia bytes32 ↔ hero-id matcher (no network).
+ * On-chain formulas are authoritative:
+ *   owned-<n> → solidityPackedKeccak256(["string","uint256"], ["owned-", n])
+ *   starter-* → sessions/.onchain-hero-ids.json mapping (injectable via opts.onchainHeroIds)
+ * encodeBytes32String / ethers.id remain as harmless fallbacks only.
+ *
  * @param {string} entry hex/bytes32 or plain id
  * @param {string} heroId e.g. owned-123
- * @param {{ encodeBytes32String?: Function, decodeBytes32String?: Function, id?: Function } | null} [ethersLike]
+ * @param {{ encodeBytes32String?: Function, decodeBytes32String?: Function, id?: Function, solidityPackedKeccak256?: Function } | null} [ethersLike]
+ * @param {{ onchainHeroIds?: Record<string, {heroIdBytes32?: string}>, loadOnchainHeroIds?: Function }} [opts]
  * @returns {boolean}
  */
-export function matchSepoliaHeroBytes32(entry, heroId, ethersLike = null) {
+export function matchSepoliaHeroBytes32(entry, heroId, ethersLike = null, opts = {}) {
   const raw = String(entry || "").trim();
   const id = String(heroId || "").trim();
   if (!raw || !id) return false;
   if (raw === id) return true;
+
+  // Authoritative: owned-<n> on-chain formula
+  const ownedM = /^owned-(\d+)$/i.exec(id);
+  if (ownedM && ethersLike && typeof ethersLike.solidityPackedKeccak256 === "function") {
+    try {
+      const h = String(
+        ethersLike.solidityPackedKeccak256(["string", "uint256"], ["owned-", BigInt(ownedM[1])]),
+      );
+      if (h.toLowerCase() === raw.toLowerCase()) return true;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Authoritative: starter desk id → recorded bytes32 mapping
+  let map = opts.onchainHeroIds;
+  if (!map && typeof opts.loadOnchainHeroIds === "function") {
+    try {
+      map = opts.loadOnchainHeroIds();
+    } catch {
+      map = null;
+    }
+  }
+  if (!map) {
+    try {
+      const p = join(sessionsDir(), ".onchain-hero-ids.json");
+      map = JSON.parse(readFileSync(p, "utf8"));
+    } catch {
+      map = null;
+    }
+  }
+  if (map && map[id]?.heroIdBytes32) {
+    if (String(map[id].heroIdBytes32).toLowerCase() === raw.toLowerCase()) return true;
+  }
 
   if (!ethersLike) return false;
 
@@ -146,12 +186,12 @@ export function matchSepoliaHeroBytes32(entry, heroId, ethersLike = null) {
  * Membership check for a sepolia heroIds() list (bytes32 hex strings).
  * @returns {"yes"|"no"|"unknown"}
  */
-export function sepoliaRosterMembership(entries, heroId, ethersLike = null) {
+export function sepoliaRosterMembership(entries, heroId, ethersLike = null, opts = {}) {
   const list = Array.isArray(entries) ? entries.map(String) : [];
   if (!list.length) return "no";
 
   for (const entry of list) {
-    if (matchSepoliaHeroBytes32(entry, heroId, ethersLike)) return "yes";
+    if (matchSepoliaHeroBytes32(entry, heroId, ethersLike, opts)) return "yes";
   }
 
   // Without ethers we cannot interpret bytes32 → unknown (caller falls back to local cache).
@@ -187,6 +227,9 @@ export function sepoliaRosterMembership(entries, heroId, ethersLike = null) {
     } catch {
       /* ignore */
     }
+  }
+  if (typeof ethersLike.solidityPackedKeccak256 === "function" && /^owned-\d+$/i.test(heroId)) {
+    anyComparable = true;
   }
 
   if (!anyComparable) return "unknown";

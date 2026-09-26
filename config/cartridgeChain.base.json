@@ -1,0 +1,68 @@
+{
+  "chainId": 8453,
+  "network": "base",
+  "status": "pending AarcadeGh-t PR #28",
+  "signingEnabled": false,
+  "cartridgeDiamond": "0x24877Cf25E23bd44F006F6970772EDFE5ca01b34",
+  "usdcToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "starterBindFee": "5000000",
+  "bindNote": "Mainnet bindStarter (nonpayable + USDC) exists only on AarcadeGh-t branch feature/cartridge-chain-provider (draft PR #28). Signing stays disabled in this repo. Approve spender = cartridgeDiamond (not the facet).",
+  "bindSelectors": {
+    "bindOwned": "0x75002762",
+    "bindStarter": "0x1b33e284",
+    "heroIds": "0x614a4e44"
+  },
+  "bindAbi": {
+    "bindOwned": {
+      "type": "function",
+      "name": "bindOwned",
+      "stateMutability": "nonpayable",
+      "inputs": [
+        { "name": "cartridgeId", "type": "uint256" },
+        { "name": "sourceTokenId", "type": "uint256" }
+      ],
+      "outputs": []
+    },
+    "bindStarter": {
+      "type": "function",
+      "name": "bindStarter",
+      "stateMutability": "nonpayable",
+      "inputs": [
+        { "name": "cartridgeId", "type": "uint256" },
+        { "name": "templateId", "type": "bytes32" },
+        { "name": "collateral", "type": "address" },
+        { "name": "paymentToken", "type": "address" },
+        { "name": "maxAmount", "type": "uint256" }
+      ],
+      "outputs": []
+    },
+    "usdcToken": {
+      "type": "function",
+      "name": "usdcToken",
+      "stateMutability": "view",
+      "inputs": [],
+      "outputs": [{ "name": "", "type": "address" }]
+    },
+    "STARTER_BIND_FEE": {
+      "type": "function",
+      "name": "STARTER_BIND_FEE",
+      "stateMutability": "view",
+      "inputs": [],
+      "outputs": [{ "name": "", "type": "uint256" }]
+    }
+  },
+  "events": {
+    "CAavegotchiBound": {
+      "type": "event",
+      "name": "CAavegotchiBound",
+      "anonymous": false,
+      "inputs": [
+        { "name": "cartridgeId", "type": "uint256", "indexed": true },
+        { "name": "heroId", "type": "bytes32", "indexed": true },
+        { "name": "bindType", "type": "uint8", "indexed": false },
+        { "name": "sourceTokenId", "type": "uint256", "indexed": false }
+      ]
+    },
+    "topic0": "0x1827e5bd6f1d1f8b1db16accce3f4eaa3a7db62d925e97e9eb749276c400baa9"
+  }
+}

@@ -40,6 +40,7 @@ const CONCIERGE_MINT_URL = "https://www.aarcadeghst.com/concierge/terminal";
 const MARKETPLACE_URL = "https://aarcadeghst.com/gotchibot-templates";
 
 function preferSepoliaNest() {
+  if (isCartridgeMainnet()) return false;
   return (
     process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "sim" &&
     process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "local" &&
@@ -48,6 +49,50 @@ function preferSepoliaNest() {
       process.env.GOTCHIBOT_PREFER_SEPOLIA === "1" ||
       process.env.GOTCHIBOT_PREFER_SEPOLIA !== "0")
   );
+}
+
+/** Base mainnet cartridge path — bind signing disabled pending AarcadeGh-t PR #28. */
+function isCartridgeMainnet() {
+  const e = String(process.env.GOTCHIBOT_CARTRIDGE_CHAIN || "").toLowerCase();
+  return e === "8453" || e === "base" || e === "mainnet";
+}
+
+/** Menu / title fragment for collateral mint cost (chain-aware). */
+function collateralMintCostLabel() {
+  if (isCartridgeMainnet()) return "disabled — pending AarcadeGh-t PR #28";
+  return "5 Sepolia test ETH";
+}
+
+async function sepoliaBindRpcHelpers(cfg) {
+  const { resolve, dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  let ethersMod;
+  try {
+    ethersMod = await import("ethers");
+  } catch {
+    ethersMod = await import(resolve(root, "../AarcadeGh-t/node_modules/ethers/lib.esm/index.js"));
+  }
+  const ethers = ethersMod.ethers || ethersMod.default || ethersMod;
+  const rpc = cfg.rpc || process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org";
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const diamond = cfg.cartridgeDiamond;
+  return {
+    ethers,
+    getReceipt: (txHash) => provider.getTransactionReceipt(txHash),
+    readHeroIds: async (cartridgeId) => {
+      const c = new ethers.Contract(
+        diamond,
+        ["function heroIds(uint256 cartridgeId) view returns (bytes32[])"],
+        provider,
+      );
+      return Array.from(await c.heroIds(BigInt(cartridgeId)));
+    },
+    readContract: async ({ address, abi, functionName, args = [] }) => {
+      const c = new ethers.Contract(address, abi, provider);
+      return c[functionName](...args);
+    },
+  };
 }
 
 function tmuxSessionName() {
@@ -526,7 +571,7 @@ async function runFirstOrchMintMenu(wallet, cartridgeId) {
     const pickOpts = preferSepoliaNest()
       ? [
           { key: "wallet", label: "Mint wallet cAavegotchi (free)" },
-          { key: "collateral", label: "Mint base collateral ($5 USDC)" },
+          { key: "collateral", label: `Mint base collateral (${collateralMintCostLabel()})` },
           { key: "marketplace", label: "View Marketplace" },
           { key: "view", label: "View cart roster / set orch from roster" },
           { key: "concierge", label: "Open Concierge only (bind / mint on-chain)" },
@@ -534,7 +579,7 @@ async function runFirstOrchMintMenu(wallet, cartridgeId) {
         ]
       : [
           { key: "wallet", label: "Mint wallet cAavegotchi (free)" },
-          { key: "collateral", label: "Mint base collateral ($5 USDC)" },
+          { key: "collateral", label: `Mint base collateral (${collateralMintCostLabel()})` },
           { key: "marketplace", label: "View Marketplace" },
           { key: "back", label: "Back / quit" },
         ];
@@ -764,7 +809,7 @@ async function runWalletGotchiMint(wallet, cartridgeId) {
   }
   if (!onChain.length) {
     console.log("\n  No Aavegotchis in this wallet.");
-    console.log("  Buy/mint one on Base, or mint base collateral ($5 USDC).");
+    console.log("  Buy/mint one on Base, or mint base collateral (5 Sepolia test ETH).");
     await pause();
     return null;
   }
@@ -780,74 +825,138 @@ async function runWalletGotchiMint(wallet, cartridgeId) {
 
   // Cheek colors persist only after a confirmed mint (see below).
 
+  if (isCartridgeMainnet()) {
+    console.log(
+      "\n  · Base mainnet bind is disabled — pending AarcadeGh-t PR #28 (feature/cartridge-chain-provider)",
+    );
+    await pause();
+    return null;
+  }
+
   if (preferSepoliaNest()) {
     if (!cartridgeId) {
       console.log("  · No cart id — mint/open a GotchiBot cart first.");
       await pause();
       return null;
     }
-    const nestBefore = await fetchDeskHeroes(wallet, cartridgeId);
-    const beforeIds = (nestBefore || []).map((h) => String(h.id || h));
     const bar = new Progress();
     bar.set(5, `Minting wallet cAavegotchi #${tokenId}…`);
     try {
-      const { runBindOwned, refreshDeskMeta } = await import("./cartridge-mint-sepolia.mjs");
-      const { pickNewHeroFromDiff, interpretBindResult } = await import("./hero-mint-readback.mjs");
-      bar.set(15, `MetaMask bindOwned #${tokenId} — confirm in browser…`);
+      const { runBindOwned, refreshDeskMeta, loadChainConfig } = await import(
+        "./cartridge-mint-sepolia.mjs"
+      );
+      const {
+        interpretBindResult,
+        readbackAfterBind,
+        deskIdForBind,
+        recordOnchainHeroId,
+      } = await import("./hero-mint-readback.mjs");
+      const cfg = loadChainConfig();
+      const rpc = await sepoliaBindRpcHelpers({
+        ...cfg,
+        rpc: process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org",
+      });
+      let heroIdsBefore = [];
+      try {
+        heroIdsBefore = await rpc.readHeroIds(cartridgeId);
+      } catch {
+        heroIdsBefore = [];
+      }
+      bar.set(15, `Preflight + MetaMask bindOwned #${tokenId}…`);
       let bound;
       try {
         bound = await bar.pulse(
-          `Minting #${tokenId} (waiting on MetaMask)…`,
+          `Minting #${tokenId} (preflight → MetaMask)…`,
           () =>
             runBindOwned({
               expectWallet: wallet,
               cartridgeId: String(cartridgeId),
               sourceTokenId: tokenId,
+              readContract: rpc.readContract,
+              ethersLib: rpc.ethers,
             }),
-          { nextPct: 85 },
+          { nextPct: 70 },
         );
       } catch (bindErr) {
         bar.fail(`Mint #${tokenId} — failed`);
         throw bindErr;
       }
       const outcome = interpretBindResult(bound);
+      if (outcome.code === "MAINNET_DISABLED") {
+        bar.fail(`Mint #${tokenId} — mainnet disabled`);
+        console.log(`  · ${outcome.error}`);
+        await pause();
+        return null;
+      }
+      if (outcome.code === "PREFLIGHT") {
+        bar.fail(`Mint #${tokenId} — preflight failed`);
+        console.log(`  · Preflight failed: ${outcome.error}`);
+        await pause();
+        return null;
+      }
       if (outcome.code === "ABI_MISSING") {
         bar.fail(`Mint #${tokenId} — ABI missing`);
         console.log(`  · Sepolia mint not available: ABI missing — ${outcome.error}`);
         await pause();
         return null;
       }
-      if (outcome.ok) {
+      if (outcome.ok && outcome.txHash) {
+        bar.set(75, "Waiting for receipt + hero readback…");
+        const rb = await readbackAfterBind({
+          txHash: outcome.txHash,
+          getReceipt: rpc.getReceipt,
+          cartridgeDiamond: cfg.cartridgeDiamond,
+          topic0: cfg.events?.topic0,
+          eventFragment: cfg.events?.CAavegotchiBound,
+          cartridgeId: String(cartridgeId),
+          bindKind: "owned",
+          sourceTokenId: tokenId,
+          heroIdsBefore,
+          readHeroIds: rpc.readHeroIds,
+          ethersLib: rpc.ethers,
+          record: false,
+          chainId: cfg.chainId || 84532,
+          intervalMs: 2000,
+          timeoutMs: 120_000,
+        });
+        if (!rb.ok) {
+          bar.fail(`Mint #${tokenId} — ${rb.code}`);
+          console.log(`  · tx ${outcome.txHash}`);
+          console.log(
+            `  · ${rb.error || rb.code} — retry readback later (hero not recorded yet)`,
+          );
+          await pause();
+          return null;
+        }
         try {
           await bar.pulse("Refreshing desk…", () => refreshDeskMeta(wallet), { nextPct: 95 });
         } catch {
           /* optional */
         }
-        let afterIds = beforeIds;
-        try {
-          const nestAfter = await fetchDeskHeroes(wallet, cartridgeId);
-          afterIds = (nestAfter || []).map((h) => String(h.id || h));
-        } catch {
-          /* readback optional */
-        }
-        const picked = pickNewHeroFromDiff({
-          beforeIds,
-          afterIds,
-          hintIncludes: `owned-${tokenId}`,
-          preferredId: guessedHeroId,
+        const { deskId: finalDeskId, warning } = deskIdForBind({
+          kind: "owned",
+          tokenId,
+          heroIdBytes32: rb.heroIdBytes32,
+          ethersLib: rpc.ethers,
         });
-        const heroId = picked.id || guessedHeroId;
-        if (picked.source === "guess" || picked.note) {
-          console.log(`  · ${picked.note || "using computed owned id"}`);
-        }
+        if (warning) console.log(`  · ${warning}`);
+        recordOnchainHeroId(finalDeskId, {
+          heroIdBytes32: rb.heroIdBytes32,
+          chainId: cfg.chainId || 84532,
+          txHash: outcome.txHash,
+          bindType: rb.bindType,
+          source: rb.source,
+          sourceTokenId: tokenId,
+        });
+        console.log(`  · on-chain heroId ${rb.heroIdBytes32} (via ${rb.source})`);
         try {
-          await persistOwnedCheekColors(wallet, gPick, tokenId, heroId);
+          await persistOwnedCheekColors(wallet, gPick, tokenId, finalDeskId);
         } catch {
           /* optional */
         }
-        bar.done(`minted ${heroId}${outcome.txHash ? ` · ${String(outcome.txHash).slice(0, 10)}…` : ""}`);
-        console.log(`  ✓ roster ${heroId}${outcome.txHash ? ` · ${outcome.txHash}` : ""}`);
-        return heroId;
+        bar.done(`minted ${finalDeskId} · ${String(outcome.txHash).slice(0, 10)}…`);
+        console.log(`  ✓ roster ${finalDeskId} · ${outcome.txHash}`);
+        return finalDeskId;
       }
       bar.fail(`Mint #${tokenId} — ${outcome.error || "skipped"}`);
       console.log(`  · Mint skipped/failed: ${outcome.error || "unknown"}`);
@@ -950,6 +1059,13 @@ async function pickCollateralOption(promptText) {
 
 /** Collateral starter mint — does not set orch (caller asks). */
 async function runCollateralGotchiMint(wallet, cartridgeId) {
+  if (isCartridgeMainnet()) {
+    console.log(
+      "\n  · Base mainnet bind is disabled — pending AarcadeGh-t PR #28 (feature/cartridge-chain-provider)",
+    );
+    await pause();
+    return null;
+  }
   if (!cartridgeId) {
     console.log("  · No cart id — mint/open a GotchiBot cart first.");
     await pause();
@@ -966,72 +1082,131 @@ async function runCollateralGotchiMint(wallet, cartridgeId) {
   const haunt = option.hauntId || 1;
   const nestBefore = await fetchDeskHeroes(wallet, cartridgeId);
   const beforeIds = (nestBefore || []).map((h) => String(h.id || h));
-  const n = nestBefore.filter((h) => String(h.id).includes(option.id)).length + 1;
-  const guessedHeroId = `starter-${option.id}-h${haunt}-${n}`;
   const collateralAddr =
     option.collateralType && String(option.collateralType).startsWith("0x")
       ? String(option.collateralType)
       : "0x0000000000000000000000000000000000000000";
 
-  console.log(`\n  Roster mint — MetaMask bindStarter · ${option.libraryName} · $5 USDC\n`);
+  console.log(
+    `\n  Roster mint — MetaMask bindStarter · ${option.libraryName} · ${collateralMintCostLabel()}\n`,
+  );
 
   const bar = new Progress();
   bar.set(5, `Minting base collateral · ${option.libraryName}…`);
   try {
-    const { runBindStarter, refreshDeskMeta } = await import("./cartridge-mint-sepolia.mjs");
-    const { pickNewHeroFromDiff, interpretBindResult } = await import("./hero-mint-readback.mjs");
-    bar.set(15, `MetaMask bindStarter — confirm in browser…`);
+    const { runBindStarter, refreshDeskMeta, loadChainConfig } = await import(
+      "./cartridge-mint-sepolia.mjs"
+    );
+    const {
+      interpretBindResult,
+      readbackAfterBind,
+      deskIdForBind,
+      collectKnownDeskIds,
+      recordOnchainHeroId,
+    } = await import("./hero-mint-readback.mjs");
+    const cfg = loadChainConfig();
+    const rpc = await sepoliaBindRpcHelpers({
+      ...cfg,
+      rpc: process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org",
+    });
+    let heroIdsBefore = [];
+    try {
+      heroIdsBefore = await rpc.readHeroIds(cartridgeId);
+    } catch {
+      heroIdsBefore = [];
+    }
+    bar.set(15, `Preflight + MetaMask bindStarter — confirm 5 Sepolia test ETH…`);
     let bound;
     try {
       bound = await bar.pulse(
-        `Minting ${option.libraryName} (waiting on MetaMask)…`,
+        `Minting ${option.libraryName} (preflight → MetaMask)…`,
         () =>
           runBindStarter({
             expectWallet: wallet,
             cartridgeId: String(cartridgeId),
             templateId: option.id,
             collateral: collateralAddr,
+            readContract: rpc.readContract,
+            ethersLib: rpc.ethers,
           }),
-        { nextPct: 85 },
+        { nextPct: 70 },
       );
     } catch (bindErr) {
       bar.fail(`Mint ${option.libraryName} — failed`);
       throw bindErr;
     }
     const outcome = interpretBindResult(bound);
+    if (outcome.code === "MAINNET_DISABLED") {
+      bar.fail(`Mint ${option.libraryName} — mainnet disabled`);
+      console.log(`  · ${outcome.error}`);
+      await pause();
+      return null;
+    }
+    if (outcome.code === "PREFLIGHT") {
+      bar.fail(`Mint ${option.libraryName} — preflight failed`);
+      console.log(`  · Preflight failed: ${outcome.error}`);
+      await pause();
+      return null;
+    }
     if (outcome.code === "ABI_MISSING") {
       bar.fail(`Mint ${option.libraryName} — ABI missing`);
       console.log(`  · Sepolia mint not available: ABI missing — ${outcome.error}`);
       await pause();
       return null;
     }
-    if (outcome.ok) {
+    if (outcome.ok && outcome.txHash) {
+      bar.set(75, "Waiting for receipt + hero readback…");
+      const rb = await readbackAfterBind({
+        txHash: outcome.txHash,
+        getReceipt: rpc.getReceipt,
+        cartridgeDiamond: cfg.cartridgeDiamond,
+        topic0: cfg.events?.topic0,
+        eventFragment: cfg.events?.CAavegotchiBound,
+        cartridgeId: String(cartridgeId),
+        bindKind: "starter",
+        templateId: option.id,
+        heroIdsBefore,
+        readHeroIds: rpc.readHeroIds,
+        ethersLib: rpc.ethers,
+        record: false,
+        chainId: cfg.chainId || 84532,
+        intervalMs: 2000,
+        timeoutMs: 120_000,
+      });
+      if (!rb.ok) {
+        bar.fail(`Mint ${option.libraryName} — ${rb.code}`);
+        console.log(`  · tx ${outcome.txHash}`);
+        console.log(
+          `  · ${rb.error || rb.code} — retry readback later (hero not recorded yet)`,
+        );
+        await pause();
+        return null;
+      }
       try {
         await bar.pulse("Refreshing desk…", () => refreshDeskMeta(wallet), { nextPct: 95 });
       } catch {
         /* optional */
       }
-      let afterIds = beforeIds;
-      try {
-        const nestAfter = await fetchDeskHeroes(wallet, cartridgeId);
-        afterIds = (nestAfter || []).map((h) => String(h.id || h));
-      } catch {
-        /* optional */
-      }
-      const picked = pickNewHeroFromDiff({
-        beforeIds,
-        afterIds,
-        hintIncludes: option.id,
-        preferredId: guessedHeroId,
+      const knownIds = collectKnownDeskIds({ nestIds: beforeIds });
+      const { deskId: finalDeskId } = deskIdForBind({
+        kind: "starter",
+        collateralId: option.id,
+        hauntId: haunt,
+        knownIds,
       });
-      const heroId = picked.id || guessedHeroId;
-      if (picked.source === "guess" || picked.note) {
-        console.log(`  · ${picked.note || "using computed starter id"}`);
-      }
+      recordOnchainHeroId(finalDeskId, {
+        heroIdBytes32: rb.heroIdBytes32,
+        chainId: cfg.chainId || 84532,
+        txHash: outcome.txHash,
+        bindType: rb.bindType,
+        source: rb.source,
+        sourceTokenId: null,
+      });
+      console.log(`  · on-chain heroId ${rb.heroIdBytes32} (via ${rb.source})`);
       try {
         const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
         const colors = findCollateralColors(collateralAddr || option.id, haunt);
-        persistHeroCollateral(heroId, {
+        persistHeroCollateral(finalDeskId, {
           collateral: option.id,
           collateralAddress: collateralAddr,
           collateralName: colors?.name || option.libraryName,
@@ -1042,9 +1217,9 @@ async function runCollateralGotchiMint(wallet, cartridgeId) {
       } catch {
         /* optional */
       }
-      bar.done(`minted ${heroId}${outcome.txHash ? ` · ${String(outcome.txHash).slice(0, 10)}…` : ""}`);
-      console.log(`  ✓ roster starter ${option.id}${outcome.txHash ? ` · ${outcome.txHash}` : ""}`);
-      return heroId;
+      bar.done(`minted ${finalDeskId} · ${String(outcome.txHash).slice(0, 10)}…`);
+      console.log(`  ✓ roster ${finalDeskId} · ${outcome.txHash}`);
+      return finalDeskId;
     }
     bar.fail(`Mint ${option.libraryName} — ${outcome.error || "skipped"}`);
     console.log(`  · Mint skipped/failed: ${outcome.error || "unknown"}`);
@@ -2593,7 +2768,7 @@ async function mainMenu(wallet, cartridgeId) {
       { key: "export-roster", label: "Export agent roster to CSV" },
       { key: "import", label: "Browse cartridge cAavegotchis" },
       { key: "mint", label: "Mint another wallet gotchi — Free (sub-agent identity)" },
-      { key: "mint-collateral", label: "Mint a base collateral cAavegotchi ($5 USDC)" },
+      { key: "mint-collateral", label: `Mint a base collateral cAavegotchi (${collateralMintCostLabel()})` },
       { key: "marketplace", label: "View Marketplace" },
       { key: "settings", label: "Settings (voice, read speed, mouse, replay, IPFS)" },
       { key: "avatar", label: "Change orchestrator avatar" },
@@ -2801,8 +2976,9 @@ async function mainMenu(wallet, cartridgeId) {
         await pause();
         continue;
       }
-      title("Mint base collateral cAavegotchi — $5 USDC");
+      title(`Mint base collateral cAavegotchi — ${collateralMintCostLabel()}`);
       console.log("  Mint a starter collateral gotchi onto the nest (MetaMask bindStarter).");
+      console.log("  Cost: 5 Sepolia test ETH (placeholder fee) — confirm before signing.\n");
       console.log("  Sub-agent identity — pick DAI / LINK / … from the collateral list.\n");
       const heroId = await runCollateralGotchiMint(wallet, cartridgeId);
       if (heroId) {
