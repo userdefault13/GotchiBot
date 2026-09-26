@@ -17,7 +17,7 @@
  *   node scripts/prof-link-cube.mjs summon --confirmed [--auto-mint gotchi|wallet|none] [--yes]
  *        # prints portal mint plan, then prompts (or uses --auto-mint) to optionally
  *        # mint-sub a collateral gotchi OR ensure wallet+cartridge. Never mints the professor.
- *   node scripts/prof-link-cube.mjs resummon --hero <id> [--role <role>] [--standing-duty <key>] [--dry-run] [--yes]
+ *   node scripts/prof-link-cube.mjs resummon --hero <id> [--role <role>] [--standing-duty <key>] [--dry-run] [--yes] [--force] [--project <slug>]
  *   node scripts/prof-link-cube.mjs bind --hero <id> [--role <role>] [--standing-duty <key>] [--yes]
  *   node scripts/prof-link-cube.mjs status
  *
@@ -169,8 +169,8 @@ Prof. Link-Cube is a GotchiBot NPC — never a hero seat, never mint-sub for the
                                                print portal mint plan, then ask (or use --auto-mint) to
                                                mint-sub a collateral gotchi OR ensure wallet+cartridge.
                                                Default: plan only. Auto-mint needs interactive pick or --yes.
-  link-cube resummon --hero <id> [--role <r>] [--standing-duty <key>] [--keep-playbook] [--dry-run] [--yes]
-                                               existing hero: design + confirm, no mint (the LINK proof path)
+  link-cube resummon --hero <id> [--role <r>] [--standing-duty <key>] [--keep-playbook] [--dry-run] [--yes] [--force] [--project <slug>]
+                                               existing hero: apply gate + design + confirm, no mint (the LINK proof path)
   link-cube bind --hero <id> [--role <r>] [--standing-duty <key>] [--yes]
                                                wire an already-summoned hero to a role (post-summon step)
   link-cube status                             show intake/design/confirm state
@@ -188,6 +188,8 @@ standing-duty keys: ${Object.keys(STANDING_DUTIES).join(", ")}
 
 Safety: design never writes; confirm needs approval; summon defaults to plan-only;
 auto-mint gotchi|wallet needs a second yes. resummon/bind never mint. Prof is NPC.
+resummon runs the apply gate (roster + available + starter crew) unless
+GOTCHIBOT_APPLY_GATE_OK=1 (template-pack apply) or --force.
 No installs, no secrets.`);
 }
 
@@ -571,6 +573,23 @@ async function cmdResummon(args) {
   const dryRun = args.includes("--dry-run");
   const yes = args.includes("--yes") || process.env.GOTCHIBOT_AUTO_APPROVE === "1";
   const keepPlaybook = args.includes("--keep-playbook");
+  const force = args.includes("--force");
+  const project = argValue(args, "--project");
+
+  // Apply gate when invoked directly (template-pack apply sets GOTCHIBOT_APPLY_GATE_OK=1).
+  {
+    const { assertHeroApplicable, formatGateFailure } = await import("./hero-apply-gate.mjs");
+    const { currentProjectSlug } = await import("./project-context.mjs");
+    const gate = await assertHeroApplicable(hero, {
+      project: project || currentProjectSlug() || null,
+      force,
+    });
+    for (const w of gate.warnings || []) console.error(w.startsWith("WARNING") ? w : `warning: ${w}`);
+    if (!gate.ok) {
+      for (const line of formatGateFailure(gate)) console.error(line);
+      process.exit(2);
+    }
+  }
 
   // intake from flags (resummon never mints — collateral is informational)
   const intake = {

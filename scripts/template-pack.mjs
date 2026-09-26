@@ -7,8 +7,9 @@
  *   node scripts/template-pack.mjs show <id>                print pack.json + file tree
  *   node scripts/template-pack.mjs install <id|path|url> [--yes]
  *                                                           merge playbook + AGENTS template + vendored skills
- *   node scripts/template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]
- *                                                           install if needed, then prof-link-cube resummon
+ *   node scripts/template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>] [--force] [--project <slug>]
+ *                                                           apply gate (roster + available + starter crew) then resummon
+ *   install needs NO hero/gotchi — free, no apply gate.
  *
  * Pack format (full desk = C):
  *   templates/marketplace/packs/<id>/
@@ -517,7 +518,13 @@ function saveStandingDuties(duties) {
   writeJson(STANDING_DUTIES_FILE, duties);
 }
 
-async function cmdApply(arg, { hero, yes = false, standingDuty = null } = {}) {
+async function cmdApply(arg, {
+  hero,
+  yes = false,
+  standingDuty = null,
+  force = false,
+  project = null,
+} = {}) {
   const catalog = loadCatalog();
   const entry = catalog.packs.find((p) => p.id === arg || p.roleId === arg);
   const roleId = entry?.roleId || arg;
@@ -534,8 +541,30 @@ async function cmdApply(arg, { hero, yes = false, standingDuty = null } = {}) {
     }
   }
 
+  const { assertHeroApplicable, listApplicableHeroes, formatGateFailure } =
+    await import("./hero-apply-gate.mjs");
+  const { currentProjectSlug } = await import("./project-context.mjs");
+  const projectSlug = project || currentProjectSlug() || null;
+
   if (!hero) {
     console.error("apply: --hero <hero> required (e.g. starter-dai-h1-2)");
+    const listed = await listApplicableHeroes();
+    if (listed.warnings?.length) {
+      for (const w of listed.warnings) console.error(`  warning: ${w}`);
+    }
+    if (listed.heroes.length) {
+      console.error(`  available heroes: ${listed.heroes.join(", ")}`);
+    } else {
+      console.error("  available heroes: (none found on roster/cache)");
+    }
+    process.exit(2);
+  }
+
+  // Rule 3 — gate before dry-run / resummon. install path never calls this.
+  const gate = await assertHeroApplicable(hero, { project: projectSlug, force });
+  for (const w of gate.warnings || []) console.error(w.startsWith("WARNING") ? w : `warning: ${w}`);
+  if (!gate.ok) {
+    for (const line of formatGateFailure(gate)) console.error(line);
     process.exit(2);
   }
 
@@ -549,6 +578,7 @@ async function cmdApply(arg, { hero, yes = false, standingDuty = null } = {}) {
   ];
   if (standingDuty) resummon.push("--standing-duty", standingDuty);
   if (yes) resummon.push("--yes");
+  if (force) resummon.push("--force");
 
   if (!yes) {
     console.log(`apply ${roleId} → hero ${hero} (dry-run, no --yes)`);
@@ -558,18 +588,28 @@ async function cmdApply(arg, { hero, yes = false, standingDuty = null } = {}) {
   }
 
   console.log(`apply ${roleId} → hero ${hero}`);
-  const r = spawnSync(resummon[0], resummon.slice(1), { stdio: "inherit", cwd: ROOT });
+  const r = spawnSync(resummon[0], resummon.slice(1), {
+    stdio: "inherit",
+    cwd: ROOT,
+    env: { ...process.env, GOTCHIBOT_APPLY_GATE_OK: "1" },
+  });
   if (r.status !== 0) {
     console.error(`apply: prof-link-cube resummon failed (exit ${r.status})`);
     process.exit(r.status || 1);
   }
   // Nest pack on cart + equip assignment slot (label = marketplace pack).
+  // Gate already passed — skip re-check in equip callers via env.
+  const prevGate = process.env.GOTCHIBOT_APPLY_GATE_OK;
+  process.env.GOTCHIBOT_APPLY_GATE_OK = "1";
   try {
     const { equipPack } = await import("./pack-wearable.mjs");
     const eq = equipPack(hero, entry?.id || roleId);
     console.log(`  ✓ pack wearable → slot ${eq.slot}  (${eq.packId})  [assignment label]`);
   } catch (e) {
     console.error(`  · pack wearable equip skipped: ${e?.message || e}`);
+  } finally {
+    if (prevGate === undefined) delete process.env.GOTCHIBOT_APPLY_GATE_OK;
+    else process.env.GOTCHIBOT_APPLY_GATE_OK = prevGate;
   }
 }
 
@@ -580,9 +620,10 @@ async function main() {
   template-pack.mjs pack <roleId>            build/overwrite packs/<roleId> from live config
   template-pack.mjs list [--json]            print the catalog
   template-pack.mjs show <id>                print pack.json + file tree
-  template-pack.mjs install <id|path|url> [--yes]   merge playbook + AGENTS + skills (+ standing duties with --yes)
-  template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]   install + resummon + equip pack wearable (slot 15 = assignment)
-  template-pack.mjs equip <id> --hero <hero>   nest + equip pack wearable only (no resummon)
+  template-pack.mjs install <id|path|url> [--yes]   merge playbook + AGENTS + skills (NO hero required; no apply gate)
+  template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>] [--force] [--project <slug>]
+                           apply gate then resummon + equip (slot 15 = assignment)
+  template-pack.mjs equip <id> --hero <hero> [--force] [--project <slug>]   nest + equip (apply gate)
   template-pack.mjs cdn deploy|status|undeploy [--yes]   home-infra CDN (templates.aarcadeghst.com)`);
     process.exit(2);
   }
@@ -632,20 +673,37 @@ async function main() {
     case "apply": {
       const arg = rest[0];
       if (!arg) {
-        console.error("usage: template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]");
+        console.error(
+          "usage: template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>] [--force] [--project <slug>]",
+        );
         process.exit(2);
       }
       const hero = flagValue(rest, "--hero");
       const yes = rest.includes("--yes");
+      const force = rest.includes("--force");
       const standingDuty = flagValue(rest, "--standing-duty");
-      await cmdApply(arg, { hero, yes, standingDuty });
+      const project = flagValue(rest, "--project");
+      await cmdApply(arg, { hero, yes, standingDuty, force, project });
       break;
     }
     case "equip": {
       const arg = rest[0];
       const hero = flagValue(rest, "--hero");
       if (!arg || !hero) {
-        console.error("usage: template-pack.mjs equip <id> --hero <hero>");
+        console.error("usage: template-pack.mjs equip <id> --hero <hero> [--force] [--project <slug>]");
+        process.exit(2);
+      }
+      const force = rest.includes("--force");
+      const project = flagValue(rest, "--project");
+      const { assertHeroApplicable, formatGateFailure } = await import("./hero-apply-gate.mjs");
+      const { currentProjectSlug } = await import("./project-context.mjs");
+      const gate = await assertHeroApplicable(hero, {
+        project: project || currentProjectSlug() || null,
+        force,
+      });
+      for (const w of gate.warnings || []) console.error(w.startsWith("WARNING") ? w : `warning: ${w}`);
+      if (!gate.ok) {
+        for (const line of formatGateFailure(gate)) console.error(line);
         process.exit(2);
       }
       const { equipPack } = await import("./pack-wearable.mjs");

@@ -30,6 +30,18 @@ const ONBOARDING = `${SESSIONS}/.onboarding.json`;
 const FOCUS = `${SESSIONS}/.focus.json`;
 const STATUSES = ["available", "active", "working", "assigned", "idle", "watching"];
 
+/** Standing approved desks — never steal into sandbox / apply (shared with hero-apply-gate). */
+export const STANDING_DESK_HEROES = new Set([
+  "starter-link-h1-1", // trader desk
+  "starter-yfi-h1-1", // infra monitor
+  "owned-22899", // comms
+]);
+
+/** Orchestrator seat — not a sandbox/apply worker (owned-954 or alias "gotchi"). */
+export function isOrchestratorHeroId(heroId) {
+  const id = String(heroId || "").trim();
+  return id === "owned-954" || id === "gotchi";
+}
 
 /** Standing / cron-backed task (monitor, watch, trader desk, schedule). */
 export function looksStandingTask(text) {
@@ -66,7 +78,7 @@ export async function assertSandboxHeroAvailable(heroId) {
       fix: "Pick an available hero via ./scripts/agent-focus.mjs list — do not mint",
     };
   }
-  if (id === "owned-954" || id === "gotchi") {
+  if (isOrchestratorHeroId(id)) {
     return {
       ok: false,
       code: "hero",
@@ -76,12 +88,7 @@ export async function assertSandboxHeroAvailable(heroId) {
   }
 
   // Standing approved projects — never steal into sandbox.
-  const STANDING = new Set([
-    "starter-link-h1-1", // trader desk
-    "starter-yfi-h1-1", // infra monitor
-    "owned-22899", // comms
-  ]);
-  if (STANDING.has(id)) {
+  if (STANDING_DESK_HEROES.has(id)) {
     return {
       ok: false,
       code: "hero",

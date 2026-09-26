@@ -13,10 +13,13 @@
  *
  *   node scripts/pack-wearable.mjs list [--json]
  *   node scripts/pack-wearable.mjs nest <packId>
- *   node scripts/pack-wearable.mjs equip <hero> <packId> [--slot 15]
+ *   node scripts/pack-wearable.mjs equip <hero> <packId> [--slot 15] [--force] [--project <slug>]
  *   node scripts/pack-wearable.mjs unequip <hero>
  *   node scripts/pack-wearable.mjs status [<hero>] [--json]
  *   node scripts/pack-wearable.mjs clear-all [--reason transfer]
+ *
+ * Equip runs the apply gate (cartridge roster + available + starter crew) unless
+ * GOTCHIBOT_APPLY_GATE_OK=1 (set by template-pack apply) or --force.
  */
 import {
   readFileSync,
@@ -223,7 +226,7 @@ function usage() {
   console.error(`usage:
   pack-wearable list [--json]
   pack-wearable nest <packId>
-  pack-wearable equip <hero> <packId> [--slot 15]
+  pack-wearable equip <hero> <packId> [--slot 15] [--force] [--project <slug>]
   pack-wearable unequip <hero>
   pack-wearable status [<hero>] [--json]
   pack-wearable clear-all [--reason transfer]`);
@@ -270,6 +273,23 @@ async function main() {
     let slot = ASSIGNMENT_SLOT;
     const si = args.indexOf("--slot");
     if (si >= 0 && args[si + 1]) slot = Number(args[si + 1]);
+    const force = args.includes("--force");
+    const pi = args.indexOf("--project");
+    const project = pi >= 0 && args[pi + 1] ? args[pi + 1] : null;
+
+    // Apply gate when invoked directly (template-pack apply sets GOTCHIBOT_APPLY_GATE_OK=1).
+    const { assertHeroApplicable, formatGateFailure } = await import("./hero-apply-gate.mjs");
+    const { currentProjectSlug } = await import("./project-context.mjs");
+    const gate = await assertHeroApplicable(hero, {
+      project: project || currentProjectSlug() || null,
+      force,
+    });
+    for (const w of gate.warnings || []) console.error(w.startsWith("WARNING") ? w : `warning: ${w}`);
+    if (!gate.ok) {
+      for (const line of formatGateFailure(gate)) console.error(line);
+      process.exit(2);
+    }
+
     const eq = equipPack(hero, packId, { slot });
     console.log(`equipped ${hero} → ${eq.packId}  (slot ${eq.slot})`);
     console.log("  agent-roles.json synced (assignment label)");
