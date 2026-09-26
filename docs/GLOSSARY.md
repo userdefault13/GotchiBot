@@ -25,37 +25,53 @@ CLI shortcuts: `node scripts/project-context.mjs crew|crew-add|crew-remove` (ali
 
 ## Sepolia mint (bindOwned / bindStarter)
 
-Desk onboarding can open MetaMask bind flows on Base Sepolia (chain **84532**,
-`config/cartridgeChain.base-sepolia.json` → `cartridgeDiamond`).
+Desk onboarding opens MetaMask bind flows on **Base Sepolia (84532)** using
+per-chain JSON ABI fragments in this repo. Mainnet signing is disabled.
 
-**This repo does not ship the bind ABI fragments.** Until configured, mint
-buttons return a clear **not available** result (`code: ABI_MISSING`) and do
-**not** open a browser page.
+| Chain | Config | bindOwned | bindStarter | Signing |
+|---|---|---|---|---|
+| Base Sepolia 84532 | `config/cartridgeChain.base-sepolia.json` | wired, free (gas only), selector `0x75002762` | wired, **payable 5 Sepolia test ETH** placeholder (`starterBindFeeWei`), selector `0x100cc61b` — **old Sep 4 facet** until a diamondCut | enabled |
+| Base mainnet 8453 | `config/cartridgeChain.base.json` | fragment present, selector `0x75002762` | fragment present (USDC path), selector `0x1b33e284` | **DISABLED** (`MAINNET_DISABLED`) pending AarcadeGh-t PR #28 (`feature/cartridge-chain-provider`) |
 
-Configure the **exact** ethers human-readable function fragment from the
-deployed cartridge diamond facet (cartridge contracts repo / verified facet on
-Base Sepolia) — do not invent signatures. Inputs must be **named** so
-`encodeBindCalldata` can map them:
+**Mainnet (disabled) fee model:** `paymentToken` must be Base USDC
+`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`; fee `STARTER_BIND_FEE` = `5000000`
+($5, 6 decimals); approve **spender = cartridgeDiamond** (not the facet).
+`buildMainnetStarterPlan()` returns the ordered `[approve, bindStarter]` txs for
+tests/docs only — never auto-run while `signingEnabled: false`.
 
-- `cartridgeId` \| `cartId` → cartridgeId
-- `sourceTokenId` \| `tokenId` \| `gotchiId` → sourceTokenId
-- `templateId` \| `template` \| `collateralId` → templateId
-- `collateral` \| `collateralAddress` \| `collateralType` → collateral
+**Event (both chains):** `CAavegotchiBound(uint256 indexed cartridgeId, bytes32 indexed heroId, uint8 bindType, uint256 sourceTokenId)`
+topic0 `0x1827e5bd6f1d1f8b1db16accce3f4eaa3a7db62d925e97e9eb749276c400baa9`.
+`bindType`: 0 None, 1 Owned, 2 Rented, 3 Starter. First hero also becomes
+`activeHeroId`.
 
-Set via chain config or env:
+**Preflight** (read-only, before sign page; injectable `readContract`):
+1. `ownerOf(cartridgeId)` == expectWallet
+2. `portalStatus != 1` (1 = sealed — open the cart first)
+3. `lineAPaid` — **skipped** (view fragment not in this repo)
+4. bindOwned only: L1 `ownerOf(sourceTokenId)` on `l1AavegotchiDiamond` == sender;
+   deterministic owned heroId not already in `heroIds(cartridgeId)`
 
-- `bindOwnedAbi` / `CARTRIDGE_BIND_OWNED_ABI`
-- `bindStarterAbi` / `CARTRIDGE_BIND_STARTER_ABI`
+**Hero readback** (only after mined successful receipt):
+1. Parse `CAavegotchiBound` log → `heroId = topics[2]`
+2. Else last element of `heroIds(cartridgeId)` (selector `0x614a4e44`)
+3. Else deterministic: owned =
+   `keccak256(abi.encodePacked("owned-", uint256 id))`; starter =
+   `keccak256(abi.encodePacked("starter-", bytes32 templateId, "-", uint256 n))`
+   with `n = heroIds.length` **before** the call.
+Persist desk id → bytes32 in `sessions/.onchain-hero-ids.json` (bytes32 is
+source of truth for the roster matcher).
 
-Unnamed or unrecognised input names → `code: ABI_UNSUPPORTED` (no positional
-guessing).
+**templateId encoding (UNVERIFIED ASSUMPTION — confirm with Aarcadeghst CoS):**
+`0x`-prefixed 32-byte hex as-is; otherwise `ethers.encodeBytes32String(id)`.
 
-`ok: true` from the MetaMask helper means a **tx hash was submitted**, not that
-the tx is mined; onboarding-gate confirms the new hero via hero-list readback.
+**AarcadeGh-t source pointers:** `contracts/cartridge/facets/CAavegotchiFacet.sol`,
+`contracts/cartridge/CartridgeEvents.sol`, `contracts/interfaces/IAarcadeCartridge.sol`,
+`out/CAavegotchiFacet.sol/CAavegotchiFacet.json` (after forge build). Sepolia facet
+stays the old payable version until a diamondCut (needs Julius's go via
+Aarcadeghst CoS).
 
-**bindStarter / USDC:** on-chain bindStarter costs **$5 USDC**. Desk helpers do
-**not** run a USDC `approve` step — if the facet needs an allowance the tx
-reverts. Approval flow is **TODO**.
+Config load: repo `config/cartridgeChain.*.json` **wins** over any upstream
+AarcadeGh-t copy so bind keys are never shadowed. Inject `cfg` in tests.
 
 Or mint via Concierge: `https://www.aarcadeghst.com/concierge/terminal`.
 
