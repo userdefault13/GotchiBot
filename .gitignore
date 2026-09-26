@@ -5,6 +5,8 @@ config/openclaw/agents/*/models.json
 config/openclaw/agents/*/openclaw-agent.sqlite*
 KNOWLEDGE.md
 sandboxes/
+# VM sandbox state (vms/<id>/): disks, seeds, pidfiles, work — never source
+vms/
 node_modules/
 
 var/

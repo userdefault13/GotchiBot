@@ -19,5 +19,7 @@ GOTCHIBOT_HERO_ID=starter-dai-h1-1 \
 - Work in `/work`; deliverable in `/session/output.md`.
 - Abra only in-box via `ABRA_KEY` → `host.docker.internal:7331`.
 - No host `cursor-cli`, no docker.sock, no `~/Dev` mount.
+- Caps: `GOTCHIBOT_SANDBOX_MEMORY` (default `2g`, swap pinned to same so it cannot spill), `GOTCHIBOT_SANDBOX_CPUS` (default `2`), `GOTCHIBOT_SANDBOX_PIDS` (default `512`).
+- VM backend (QEMU/KVM, 2020 iMac only): `scripts/gotchibot-vm.mjs` — same verbs, one VM at a time; see `docs/GOTCHIBOT-VM-2020.md`.
 
 Build: `docker/sandbox/Dockerfile` → image `gotchibot-sandbox:local`.
