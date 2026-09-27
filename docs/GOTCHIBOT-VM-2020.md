@@ -200,7 +200,8 @@ deleting the VM deletes the overlay.
 
 | What | Where |
 |---|---|
-| Base images | `~/.cache/gotchibot-vm/` |
+| Debian base download | `~/.cache/gotchibot-vm/` |
+| Prepared guest image | `~/.cache/gotchibot-vm/gotchibot-sandbox.qcow2` (read-only) |
 | Per-VM state | `~/dev/GotchiBot/vms/<id>/` (gitignored) |
 
 ### CLI
@@ -325,6 +326,32 @@ Teach `gotchi-orchestrate.mjs spawn --sandbox` to honor
 
 **Done when:** a spawn smoke test runs one sandbox job end to end in a VM
 and writes `output.md`, with `docker` still the default.
+
+**Built (2026-09-26).** `scripts/gotchibot-vm.mjs ensure-image` now builds
+ONE prepared image, `~/.cache/gotchibot-vm/gotchibot-sandbox.qcow2`
+(read-only, standalone), with Node 22, opencode, rsync and
+`sandbox-abra-fetch` installed, plus a provenance record
+`~/.cache/gotchibot-vm/gotchibot-sandbox.json` (`builtAt`, `debianImage`,
+`nodeVersion`, `opencodeVersion`). `up` backs overlays onto it and fails
+fast (exit 3) when it is missing. `scripts/opencode-dispatch.sh` honours
+`GOTCHIBOT_SANDBOX_BACKEND=docker|vm` and records it as `sandboxBackend` in
+`state.env`. `scripts/gotchibot vm …` wraps the script.
+
+**Tested on the 2020 iMac (2026-09-26).** Image build: 2.5 min (node
+v22.23.3, opencode 1.18.32). First build did not boot: bookworm's
+`cloud-init clean --machine-id` deletes `/etc/machine-id`, and systemd
+refuses to finish booting with it missing on a read-only early `/etc` (no
+network, SSH never answers). Fixed by always leaving it present and empty.
+Rebuilt image: `up` in 9 s; `models` lists the `opencode/*` free models.
+An `opencode run` job with `opencode/nemotron-3.5-lightning-free` inside the
+VM finished in 6 s, and after `rm` both `/work/hello.txt` and
+`/session/output.md` were back on the host.
+
+**Not yet run:** the full `opencode-dispatch.sh new --sandbox` path with
+`GOTCHIBOT_SANDBOX_BACKEND=vm`. On the 2020 the wallet gate fails before any
+sandbox starts: `cartridge-sepolia.mjs` needs `ethers`, and the 2020's
+`~/dev/AarcadeGh-t` is a partial checkout with no `package.json`. This is
+separate from the VM work.
 
 ### Phase 4 (later): Host Network slots on VMs
 

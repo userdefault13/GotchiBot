@@ -24,6 +24,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot spawn [--host auto|imac|local] [--sandbox] [--model t] "P"   spawn (Tailscale iMac when auto/imac)
                                   # --sandbox = Docker box; hero must be available; never auto-mint
   gotchibot sandbox up|exec|status|promote|rm|ensure-image   Docker sandbox ops
+  gotchibot vm up|exec|status|models|promote|rm|ensure-image   QEMU VM sandbox ops (2020 iMac only)
   gotchibot new [--model t] "P"   spawn a sub-agent
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
@@ -688,6 +689,9 @@ case "$cmd" in
   spawn) cmd_spawn "$@" ;;
   sandbox)
     exec node "$ROOT/scripts/sandbox.mjs" "$@"
+    ;;
+  vm)
+    exec node "$ROOT/scripts/gotchibot-vm.mjs" "$@"
     ;;
   new) "$DISPATCH" new "$@" ;;
   list) exec "$DISPATCH" list ;;

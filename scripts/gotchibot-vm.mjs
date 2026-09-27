@@ -2,7 +2,7 @@
 /**
  * GotchiBot QEMU/KVM VM sandbox (2020 iMac only) — the VM twin of sandbox.mjs.
  *
- *   node scripts/gotchibot-vm.mjs ensure-image
+ *   node scripts/gotchibot-vm.mjs ensure-image [--rebuild]
  *   node scripts/gotchibot-vm.mjs up <id> [--json]
  *   node scripts/gotchibot-vm.mjs exec <id> -- <cmd...>
  *   node scripts/gotchibot-vm.mjs status [id]
@@ -10,7 +10,10 @@
  *   node scripts/gotchibot-vm.mjs promote <id> <destDir>
  *   node scripts/gotchibot-vm.mjs rm <id> [--purge]
  *
- * Isolation: own kernel, 2 vCPU / 2 GiB / 20G overlay on a read-only Debian 12 base.
+ * Image: ensure-image downloads + SHA512-verifies the Debian 12 base, then builds a
+ * prepared image (node 22 + opencode) ONCE into ~/.cache/gotchibot-vm, reused by every
+ * `up`. `up` never builds; without the prepared image it fails fast.
+ * Isolation: own kernel, 2 vCPU / 2 GiB / 20G overlay on the read-only prepared image.
  * User-mode NAT only: SSH on 127.0.0.1:<port>, host at 10.0.2.2. No bridge, no UFW rules.
  * /work is copied in and out over SSH; AGENTS.md + skills registry land root-owned 0444.
  * Design: docs/GOTCHIBOT-VM-2020.md. Proven flags: scripts/vm-phase1-test.sh.
@@ -56,6 +59,18 @@ function envOr(name, fallback) {
 
 const IMAGE = envOr("GOTCHIBOT_VM_IMAGE", "debian-12-genericcloud-amd64.qcow2");
 const BASE = `${CACHE}/${IMAGE}`;
+const PREPARED = `${CACHE}/gotchibot-sandbox.qcow2`;
+const PREPARED_PART = `${PREPARED}.part`;
+const PREPARED_META = `${CACHE}/gotchibot-sandbox.json`;
+const BUILD_DIR = `${CACHE}/build`;
+const BUILD_ID = "__build__";
+const FAILED_SERIAL = `${CACHE}/build-failed-serial.log`;
+
+const BUILD_LOCK = `${CACHE}/.image-build.lock`;
+/** Boot + provision + convert is minutes; anything older than this is a corpse. */
+const BUILD_LOCK_STALE_MS = 30 * 60_000;
+/** Hard ceiling for provisioning — a wedged apt or installer must not hang the caller. */
+const BUILD_TIMEOUT_MS = Number(process.env.GOTCHIBOT_VM_BUILD_TIMEOUT_MS || 20 * 60_000);
 const VM_CPUS = envOr("GOTCHIBOT_VM_CPUS", "2");
 const VM_MEMORY_MB = envOr("GOTCHIBOT_VM_MEMORY_MB", "2048");
 const VM_DISK = envOr("GOTCHIBOT_VM_DISK", "20G");
@@ -80,9 +95,90 @@ const TOOLS = {
   "cloud-localds": "cloud-image-utils",
 };
 
+/**
+ * Runs as root in the build guest (piped to `sudo bash -s`). Mirrors
+ * docker/sandbox/Dockerfile so a job behaves the same in either backend.
+ * No secret ever enters the build guest: the image is shared by every VM.
+ * The GOTCHIBOT_* lines are the last thing on stdout; the host parses them.
+ */
+const PROVISION_SCRIPT = `set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+# First boot is still settling (cloud-init may hold apt). Errors here are
+# cloud-init's to report, not ours to fail on.
+cloud-init status --wait >/dev/null 2>&1 || true
+
+# Same toolchain as the Dockerfile, plus rsync so pushWork/pullWork never need
+# the scp fallback.
+apt-get -o DPkg::Lock::Timeout=300 update
+apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends \\
+  git curl ca-certificates build-essential python3 rsync
+rm -rf /var/lib/apt/lists/*
+
+# Node 22 from nodejs.org (the Dockerfile's node:22 base), not apt's older
+# nodejs. .tar.gz so xz-utils is not needed; sha256 checked BEFORE extracting.
+tmp=$(mktemp -d)
+curl -fsSL https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o "$tmp/SHASUMS256.txt"
+tarball=$(awk '$2 ~ /^node-v[0-9.]+-linux-x64\\.tar\\.gz$/ {print $2; exit}' "$tmp/SHASUMS256.txt")
+want=$(awk -v f="$tarball" '$2 == f {print $1}' "$tmp/SHASUMS256.txt")
+if [ -z "$tarball" ] || [ -z "$want" ]; then
+  echo "[provision] no node linux-x64 .tar.gz in SHASUMS256.txt" >&2
+  exit 1
+fi
+curl -fsSL "https://nodejs.org/dist/latest-v22.x/$tarball" -o "$tmp/$tarball"
+got=$(sha256sum "$tmp/$tarball" | awk '{print $1}')
+if [ "$want" != "$got" ]; then
+  echo "[provision] node checksum mismatch for $tarball" >&2
+  exit 1
+fi
+tar -xzf "$tmp/$tarball" -C /usr/local --strip-components=1
+rm -rf "$tmp"
+node --version >&2
+
+# Same installer as the Dockerfile. Installed, not symlinked: a link into
+# /root is unreadable by the unprivileged gotchi user.
+curl -fsSL https://opencode.ai/install | HOME=/root bash
+install -m 0755 /root/.opencode/bin/opencode /usr/local/bin/opencode
+sudo -u ${GUEST_USER} -H opencode --version >&2
+
+# Same helper as the Dockerfile with one difference: the default host is
+# 10.0.2.2, QEMU user-mode NAT's gateway to the host, not Docker's
+# host.docker.internal alias (which does not exist in a VM).
+printf '%s\\n' \\
+  '#!/bin/sh' \\
+  'set -e' \\
+  'if [ -z "\${ABRA_KEY:-}" ]; then echo "ABRA_KEY missing — secrets unavailable in sandbox" >&2; exit 2; fi' \\
+  'HOST="\${ABRA_HOST:-10.0.2.2}"' \\
+  'curl -fsS -X POST "http://\${HOST}:7331/secret" \\' \\
+  '  -H "Authorization: Bearer \${ABRA_KEY}" \\' \\
+  '  -H "Content-Type: application/json" \\' \\
+  '  -d "{\\"project\\":\\"\${ABRA_PROJECT:-gotchibot}\\",\\"keys\\":$1}"' \\
+  > /usr/local/bin/sandbox-abra-fetch
+chmod 0755 /usr/local/bin/sandbox-abra-fetch
+
+install -d -o ${GUEST_USER} -g ${GUEST_USER} /work /session
+
+printf 'GOTCHIBOT_NODE=%s\\n' "$(node --version)"
+printf 'GOTCHIBOT_OPENCODE=%s\\n' "$(opencode --version)"
+printf 'GOTCHIBOT_DEBIAN_IMAGE=%s\\n' ${shq(IMAGE)}
+
+# Every VM made from this image must be a fresh identity: cloud-init re-runs on
+# its first boot with that VM's hostname, user key and new SSH host keys.
+# /etc/machine-id must exist and be empty: systemd treats that as first boot.
+# Missing (what bookworm's "cloud-init clean --machine-id" leaves) on a
+# read-only early /etc means the guest never finishes booting.
+cloud-init clean --logs >&2
+: > /etc/machine-id
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+echo "[provision] done — powering off" >&2
+# Delayed so this ssh session exits 0 with all of stdout before sshd goes down.
+systemd-run --quiet --on-active=3 /usr/bin/systemctl poweroff
+`;
+
 function usage() {
   console.error(`usage:
-  gotchibot-vm.mjs ensure-image
+  gotchibot-vm.mjs ensure-image [--rebuild]
   gotchibot-vm.mjs up <id> [--json]
   gotchibot-vm.mjs exec <id> -- <cmd...>
   gotchibot-vm.mjs status [id]
@@ -99,10 +195,18 @@ function safeId(id) {
 }
 
 const vmName = (id) => `gbvm-${safeId(id)}`;
+// A hostname may not contain "_" and the build id has two. Real session ids are
+// already hostname-safe, so this is a no-op for them: gbvm-__build__ → gbvm-build.
+const guestHost = (id) => vmName(id).replace(/_/g, "-").replace(/-{2,}/g, "-").replace(/^-|-$/g, "");
 const vmDir = (id) => `${VMS}/${safeId(id)}`;
-const workDir = (id) => `${vmDir(id)}/work`;
-const metaPath = (id) => `${vmDir(id)}/meta.json`;
-const pidPath = (id) => `${vmDir(id)}/qemu.pid`;
+// The build guest lives outside vms/ so status and the one-VM scan never see
+// it as a job, but every id-keyed helper still works for it.
+function stateDir(id) {
+  return id === BUILD_ID ? BUILD_DIR : vmDir(id);
+}
+const workDir = (id) => `${stateDir(id)}/work`;
+const metaPath = (id) => `${stateDir(id)}/meta.json`;
+const pidPath = (id) => `${stateDir(id)}/qemu.pid`;
 const sessionDir = (id) => `${ROOT}/sessions/${safeId(id)}`;
 const here = () => hostname().replace(/\.local$/, "");
 
@@ -211,11 +315,11 @@ function curl(args, inherit) {
   return spawnSync("curl", args, { stdio: ["ignore", inherit ? "inherit" : "pipe", "inherit"], encoding: "utf8" });
 }
 
-function cmdEnsureImage() {
-  requireKvm();
+/** The plain Debian base. Only the image build backs onto it; VMs never do. */
+function fetchBaseImage() {
   mkdirSync(CACHE, { recursive: true });
   // The base was verified when it was downloaded and has been read-only since;
-  // re-hashing ~400 MB on every `up` buys nothing.
+  // re-hashing ~400 MB on every build buys nothing.
   if (existsSync(BASE) && statSync(BASE).isFile() && statSync(BASE).size > 0) {
     console.error(`[vm] image ready: ${BASE}`);
     return;
@@ -241,8 +345,7 @@ function cmdEnsureImage() {
   const got = sha512File(part);
   if (!want || want !== got) {
     rmSync(part, { force: true });
-    console.error(`[vm] checksum mismatch for ${IMAGE} (${want ? "hash differs" : "not listed in SHA512SUMS"})`);
-    process.exit(1);
+    throw new Error(`checksum mismatch for ${IMAGE} (${want ? "hash differs" : "not listed in SHA512SUMS"})`);
   }
   renameSync(part, BASE);
   // Every overlay backs onto this file; a write here corrupts all of them.
@@ -264,7 +367,7 @@ function sshOpts(id, port, portFlag = "-p") {
     "-o",
     "StrictHostKeyChecking=accept-new",
     "-o",
-    `UserKnownHostsFile=${vmDir(id)}/known_hosts`,
+    `UserKnownHostsFile=${stateDir(id)}/known_hosts`,
   ];
 }
 
@@ -299,8 +402,8 @@ async function pickPort(preferred) {
   for (let p = VM_PORT; p < VM_PORT + PORT_SEARCH; p++) {
     if (await portFree(p)) return p;
   }
-  console.error(`[vm] no free SSH port in 127.0.0.1:${VM_PORT}-${VM_PORT + PORT_SEARCH - 1}`);
-  process.exit(1);
+  // Thrown, not exit(): an image build must get to failBuild and clean up.
+  throw new Error(`no free SSH port in 127.0.0.1:${VM_PORT}-${VM_PORT + PORT_SEARCH - 1}`);
 }
 
 /** rsync needs to exist on both ends; the genericcloud guest may not ship it. */
@@ -339,28 +442,48 @@ function pushWork(id, port) {
   );
 }
 
-function pullWork(id, port) {
-  const work = workDir(id);
+/**
+ * Copy a guest dir back over SSH. rsync when both ends have it, scp otherwise.
+ * `replace` lets the scp path swap `dest` out wholesale; without it the copy is
+ * merged in, so host files the guest never had survive.
+ */
+function pullGuest(id, port, remote, dest, what, { replace = false } = {}) {
   if (useRsync(id, port)) {
-    console.error(`[vm] pulling ${GUEST_WORK} → ${work} (rsync)`);
-    mkdirSync(work, { recursive: true });
-    const r = spawnSync("rsync", ["-a", "-e", rsyncSsh(id, port), `${GUEST}:${GUEST_WORK}/`, `${work}/`], {
+    console.error(`[vm] pulling ${remote} → ${dest} (rsync)`);
+    mkdirSync(dest, { recursive: true });
+    const r = spawnSync("rsync", ["-a", "-e", rsyncSsh(id, port), `${GUEST}:${remote}/`, `${dest}/`], {
       stdio: ["ignore", "ignore", "pipe"],
       encoding: "utf8",
     });
     if (r.status !== 0) throw new Error(`rsync pull failed: ${r.stderr}`);
     return;
   }
-  console.error(`[vm] pulling ${GUEST_WORK} → ${work} (scp)`);
-  const tmp = `${vmDir(id)}/work.pull`;
+  console.error(`[vm] pulling ${remote} → ${dest} (scp)`);
+  const tmp = `${stateDir(id)}/${what}.pull`;
   rmSync(tmp, { recursive: true, force: true });
-  const r = spawnSync("scp", ["-q", "-r", ...sshOpts(id, port, "-P"), `${GUEST}:${GUEST_WORK}`, tmp], {
+  const r = spawnSync("scp", ["-q", "-r", ...sshOpts(id, port, "-P"), `${GUEST}:${remote}`, tmp], {
     stdio: ["ignore", "ignore", "pipe"],
     encoding: "utf8",
   });
   if (r.status !== 0) throw new Error(`scp pull failed: ${r.stderr}`);
-  rmSync(work, { recursive: true, force: true });
-  renameSync(tmp, work);
+  if (replace) {
+    rmSync(dest, { recursive: true, force: true });
+    renameSync(tmp, dest);
+    return;
+  }
+  mkdirSync(dest, { recursive: true });
+  cpSync(tmp, dest, { recursive: true, force: true });
+  rmSync(tmp, { recursive: true, force: true });
+}
+
+function pullWork(id, port) {
+  pullGuest(id, port, GUEST_WORK, workDir(id), "work", { replace: true });
+}
+
+// Never --delete or replace here: sessions/<id>/ holds prompt.txt, state.env,
+// runner.sh, output.log — host files the guest knows nothing about.
+function pullSession(id, port) {
+  pullGuest(id, port, GUEST_SESSION, sessionDir(id), "session");
 }
 
 /** Write a guest file from stdin as root. Content never touches argv. */
@@ -384,6 +507,283 @@ function runningOther(sid) {
   return null;
 }
 
+function createOverlay(id, backing) {
+  const disk = `${stateDir(id)}/disk.qcow2`;
+  if (existsSync(disk)) return disk;
+  const r = spawnSync("qemu-img", ["create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", backing, disk, VM_DISK], {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+  if (r.status !== 0) throw new Error(`qemu-img create failed: ${r.stderr}`);
+  return disk;
+}
+
+function writeSeed(id) {
+  const dir = stateDir(id);
+  const name = vmName(id);
+  const seed = `${dir}/seed.iso`;
+  const pub = readFileSync(`${KEY}.pub`, "utf8").trim();
+  writeFileSync(
+    `${dir}/user-data`,
+    `#cloud-config
+hostname: ${guestHost(id)}
+users:
+  - name: ${GUEST_USER}
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${pub}
+ssh_pwauth: false
+`,
+  );
+  writeFileSync(`${dir}/meta-data`, `instance-id: ${name}\nlocal-hostname: ${guestHost(id)}\n`);
+  const r = spawnSync("cloud-localds", [seed, `${dir}/user-data`, `${dir}/meta-data`], { stdio: "pipe", encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`cloud-localds failed: ${r.stderr}`);
+  return seed;
+}
+
+/** vm-phase1-test.sh's flags, verbatim: proven on the 2020 iMac. Jobs and the build share them. */
+function bootQemu(id, port) {
+  const dir = stateDir(id);
+  return spawnSync(
+    "qemu-system-x86_64",
+    [
+      "-name", vmName(id),
+      "-machine", "q35,accel=kvm",
+      "-cpu", "host",
+      "-smp", VM_CPUS,
+      "-m", VM_MEMORY_MB,
+      "-drive", `file=${dir}/disk.qcow2,if=virtio,format=qcow2`,
+      "-drive", `file=${dir}/seed.iso,if=virtio,format=raw,readonly=on`,
+      "-netdev", `user,id=n0,hostfwd=tcp:127.0.0.1:${port}-:22`,
+      "-device", "virtio-net-pci,netdev=n0",
+      "-display", "none",
+      "-serial", `file:${dir}/serial.log`,
+      "-pidfile", pidPath(id),
+      "-daemonize",
+    ],
+    { stdio: "pipe", encoding: "utf8" },
+  );
+}
+
+function waitForSsh(id, port) {
+  console.error(`[vm] waiting for SSH on 127.0.0.1:${port}`);
+  for (let i = 0; i < 60; i++) {
+    if (vmSsh(id, port, ["true"]).status === 0) {
+      console.error("[vm] SSH ready");
+      return true;
+    }
+    sleep(3000);
+  }
+  return false;
+}
+
+/** Who else is building the prepared image right now, if anyone. */
+function readBuildLock() {
+  try {
+    const lock = JSON.parse(readFileSync(BUILD_LOCK, "utf8"));
+    if (Date.now() - new Date(lock.at).getTime() > BUILD_LOCK_STALE_MS) return null;
+    try {
+      process.kill(lock.pid, 0);
+    } catch {
+      return null; // holder is gone
+    }
+    return lock;
+  } catch {
+    return null;
+  }
+}
+
+function releaseBuildLock() {
+  try {
+    if (JSON.parse(readFileSync(BUILD_LOCK, "utf8")).pid === process.pid) rmSync(BUILD_LOCK, { force: true });
+  } catch {
+    /* best effort */
+  }
+}
+
+function readProvenance() {
+  try {
+    return JSON.parse(readFileSync(PREPARED_META, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+const preparedReady = () => existsSync(PREPARED) && statSync(PREPARED).isFile() && statSync(PREPARED).size > 0;
+
+function tail(text, n = 200) {
+  return String(text || "").split("\n").slice(-n).join("\n");
+}
+
+/**
+ * Every failure of a build ends here: no build qemu, no build dir, no partial
+ * image, no lock. process.exit skips `finally`, so the lock is released here too.
+ * Never throws — it is what runs when something already did.
+ */
+function failBuild(msg) {
+  try {
+    stopVm(BUILD_ID);
+  } catch {
+    /* best effort */
+  }
+  let kept = false;
+  try {
+    if (existsSync(`${BUILD_DIR}/serial.log`)) {
+      renameSync(`${BUILD_DIR}/serial.log`, FAILED_SERIAL);
+      kept = true;
+    }
+  } catch {
+    /* best effort */
+  }
+  try {
+    rmSync(BUILD_DIR, { recursive: true, force: true });
+    rmSync(PREPARED_PART, { force: true });
+    // A PREPARED without provenance is half-written; one with provenance is a
+    // previous good build that a failed --rebuild must not destroy.
+    if (existsSync(PREPARED) && !readProvenance()) rmSync(PREPARED, { force: true });
+  } catch {
+    /* best effort */
+  }
+  releaseBuildLock();
+  console.error(`[vm] image build failed: ${msg}`);
+  console.error(kept ? `[vm] see ${FAILED_SERIAL}` : "[vm] no serial log (failed before the build guest booted)");
+  process.exit(1);
+}
+
+async function buildPrepared() {
+  // A build whose caller died (Ctrl-C, killed ssh) leaves a daemonized qemu
+  // holding 2 GiB. Its lock is already judged dead; reap the guest too.
+  if (!stopVm(BUILD_ID)) throw new Error("an orphaned build qemu survived SIGKILL");
+  rmSync(BUILD_DIR, { recursive: true, force: true });
+  rmSync(FAILED_SERIAL, { force: true });
+  mkdirSync(BUILD_DIR, { recursive: true });
+
+  fetchBaseImage();
+  createOverlay(BUILD_ID, BASE);
+  writeSeed(BUILD_ID);
+
+  const port = await pickPort(readMeta(BUILD_ID).port);
+  // stopVm reads the port from meta to power the guest off cleanly.
+  writeMeta(BUILD_ID, { id: BUILD_ID, name: vmName(BUILD_ID), port, status: "building" });
+  rmSync(pidPath(BUILD_ID), { force: true });
+  let r = bootQemu(BUILD_ID, port);
+  if (r.status !== 0) throw new Error(`qemu-system-x86_64 failed: ${r.stderr || r.stdout || `exit ${r.status}`}`);
+  console.error(`[vm] booted build guest ${vmName(BUILD_ID)} (pid ${readPid(BUILD_ID)})`);
+  if (!waitForSsh(BUILD_ID, port)) throw new Error("SSH not ready after 180s");
+
+  console.error(`[vm] provisioning (apt, node 22, opencode) — minutes, ceiling ${Math.round(BUILD_TIMEOUT_MS / 60000)}m`);
+  // Output is captured, not streamed, so the provenance lines can be parsed;
+  // apt is chatty, hence the large buffer.
+  r = vmSsh(BUILD_ID, port, ["sudo bash -s"], {
+    input: PROVISION_SCRIPT,
+    timeout: BUILD_TIMEOUT_MS,
+    killSignal: "SIGKILL",
+    maxBuffer: 64 << 20,
+  });
+  const found = {};
+  for (const line of String(r.stdout || "").split("\n")) {
+    const m = line.trim().match(/^(GOTCHIBOT_[A-Z_]+)=(.*)$/);
+    if (m) found[m[1]] = m[2];
+  }
+  if (r.status !== 0 || !found.GOTCHIBOT_NODE || !found.GOTCHIBOT_OPENCODE) {
+    console.error(`[vm] provision stdout (last 200 lines):\n${tail(r.stdout)}`);
+    console.error(`[vm] provision stderr (last 200 lines):\n${tail(r.stderr)}`);
+    const why = r.error ? r.error.message : r.status !== 0 ? `exit ${r.status}` : "no GOTCHIBOT_NODE / GOTCHIBOT_OPENCODE lines";
+    throw new Error(`provision failed (${why})`);
+  }
+  console.error(`[vm] provisioned: node ${found.GOTCHIBOT_NODE}, opencode ${found.GOTCHIBOT_OPENCODE}`);
+
+  // The guest powers itself off; converting a disk qemu still writes to would
+  // snapshot a half-flushed filesystem.
+  for (let i = 0; i < 60 && vmRunning(BUILD_ID); i++) sleep(1000);
+  if (!stopVm(BUILD_ID)) throw new Error("build qemu survived SIGKILL");
+  console.error("[vm] build guest powered off");
+
+  // Standalone (no backing file): every overlay backs onto this, and the
+  // Debian base is not guaranteed to stay around.
+  console.error(`[vm] converting to standalone ${PREPARED}`);
+  r = spawnSync("qemu-img", ["convert", "-O", "qcow2", `${BUILD_DIR}/disk.qcow2`, PREPARED_PART], {
+    stdio: ["ignore", "ignore", "pipe"],
+    encoding: "utf8",
+  });
+  if (r.status !== 0) throw new Error(`qemu-img convert failed: ${r.stderr || `exit ${r.status}`}`);
+
+  // Provenance present ⇔ PREPARED is complete: drop the old record before the
+  // swap so a crash in between reads as half-written, not as the old build.
+  rmSync(PREPARED_META, { force: true });
+  renameSync(PREPARED_PART, PREPARED);
+  // Every overlay backs onto this file; a write here corrupts all of them.
+  chmodSync(PREPARED, statSync(PREPARED).mode & ~0o222);
+  const prov = {
+    builtAt: new Date().toISOString(),
+    debianImage: found.GOTCHIBOT_DEBIAN_IMAGE || IMAGE,
+    nodeVersion: found.GOTCHIBOT_NODE,
+    opencodeVersion: found.GOTCHIBOT_OPENCODE,
+    base: BASE,
+  };
+  writeFileSync(PREPARED_META, `${JSON.stringify(prov, null, 2)}\n`);
+  rmSync(BUILD_DIR, { recursive: true, force: true });
+  console.error(`[vm] prepared image ready: ${PREPARED} (node ${prov.nodeVersion}, opencode ${prov.opencodeVersion})`);
+}
+
+async function cmdEnsureImage({ rebuild = false } = {}) {
+  requireKvm();
+  mkdirSync(CACHE, { recursive: true });
+  if (!rebuild && preparedReady()) {
+    const p = readProvenance();
+    console.error(
+      `[vm] prepared image ready: ${PREPARED}` +
+        (p ? ` (built ${p.builtAt}, node ${p.nodeVersion}, opencode ${p.opencodeVersion})` : ""),
+    );
+    return;
+  }
+
+  // Two builds share ~/.cache/gotchibot-vm/build and would destroy each other.
+  const held = readBuildLock();
+  if (held) {
+    console.error(`[vm] another image build is already running (pid ${held.pid}, started ${held.at}) — wait for it instead of racing`);
+    process.exit(4);
+  }
+  // The build guest is a 2 GiB VM like any other: the one-VM rule applies.
+  const other = runningOther(BUILD_ID);
+  if (other) {
+    console.error(
+      `[vm] refusing: ${vmName(other.id)} is already running (pid ${other.pid}) — only one VM fits in the 2020 iMac's RAM. ` +
+        `Stop it first: node scripts/gotchibot-vm.mjs rm ${other.id}`,
+    );
+    process.exit(4);
+  }
+  // A stopped VM's overlay backs onto the image this build replaces; booting
+  // it afterwards would read a different disk underneath its own blocks.
+  const leftover = existsSync(VMS) ? readdirSync(VMS).filter((d) => existsSync(`${VMS}/${d}/disk.qcow2`)) : [];
+  if (leftover.length) {
+    console.error(
+      `[vm] refusing: leftover VM disk(s) would back onto the image this build replaces: ${leftover.join(", ")} — ` +
+        `remove them first: node scripts/gotchibot-vm.mjs rm <id> [--purge]`,
+    );
+    process.exit(4);
+  }
+
+  try {
+    rmSync(BUILD_LOCK, { force: true }); // any existing lock was judged stale above
+    writeFileSync(BUILD_LOCK, `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() }, null, 2)}\n`, {
+      flag: "wx",
+    });
+  } catch {
+    console.error("[vm] another image build took the lock just now — wait for it instead of racing");
+    process.exit(4);
+  }
+
+  try {
+    await buildPrepared();
+  } catch (e) {
+    failBuild(e?.message || String(e));
+  } finally {
+    releaseBuildLock();
+  }
+}
+
 function printUp(meta, json) {
   if (json) console.log(JSON.stringify({ ok: true, ...meta }, null, 2));
   else {
@@ -396,7 +796,7 @@ async function cmdUp(id, { json = false } = {}) {
   requireKvm();
   const sid = safeId(id);
   const name = vmName(sid);
-  const dir = vmDir(sid);
+  const dir = stateDir(sid);
 
   const other = runningOther(sid);
   if (other) {
@@ -406,83 +806,43 @@ async function cmdUp(id, { json = false } = {}) {
     );
     process.exit(4);
   }
+  // A build guest is a 2 GiB VM too. Two guests make the host swap.
+  if (vmRunning(BUILD_ID)) {
+    console.error(`[vm] refusing: an image build guest (${vmName(BUILD_ID)}) is running — wait for ensure-image to finish`);
+    process.exit(4);
+  }
   if (vmRunning(sid)) {
     printUp({ ...readMeta(sid), id: sid, name, status: "running" }, json);
     return;
+  }
+
+  // A spawn must fail fast; the build takes minutes and belongs to ensure-image.
+  if (!preparedReady()) {
+    console.error("no prepared image — run: node scripts/gotchibot-vm.mjs ensure-image");
+    process.exit(3);
   }
 
   const work = workDir(sid);
   const sess = sessionDir(sid);
   mkdirSync(work, { recursive: true });
   mkdirSync(sess, { recursive: true });
-  if (!existsSync(BASE)) cmdEnsureImage();
 
-  const disk = `${dir}/disk.qcow2`;
-  const seed = `${dir}/seed.iso`;
-  if (!existsSync(disk)) {
-    const r = spawnSync("qemu-img", ["create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", BASE, disk, VM_DISK], {
-      stdio: "pipe",
-      encoding: "utf8",
-    });
-    if (r.status !== 0) throw new Error(`qemu-img create failed: ${r.stderr}`);
-  }
-
-  const pub = readFileSync(`${KEY}.pub`, "utf8").trim();
-  writeFileSync(
-    `${dir}/user-data`,
-    `#cloud-config
-hostname: ${name}
-users:
-  - name: ${GUEST_USER}
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/bash
-    ssh_authorized_keys:
-      - ${pub}
-ssh_pwauth: false
-`,
-  );
-  writeFileSync(`${dir}/meta-data`, `instance-id: ${name}\nlocal-hostname: ${name}\n`);
-  let r = spawnSync("cloud-localds", [seed, `${dir}/user-data`, `${dir}/meta-data`], { stdio: "pipe", encoding: "utf8" });
-  if (r.status !== 0) throw new Error(`cloud-localds failed: ${r.stderr}`);
+  const disk = createOverlay(sid, PREPARED);
+  const seed = writeSeed(sid);
 
   const port = await pickPort(readMeta(sid).port);
   rmSync(pidPath(sid), { force: true });
-  r = spawnSync(
-    "qemu-system-x86_64",
-    [
-      "-name", name,
-      "-machine", "q35,accel=kvm",
-      "-cpu", "host",
-      "-smp", VM_CPUS,
-      "-m", VM_MEMORY_MB,
-      "-drive", `file=${disk},if=virtio,format=qcow2`,
-      "-drive", `file=${seed},if=virtio,format=raw,readonly=on`,
-      "-netdev", `user,id=n0,hostfwd=tcp:127.0.0.1:${port}-:22`,
-      "-device", "virtio-net-pci,netdev=n0",
-      "-display", "none",
-      "-serial", `file:${dir}/serial.log`,
-      "-pidfile", pidPath(sid),
-      "-daemonize",
-    ],
-    { stdio: "pipe", encoding: "utf8" },
-  );
+  const r = bootQemu(sid, port);
   if (r.status !== 0) {
     console.error(r.stderr || r.stdout || "qemu-system-x86_64 failed");
     process.exit(r.status ?? 1);
   }
   console.error(`[vm] booted ${name} (pid ${readPid(sid)})`);
 
-  console.error(`[vm] waiting for SSH on 127.0.0.1:${port}`);
-  let ready = false;
-  for (let i = 0; i < 60 && !ready; i++) {
-    ready = vmSsh(sid, port, ["true"]).status === 0;
-    if (!ready) sleep(3000);
-  }
-  if (!ready) {
+  if (!waitForSsh(sid, port)) {
     console.error(`[vm] SSH not ready after 180s; see ${dir}/serial.log`);
     process.exit(1);
   }
-  console.error("[vm] SSH ready");
 
   mustSsh(
     sid,
@@ -537,7 +897,8 @@ ssh_pwauth: false
     session: sess,
     cpus: VM_CPUS,
     memoryMb: VM_MEMORY_MB,
-    image: BASE,
+    image: PREPARED,
+    baseImage: BASE,
     startedAt: new Date().toISOString(),
     status: "running",
     forwardedEnv: forwarded,
@@ -593,10 +954,6 @@ function cmdStatus(id) {
 function cmdModels(id, { json = false, check = null } = {}) {
   const sid = safeId(id);
   const port = requireRunning(sid);
-  if (vmSsh(sid, port, ["command -v opencode"]).status !== 0) {
-    console.error("opencode not installed in this VM (Phase 3)");
-    process.exit(1);
-  }
   const r = vmSsh(sid, port, [guestCommand(["opencode", "models"])], { timeout: 60_000 });
   const models = String(r.stdout || "")
     .split("\n")
@@ -624,8 +981,10 @@ function cmdPromote(id, dest) {
     process.exit(2);
   }
   const port = readMeta(sid).port;
-  if (vmRunning(sid) && port) pullWork(sid, port);
-  else if (existsSync(work)) console.error(`[vm] ${vmName(sid)} not running — promoting the last copy in ${work}`);
+  if (vmRunning(sid) && port) {
+    pullWork(sid, port);
+    pullSession(sid, port);
+  } else if (existsSync(work)) console.error(`[vm] ${vmName(sid)} not running — promoting the last copy in ${work}`);
   if (!existsSync(work)) {
     console.error(`no work dir: ${work}`);
     process.exit(1);
@@ -650,10 +1009,13 @@ function signal(pid, sig) {
   }
 }
 
-/** vm-phase1-test.sh cmd_down, plus a SIGKILL so no qemu is ever left behind. */
+/**
+ * vm-phase1-test.sh cmd_down, plus a SIGKILL so no qemu is ever left behind.
+ * Returns false (never exits) when the pid survives, so a build can clean up.
+ */
 function stopVm(sid) {
   const pid = readPid(sid);
-  if (!pidAlive(pid)) return;
+  if (!pidAlive(pid)) return true;
   const port = readMeta(sid).port;
   const off = port ? vmSsh(sid, port, ["sudo systemctl poweroff"]) : { status: 1 };
   if (off.status !== 0) signal(pid, "SIGTERM");
@@ -664,16 +1026,33 @@ function stopVm(sid) {
   sleep(500);
   if (pidAlive(pid)) {
     console.error(`[vm] qemu pid ${pid} for ${vmName(sid)} survived SIGKILL — not deleting its disk`);
-    process.exit(1);
+    return false;
   }
   console.error(`[vm] stopped ${vmName(sid)} (pid ${pid} gone)`);
+  return true;
 }
 
 function cmdRm(id, { purge = false } = {}) {
   const sid = safeId(id);
   const dir = vmDir(sid);
-  stopVm(sid);
-  // The shared base in ~/.cache/gotchibot-vm is never touched: other VMs back onto it.
+  // Pull before stopping so the job's output survives the VM the way it
+  // survives the Docker bind mount. --purge is throwing the work away anyway.
+  const port = readMeta(sid).port;
+  if (!purge && port && vmRunning(sid)) {
+    for (const [pull, remote] of [
+      [pullWork, GUEST_WORK],
+      [pullSession, GUEST_SESSION],
+    ]) {
+      try {
+        pull(sid, port);
+      } catch (e) {
+        throw new Error(`${e.message} — ${vmName(sid)} left running so its ${remote} is not lost (rm --purge discards it)`);
+      }
+    }
+  }
+  if (!stopVm(sid)) process.exit(1);
+  // Neither the prepared image nor the Debian base in ~/.cache/gotchibot-vm is
+  // ever touched: every VM's overlay backs onto the first, the next build onto the second.
   for (const f of ["disk.qcow2", "seed.iso", "user-data", "meta-data", "qemu.pid", "known_hosts"]) {
     rmSync(`${dir}/${f}`, { force: true });
   }
@@ -694,9 +1073,13 @@ function cmdRm(id, { purge = false } = {}) {
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd) usage();
+  if (rest[0] === BUILD_ID) {
+    console.error(`${BUILD_ID} is reserved for the ensure-image build guest`);
+    process.exit(2);
+  }
 
   if (cmd === "ensure-image") {
-    cmdEnsureImage();
+    await cmdEnsureImage({ rebuild: rest.includes("--rebuild") });
     return;
   }
   if (cmd === "up") {
