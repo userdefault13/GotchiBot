@@ -10,7 +10,7 @@
  *   gotchibot db pin-desk   # set deskApiBase from .hub.json MagicDNS:8793
  *
  * Secrets: abra set gotchibot MONGODB_URI  and/or sessions/.mongo.json (gitignored).
- * Arcade only gets chatStore.kind (+ optional atlasHostHint) — never the URI.
+ * Nothing here is sent to Arcade — the chat store is local to the Hub.
  */
 import {
   writeFileSync,
@@ -23,9 +23,6 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { isMainModule } from "./is-main.mjs";
 import {
-  infraHeaders,
-  soloApiBase,
-  hasInstallToken,
   deskApiBase,
   deskApiBaseFromHubPin,
   readHubPin,
@@ -71,45 +68,6 @@ function extractAtlasHost(uri) {
   } catch {
     return null;
   }
-}
-
-async function publishChatStore(kind, { dbName, atlasHostHint } = {}) {
-  if (!hasInstallToken()) {
-    console.warn("No GOTCHIBOT_INFRA_TOKEN — skipping Arcade chatStore pin (local pin ok).");
-    console.warn("  abra run gotchibot -- ./scripts/gotchibot hub chat-store --kind " + kind);
-    return null;
-  }
-  const base = soloApiBase();
-  const chatStore = {
-    kind,
-    dbName: kind === "none" ? null : dbName || DEFAULT_DB,
-    atlasHostHint: kind === "atlas" ? atlasHostHint || null : null,
-  };
-  const res = await fetch(`${base}/api/gotchibot/hub/chat-store`, {
-    method: "POST",
-    headers: { ...infraHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ chatStore }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    console.warn(`Arcade chat-store failed (${res.status}): ${json.error || res.statusText}`);
-    console.warn("  Local pin still written. Retry: gotchibot hub chat-store --kind " + kind);
-    return null;
-  }
-  // Refresh hub pin chatStore field (preserve deskToken / pairing via spread)
-  try {
-    const hub = readHubPin() || {};
-    if (json.hub) {
-      writeFileSync(
-        hubPinPath(),
-        `${JSON.stringify({ ...hub, ...json.hub, chatStore: json.hub.chatStore, writtenAt: new Date().toISOString() }, null, 2)}\n`,
-        { mode: 0o600 },
-      );
-    }
-  } catch {
-    /* non-fatal */
-  }
-  return json;
 }
 
 function dockerAvailable() {
@@ -200,28 +158,24 @@ async function cmdAtlas(uriArg) {
     atlasHostHint: hostHint,
     uriEnv: "MONGODB_URI",
   });
-  await publishChatStore("atlas", { dbName: DEFAULT_DB, atlasHostHint: hostHint });
   console.log(`pin → sessions/.mongo.json (kind=atlas, hostHint=${hostHint || "—"})`);
   return pin;
 }
 
 async function cmdNone() {
   const pin = writeMongoPin({ kind: "none", dbName: null });
-  await publishChatStore("none");
   console.log("chatStore=none — Hub works; chats push/pull disabled until you pick local/atlas.");
   return pin;
 }
 
 async function cmdLocal() {
-  const pin = cmdLocalInstall();
-  await publishChatStore("local", { dbName: DEFAULT_DB });
-  return pin;
+  return cmdLocalInstall();
 }
 
 function cmdPinDesk() {
   const hub = readHubPin();
   if (!hub?.tailscaleHost) {
-    throw new Error("no sessions/.hub.json — run: gotchibot hub enable <MagicDNS>");
+    throw new Error("no sessions/.hub.json — run: gotchibot hub join <MagicDNS> <code>");
   }
   const base = deskApiBaseFromHubPin(hub);
   if (!base) throw new Error("could not derive deskApiBase from hub pin");
@@ -313,7 +267,7 @@ BYO chat storage (Arcade never holds your messages)
     rl2.close();
     if (pin !== "n" && pin !== "no") cmdPinDesk();
   } else {
-    console.log("No Hub pin yet — after hub enable, run: gotchibot db pin-desk");
+    console.log("No Hub pin yet — after hub join, run: gotchibot db pin-desk");
   }
 }
 
@@ -353,4 +307,4 @@ if (isMainModule(import.meta.url)) {
   main();
 }
 
-export { writeMongoPin, cmdLocalInstall, extractAtlasHost, publishChatStore };
+export { writeMongoPin, cmdLocalInstall, extractAtlasHost };

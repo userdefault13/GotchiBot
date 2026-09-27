@@ -5,7 +5,7 @@
  *
  * Host resolution order:
  *   1. REMOTE_HOST / GOTCHIBOT_REMOTE_HOST (env / abra)
- *   2. sessions/.hub.json tailscaleHost (from gotchibot hub enable)
+ *   2. sessions/.hub.json tailscaleHost (from gotchibot hub join)
  *   3. empty (caller must set)
  */
 import { mkdtempSync, writeFileSync, chmodSync, rmSync, existsSync, readFileSync } from "node:fs";
@@ -49,7 +49,7 @@ export function assertRemoteReady({ needKey = true } = {}) {
       "Missing: " + missing.join(", "),
       "",
       "Own Hub (prod):",
-      "  ./scripts/gotchibot hub enable <MagicDNS|100.x>   # writes sessions/.hub.json",
+      "  ./scripts/gotchibot hub join <MagicDNS> <code>   # writes sessions/.hub.json",
       "  abra set gotchibot REMOTE_USER   # Hub Mac username",
       "  abra set gotchibot SSH_PRIVATE_KEY / keygen",
       "",

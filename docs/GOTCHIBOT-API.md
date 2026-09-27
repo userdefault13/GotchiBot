@@ -4,20 +4,28 @@
 
 `gotchibot-api` runs on **your** Hub next to **your** Mongo. Chat bodies never leave that machine’s database.
 
-Arcade (`www`) keeps metadata only: install token, `hub.tailscaleHost`, `hub.chatStore.kind`. No URIs, no messages.
+Arcade (`www`) knows nothing about your Hub. Desk ↔ Hub is Tailscale only.
 
 The Arcade install token (`GOTCHIBOT_INFRA_TOKEN` / `X-GotchiBot-Install-Token`) **never** unlocks chat data. Desks pair with a one-time code and use a desk token (`X-GotchiBot-Desk-Token`).
 
 ## Quick start
 
-**On the Hub**
+**Guided (setup wizard, or `gotchibot hub setup` on each computer)**
+
+- **One computer** — Hub API on loopback, this desk auto-paired to `127.0.0.1`. No Tailscale.
+- **Two computers** — both sign into the **same** Tailscale account (free; the first sign-in link creates it). The wizard walks install → sign-in on each. The Hub runs `hub install` and shows a code; the Desk finds the Hub by probing each online tailnet device's MagicDNS name on `:8793–8799/health`, then runs `hub join`. MagicDNS must be on (default) — `tailscale serve` routes by hostname, bare IPs 404.
+- `gotchibot hub setup --status [--json]` — Tailscale state, Hub/desk role, reachability.
+
+`hub install` takes `:8793`, or the next free port up to `:8799` when something else holds it (env / saved config win).
+
+**By hand — on the Hub**
 
 ```bash
 gotchibot hub install
 # → local Mongo (if needed), LaunchAgent/systemd, tailscale serve (tailnet only), first pairing code
 ```
 
-**On each desk**
+**By hand — on each desk**
 
 ```bash
 gotchibot hub join <MagicDNS> <code>
@@ -225,7 +233,7 @@ gotchibot hub uninstall [--dry-run]
 gotchibot hub install --uninstall   # alias
 ```
 
-**Eight steps + Arcade metadata**
+**Eight steps**
 
 1. **Node** — require ≥18; bake `process.execPath` into the service unit.
 2. **Mongo** — probe `127.0.0.1:27017`; optionally start `docker/chat-mongo` (bind loopback only); else Homebrew / distro hints.
@@ -236,7 +244,7 @@ gotchibot hub install --uninstall   # alias
 7. **tailscale serve** — `tailscale serve --bg --http=8793 http://127.0.0.1:8793` (never funnel). Warns if AllowFunnel is on.
 8. **First pairing code** — mint only if no active desks; print `gotchibot hub join <MagicDNS> <code>`.
 
-Then **Arcade metadata (optional)**: if `GOTCHIBOT_INFRA_TOKEN` is set, publish `chatStore kind=local`; optionally `hub enable <MagicDNS>` (wallet-signed). Never sends chats.
+Nothing is sent to Arcade: the Hub and its chat store stay on your network.
 
 **What it changes**
 
@@ -251,7 +259,7 @@ Then **Arcade metadata (optional)**: if `GOTCHIBOT_INFRA_TOKEN` is set, publish 
 
 | Symptom | Fix |
 |---|---|
-| `NO_HUB_PINNED` | Pin the Hub: `gotchibot hub join` / `hub enable` / `db pin-desk`, or set `GOTCHIBOT_DESK_API_BASE` |
+| `NO_HUB_PINNED` | Pin the Hub: `gotchibot hub join` / `db pin-desk`, or set `GOTCHIBOT_DESK_API_BASE` |
 | `NO_DESK_TOKEN` | Pair: Hub `gotchibot hub pair`, desk `gotchibot hub join <MagicDNS> <code>` |
 | `401` desk token revoked | Mint a new code and re-join; old token stays revoked |
 | `403` login mismatch / owner not configured | Remote request’s `Tailscale-User-Login` must match `GOTCHIBOT_HUB_OWNER_LOGIN` / `.hub-api.json`; set owner or use direct loopback |

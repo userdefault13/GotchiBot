@@ -29,6 +29,7 @@ import { hubPinPath, isArcadeSharedChatBase } from "./infra-client.mjs";
 import { hubRequest } from "./chat-hub-client.mjs";
 import { resolveApiConfig } from "../services/gotchibot-api/config.mjs";
 import { connectStore } from "../services/gotchibot-api/store.mjs";
+import { tailscaleBin } from "./tailscale-cli.mjs";
 
 function usage() {
   console.log(`Hub pairing — one-time codes so a desk can talk to YOUR Hub.
@@ -190,7 +191,7 @@ function buildPairOutput({ code, kind, expiresAt, host, port, appBase }) {
 }
 
 function magicDnsFromTailscale() {
-  const r = spawnSync("tailscale", ["status", "--json"], {
+  const r = spawnSync(tailscaleBin() || "tailscale", ["status", "--json"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });

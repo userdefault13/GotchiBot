@@ -89,8 +89,7 @@ gotchibot — GotchiBot orchestrator CLI
                                   BYO Hub chat sync + optional Sepolia checkpointSave
   gotchibot db wizard|local|atlas|none|status|pin-desk
                                   BYO Mongo (local Docker / Atlas / skip) → sessions/.mongo.json
-  gotchibot hub enable <host>|pin|chat-store|arcade-status
-                                  own Hub Tailscale pin → sessions/.hub.json (Arcade metadata)
+  gotchibot hub setup [--status [--json]]         guided: one computer or Desk + Hub over Tailscale (sign-in, install, find, pair)
   gotchibot hub install [--dry-run|--uninstall]   set up THIS computer as your Hub (gotchibot-api + Mongo + tailscale serve)
   gotchibot hub pair|desks|revoke|share|unshare|shares
                                   on the Hub: pairing codes, desks, thread shares
@@ -464,18 +463,15 @@ cmd_remote_setup() {
 GotchiBot — Fleet / own Hub (Tailscale)
 
   Desk MBP ──Tailscale──→ Hub Mac (OpenClaw + gotchibot-api + BYO Mongo)
-  Arcade (www) holds install token + hub.tailscaleHost + chatStore.kind only
-  Chat bodies live on YOUR Hub Mongo (local Docker or Atlas) — not Arcade
+  gotchibot-api is local to your network — Arcade never sees your Hub or chats
 
 1) Register install:  ./scripts/gotchibot infra register
-2) Enable Hub:        ./scripts/gotchibot hub enable <MagicDNS|100.x>
-                      → writes sessions/.hub.json (remote-lib reads it)
-3) On the Hub:        ./scripts/gotchibot hub install
-                      → gotchibot-api + local Mongo + tailscale serve (tailnet only), prints a pairing code
-4) On each desk:      ./scripts/gotchibot hub join <MagicDNS> <code>
-                      → writes sessions/.hub.json with this desk's token
-5) Vault:             abra set gotchibot REMOTE_USER + SSH key
-6) From Desk:
+2) On the Hub:        ./scripts/gotchibot hub setup   → "this computer is the Hub"
+                      → Tailscale sign-in, gotchibot-api + local Mongo + tailscale serve, prints a pairing code
+3) On each desk:      ./scripts/gotchibot hub setup   → "this computer is the Desk"
+                      → Tailscale sign-in (same account), finds the Hub, pairs with the code
+4) Fleet ops (SSH):   abra set gotchibot REMOTE_USER + SSH key
+5) From Desk:
    abra run gotchibot -- ./scripts/gotchibot remote-push
    abra run gotchibot -- ./scripts/gotchibot attach
 
@@ -865,7 +861,6 @@ case "$cmd" in
   remote-setup) cmd_remote_setup ;;
   remote-status) abra_or_node "$ROOT/scripts/remote-status.mjs" ;;
   hub)
-    # Arcade pin (enable/pin/chat-store) vs Hub SOP (status/ops/monitor)
     sub="${1:-status}"
     case "$sub" in
       pair|join|desks|revoke|share|unshare|shares)
@@ -878,8 +873,13 @@ case "$cmd" in
       install|uninstall)
         exec node "$ROOT/scripts/hub-install.mjs" "$@"
         ;;
+      setup|network)
+        exec node "$ROOT/scripts/hub-network.mjs" "$@"
+        ;;
       enable|pin|chat-store|chatstore|arcade-status)
-        exec node "$ROOT/scripts/hub.mjs" "$@"
+        echo "gotchibot hub $sub was removed: the Hub is local to your network and Arcade never records it." >&2
+        echo "Pair a desk with: ./scripts/gotchibot hub join <MagicDNS> <code>" >&2
+        exit 2
         ;;
       ""|status|--json|--infra|--live|-h|--help)
         abra_or_node "$ROOT/scripts/hub-status.mjs" "$@"
