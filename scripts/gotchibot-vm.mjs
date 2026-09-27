@@ -51,10 +51,40 @@ const GUEST_USER = "gotchi";
 const GUEST_WORK = "/work";
 const GUEST_SESSION = "/session";
 const SANDBOX_ENV = "/etc/gotchibot/sandbox.env";
+const GIT_CREDENTIAL_HELPER = "/usr/local/bin/git-credential-gotchibot";
 
 function envOr(name, fallback) {
   const v = process.env[name];
   return typeof v === "string" && v.trim() ? v.trim() : fallback;
+}
+
+// Each git request to github.com gets a fresh 1-hour GitHub App token minted by
+// the host's abra serve, limited to the ABRA_KEY's GitHub grant; nothing is stored
+// in the guest. No grant or no App makes git fail, not prompt.
+const GIT_CREDENTIAL_SCRIPT = `#!/bin/sh
+[ "$1" = get ] || exit 0
+host=
+while IFS='=' read -r k v; do
+  [ -z "$k" ] && break
+  [ "$k" = host ] && host=$v
+done
+[ "$host" = github.com ] || exit 0
+set -a; . ${SANDBOX_ENV}; set +a
+[ -n "\${ABRA_KEY:-}" ] || exit 0
+tok=$(curl -fsS -X POST "http://\${ABRA_HOST:-10.0.2.2}:7331/github/token" -H "Authorization: Bearer \${ABRA_KEY}" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).token||"")}catch{}})')
+[ -n "$tok" ] || exit 0
+printf 'username=x-access-token\\npassword=%s\\n' "$tok"
+`;
+
+function gitSystemConfig() {
+  const name = envOr("GOTCHIBOT_VM_GIT_NAME", "GotchiBot VM");
+  const email = envOr("GOTCHIBOT_VM_GIT_EMAIL", "gotchibot-vm@users.noreply.github.com");
+  return `[credential "https://github.com"]
+\thelper = ${GIT_CREDENTIAL_HELPER}
+[user]
+\tname = ${name}
+\temail = ${email}
+`;
 }
 
 const IMAGE = envOr("GOTCHIBOT_VM_IMAGE", "debian-12-genericcloud-amd64.qcow2");
@@ -868,7 +898,7 @@ async function cmdUp(id, { json = false } = {}) {
   // logs or stdout. Only the NAMES are recorded, so a job that fails for lack
   // of a key is still distinguishable from a provider outage.
   const abraKey = process.env.ABRA_KEY || process.env.GOTCHIBOT_SANDBOX_ABRA_KEY || "";
-  let env = "GOTCHIBOT_SANDBOX=1\nGOTCHIBOT_SKIP_ABRA=1\nABRA_HOST=10.0.2.2\n";
+  let env = "GOTCHIBOT_SANDBOX=1\nGOTCHIBOT_SKIP_ABRA=1\nABRA_HOST=10.0.2.2\nGIT_TERMINAL_PROMPT=0\n";
   const forwarded = [];
   if (abraKey) {
     env += envLine("ABRA_KEY", abraKey);
@@ -880,6 +910,8 @@ async function cmdUp(id, { json = false } = {}) {
     forwarded.push(k);
   }
   guestWrite(sid, port, SANDBOX_ENV, env, { owner: `${GUEST_USER}:${GUEST_USER}`, mode: "600", umask: "077" });
+  guestWrite(sid, port, GIT_CREDENTIAL_HELPER, GIT_CREDENTIAL_SCRIPT, { owner: "root:root", mode: "0755" });
+  guestWrite(sid, port, "/etc/gitconfig", gitSystemConfig(), { owner: "root:root", mode: "0644" });
   console.error(
     forwarded.length
       ? `[vm] forwarded credentials: ${forwarded.join(", ")}`
