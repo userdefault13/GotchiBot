@@ -347,11 +347,20 @@ An `opencode run` job with `opencode/nemotron-3.5-lightning-free` inside the
 VM finished in 6 s, and after `rm` both `/work/hello.txt` and
 `/session/output.md` were back on the host.
 
-**Not yet run:** the full `opencode-dispatch.sh new --sandbox` path with
-`GOTCHIBOT_SANDBOX_BACKEND=vm`. On the 2020 the wallet gate fails before any
-sandbox starts: `cartridge-sepolia.mjs` needs `ethers`, and the 2020's
-`~/dev/AarcadeGh-t` is a partial checkout with no `package.json`. This is
-separate from the VM work.
+**Full dispatch path passed (2026-09-26).**
+`GOTCHIBOT_SANDBOX_BACKEND=vm ./scripts/opencode-dispatch.sh new --sandbox …`
+on the 2020: VM up, agent ran in the guest, `status=done`,
+`sandboxBackend=vm`, `/work/hello.txt` back on the host, no qemu left.
+Phase 3 done.
+
+It first needed the wallet gate working on the 2020: `cartridge-sepolia.mjs`
+borrows `ethers` from `../AarcadeGh-t/node_modules`, and the 2020 only had a
+partial, non-git `~/dev/AarcadeGh-t`. It now has a full clone (from a git
+bundle of the MBP's `main`; the 2020 has no GitHub access) with `npm ci`
+done (`SHARP_IGNORE_GLOBAL_LIBVIPS=1`, because the host's `libvips` makes
+sharp try a source build). The 2020's own files (Linux `run.sh` scripts,
+`.env` files, `services/cloudflared/`) were overlaid on the clone. The old
+folder is kept at `~/dev/AarcadeGh-t.partial-backup-20260926-2007`.
 
 ### Phase 4 (later): Host Network slots on VMs
 
