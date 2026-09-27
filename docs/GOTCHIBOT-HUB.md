@@ -3,7 +3,7 @@
 Each install’s **Hub** is their always-on Mac (OpenClaw + gotchibot-api) on **Tailscale**.
 **Chat bodies** live on **their** Mongo (local Docker or Atlas) — never Arcade shared home.
 
-Arcade (`www`) only holds: install token, `hub.tailscaleHost`, `hub.chatStore.kind` (+ optional host hint). **No URI, no messages.**
+Arcade (`www`) holds only the install token. It never learns your Hub's address, chat store, or messages.
 
 Full API, auth, sync model, and install wizard: [`GOTCHIBOT-API.md`](./GOTCHIBOT-API.md).
 
@@ -16,21 +16,14 @@ Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserve
    The install token is never used for the Hub or chats — `gotchibot-api` is local to your network.
 
 2. **Hub Mac**  
-   - Install Tailscale; note MagicDNS name or `100.x`  
-   - Clone GotchiBot; Remote Login (SSH); install desk pubkey  
-   - Run OpenClaw / `gotchibot` as you would on the PoC iMac  
-   - Run the Hub install wizard (gotchibot-api + Mongo + serve):
-
-   ```bash
-   gotchibot hub install
-   # → LaunchAgent/systemd, local Mongo if needed, tailscale serve (never funnel),
-   #   prints: gotchibot hub join <MagicDNS> <code>
-   ```
+   - Clone GotchiBot, then run `gotchibot hub setup` → *this computer is the Hub*.
+     It walks Tailscale install + sign-in (free account; same account on every computer),
+     then runs `hub install` (gotchibot-api + Mongo + tailscale serve, never funnel) and prints a pairing code.
+   - For fleet ops (remote spawn, deploys): Remote Login (SSH) + desk pubkey, OpenClaw as on the PoC iMac.
 
 3. **Pair each desk**  
-   ```bash
-   gotchibot hub join <MagicDNS> <code>
-   ```  
+   `gotchibot hub setup` → *this computer is the Desk*: Tailscale sign-in, finds the Hub on the tailnet, asks for the code.
+   By hand: `gotchibot hub join <MagicDNS>[:port] <code>`.  
    Writes `sessions/.hub.json` with `deskToken` + `deskApiBase` (mode `0600`).  
    More codes: on the Hub, `gotchibot hub pair`. List / revoke: `hub desks`, `hub revoke <deskId>`.  
    `remote-lib` uses that host when `REMOTE_HOST` is unset.

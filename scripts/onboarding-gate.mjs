@@ -1974,10 +1974,30 @@ function isHubNetworkUnset() {
   }
 }
 
+async function runHubNetworkSetup() {
+  clear();
+  try {
+    rl.pause();
+  } catch {}
+  try {
+    spawnSync(process.execPath, [`${ROOT}/scripts/hub-network.mjs`, "setup"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: process.env,
+    });
+  } finally {
+    try {
+      rl.resume();
+    } catch {}
+  }
+  await pause();
+}
+
 async function implementGotchiHubNetwork() {
   clear();
-  title("Implement Gotchi Hub (network)");
-  console.log("  Wire this desk to the always-on Hub (Tailscale · SSH · OpenClaw).\n");
+  title("Fleet ops over SSH (advanced)");
+  console.log("  Remote spawns, deploys and Hub status over Tailscale SSH + abra keys.");
+  console.log("  Chats and pairing don't need this — they use \"Set up Hub network\".\n");
   console.log("  Steps:");
   console.log("    1. Hub Mac on Tailscale (MagicDNS name)");
   console.log("    2. config/hub-bridge.json host = that name (seeded below if missing)");
@@ -2507,15 +2527,39 @@ async function mainMenu(wallet, cartridgeId) {
       }
       continue;
     }
+    const net = (await import("./hub-network.mjs")).hubNetworkSummary();
+    if (!ob.hubNetworkAsked && !net.deskPaired && !net.hubInstalled) {
+      console.log(`  next        set up your Hub (one computer, or Desk + Hub over Tailscale)`);
+      hr();
+      saveOnboarding({ hubNetworkAsked: true });
+      const go = await choose("Set up your Hub now?", [
+        { key: "now", label: "Set up now (a few minutes)" },
+        { key: "later", label: "Later (it stays in this menu as \"Set up Hub network\")" },
+      ]);
+      if (go?.key === "now") await runHubNetworkSetup();
+      continue;
+    }
+
     hr();
 
-    const hubUp = isHubUpQuick() && !isHubNetworkUnset();
-    const hubMenu = hubUp
-      ? [
-          { key: "hub", label: "Hub status (iMac OpenClaw · tunnel · Docker)" },
-          { key: "hub-infra", label: "Hub infra (Docker container table)" },
-        ]
-      : [{ key: "hub-implement", label: "Implement Gotchi Hub (network)" }];
+    const hubHost = (base) => String(base || "").replace(/^https?:\/\//, "").replace(/[:/].*$/, "");
+    const sshHubUp = isHubUpQuick() && !isHubNetworkUnset();
+    const hubMenu = [
+      {
+        key: "hub-network",
+        label: net.deskPaired
+          ? `Hub network (paired · ${hubHost(net.deskApiBase)})`
+          : net.hubInstalled
+            ? "Hub network (this computer is the Hub)"
+            : "Set up Hub network (Tailscale)",
+      },
+      ...(sshHubUp
+        ? [
+            { key: "hub", label: "Hub status (iMac OpenClaw · tunnel · Docker)" },
+            { key: "hub-infra", label: "Hub infra (Docker container table)" },
+          ]
+        : [{ key: "hub-implement", label: "Advanced: fleet ops over SSH" }]),
+    ];
 
     const pick = await choose("What next?", [
       { key: "launch", label: "Open desk" },
@@ -2650,6 +2694,11 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "hub") {
       await viewHubStatus();
+      continue;
+    }
+
+    if (pick.key === "hub-network") {
+      await runHubNetworkSetup();
       continue;
     }
 

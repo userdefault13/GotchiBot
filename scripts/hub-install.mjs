@@ -6,7 +6,7 @@
  *   gotchibot hub uninstall [--dry-run]
  *   gotchibot hub install --uninstall   (alias)
  *
- * Chat bodies stay in local Mongo. Arcade only gets metadata (kind / host).
+ * Chat bodies stay in local Mongo. Nothing is sent to Arcade.
  * ABSOLUTE: never run launchctl/systemctl/tailscale serve without --dry-run
  * when testing; production use is intentional.
  */
@@ -39,6 +39,8 @@ import {
 } from "../services/gotchibot-api/config.mjs";
 import { connectStore } from "../services/gotchibot-api/store.mjs";
 import { formatJoinHost } from "./hub-pair.mjs";
+import { tailscaleBin } from "./tailscale-cli.mjs";
+import { createServer } from "node:net";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER_PATH = resolve(ROOT, "services/gotchibot-api/server.mjs");
@@ -300,6 +302,25 @@ function resolvePort() {
   return DEFAULT_PORT;
 }
 
+function portFree(port) {
+  return new Promise((done) => {
+    const srv = createServer();
+    srv.once("error", () => done(false));
+    srv.listen(port, "127.0.0.1", () => srv.close(() => done(true)));
+  });
+}
+
+/** Env or saved config wins; otherwise the first free port from 8793 (desks probe 8793–8799). */
+async function choosePort() {
+  const envSet = process.env.GOTCHIBOT_API_PORT != null && String(process.env.GOTCHIBOT_API_PORT).trim();
+  if (envSet || readHubApiConfig(configPath())?.port != null) return resolvePort();
+  for (let p = DEFAULT_PORT; p <= DEFAULT_PORT + 6; p++) {
+    if (await portFree(p)) return p;
+    if ((await healthCheck(p, "127.0.0.1"))?.ok) return p;
+  }
+  return DEFAULT_PORT;
+}
+
 async function probeMongo(uri = DEFAULT_MONGO_URI) {
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 1500 });
   try {
@@ -326,7 +347,7 @@ function dockerInfoOk() {
 }
 
 function readTailscaleStatusJson() {
-  const r = spawnSync("tailscale", ["status", "--json"], {
+  const r = spawnSync(tailscaleBin() || "tailscale", ["status", "--json"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -349,7 +370,7 @@ function readTailscaleStatusJson() {
 }
 
 function readServeStatusJson() {
-  const r = spawnSync("tailscale", ["serve", "status", "--json"], {
+  const r = spawnSync(tailscaleBin() || "tailscale", ["serve", "status", "--json"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -432,7 +453,7 @@ async function cmdInstall(opts) {
   requireInteractiveOrFlags(opts);
   const dry = opts.dryRun;
   const changes = [];
-  const port = resolvePort();
+  const port = await choosePort();
   const dbName = resolveDbName();
   const cfgPath = configPath();
   let loopbackOnly = Boolean(opts.noTailscale);
@@ -834,7 +855,7 @@ volumes:
       );
     } else {
       const r = spawnSync(
-        "tailscale",
+        tailscaleBin() || "tailscale",
         ["serve", "--bg", `--http=${port}`, want],
         { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
       );
@@ -985,7 +1006,7 @@ async function cmdUninstall(opts) {
     if (dry) {
       say(`[dry run] I would run: tailscale serve --http=${port} off`);
     } else {
-      spawnSync("tailscale", ["serve", `--http=${port}`, "off"], {
+      spawnSync(tailscaleBin() || "tailscale", ["serve", `--http=${port}`, "off"], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
       });
