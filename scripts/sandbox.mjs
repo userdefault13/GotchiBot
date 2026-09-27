@@ -10,7 +10,7 @@
  *   node scripts/sandbox.mjs promote <sessionId> <destDir>
  *   node scripts/sandbox.mjs rm <sessionId> [--purge]
  *
- * Isolation: /work (rw), /session (rw), AGENTS.md + skills/registry.json (ro).
+ * Isolation: /work (rw), /session (rw), AGENTS.md + skills/registry.json (ro); caps memory / cpus / pids.
  * No ~/Dev, no docker.sock, no ~/.abra mount. Abra via host.docker.internal + ABRA_KEY only.
  */
 import { spawnSync } from "node:child_process";
@@ -32,6 +32,15 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const IMAGE = process.env.GOTCHIBOT_SANDBOX_IMAGE || "gotchibot-sandbox:local";
 const DOCKERFILE = `${ROOT}/docker/sandbox/Dockerfile`;
 const SANDBOXES = `${ROOT}/sandboxes`;
+
+function envOr(name, fallback) {
+  const v = process.env[name];
+  return typeof v === "string" && v.trim() ? v.trim() : fallback;
+}
+
+const SANDBOX_MEMORY = envOr("GOTCHIBOT_SANDBOX_MEMORY", "2g");
+const SANDBOX_CPUS = envOr("GOTCHIBOT_SANDBOX_CPUS", "2");
+const SANDBOX_PIDS = envOr("GOTCHIBOT_SANDBOX_PIDS", "512");
 
 const FORWARD_ENV = [
   "NVIDIA_API_KEY",
@@ -332,6 +341,14 @@ function cmdUp(id, { json = false } = {}) {
     "bridge",
     "--add-host",
     "host.docker.internal:host-gateway",
+    "--memory",
+    SANDBOX_MEMORY,
+    "--memory-swap",
+    SANDBOX_MEMORY,
+    "--cpus",
+    SANDBOX_CPUS,
+    "--pids-limit",
+    SANDBOX_PIDS,
     "-v",
     `${work}:/work`,
     "-v",

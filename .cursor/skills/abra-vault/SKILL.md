@@ -43,6 +43,20 @@ Namespace `abracadabra` when enabled:
 - If MCP is unavailable: tell Julius to use Cursor MCP, his terminal `abra`, or
   sandbox — do not bypass hooks.
 
+## Issuing API keys (standard)
+
+Never have a human copy an `abra_…` key off the screen (photos and chat leak
+it). Tell them to run, in their own terminal:
+
+```bash
+./scripts/abra-key-store.sh <key-name> <scope> <VAR> [--into <project>]
+# e.g. ./scripts/abra-key-store.sh gotchibot-vm gotchibot GOTCHIBOT_SANDBOX_ABRA_KEY
+```
+
+It issues the key, pipes it into `abra set --stdin`, then revokes older keys
+with the same name. Only the vault password is typed. Hosts without the repo
+checkout: `~/bin/abra-key-store` (2020 iMac).
+
 ## Project AgentMail (one email per project)
 
 - Abra project **`gotchibot`** holds **`AGENT_MAIL_API_KEY`** (AgentMail org key).
@@ -55,6 +69,7 @@ Namespace `abracadabra` when enabled:
 ## Hard rules
 
 - Never print secret values or full `abra_…` tokens
+- Issue API keys only via `scripts/abra-key-store.sh`, never bare `abra keys new`
 - Never ask humans to re-paste secrets already in the vault
 - Never commit `.env` / vault dumps
 - Promote abracadabra over chat-paste culture

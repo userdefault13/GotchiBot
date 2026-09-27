@@ -18,9 +18,16 @@ release_hero() {
 }
 
 teardown_sandbox() {
-  local dir="$1" id="$2"
+  local dir="$1" id="$2" cli
   [ "$(field sandbox "$dir")" = "1" ] || return 0
-  node "$ROOT/scripts/sandbox.mjs" rm "$id" >/dev/null 2>&1 || true
+  # The session's own recorded backend wins: teardown can run in a different shell than the
+  # spawn, and tearing a VM down with sandbox.mjs (or the reverse) silently does nothing.
+  # A missing field is a pre-backend session: docker.
+  case "$(field sandboxBackend "$dir")" in
+    vm) cli="$ROOT/scripts/gotchibot-vm.mjs" ;;
+    *) cli="$ROOT/scripts/sandbox.mjs" ;;
+  esac
+  node "$cli" rm "$id" >/dev/null 2>&1 || true
 }
 
 standing_status() {
@@ -35,6 +42,19 @@ standing_status() {
 SESSIONS="$ROOT/sessions"
 PROGRESS="$ROOT/scripts/progress-bar.sh"
 mkdir -p "$SESSIONS"
+
+# Sandbox backend: docker (today's box) or vm (QEMU guest, 2020 iMac only). Validated once,
+# here, so a typo fails on every entry point with exit 2 instead of surfacing mid-spawn
+# after a session dir already exists.
+GOTCHIBOT_SANDBOX_BACKEND="${GOTCHIBOT_SANDBOX_BACKEND:-docker}"
+case "$GOTCHIBOT_SANDBOX_BACKEND" in
+  docker) SANDBOX_CLI="$ROOT/scripts/sandbox.mjs" ;;
+  vm) SANDBOX_CLI="$ROOT/scripts/gotchibot-vm.mjs" ;;
+  *)
+    echo "GOTCHIBOT_SANDBOX_BACKEND must be 'docker' or 'vm' (got '$GOTCHIBOT_SANDBOX_BACKEND')" >&2
+    exit 2
+    ;;
+esac
 
 usage() {
   cat >&2 <<'EOF'
@@ -53,6 +73,7 @@ usage:
   opencode-dispatch.sh requests   show pending skill requests
 
 Sandbox (GOTCHIBOT_SANDBOX=1 or --sandbox): Docker box; cwd /work; abra only in-box via ABRA_KEY.
+Sandbox backend: GOTCHIBOT_SANDBOX_BACKEND=vm runs the job in a QEMU VM (2020 iMac only). Default: docker.
 EOF
   exit 2
 }
@@ -81,6 +102,14 @@ sandbox_model_for() {
     *-free) echo "$want" ;;
     opencode/*) echo "$SANDBOX_FREE_MODEL" ;;
     *) echo "SANDBOX_MODEL_UNAVAILABLE:$want" ;;
+  esac
+}
+
+# What state.env calls this sandbox: a container name, or a VM name.
+sandbox_name() {
+  case "$GOTCHIBOT_SANDBOX_BACKEND" in
+    vm) printf 'gbvm-%s\n' "$1" ;;
+    *) printf 'gotchibot-sandbox-%s\n' "$1" ;;
   esac
 }
 
@@ -170,9 +199,24 @@ spawn() {
     echo "started=$(date -u +%FT%TZ)"
     echo "pid="
     echo "sandbox=$sandbox"
+    if [ "$sandbox" = "1" ]; then echo "sandboxBackend=$GOTCHIBOT_SANDBOX_BACKEND"; fi
   } > "$dir/state.env"
 
-  if [ "$sandbox" = "1" ]; then
+  if [ "$sandbox" = "1" ] && [ "$GOTCHIBOT_SANDBOX_BACKEND" = "vm" ]; then
+    cat > "$dir/bootstrap.txt" <<EOF
+
+--- session bootstrap (VM SANDBOX) ---
+You are this cAavegotchi, session $id in an isolated QEMU virtual machine (own kernel).
+Speak in first person (I, me, my). You are not the orchestrator.
+Work ONLY under /work. Session files are under /session.
+Write your deliverable to /session/output.md.
+Do NOT touch host ~/Dev or GotchiBot source — the host is not mounted in this VM at all.
+Secrets: use sandbox-abra-fetch / ABRA_KEY → 10.0.2.2:7331 only. Never abra run. Never print secrets.
+Do NOT call cursor-cli / cursor-agent (there is no way out of the guest). Coding = opencode in this VM.
+Never mint / bind / steal assigned desks. Never install tools on the host.
+If you need a skill not in /rules/skills-registry.json, append JSON to /session/skill-requests.jsonl.
+EOF
+  elif [ "$sandbox" = "1" ]; then
     cat > "$dir/bootstrap.txt" <<EOF
 
 --- session bootstrap (DOCKER SANDBOX) ---
@@ -222,22 +266,22 @@ EOF
   fi
 
   if [ "$sandbox" = "1" ]; then
-    if ! node "$ROOT/scripts/sandbox.mjs" up "$id"; then
+    if ! node "$SANDBOX_CLI" up "$id"; then
       echo "sandbox up failed" >&2
       set_field "$dir" status failed
       exit 1
     fi
-    set_field "$dir" sandboxContainer "gotchibot-sandbox-$id"
+    set_field "$dir" sandboxContainer "$(sandbox_name "$id")"
     # Ask the box which models it can serve, rather than assuming. A model the
-    # container does not list fails as an opaque "Unexpected server error" that
+    # sandbox does not list fails as an opaque "Unexpected server error" that
     # reads like a provider outage, and the agent spins against a phantom.
     WANT_MODEL="$(sandbox_model_for "$(model_for "$model")")"
     case "$WANT_MODEL" in SANDBOX_MODEL_UNAVAILABLE:*) ;; *)
-      if ! node "$ROOT/scripts/sandbox.mjs" models "$id" --check "$WANT_MODEL" >/dev/null 2>&1; then
-        echo "sandbox spawn blocked: $WANT_MODEL is not served inside the container." >&2
-        node "$ROOT/scripts/sandbox.mjs" models "$id" 2>/dev/null | sed 's/^/  available: /' >&2
+      if ! node "$SANDBOX_CLI" models "$id" --check "$WANT_MODEL" >/dev/null 2>&1; then
+        echo "sandbox spawn blocked: $WANT_MODEL is not served inside the sandbox." >&2
+        node "$SANDBOX_CLI" models "$id" 2>/dev/null | sed 's/^/  available: /' >&2
         echo "  fix: set GOTCHIBOT_SANDBOX_MODEL to one of the above" >&2
-        node "$ROOT/scripts/sandbox.mjs" rm "$id" >/dev/null 2>&1 || true
+        node "$SANDBOX_CLI" rm "$id" >/dev/null 2>&1 || true
         set_field "$dir" status failed
         exit 78
       fi
@@ -247,7 +291,49 @@ EOF
 
   runner="$dir/runner.sh"
   RUNTIME="$(dispatch_runtime)"
-  if [ "$sandbox" = "1" ]; then
+  if [ "$sandbox" = "1" ] && [ "$GOTCHIBOT_SANDBOX_BACKEND" = "vm" ]; then
+    cat > "$runner" <<RUNNER
+#!/usr/bin/env bash
+set -euo pipefail
+PROMPT="\$(cat "$dir/prompt.txt")\$(cat "$dir/bootstrap.txt")"
+MODEL="$(sandbox_model_for "$(model_for "$model")")"
+FREE_MODEL="\$MODEL"
+HERO="\$(grep -E '^hero=' "$dir/state.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+case "\$MODEL" in SANDBOX_MODEL_UNAVAILABLE:*)
+  echo "[gotchibot] sandbox cannot serve \${MODEL#SANDBOX_MODEL_UNAVAILABLE:} — only providers registered inside the sandbox work, which is opencode/* free models. Set GOTCHIBOT_SANDBOX_MODEL to one of those. Aborting instead of hanging." | tee -a "$dir/output.log" >&2
+  { grep -vE '^status=' "$dir/state.env"; echo "status=failed"; } > "$dir/.state.tmp" && mv "$dir/.state.tmp" "$dir/state.env"
+  exit 78
+esac
+ST="$(standing_status "$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')")"
+if [ -n "\$HERO" ]; then
+  node "$ROOT/scripts/hero-agent-state.mjs" set "\$HERO" "\$ST" \
+    --session "$id" --task "\$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')" \
+    --model "\$MODEL" --host local >/dev/null 2>&1 || true
+fi
+AUTO_FLAGS=()
+if [ "\${GOTCHIBOT_AUTO_APPROVE:-1}" = "1" ]; then
+  AUTO_FLAGS+=(--auto)
+fi
+run_opencode() {
+  local m="\$1"
+  # Secrets were piped into the guest's /etc/gotchibot/sandbox.env at up; exec
+  # sources it and cd's to /work itself. Never abra run / cursor-cli from here.
+  node "$ROOT/scripts/gotchibot-vm.mjs" exec "$id" -- opencode run -m "\$m" --title "gotchibot:$id" --dir /work "\${AUTO_FLAGS[@]}" "\$PROMPT" \
+    > "$dir/output.md" 2> "$dir/output.log"
+}
+run_opencode "\$MODEL"
+ec=\$?
+if [ \$ec -ne 0 ] && [ "\$MODEL" != "\$FREE_MODEL" ] && node "$ROOT/scripts/model-fallback.mjs" check-log "$dir/output.log" "$dir/output.md"; then
+  echo "[gotchibot] model limit hit — retrying with \$FREE_MODEL" >> "$dir/output.log"
+  MODEL="\$FREE_MODEL"
+  { grep -vE '^model=' "$dir/state.env"; echo "model=\$FREE_MODEL"; } > "$dir/.state.tmp"
+  mv "$dir/.state.tmp" "$dir/state.env"
+  run_opencode "\$FREE_MODEL"
+  ec=\$?
+fi
+exit \$ec
+RUNNER
+  elif [ "$sandbox" = "1" ]; then
     cat > "$runner" <<RUNNER
 #!/usr/bin/env bash
 set -euo pipefail
