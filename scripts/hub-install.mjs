@@ -38,7 +38,6 @@ import {
   writeHubApiConfig,
 } from "../services/gotchibot-api/config.mjs";
 import { connectStore } from "../services/gotchibot-api/store.mjs";
-import { hasInstallToken } from "./infra-client.mjs";
 import { formatJoinHost } from "./hub-pair.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -902,55 +901,6 @@ volumes:
     } catch (e) {
       say(`  Could not mint pairing code: ${e.message || e}`);
       say("  Later: gotchibot hub pair");
-    }
-  }
-
-  // ── Arcade metadata (optional) ───────────────────────────────────────────
-  say("");
-  say("Arcade metadata (optional — never sends chats)");
-  if (dry) {
-    say(
-      "[dry run] I would publish chatStore kind=local only if GOTCHIBOT_INFRA_TOKEN is set.",
-    );
-    if (dnsName) {
-      say(`[dry run] I would print (not auto-run): node scripts/hub.mjs enable ${dnsName}`);
-    }
-  } else if (!hasInstallToken()) {
-    say("  No install token in the environment — skipped Arcade pin.");
-    say("  Later:");
-    say("    abra run gotchibot -- ./scripts/gotchibot hub chat-store --kind local");
-    if (dnsName) {
-      say(`    node scripts/hub.mjs enable ${dnsName}`);
-    }
-  } else {
-    try {
-      const { publishChatStore } = await import("./mongo-byo.mjs");
-      await publishChatStore("local", { dbName });
-      changes.push("Arcade chatStore kind=local");
-      say("  Published chatStore kind=local to Arcade (metadata only).");
-    } catch (e) {
-      say(`  Arcade chat-store skipped: ${e.message || e}`);
-    }
-    if (dnsName) {
-      if (opts.yes) {
-        say("  (--yes) Not auto-signing wallet enable. When ready:");
-        say(`    node scripts/hub.mjs enable ${dnsName}`);
-      } else {
-        const doEnable = await promptYesNo(
-          opts,
-          `Publish MagicDNS to Arcade with wallet sign (node scripts/hub.mjs enable ${dnsName})?`,
-          true,
-        );
-        if (doEnable) {
-          spawnSync(process.execPath, [resolve(ROOT, "scripts/hub.mjs"), "enable", dnsName], {
-            stdio: "inherit",
-            cwd: ROOT,
-          });
-          changes.push("hub enable (Arcade tailscaleHost)");
-        } else {
-          say(`  Skipped. Later: node scripts/hub.mjs enable ${dnsName}`);
-        }
-      }
     }
   }
 

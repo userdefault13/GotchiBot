@@ -13,7 +13,7 @@ Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserve
 
 1. **Install + register** on Desk  
    `gotchibot onboard` / `gotchibot infra register` → `GOTCHIBOT_INFRA_TOKEN` in abra.
-   Install token is for **Arcade metadata only** (`hub enable`, `hub chat-store`) — not for chats.
+   The install token is never used for the Hub or chats — `gotchibot-api` is local to your network.
 
 2. **Hub Mac**  
    - Install Tailscale; note MagicDNS name or `100.x`  
@@ -32,15 +32,10 @@ Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserve
    gotchibot hub join <MagicDNS> <code>
    ```  
    Writes `sessions/.hub.json` with `deskToken` + `deskApiBase` (mode `0600`).  
-   More codes: on the Hub, `gotchibot hub pair`. List / revoke: `hub desks`, `hub revoke <deskId>`.
+   More codes: on the Hub, `gotchibot hub pair`. List / revoke: `hub desks`, `hub revoke <deskId>`.  
+   `remote-lib` uses that host when `REMOTE_HOST` is unset.
 
-4. **Enable Hub metadata** (wallet-signed → Arcade; optional if install already offered it)  
-   ```bash
-   abra run gotchibot -- ./scripts/gotchibot hub enable <MagicDNS-or-100.x>
-   ```  
-   Preserves desk pairing fields in `sessions/.hub.json`. `remote-lib` uses that host when `REMOTE_HOST` is unset.
-
-5. **BYO Mongo** (if you skipped Docker during install)  
+4. **BYO Mongo** (if you skipped Docker during install)  
    ```bash
    ./scripts/gotchibot db wizard
    # or: db local | db atlas | db none
@@ -50,12 +45,11 @@ Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserve
    - **atlas** — URI via `abra set gotchibot MONGODB_URI` (never Arcade)  
    - **none** — Hub ok; no chat push/pull  
 
-6. **Vault**  
+5. **Vault**  
    `abra set gotchibot REMOTE_USER` + SSH key. Optional: still set `REMOTE_HOST` to override the pin.
 
-7. **Verify**  
+6. **Verify**  
    ```bash
-   abra run gotchibot -- ./scripts/gotchibot hub pin          # Arcade hub + chatStore metadata
    abra run gotchibot -- ./scripts/gotchibot db status
    abra run gotchibot -- ./scripts/gotchibot remote -- hostname
    gotchibot api status                                       # on the Hub
@@ -64,7 +58,7 @@ Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserve
 ## Chat sync (your Hub Mongo)
 
 Auth = **desk token** from `gotchibot hub join` (`sessions/.hub.json` or `GOTCHIBOT_DESK_TOKEN`).  
-**Not** the Arcade install token. Chats go **ONLY** to your pinned Hub (`GOTCHIBOT_DESK_API_BASE` or pin via `hub join` / `hub enable` / `db pin-desk`) — **never** `gotchibot.aarcadeghst.com`. With no pin, chat commands fail with `NO_HUB_PINNED`. Shared Arcade hosts are refused (`SHARED_ARCADE_CHAT`). Missing pair → `NO_DESK_TOKEN`.
+**Not** the Arcade install token. Chats go **ONLY** to your pinned Hub (`GOTCHIBOT_DESK_API_BASE` or pin via `hub join` / `db pin-desk`) — **never** `gotchibot.aarcadeghst.com`. With no pin, chat commands fail with `NO_HUB_PINNED`. Shared Arcade hosts are refused (`SHARED_ARCADE_CHAT`). Missing pair → `NO_DESK_TOKEN`.
 
 ```bash
 ./scripts/gotchibot chats push --text "hello from desk"

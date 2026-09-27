@@ -188,7 +188,7 @@ export function assertChatDeskAllowed(env = process.env) {
       [
         "No Hub pinned for chat sync — chats only go to YOUR Hub.",
         "Run: ./scripts/gotchibot db wizard",
-        "Then: ./scripts/gotchibot db pin-desk  (or ./scripts/gotchibot hub enable)",
+        "Then: ./scripts/gotchibot db pin-desk  (or ./scripts/gotchibot hub join <MagicDNS> <code>)",
         "Or set GOTCHIBOT_DESK_API_BASE=http://<MagicDNS>:8793",
       ].join("\n"),
     );

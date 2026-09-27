@@ -146,7 +146,7 @@ gotchibot hub uninstall [--dry-run]
 gotchibot hub install --uninstall   # alias
 ```
 
-**Eight steps + Arcade metadata**
+**Eight steps**
 
 1. **Node** — require ≥18; bake `process.execPath` into the service unit.
 2. **Mongo** — probe `127.0.0.1:27017`; optionally start `docker/chat-mongo` (bind loopback only); else Homebrew / distro hints.
@@ -157,7 +157,7 @@ gotchibot hub install --uninstall   # alias
 7. **tailscale serve** — `tailscale serve --bg --http=8793 http://127.0.0.1:8793` (never funnel). Warns if AllowFunnel is on.
 8. **First pairing code** — mint only if no active desks; print `gotchibot hub join <MagicDNS> <code>`.
 
-Then **Arcade metadata (optional)**: if `GOTCHIBOT_INFRA_TOKEN` is set, publish `chatStore kind=local`; optionally `hub enable <MagicDNS>` (wallet-signed). Never sends chats.
+Nothing is sent to Arcade: the Hub and its chat store stay on your network.
 
 **What it changes**
 
@@ -172,7 +172,7 @@ Then **Arcade metadata (optional)**: if `GOTCHIBOT_INFRA_TOKEN` is set, publish 
 
 | Symptom | Fix |
 |---|---|
-| `NO_HUB_PINNED` | Pin the Hub: `gotchibot hub join` / `hub enable` / `db pin-desk`, or set `GOTCHIBOT_DESK_API_BASE` |
+| `NO_HUB_PINNED` | Pin the Hub: `gotchibot hub join` / `db pin-desk`, or set `GOTCHIBOT_DESK_API_BASE` |
 | `NO_DESK_TOKEN` | Pair: Hub `gotchibot hub pair`, desk `gotchibot hub join <MagicDNS> <code>` |
 | `401` desk token revoked | Mint a new code and re-join; old token stays revoked |
 | `403` login mismatch / owner not configured | Remote request’s `Tailscale-User-Login` must match `GOTCHIBOT_HUB_OWNER_LOGIN` / `.hub-api.json`; set owner or use direct loopback |
