@@ -117,6 +117,7 @@ export async function connectStore({ mongoUri, dbName }) {
   const pairingCodes = db.collection("pairing_codes");
   const hubRunner = db.collection("hub_runner");
   const walletNonces = db.collection("wallet_nonces");
+  const projectSnapshot = db.collection("project_snapshot");
 
   async function ensureIndexes() {
     await chatMessages.createIndex({ threadId: 1, messageId: 1 }, { unique: true });
@@ -966,6 +967,31 @@ export async function connectStore({ mongoUri, dbName }) {
     return getRunnerStatus();
   }
 
+  /**
+   * Whole-portfolio snapshot from a desk (validated by the caller). Replaces
+   * the previous push; files stay an array because paths contain dots.
+   */
+  async function putProjectSnapshot({ deskId, files, heroNames }) {
+    const pushedAt = new Date();
+    await projectSnapshot.replaceOne(
+      { _id: "current" },
+      { _id: "current", deskId, pushedAt, files, heroNames },
+      { upsert: true },
+    );
+    return { pushedAt: pushedAt.toISOString() };
+  }
+
+  async function getProjectSnapshot() {
+    const doc = await projectSnapshot.findOne({ _id: "current" });
+    if (!doc) return null;
+    return {
+      deskId: doc.deskId,
+      pushedAt: doc.pushedAt instanceof Date ? doc.pushedAt.toISOString() : doc.pushedAt,
+      files: Array.isArray(doc.files) ? doc.files : [],
+      heroNames: doc.heroNames || {},
+    };
+  }
+
   async function getRunnerStatus() {
     const doc = await hubRunner.findOne({ _id: "status" });
     const lastBeatAt = doc?.lastBeatAt ? new Date(doc.lastBeatAt) : null;
@@ -1326,6 +1352,8 @@ export async function connectStore({ mongoUri, dbName }) {
     failReply,
     writeRunnerHeartbeat,
     getRunnerStatus,
+    putProjectSnapshot,
+    getProjectSnapshot,
     createSnapshot,
     getSnapshot,
     close,

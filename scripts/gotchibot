@@ -94,6 +94,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot hub pair|desks|revoke|share|unshare|shares
                                   on the Hub: pairing codes, desks, thread shares
   gotchibot hub runner [--once|--check]           Hub phone-reply runner (prefer: abra run gotchibot -- node scripts/hub-runner.mjs)
+  gotchibot hub projects push|schedule            Push pstack rooms + avatars to the Hub for the phone app
   gotchibot hub join <host> <code>                on a desk: pair with your Hub
   gotchibot api start|stop|status                 run gotchibot-api by hand (dev)
   gotchibot host register|run|status
@@ -869,6 +870,10 @@ case "$cmd" in
       runner)
         shift || true
         exec node "$ROOT/scripts/hub-runner.mjs" "$@"
+        ;;
+      projects)
+        shift || true
+        exec node "$ROOT/scripts/hub-projects-push.mjs" "$@"
         ;;
       install|uninstall)
         exec node "$ROOT/scripts/hub-install.mjs" "$@"

@@ -5,6 +5,10 @@
  * dossier, roster, kanban, status.md) plus the hero caches the desk keeps
  * (sessions/.hero-agent-state.json, config/agent-roles.json,
  * sessions/.avatars/<hero>.svg). Nothing here writes.
+ *
+ * Those files live on the desk, not the Hub, so the desk pushes the same
+ * whitelisted files (collectProjectSnapshot → POST /projects/push) and the Hub
+ * renders them through this module unchanged.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -116,23 +120,147 @@ export function normalizeAvatarSvg(text) {
   return /^<svg[\s>]/.test(svg) ? svg : null;
 }
 
+const PROJECT_FILES = ["dossier.json", "overview.md", "status.md", "roster.json", "kanban.json"];
+const CURRENT_FILES = ["sessions/.pstack-dossier-current", "sessions/.project-current"];
+const HERO_STATE_FILE = "sessions/.hero-agent-state.json";
+const ROLES_FILE = "config/agent-roles.json";
+const SNAPSHOT_MAX_FILES = 2000;
+const SNAPSHOT_MAX_FILE_BYTES = 256 * 1024;
+const SNAPSHOT_MAX_NAME = 64;
+
+/** Repo-relative paths a desk may push — exactly what the project source reads. */
+export function snapshotPathOk(path) {
+  const p = String(path || "");
+  if (CURRENT_FILES.includes(p) || p === HERO_STATE_FILE || p === ROLES_FILE) return true;
+  let m = p.match(/^sessions\/pstack\/([^/]+)\/([^/]+)$/);
+  if (m) return projectSlugOk(m[1]) && PROJECT_FILES.includes(m[2]);
+  m = p.match(/^sessions\/\.avatars\/([^/]+)\.svg$/);
+  return Boolean(m && heroIdOk(m[1]));
+}
+
+function snapshotError(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
 /**
+ * Validate a pushed project snapshot body.
+ * @returns {{ files: Array<{ path: string, text: string, mtime: string|null }>, heroNames: Record<string, string> }}
+ */
+export function validateProjectSnapshot(body) {
+  const files = body?.files;
+  if (!Array.isArray(files)) throw snapshotError("files array required");
+  if (files.length > SNAPSHOT_MAX_FILES) throw snapshotError("too many files");
+  const seen = new Set();
+  const out = [];
+  for (const f of files) {
+    const path = String(f?.path || "");
+    if (!snapshotPathOk(path)) throw snapshotError(`path not allowed: ${path.slice(0, 120)}`);
+    if (seen.has(path)) throw snapshotError(`duplicate path: ${path}`);
+    seen.add(path);
+    if (typeof f.text !== "string") throw snapshotError(`text required: ${path}`);
+    if (Buffer.byteLength(f.text, "utf8") > SNAPSHOT_MAX_FILE_BYTES) {
+      throw snapshotError(`file too large: ${path}`);
+    }
+    const mtime = f.mtime && !Number.isNaN(new Date(f.mtime).getTime())
+      ? new Date(f.mtime).toISOString()
+      : null;
+    out.push({ path, text: f.text, mtime });
+  }
+  const heroNames = {};
+  for (const [id, name] of Object.entries(body?.heroNames || {})) {
+    if (heroIdOk(id) && typeof name === "string" && name.trim()) {
+      heroNames[id] = name.trim().slice(0, SNAPSHOT_MAX_NAME);
+    }
+  }
+  return { files: out, heroNames };
+}
+
+/**
+ * Desk side: gather every file the project source reads (disk only) so the Hub
+ * can render the same portfolio. Avatars only for heroes on some roster.
  * @param {{ root: string, heroName?: (heroId: string) => string|null }} opts
  */
-export function createProjectSource({ root, heroName } = {}) {
+export function collectProjectSnapshot({ root, heroName } = {}) {
+  const src = createProjectSource({ root });
+  const files = [];
+  const add = (rel) => {
+    const abs = join(root, rel);
+    const text = readText(abs);
+    if (text != null) files.push({ path: rel, text, mtime: mtimeIso(abs) });
+  };
+  const heroes = new Set();
+  for (const slug of src.listSlugs()) {
+    for (const f of PROJECT_FILES) add(`sessions/pstack/${slug}/${f}`);
+    const roster = readJson(join(root, "sessions/pstack", slug, "roster.json"), {}) || {};
+    for (const h of Array.isArray(roster.heroes) ? roster.heroes : []) {
+      if (heroIdOk(String(h))) heroes.add(String(h));
+    }
+  }
+  for (const rel of [...CURRENT_FILES, HERO_STATE_FILE, ROLES_FILE]) add(rel);
+  const heroNames = {};
+  for (const id of [...heroes].sort()) {
+    add(`sessions/.avatars/${id}.svg`);
+    let name = null;
+    try {
+      name = heroName ? heroName(id) : null;
+    } catch {
+      name = null;
+    }
+    if (name) heroNames[id] = String(name);
+  }
+  return { files, heroNames };
+}
+
+/**
+ * Reads go to the pushed snapshot first (the desk owns its pstack rooms), then
+ * the Hub's own disk, so a Hub with local rooms still shows them.
+ * @param {{
+ *   root: string,
+ *   heroName?: (heroId: string) => string|null,
+ *   snapshot?: () => ({ files: Map<string, { text: string, mtime: string|null }>, heroNames: Record<string, string> }|null),
+ * }} opts
+ */
+export function createProjectSource({ root, heroName, snapshot } = {}) {
   const pstackRoot = join(root, "sessions/pstack");
+  const snap = () => (typeof snapshot === "function" ? snapshot() : null) || null;
+
+  function fileText(rel) {
+    const f = snap()?.files.get(rel);
+    return f ? f.text : readText(join(root, rel));
+  }
+
+  function fileJson(rel, fallback) {
+    const text = fileText(rel);
+    if (text == null) return fallback;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return fallback;
+    }
+  }
+
+  function fileExists(rel) {
+    return Boolean(snap()?.files.has(rel)) || existsSync(join(root, rel));
+  }
+
+  function fileMtime(rel) {
+    const f = snap()?.files.get(rel);
+    return f ? f.mtime : mtimeIso(join(root, rel));
+  }
 
   function currentSlug() {
-    for (const name of [".pstack-dossier-current", ".project-current"]) {
-      const s = readText(join(root, "sessions", name))?.trim();
+    for (const rel of CURRENT_FILES) {
+      const s = fileText(rel)?.trim();
       if (s && projectSlugOk(s)) return s;
     }
     return null;
   }
 
   function heroTable() {
-    const state = readJson(join(root, "sessions/.hero-agent-state.json"), {}) || {};
-    const roles = readJson(join(root, "config/agent-roles.json"), {}) || {};
+    const state = fileJson(HERO_STATE_FILE, {}) || {};
+    const roles = fileJson(ROLES_FILE, {}) || {};
     return { state, roles };
   }
 
@@ -140,8 +268,8 @@ export function createProjectSource({ root, heroName } = {}) {
     const st = table.state?.[id] || {};
     const roleRaw = table.roles?.[id];
     const role = typeof roleRaw === "string" ? roleRaw : roleRaw?.roleId || roleRaw?.role || null;
-    let name = null;
-    if (heroName) {
+    let name = snap()?.heroNames?.[id] || null;
+    if (!name && heroName) {
       try {
         name = heroName(id) || null;
       } catch {
@@ -161,18 +289,17 @@ export function createProjectSource({ root, heroName } = {}) {
       model: st.model || null,
       sessionId: st.sessionId || null,
       updatedAt: st.at || null,
-      hasAvatar: existsSync(join(root, "sessions/.avatars", `${id}.svg`)),
+      hasAvatar: fileExists(`sessions/.avatars/${id}.svg`),
     };
   }
 
   function loadProjectFiles(slug) {
-    const dir = join(pstackRoot, slug);
-    const dossierPath = join(dir, "dossier.json");
-    const dossier = readJson(dossierPath);
-    const overview = readText(join(dir, "overview.md"));
-    const statusMd = readText(join(dir, "status.md"));
-    const roster = readJson(join(dir, "roster.json"), {}) || {};
-    const kanban = readJson(join(dir, "kanban.json"), {}) || {};
+    const dir = `sessions/pstack/${slug}`;
+    const dossier = fileJson(`${dir}/dossier.json`, null);
+    const overview = fileText(`${dir}/overview.md`);
+    const statusMd = fileText(`${dir}/status.md`);
+    const roster = fileJson(`${dir}/roster.json`, {}) || {};
+    const kanban = fileJson(`${dir}/kanban.json`, {}) || {};
     const fields = dossier?.fields || {};
     const cards = Array.isArray(kanban.cards) ? kanban.cards : [];
     const heroes = Array.isArray(roster.heroes)
@@ -190,8 +317,8 @@ export function createProjectSource({ root, heroName } = {}) {
         dossier?.updatedAt,
         roster.updatedAt,
         kanban.updatedAt,
-        mtimeIso(join(dir, "status.md")),
-        mtimeIso(join(dir, "overview.md")),
+        fileMtime(`${dir}/status.md`),
+        fileMtime(`${dir}/overview.md`),
       ),
     };
   }
@@ -214,17 +341,21 @@ export function createProjectSource({ root, heroName } = {}) {
 
   /** Every pstack room with a dossier, overview or status (smoke rooms hidden). */
   function listSlugs() {
-    if (!existsSync(pstackRoot)) return [];
-    let names = [];
+    const names = new Set();
     try {
-      names = readdirSync(pstackRoot);
+      for (const name of readdirSync(pstackRoot)) names.add(name);
     } catch {
-      return [];
+      /* no local rooms */
     }
-    return names.filter((name) => {
+    for (const rel of snap()?.files.keys() || []) {
+      const m = rel.match(/^sessions\/pstack\/([^/]+)\//);
+      if (m) names.add(m[1]);
+    }
+    return [...names].filter((name) => {
       if (!projectSlugOk(name) || /smoke/i.test(name)) return false;
-      const dir = join(pstackRoot, name);
-      return ["dossier.json", "overview.md", "status.md"].some((f) => existsSync(join(dir, f)));
+      return ["dossier.json", "overview.md", "status.md"].some((f) =>
+        fileExists(`sessions/pstack/${name}/${f}`),
+      );
     });
   }
 
@@ -309,10 +440,9 @@ export function createProjectSource({ root, heroName } = {}) {
 
   /** Avatar SVG text, or null. See normalizeAvatarSvg for the cache quirk. */
   function readAvatarSvg(heroId) {
-    const p = avatarPath(heroId);
-    if (!p) return null;
-    return normalizeAvatarSvg(readText(p));
+    if (!heroIdOk(heroId)) return null;
+    return normalizeAvatarSvg(fileText(`sessions/.avatars/${heroId}.svg`));
   }
 
-  return { listProjects, getProject, avatarPath, readAvatarSvg, currentSlug };
+  return { listProjects, getProject, listSlugs, avatarPath, readAvatarSvg, currentSlug };
 }

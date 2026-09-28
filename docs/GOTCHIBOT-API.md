@@ -176,7 +176,8 @@ JSON in/out. Body limit 2 MB. Unknown route → `404` `{ok:false,error}`. Errors
 | `POST` | `/api/gotchibot/chats/retry` | desk token | body `{threadId, messageId}` — resets phone `reply.status` to `pending` when `error` or stale `claimed` (>~5m); inaccessible → `404` |
 | `GET` | `/api/gotchibot/chats/pull?threadId=&after=&limit=` | desk token | `{ok, threadId\|null, messages:[…], nextAfter, hasMore}` — messages may include `originKind` + `reply`; limit default 100, max 500 |
 | `GET` | `/api/gotchibot/chats/threads?limit=&project=` | desk token | `{ok, threads:[…]}` sorted `updatedAt` desc; each thread has `project` (slug or null). `project=<slug>` filters to that project, `project=none` to untagged threads |
-| `GET` | `/api/gotchibot/projects` | desk token | `{ok, projects:[{slug, title, goal, playbook, status, current, heroCount, kanban, units, updatedAt, accent, working, heroes:[…≤5]}]}` — read-only view of `sessions/pstack/<slug>/`; current project first, then newest; `*smoke*` rooms hidden |
+| `POST` | `/api/gotchibot/projects/push` | desk token (desk kind only) | body `{files:[{path, text, mtime?}], heroNames?}` → `{ok, pushedAt, files, projects}` — replaces the stored portfolio snapshot; paths are whitelisted (see *Project snapshots*), bad path / oversize → `400`; phone → `403` |
+| `GET` | `/api/gotchibot/projects` | desk token | `{ok, projects:[{slug, title, goal, playbook, status, current, heroCount, kanban, units, updatedAt, accent, working, heroes:[…≤5]}]}` — read-only view of `sessions/pstack/<slug>/` (pushed snapshot first, then the Hub's disk); current project first, then newest; `*smoke*` rooms hidden |
 | `GET` | `/api/gotchibot/projects/:slug` | desk token | `{ok, project:{…summary, scope, roster:[…], cards:[…≤60]}}`; unknown slug → `404` |
 | `GET` | `/api/gotchibot/avatars/:heroId.svg` | desk token | `image/svg+xml` from `sessions/.avatars/<heroId>.svg` (JSON-escaped caches are unescaped); missing or not an SVG → `404` |
 | `POST` | `/api/gotchibot/chats/snapshot` | desk token (desk kind only) | `{ok, snapshotId, contentHash, stateUri, messageCount, threadIds, upToSeq, createdAt}` — phone → `403` |
@@ -211,6 +212,14 @@ Install token alone on a chat/hub route → `401` *install token cannot unlock c
 - **Phone reply tracking** (phone user messages only): `originKind:"phone"`, `reply.status` lifecycle `pending` → `claimed` → `replied` | `error`. Store helpers used by hub-runner: `claimNextPendingReply`, `getThreadMessagesForContext`, `completeReply`, `failReply`, `writeRunnerHeartbeat` / `getRunnerStatus` (`hub_runner` collection). Assistant replies are inserted via `pushMessages` with deskId `hub-runner` (trusted non-phone writer).
 - **Pull** with `after=<seq>` (cursor). Messages sorted by `seq` ascending.
 - **Threads** last-writer-wins on `(updatedAt, deskId)`: apply incoming title only when incoming `updatedAt` is greater, or equal and incoming `deskId` is greater (string compare). Always `$max` `lastSeq` / `lastMessageAt`.
+
+## Project snapshots
+
+pstack rooms, hero caches and avatars live on the **desk**, so the phone portfolio would be empty on a Hub that doesn't run pstack itself. The desk pushes the exact files the project view reads and the Hub renders them with the same code (`services/gotchibot-api/projects.mjs`).
+
+- **Desk:** `gotchibot hub projects push [--force] [--dry-run] [--json]` — skips when the content hash matches the last push (`sessions/.hub-projects-push.json`). `gotchibot hub projects schedule install [--every SEC] | uninstall | status` — macOS LaunchAgent `com.gotchibot.hub-projects-push`, default every 300s, logs in `sessions/hub-projects-push-logs/`.
+- **Whitelist:** `sessions/pstack/<slug>/{dossier.json,overview.md,status.md,roster.json,kanban.json}`, `sessions/.pstack-dossier-current`, `sessions/.project-current`, `sessions/.hero-agent-state.json`, `config/agent-roles.json`, `sessions/.avatars/<heroId>.svg` (roster heroes only). Anything else → `400`. Max 2000 files, 256 KB each, 2 MB body. `heroNames` (`{heroId: name}`) carries desk-side display names.
+- **Hub:** one Mongo doc (`project_snapshot`, `_id: "current"`), replaced per push, cached in memory. Reads prefer the snapshot, then the Hub's own disk, so Hub-local rooms still appear.
 
 ## Checkpoint snapshots
 

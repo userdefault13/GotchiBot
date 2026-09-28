@@ -12,7 +12,7 @@ import { isUlid } from "../../scripts/chat-canonical.mjs";
 import { resolveApiConfig } from "./config.mjs";
 import { checkOrigin } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
-import { createProjectSource } from "./projects.mjs";
+import { createProjectSource, validateProjectSnapshot } from "./projects.mjs";
 import {
   createCastVerifier,
   isAddress,
@@ -148,11 +148,30 @@ async function loadHeroName() {
  */
 export function createApiServer({ store, config, projects, verifyWallet, ownerWallet }) {
   const ownerLogin = config.ownerLogin;
+  /** Desk-pushed portfolio, loaded from Mongo once and replaced on each push. */
+  let projectSnapshot = null;
+  let projectSnapshotLoaded = false;
+  const toSnapshotView = (doc) =>
+    doc
+      ? {
+          files: new Map(doc.files.map((f) => [f.path, { text: f.text, mtime: f.mtime }])),
+          heroNames: doc.heroNames || {},
+          pushedAt: doc.pushedAt,
+        }
+      : null;
+  async function loadProjectSnapshot() {
+    if (projectSnapshotLoaded) return;
+    if (typeof store.getProjectSnapshot === "function") {
+      projectSnapshot = toSnapshotView(await store.getProjectSnapshot());
+    }
+    projectSnapshotLoaded = true;
+  }
   const projectSource =
     projects ||
     createProjectSource({
       root: config.projectsRoot || ROOT,
       heroName: (id) => (heroNameFn ? heroNameFn(id) : null),
+      snapshot: () => projectSnapshot,
     });
   const verifySignature = verifyWallet || createCastVerifier();
   const resolveOwner = ownerWallet || (() => resolveOwnerWallet(config, config.projectsRoot || ROOT));
@@ -455,13 +474,38 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
           return json(res, 200, result);
         }
 
+        if (req.method === "POST" && path === "/api/gotchibot/projects/push") {
+          if (deskKind === "phone") {
+            return json(res, 403, {
+              ok: false,
+              error: "not allowed for phone desks",
+            });
+          }
+          const snapshot = validateProjectSnapshot(await readBody(req));
+          const { pushedAt } = await store.putProjectSnapshot({
+            deskId: desk.deskId,
+            ...snapshot,
+          });
+          projectSnapshot = toSnapshotView({ ...snapshot, pushedAt });
+          projectSnapshotLoaded = true;
+          await loadHeroName();
+          return json(res, 200, {
+            ok: true,
+            pushedAt,
+            files: snapshot.files.length,
+            projects: projectSource.listSlugs().length,
+          });
+        }
+
         if (req.method === "GET" && path === "/api/gotchibot/projects") {
+          await loadProjectSnapshot();
           await loadHeroName();
           return json(res, 200, { ok: true, projects: projectSource.listProjects() });
         }
 
         const projectMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)$/);
         if (req.method === "GET" && projectMatch) {
+          await loadProjectSnapshot();
           await loadHeroName();
           let slug;
           try {
@@ -478,6 +522,7 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
 
         const avatarMatch = path.match(/^\/api\/gotchibot\/avatars\/([^/]+)\.svg$/);
         if (req.method === "GET" && avatarMatch) {
+          await loadProjectSnapshot();
           const text = projectSource.readAvatarSvg(avatarMatch[1]);
           if (!text) {
             return json(res, 404, { ok: false, error: "avatar not found" });

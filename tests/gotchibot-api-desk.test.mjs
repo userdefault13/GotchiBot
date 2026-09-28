@@ -13,12 +13,16 @@ import { MongoClient } from "mongodb";
 import { connectStore } from "../services/gotchibot-api/store.mjs";
 import { createApiServer } from "../services/gotchibot-api/server.mjs";
 import {
+  collectProjectSnapshot,
   createProjectSource,
   cssColor,
   normalizeAvatarSvg,
   parseStatusUnits,
   projectSlugOk,
+  snapshotPathOk,
+  validateProjectSnapshot,
 } from "../services/gotchibot-api/projects.mjs";
+import { snapshotHash } from "../scripts/hub-projects-push.mjs";
 import {
   createCastVerifier,
   isAddress,
@@ -170,6 +174,109 @@ describe("project source", () => {
       assert.equal(src.avatarPath("starter-dai-1"), null);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/** Snapshot body → the Map view the Hub builds from Mongo. */
+function snapshotView(snap) {
+  return {
+    files: new Map(snap.files.map((f) => [f.path, { text: f.text, mtime: f.mtime }])),
+    heroNames: snap.heroNames,
+  };
+}
+
+describe("project snapshot push", () => {
+  const heroName = (id) => (id === "owned-1" ? "UNI" : null);
+
+  it("path whitelist is exactly what the project source reads", () => {
+    for (const ok of [
+      "sessions/pstack/alpha/dossier.json",
+      "sessions/pstack/alpha/kanban.json",
+      "sessions/.project-current",
+      "sessions/.pstack-dossier-current",
+      "sessions/.hero-agent-state.json",
+      "config/agent-roles.json",
+      "sessions/.avatars/owned-1.svg",
+    ]) {
+      assert.equal(snapshotPathOk(ok), true, ok);
+    }
+    for (const bad of [
+      "sessions/pstack/alpha/notes/x.md",
+      "sessions/pstack/alpha/ledger.tsv",
+      "sessions/pstack/../x/dossier.json",
+      "sessions/.avatars/../evil.svg",
+      "sessions/.wallet.json",
+      "sessions/.hub.json",
+      "/etc/passwd",
+      "",
+    ]) {
+      assert.equal(snapshotPathOk(bad), false, bad);
+    }
+  });
+
+  it("validation rejects bad paths, duplicates, non-text and oversize files", () => {
+    const f = (path, text = "{}") => ({ path, text });
+    assert.throws(() => validateProjectSnapshot({}), { status: 400 });
+    assert.throws(() => validateProjectSnapshot({ files: [f("sessions/.hub.json")] }), { status: 400 });
+    assert.throws(
+      () => validateProjectSnapshot({ files: [f("config/agent-roles.json"), f("config/agent-roles.json")] }),
+      /duplicate/,
+    );
+    assert.throws(() => validateProjectSnapshot({ files: [{ path: "config/agent-roles.json", text: 1 }] }), { status: 400 });
+    assert.throws(
+      () => validateProjectSnapshot({ files: [f("config/agent-roles.json", "x".repeat(300 * 1024))] }),
+      /too large/,
+    );
+    const ok = validateProjectSnapshot({
+      files: [{ path: "config/agent-roles.json", text: "{}", mtime: "2026-09-01" }, f("sessions/.project-current", "a")],
+      heroNames: { "owned-1": " UNI ", "../x": "evil", "owned-2": 7 },
+    });
+    assert.equal(ok.files[0].mtime, "2026-09-01T00:00:00.000Z");
+    assert.equal(ok.files[1].mtime, null);
+    assert.deepEqual(ok.heroNames, { "owned-1": "UNI" });
+  });
+
+  it("collected snapshot renders the same portfolio on a Hub with no local rooms", () => {
+    const desk = makeRoot();
+    const hub = mkdtempSync(join(tmpdir(), "gb-hub-"));
+    try {
+      const snap = collectProjectSnapshot({ root: desk, heroName });
+      const paths = snap.files.map((f) => f.path);
+      assert.ok(paths.includes("sessions/.avatars/owned-1.svg"));
+      assert.ok(!paths.some((p) => p.includes("smoke")), "smoke rooms are not pushed");
+      assert.deepEqual(snap.heroNames, { "owned-1": "UNI" });
+      const valid = validateProjectSnapshot(JSON.parse(JSON.stringify(snap)));
+
+      const onDesk = createProjectSource({ root: desk, heroName });
+      const onHub = createProjectSource({ root: hub, snapshot: () => snapshotView(valid) });
+      assert.deepEqual(onHub.listProjects(), onDesk.listProjects());
+      assert.deepEqual(onHub.getProject("alpha"), onDesk.getProject("alpha"));
+      assert.equal(onHub.readAvatarSvg("owned-1"), onDesk.readAvatarSvg("owned-1"));
+      assert.equal(onHub.readAvatarSvg("starter-dai-1"), null);
+    } finally {
+      rmSync(desk, { recursive: true, force: true });
+      rmSync(hub, { recursive: true, force: true });
+    }
+  });
+
+  it("Hub-local rooms still show next to pushed ones; hash ignores mtimes", () => {
+    const desk = makeRoot();
+    const hub = mkdtempSync(join(tmpdir(), "gb-hub-"));
+    try {
+      mkdirSync(join(hub, "sessions/pstack/gamma"), { recursive: true });
+      writeFileSync(join(hub, "sessions/pstack/gamma/overview.md"), "# gamma\n\nGoal: Hub room\n");
+      const snap = collectProjectSnapshot({ root: desk, heroName });
+      const src = createProjectSource({ root: hub, snapshot: () => snapshotView(snap) });
+      assert.deepEqual(src.listProjects().map((p) => p.slug).sort(), ["alpha", "beta", "gamma"]);
+
+      const touched = { ...snap, files: snap.files.map((f) => ({ ...f, mtime: "2030-01-01T00:00:00.000Z" })) };
+      assert.equal(snapshotHash(touched), snapshotHash(snap));
+      const edited = { ...snap, files: snap.files.map((f, i) => (i === 0 ? { ...f, text: `${f.text} ` } : f)) };
+      assert.notEqual(snapshotHash(edited), snapshotHash(snap));
+    } finally {
+      rmSync(desk, { recursive: true, force: true });
+      rmSync(hub, { recursive: true, force: true });
     }
   });
 });
@@ -416,5 +523,53 @@ describe("phone desk API", async () => {
       body: { text: "x", project: "../etc" },
     });
     assert.equal(bad.status, 400);
+  });
+
+  it("desk pushes a project snapshot; a Hub with no rooms serves it, also after restart", async () => {
+    const hubRoot = mkdtempSync(join(tmpdir(), "gb-hub-"));
+    const servers = [];
+    const hubServer = async () => {
+      const s = createApiServer({
+        store,
+        config: { host: "127.0.0.1", port: 0, ownerLogin: "owner@example.com", projectsRoot: hubRoot, ownerWallet: OWNER },
+        verifyWallet: async () => false,
+      });
+      servers.push(s);
+      return listen(s);
+    };
+    try {
+      const hubPort = await hubServer();
+      const { code } = await store.mintPairingCode({ name: "desk", kind: "desk" });
+      const desk = await store.claimPairingCode({ code, name: "MBP" });
+      const phone = await walletPhone();
+
+      const empty = await call(hubPort, "GET", "/api/gotchibot/projects", { token: phone.deskToken });
+      assert.deepEqual(empty.data.projects, []);
+
+      const snap = collectProjectSnapshot({ root, heroName: (id) => (id === "owned-1" ? "UNI" : null) });
+      const denied = await call(hubPort, "POST", "/api/gotchibot/projects/push", { token: phone.deskToken, body: snap });
+      assert.equal(denied.status, 403);
+      const badPath = await call(hubPort, "POST", "/api/gotchibot/projects/push", {
+        token: desk.deskToken,
+        body: { files: [{ path: "sessions/.hub.json", text: "{}" }] },
+      });
+      assert.equal(badPath.status, 400);
+
+      const pushed = await call(hubPort, "POST", "/api/gotchibot/projects/push", { token: desk.deskToken, body: snap });
+      assert.equal(pushed.status, 200);
+      assert.equal(pushed.data.projects, 2);
+
+      for (const p of [hubPort, await hubServer()]) {
+        const list = await call(p, "GET", "/api/gotchibot/projects", { token: phone.deskToken });
+        assert.deepEqual(list.data.projects.map((x) => x.slug), ["beta", "alpha"]);
+        const detail = await call(p, "GET", "/api/gotchibot/projects/alpha", { token: phone.deskToken });
+        assert.equal(detail.data.project.roster[0].name, "UNI");
+        const svg = await call(p, "GET", "/api/gotchibot/avatars/owned-1.svg", { token: phone.deskToken });
+        assert.equal(svg.status, 200);
+      }
+    } finally {
+      for (const s of servers) await new Promise((r) => s.close(r));
+      rmSync(hubRoot, { recursive: true, force: true });
+    }
   });
 });

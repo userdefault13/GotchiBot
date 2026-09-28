@@ -49,6 +49,7 @@ licensing (Mobilecode-open + jsQR, Apache-2.0).
 
 - `POST /api/gotchibot/hub/wallet/nonce` + `POST /api/gotchibot/hub/wallet/login` — owner-wallet sign-in (`personal_sign`, checked with Foundry `cast wallet verify`). Owner = `ownerWallet` / `GOTCHIBOT_HUB_OWNER_WALLET`, else `sessions/.wallet.json`. `handoff:true` returns a phone pairing code instead of a token.
 - `GET /api/gotchibot/projects`, `GET /api/gotchibot/projects/:slug` — read-only portfolio from `sessions/pstack/<slug>/` plus hero caches ([`projects.mjs`](./projects.mjs)).
+- `POST /api/gotchibot/projects/push` — desk pushes those files (whitelisted) so a Hub without pstack rooms can serve them: `gotchibot hub projects push`, or `hub projects schedule install` for every 5 min.
 - `GET /api/gotchibot/avatars/:heroId.svg` — gotchi SVG from `sessions/.avatars/`.
 - `chats/send` takes `project`; `chats/threads` takes `?project=<slug>|none`.
 
