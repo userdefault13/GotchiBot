@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gotchibot.aarcadeghst.com/schemas/host-network.slot-job.json",
+  "title": "Aarcade Host Network slot job (Arcade metadata)",
+  "description": "Arcade stores this shape only — never prompt/result bodies. Bodies live at renter artifact URLs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "jobId",
+    "renterWallet",
+    "renterInstallId",
+    "status",
+    "artifactPutUrl",
+    "artifactGetUrl",
+    "promptHash",
+    "maxCoreMinutes",
+    "priceGhstWei"
+  ],
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "pattern": "^job_[a-zA-Z0-9_-]{8,64}$"
+    },
+    "renterWallet": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{40}$"
+    },
+    "renterInstallId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "assigned", "running", "done", "failed"]
+    },
+    "providerId": {
+      "type": ["string", "null"],
+      "pattern": "^prov_[a-zA-Z0-9_-]{8,64}$"
+    },
+    "artifactPutUrl": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 2048
+    },
+    "artifactGetUrl": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 2048
+    },
+    "promptHash": {
+      "type": "string",
+      "pattern": "^0x[a-fA-F0-9]{64}$",
+      "description": "keccak256/sha256 hex of prompt bytes — not the prompt"
+    },
+    "resultHash": {
+      "type": ["string", "null"],
+      "pattern": "^0x[a-fA-F0-9]{64}$"
+    },
+    "maxCoreMinutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10080
+    },
+    "priceGhstWei": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "GHST amount in wei (18 decimals) as decimal string"
+    },
+    "escrowTx": {
+      "type": ["string", "null"],
+      "description": "Base lock tx hash; null allowed only when SIM mode"
+    },
+    "sim": {
+      "type": "boolean",
+      "description": "true when GOTCHIBOT_HOST_NETWORK_SIM dogfood (no chain)"
+    },
+    "error": {
+      "type": ["string", "null"],
+      "maxLength": 512
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "assignedAt": { "type": ["string", "null"], "format": "date-time" },
+    "completedAt": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

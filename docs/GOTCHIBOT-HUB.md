@@ -7,7 +7,8 @@ Arcade (`www`) holds only the install token. It never learns your Hub's address,
 
 Full API, auth, sync model, and install wizard: [`GOTCHIBOT-API.md`](./GOTCHIBOT-API.md).
 
-Rental / Arcade-operated Hubs are a **later** plan (`hub.kind: "rental"` reserved).
+**Rental / spare-CPU mesh:** [`AARCADE-HOST-NETWORK.md`](./AARCADE-HOST-NETWORK.md)
+(`hub.kind: "rental"`, GHST slots + gated Hub seats). Arcade does not custody chat data.
 
 ## Checklist — host your own Hub
 
