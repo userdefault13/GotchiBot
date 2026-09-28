@@ -113,7 +113,8 @@ async function cmdHostStatus() {
  * GET/PUT /a/:token
  */
 function ensureLocalArtifactServer() {
-  const port = Number(process.env.GOTCHIBOT_HOST_ARTIFACT_PORT || 8794);
+  // Outside 8793–8799: desks probe that range for the Hub API.
+  const port = Number(process.env.GOTCHIBOT_HOST_ARTIFACT_PORT || 8785);
   mkdirSync(ARTIFACT_ROOT, { recursive: true });
   const server = createServer(async (req, res) => {
     const u = new URL(req.url || "/", `http://127.0.0.1:${port}`);

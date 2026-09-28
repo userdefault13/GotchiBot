@@ -18,7 +18,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PIN = `${ROOT}/sessions/.chat-sync-checkpoint.json`;
 const IDENTITY = `${ROOT}/sessions/.identity.json`;
 const WALLET = `${ROOT}/sessions/.wallet.json`;
-const SIGN_PORT = Number(process.env.GOTCHIBOT_CHECKPOINT_SIGN_PORT ?? 8794);
+// Outside 8793–8799: desks probe that range for the Hub API.
+const SIGN_PORT = Number(process.env.GOTCHIBOT_CHECKPOINT_SIGN_PORT ?? 8784);
 export const CHAIN_ID = 84532;
 
 function loadJson(path) {
