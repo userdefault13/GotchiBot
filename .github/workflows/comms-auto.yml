@@ -1,0 +1,18 @@
+# GotchiBot pushes → Aarcade newsfeed post + tweet draft (via AarcadeGh-t's reusable Commsies workflow).
+# Every push to main is sent; Commsies itself drops admin/internal-only commits. To limit it to docs,
+# add a `paths:` filter like aarcade-game-docs' workflow.
+name: Comms auto
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  comms:
+    uses: userdefault13/AarcadeGh-t/.github/workflows/comms-auto.yml@main
+    with:
+      before: ${{ github.event.before }}
+      after: ${{ github.sha }}
+    secrets:
+      COMM_AUTOMATION_SECRET: ${{ secrets.COMM_AUTOMATION_SECRET }}
