@@ -29,7 +29,7 @@ function idbReq(req) {
 }
 
 /**
- * @returns {Promise<{deskId: string, deskToken: string, name: string, kind: string, pairedAt: string}|null>}
+ * @returns {Promise<{deskId: string, deskToken: string, name: string, kind: string, pairedAt: string, walletAddress?: string|null}|null>}
  */
 export async function getDesk() {
   const db = await openDb();
@@ -44,7 +44,7 @@ export async function getDesk() {
 }
 
 /**
- * @param {{deskId: string, deskToken: string, name: string, kind: string, pairedAt?: string}} desk
+ * @param {{deskId: string, deskToken: string, name: string, kind: string, pairedAt?: string, walletAddress?: string|null}} desk
  */
 export async function setDesk(desk) {
   const record = {
@@ -53,6 +53,7 @@ export async function setDesk(desk) {
     name: String(desk.name ?? ""),
     kind: String(desk.kind ?? "phone"),
     pairedAt: desk.pairedAt || new Date().toISOString(),
+    walletAddress: desk.walletAddress ? String(desk.walletAddress) : null,
   };
   const db = await openDb();
   try {

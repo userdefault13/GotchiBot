@@ -2,6 +2,7 @@
  * gotchibot-api — self-hosted Hub chat/desk HTTP API (node:http, no express).
  */
 import { createServer } from "node:http";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -11,6 +12,14 @@ import { isUlid } from "../../scripts/chat-canonical.mjs";
 import { resolveApiConfig } from "./config.mjs";
 import { checkOrigin } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
+import { createProjectSource } from "./projects.mjs";
+import {
+  createCastVerifier,
+  isAddress,
+  isSignature,
+  resolveOwnerWallet,
+  walletLoginMessage,
+} from "./wallet.mjs";
 import {
   resolveStaticPath,
   contentTypeFor,
@@ -114,12 +123,39 @@ function redactMongoUri(uri) {
   return String(uri || "").replace(/\/\/([^/@]+)@/g, "//***@");
 }
 
+/** Hero display names come from the OpenClaw workspaces; loaded lazily, best-effort. */
+let heroNameFn;
+async function loadHeroName() {
+  if (heroNameFn !== undefined) return heroNameFn;
+  try {
+    const mod = await import("../../scripts/openclaw-fleet.mjs");
+    heroNameFn = typeof mod.heroDisplayName === "function" ? mod.heroDisplayName : null;
+  } catch {
+    heroNameFn = null;
+  }
+  return heroNameFn;
+}
+
 /**
- * @param {{ store: object, config: object }} opts
+ * @param {{
+ *   store: object,
+ *   config: object,
+ *   projects?: ReturnType<typeof createProjectSource>,
+ *   verifyWallet?: (input: { address: string, message: string, signature: string }) => Promise<boolean>,
+ *   ownerWallet?: () => string|null,
+ * }} opts
  * @returns {import('node:http').Server}
  */
-export function createApiServer({ store, config }) {
+export function createApiServer({ store, config, projects, verifyWallet, ownerWallet }) {
   const ownerLogin = config.ownerLogin;
+  const projectSource =
+    projects ||
+    createProjectSource({
+      root: config.projectsRoot || ROOT,
+      heroName: (id) => (heroNameFn ? heroNameFn(id) : null),
+    });
+  const verifySignature = verifyWallet || createCastVerifier();
+  const resolveOwner = ownerWallet || (() => resolveOwnerWallet(config, config.projectsRoot || ROOT));
 
   async function requireDesk(req, res) {
     const deskToken = headerGet(req, DESK_TOKEN_HEADER);
@@ -263,6 +299,71 @@ export function createApiServer({ store, config }) {
         }
       }
 
+      // POST /api/gotchibot/hub/wallet/nonce — message for the owner wallet to sign
+      if (req.method === "POST" && path === "/api/gotchibot/hub/wallet/nonce") {
+        if (!resolveOwner()) {
+          return json(res, 503, {
+            ok: false,
+            error: "wallet sign-in not set up on this Hub — run gotchibot wallet connect on the Hub (or set ownerWallet)",
+          });
+        }
+        const nonce = `0x${randomBytes(16).toString("hex")}`;
+        const issuedAt = new Date().toISOString();
+        const host = config.tailscaleHost || headerGet(req, "host") || null;
+        const message = walletLoginMessage({ nonce, host, issuedAt });
+        const minted = await store.mintWalletNonce({ nonce, message });
+        return json(res, 200, {
+          ok: true,
+          nonce,
+          message,
+          expiresAt: minted.expiresAt,
+        });
+      }
+
+      // POST /api/gotchibot/hub/wallet/login — verify signature → phone desk token
+      // (or, with handoff:true, a one-time pairing code for the home-screen app).
+      if (req.method === "POST" && path === "/api/gotchibot/hub/wallet/login") {
+        if (claimRateLimited()) {
+          return json(res, 429, { ok: false, error: "too many failed sign-ins" });
+        }
+        const body = await readBody(req);
+        const address = String(body.address || "").trim();
+        const signature = String(body.signature || "").trim();
+        if (!isAddress(address) || !isSignature(signature)) {
+          return json(res, 400, { ok: false, error: "address and signature required" });
+        }
+        const owner = resolveOwner();
+        if (!owner) {
+          return json(res, 503, { ok: false, error: "wallet sign-in not set up on this Hub" });
+        }
+        const issued = await store.consumeWalletNonce(String(body.nonce || ""));
+        if (!issued) {
+          recordClaimFailure();
+          return json(res, 401, { ok: false, error: "sign-in expired — try again" });
+        }
+        if (address.toLowerCase() !== owner) {
+          recordClaimFailure();
+          return json(res, 403, { ok: false, error: "this wallet is not the Hub owner" });
+        }
+        const valid = await verifySignature({ address, message: issued.message, signature });
+        if (!valid) {
+          recordClaimFailure();
+          return json(res, 401, { ok: false, error: "signature did not verify" });
+        }
+        if (body.handoff === true) {
+          const pair = await store.mintPairingCode({
+            name: body.name || "iPhone",
+            kind: "phone",
+          });
+          return json(res, 200, {
+            ok: true,
+            handoff: { code: pair.code, expiresAt: pair.expiresAt },
+          });
+        }
+        const desk = await store.createWalletDesk({ address, name: body.name });
+        return json(res, 200, { ok: true, ...desk });
+      }
+
       // Desk-token routes
       if (path.startsWith("/api/gotchibot/")) {
         const desk = await requireDesk(req, res);
@@ -278,6 +379,7 @@ export function createApiServer({ store, config }) {
             deskId: desk.deskId,
             name: desk.name,
             kind: deskKind,
+            walletAddress: desk.walletAddress || null,
           });
         }
 
@@ -313,6 +415,7 @@ export function createApiServer({ store, config }) {
             clientMessageId: body.clientMessageId,
             text: body.text,
             title: body.title,
+            project: body.project,
           });
           return json(res, 200, result);
         }
@@ -347,8 +450,48 @@ export function createApiServer({ store, config }) {
 
         if (req.method === "GET" && path === "/api/gotchibot/chats/threads") {
           const limit = url.searchParams.get("limit") || 100;
-          const result = await store.listThreads({ limit, desk });
+          const project = url.searchParams.get("project") || undefined;
+          const result = await store.listThreads({ limit, desk, project });
           return json(res, 200, result);
+        }
+
+        if (req.method === "GET" && path === "/api/gotchibot/projects") {
+          await loadHeroName();
+          return json(res, 200, { ok: true, projects: projectSource.listProjects() });
+        }
+
+        const projectMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)$/);
+        if (req.method === "GET" && projectMatch) {
+          await loadHeroName();
+          let slug;
+          try {
+            slug = decodeURIComponent(projectMatch[1]);
+          } catch {
+            slug = "";
+          }
+          const project = projectSource.getProject(slug);
+          if (!project) {
+            return json(res, 404, { ok: false, error: "project not found" });
+          }
+          return json(res, 200, { ok: true, project });
+        }
+
+        const avatarMatch = path.match(/^\/api\/gotchibot\/avatars\/([^/]+)\.svg$/);
+        if (req.method === "GET" && avatarMatch) {
+          const text = projectSource.readAvatarSvg(avatarMatch[1]);
+          if (!text) {
+            return json(res, 404, { ok: false, error: "avatar not found" });
+          }
+          const svg = Buffer.from(text, "utf8");
+          res.writeHead(200, {
+            "Content-Type": "image/svg+xml",
+            "Content-Length": String(svg.length),
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+            "Cache-Control": "private, max-age=600",
+          });
+          res.end(svg);
+          return;
         }
 
         if (req.method === "POST" && path === "/api/gotchibot/chats/snapshot") {

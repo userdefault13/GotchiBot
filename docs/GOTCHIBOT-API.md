@@ -134,6 +134,8 @@ Prefer the install wizard’s service unit for always-on. Manual start is for de
 | `GOTCHIBOT_HUB_OWNER_LOGIN` | (from config file) | Hub | Tailscale login required for non-loopback / proxied requests |
 | `GOTCHIBOT_HUB_CONFIG` | `sessions/.hub-api.json` | Hub | Install-wizard JSON path |
 | `GOTCHIBOT_HUB_APP_URL` | (from config `appUrl`) | Hub | PWA base for `hub pair --qr` deep links (else `https://<MagicDNS>/app/`) |
+| `GOTCHIBOT_HUB_OWNER_WALLET` | (from config `ownerWallet`, else `sessions/.wallet.json`) | Hub | Only address allowed to use phone wallet sign-in |
+| `CAST_BIN` | `~/.foundry/bin/cast`, then `cast` on PATH | Hub | Foundry binary for wallet signature checks |
 | `GOTCHIBOT_HUB_RUNNER_MODEL` | (unset) | Hub | Prefer this model in hub-runner before the desk pin |
 | `GOTCHIBOT_OPENCODE_MODEL` | (from `sessions/.gotchi-model.env`) | Hub | Desk chat pin reused by hub-runner |
 | `GOTCHIBOT_HUB_RUNNER_TIMEOUT_MS` | `120000` | Hub | Per opencode call timeout |
@@ -152,7 +154,7 @@ Hub API default bind is **8793**. The live Hub host often runs the API on **8794
 
 | Path | Where | Notes |
 |---|---|---|
-| `sessions/.hub-api.json` | Hub | `{ownerLogin, host, port, dbName, mongoUri, tailscaleHost, appUrl?, installedAt}` — mode `0600`, under `sessions/` (gitignored) |
+| `sessions/.hub-api.json` | Hub | `{ownerLogin, host, port, dbName, mongoUri, tailscaleHost, appUrl?, ownerWallet?, installedAt}` — mode `0600`, under `sessions/` (gitignored) |
 | `sessions/.hub.json` | Desk | Pin: MagicDNS / `deskApiBase` / `deskToken` / pairing fields — mode `0600`, gitignored |
 
 ## Routes
@@ -164,14 +166,19 @@ JSON in/out. Body limit 2 MB. Unknown route → `404` `{ok:false,error}`. Errors
 | `GET`/`HEAD` | `/` | origin (same as `/app/`) | `302` `Location: /app/` — exact pathname `/` only |
 | `GET` | `/health` | none | `{ok, service:"gotchibot-api", version, db:"ok"\|"down"}` — never reveals owner, tokens, or URIs |
 | `POST` | `/api/gotchibot/hub/pair/claim` | pairing code in body (`kind` optional) | `{ok, deskId, deskToken, name, kind}` |
-| `GET` | `/api/gotchibot/hub/whoami` | desk token | `{ok, deskId, name, kind}` |
+| `POST` | `/api/gotchibot/hub/wallet/nonce` | origin only | `{ok, nonce, message, expiresAt}` — one-time message for the owner wallet to `personal_sign` (5 min); no owner wallet → `503` |
+| `POST` | `/api/gotchibot/hub/wallet/login` | signed nonce in body | body `{address, signature, nonce, name?, handoff?}` → `{ok, deskId, deskToken, name, kind:"phone", walletAddress}`; with `handoff:true` → `{ok, handoff:{code, expiresAt}}` (phone pairing code instead of a token). Expired nonce `401`, wrong wallet `403`, bad signature `401` |
+| `GET` | `/api/gotchibot/hub/whoami` | desk token | `{ok, deskId, name, kind, walletAddress}` (`walletAddress` null unless wallet sign-in) |
 | `GET` | `/api/gotchibot/hub/desks` | desk token (desk kind only) | `{ok, desks:[{deskId,name,kind,createdAt,lastSeen,revokedAt}]}` — never hashes; phone → `403` |
 | `GET` | `/api/gotchibot/hub/runner` | desk token | `{ok, runner:{status:"ok"\|"error"\|"offline", detail, model?, lastBeatAt}}` — offline if no beat or `lastBeatAt` older than ~90s; `detail` never holds secrets |
 | `POST` | `/api/gotchibot/chats/push` | desk token | `{ok, threadId, inserted, skipped, lastSeq, results:[…]}` — phone hardening above |
-| `POST` | `/api/gotchibot/chats/send` | desk token | body `{threadId?, clientMessageId?, text, title?}` → `{ok, threadId, messageId, seq, reply:{status}}` — creates thread (ULID) when `threadId` omitted; uses `pushMessages` |
+| `POST` | `/api/gotchibot/chats/send` | desk token | body `{threadId?, clientMessageId?, text, title?, project?}` → `{ok, threadId, project?, messageId, seq, reply:{status}}` — creates thread (ULID) when `threadId` omitted; `project` (pstack slug) tags only a new thread, invalid slug → `400`; uses `pushMessages` |
 | `POST` | `/api/gotchibot/chats/retry` | desk token | body `{threadId, messageId}` — resets phone `reply.status` to `pending` when `error` or stale `claimed` (>~5m); inaccessible → `404` |
 | `GET` | `/api/gotchibot/chats/pull?threadId=&after=&limit=` | desk token | `{ok, threadId\|null, messages:[…], nextAfter, hasMore}` — messages may include `originKind` + `reply`; limit default 100, max 500 |
-| `GET` | `/api/gotchibot/chats/threads?limit=` | desk token | `{ok, threads:[…]}` sorted `updatedAt` desc |
+| `GET` | `/api/gotchibot/chats/threads?limit=&project=` | desk token | `{ok, threads:[…]}` sorted `updatedAt` desc; each thread has `project` (slug or null). `project=<slug>` filters to that project, `project=none` to untagged threads |
+| `GET` | `/api/gotchibot/projects` | desk token | `{ok, projects:[{slug, title, goal, playbook, status, current, heroCount, kanban, units, updatedAt, accent, working, heroes:[…≤5]}]}` — read-only view of `sessions/pstack/<slug>/`; current project first, then newest; `*smoke*` rooms hidden |
+| `GET` | `/api/gotchibot/projects/:slug` | desk token | `{ok, project:{…summary, scope, roster:[…], cards:[…≤60]}}`; unknown slug → `404` |
+| `GET` | `/api/gotchibot/avatars/:heroId.svg` | desk token | `image/svg+xml` from `sessions/.avatars/<heroId>.svg` (JSON-escaped caches are unescaped); missing or not an SVG → `404` |
 | `POST` | `/api/gotchibot/chats/snapshot` | desk token (desk kind only) | `{ok, snapshotId, contentHash, stateUri, messageCount, threadIds, upToSeq, createdAt}` — phone → `403` |
 | `GET` | `/api/gotchibot/chats/snapshot/:snapshotId` | desk token (desk kind only) | `{ok, snapshotId, contentHash, stateUri, content, createdAt}` — phone → `403` |
 
@@ -182,6 +189,8 @@ Install token alone on a chat/hub route → `401` *install token cannot unlock c
 **Desk tokens.** `gbd_` + base64url(32 random bytes). Hub stores only `sha256` hex as `tokenHash` in `desks` (`deskId` ULID, `name`, `kind` (`desk`\|`phone`, default `desk`), `createdAt`, `lastSeen`, `revokedAt`). Header: `X-GotchiBot-Desk-Token`. Missing/unknown → `401` *desk token required — run: gotchibot hub join \<host\> \<code\>*. Revoked → `401` *desk token revoked*. `lastSeen` updates at most once per minute.
 
 **Pairing codes.** One-time, 8 Crockford base32 chars shown as `XXXX-XXXX`, 15 minutes. Stored as sha256 of normalized code (uppercase, no dash) in `pairing_codes` with optional `kind`. Claim is atomic (`usedAt` null + not expired); kind-mismatch checks run before consume. More than 20 failed claims in 10 minutes → `429`.
+
+**Wallet sign-in** (phone app). EIP-191 `personal_sign` over the message from `wallet/nonce` (`GotchiBot Hub sign-in` / `Host` / `Nonce` / `Issued`), verified with Foundry `cast wallet verify` — no npm crypto deps. Nonces live in `wallet_nonces` (TTL 5 min) and are consumed atomically, so each signature works once. Only the owner wallet may sign in: `ownerWallet` in config (or `GOTCHIBOT_HUB_OWNER_WALLET`), else the Hub's `sessions/.wallet.json`; neither → `503`. Success mints a `phone` desk with `walletAddress`, or a pairing code when `handoff:true` (sign in inside the wallet's browser, finish pairing in the home-screen app). Failed sign-ins share the pair/claim `429` limit.
 
 **Hub CLI** (talks to Mongo directly when there is no token yet): `hub pair [--kind] [--qr] [--app-url]`, `hub desks`, `hub revoke`, `hub share` / `unshare` / `shares`. Desk: `hub join <host> <code>`.
 

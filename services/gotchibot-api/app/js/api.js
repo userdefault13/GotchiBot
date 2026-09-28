@@ -102,8 +102,14 @@ export function whoami(token) {
   return apiFetch("/api/gotchibot/hub/whoami", { token });
 }
 
-export function listThreads(token, limit = 50) {
+/**
+ * @param {string} token
+ * @param {number} [limit]
+ * @param {string|null} [project] pstack slug, "none" for chats with no project
+ */
+export function listThreads(token, limit = 50, project = null) {
   const q = new URLSearchParams({ limit: String(limit) });
+  if (project) q.set("project", project);
   return apiFetch(`/api/gotchibot/chats/threads?${q}`, { token });
 }
 
@@ -119,7 +125,7 @@ export function pullMessages(token, { threadId, after = 0, limit = 500 }) {
 /**
  * Phone send (new thread when threadId omitted).
  * @param {string} token
- * @param {{ threadId?: string, clientMessageId?: string, text: string, title?: string }} body
+ * @param {{ threadId?: string, clientMessageId?: string, text: string, title?: string, project?: string }} body
  */
 export function sendMessage(token, body) {
   /** @type {Record<string, unknown>} */
@@ -129,6 +135,7 @@ export function sendMessage(token, body) {
   }
   if (body.clientMessageId) payload.clientMessageId = body.clientMessageId;
   if (body.title != null) payload.title = body.title;
+  if (body.project) payload.project = body.project;
   return apiFetch("/api/gotchibot/chats/send", {
     method: "POST",
     token,
@@ -159,4 +166,44 @@ export function runnerStatus(token) {
 
 export function hubHealth() {
   return apiFetch("/health");
+}
+
+/** Owner-wallet sign-in: fetch the message to sign. */
+export function walletNonce() {
+  return apiFetch("/api/gotchibot/hub/wallet/nonce", { method: "POST", body: {} });
+}
+
+/**
+ * Verify the signature on the Hub. handoff:true returns a pairing code for the
+ * home-screen app instead of a desk token for this browser.
+ * @param {{ address: string, signature: string, nonce: string, name?: string, handoff?: boolean }} body
+ */
+export function walletLogin(body) {
+  return apiFetch("/api/gotchibot/hub/wallet/login", { method: "POST", body });
+}
+
+export function listProjects(token) {
+  return apiFetch("/api/gotchibot/projects", { token });
+}
+
+export function getProject(token, slug) {
+  return apiFetch(`/api/gotchibot/projects/${encodeURIComponent(slug)}`, { token });
+}
+
+/**
+ * Hero avatar SVG as a blob: URL (img tags can't send the desk token header).
+ * @returns {Promise<string|null>}
+ */
+export async function avatarObjectUrl(token, heroId) {
+  let res;
+  try {
+    res = await fetch(hubUrl(`/api/gotchibot/avatars/${encodeURIComponent(heroId)}.svg`), {
+      headers: { "X-GotchiBot-Desk-Token": String(token) },
+      cache: "default",
+    });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  return URL.createObjectURL(await res.blob());
 }

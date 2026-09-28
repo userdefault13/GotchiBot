@@ -2,8 +2,9 @@
 
 Home-screen iPhone PWA for the self-hosted GotchiBot Hub. Served by
 `gotchibot-api` at `/app/` (same origin). Talks **only** to the Hub API
-(`X-GotchiBot-Desk-Token`; pair/claim, whoami, threads, pull, send, retry,
-runner). No React, no Vite build step — vanilla HTML/CSS/ES modules.
+(`X-GotchiBot-Desk-Token`; wallet nonce/login, pair/claim, whoami, threads,
+pull, send, retry, runner, projects, avatars). No React, no Vite build step —
+vanilla HTML/CSS/ES modules.
 
 Design tokens / session cards / message bubbles / drawer / buttons / composer
 chrome are adapted from [Mobilecode-open](https://github.com/elkir0/Mobilecode-open)
@@ -17,7 +18,15 @@ chrome are adapted from [Mobilecode-open](https://github.com/elkir0/Mobilecode-o
 | `manifest.webmanifest` | Standalone install under `/app/` |
 | `app.css` | Viewer + composer design system (adapted) |
 | `sw.js` | App-shell service worker (never caches `/api/` or `vendor/`) |
-| `js/main.js` | Hash router + Pair / Threads / Thread / Settings views |
+| `js/main.js` | Hash router + boot |
+| `js/state.js` | Shared app state + navigation (views import this, not `main.js`) |
+| `js/ui.js` | Small DOM helpers shared by the views |
+| `js/login.js` | Wallet sign-in (primary) + pairing-code view |
+| `js/portfolio.js` | Home: project cards, General card, ask bar |
+| `js/chat.js` | Project chat: header, history sheet, S2 composer |
+| `js/avatar-pane.js` | Crew pane: goal, orchestrators, crew, board |
+| `js/settings.js` | Hub status, this device, sign out |
+| `js/desk-model.js` | Routes, grouping, kanban bars, labels (pure) |
 | `js/version.js` | `APP_VERSION` (must match `sw.js`) |
 | `js/icons.js` | SVG icon strings (adapted) |
 | `js/pair.js` | Pairing-code normalize / format / deep-link parse (pure) |
@@ -47,8 +56,26 @@ chrome are adapted from [Mobilecode-open](https://github.com/elkir0/Mobilecode-o
 - **Runner** — while waiting, `GET /hub/runner` at most every ~10s; settings
   shows status · model. Non-blocking notice when offline/error.
 - **Version** — bump `APP_VERSION` in **both** `sw.js` and `js/version.js`
-  together (currently `0.2.0`). New JS modules must be listed in the SW
+  together (currently `0.3.0`). New JS modules must be listed in the SW
   `SHELL` precache.
+
+## 0.3.0: project desk
+
+- **Routes** — `#/login` · `#/pair` (and `#pair=CODE`) · `#/projects` (home) ·
+  `#/p/<slug>[/t/<threadId>]` · `#/settings`. Old `#/threads` and
+  `#/thread/<id>` still resolve (General project).
+- **Sign-in** — owner wallet via the injected EIP-1193 provider
+  (`wallet/nonce` → `personal_sign` → `wallet/login`). Inside a wallet's
+  browser, "Sign in the Home Screen app instead" asks for `handoff:true` and shows a
+  pairing code to carry over. Pairing code stays as the fallback.
+- **Portfolio** — every pstack room from `GET /projects` as a card (heroes,
+  kanban progress bar, working count), a General card for untagged chats, and
+  an ask bar that starts a General chat.
+- **Project chat** — threads filtered by `?project=`; new threads send
+  `project` so they land in the right room. History sheet lists that
+  project's threads.
+- **Crew pane** — `GET /projects/:slug`: goal, orchestrators, crew (gotchi SVG
+  from `/avatars/<id>.svg`, else the collateral spirit letter), and the board.
 
 ## Regenerate icons
 

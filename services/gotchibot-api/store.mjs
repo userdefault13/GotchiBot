@@ -12,6 +12,8 @@ import {
 } from "./auth.mjs";
 
 const PAIRING_TTL_MS = 15 * 60 * 1000;
+const WALLET_NONCE_TTL_MS = 5 * 60 * 1000;
+const PROJECT_SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 const SNAPSHOT_MAX_BYTES = 12 * 1024 * 1024;
 const LAST_SEEN_MIN_MS = 60_000;
 /** Trusted server-side writer for hub-runner assistant replies (not an HTTP desk). */
@@ -68,6 +70,18 @@ function publicReply(reply) {
   return out;
 }
 
+/** null when absent; 400 when present but not a pstack slug. */
+function normalizeProjectSlug(project) {
+  if (project == null || String(project).trim() === "") return null;
+  const slug = String(project).trim();
+  if (!PROJECT_SLUG_RE.test(slug)) {
+    const err = new Error("invalid project slug");
+    err.status = 400;
+    throw err;
+  }
+  return slug;
+}
+
 /** @param {unknown} kind @returns {"desk"|"phone"} */
 function normalizeDeskKind(kind, { defaultKind = "desk" } = {}) {
   if (kind == null || kind === "") return defaultKind;
@@ -102,6 +116,7 @@ export async function connectStore({ mongoUri, dbName }) {
   const desks = db.collection("desks");
   const pairingCodes = db.collection("pairing_codes");
   const hubRunner = db.collection("hub_runner");
+  const walletNonces = db.collection("wallet_nonces");
 
   async function ensureIndexes() {
     await chatMessages.createIndex({ threadId: 1, messageId: 1 }, { unique: true });
@@ -122,6 +137,9 @@ export async function connectStore({ mongoUri, dbName }) {
     await desks.createIndex({ deskId: 1 }, { unique: true });
     await pairingCodes.createIndex({ codeHash: 1 }, { unique: true });
     await pairingCodes.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await chatThreads.createIndex({ project: 1, updatedAt: -1 });
+    await walletNonces.createIndex({ nonce: 1 }, { unique: true });
+    await walletNonces.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   }
 
   function threadAccessibleToPhone(thread, deskId) {
@@ -268,31 +286,71 @@ export async function connectStore({ mongoUri, dbName }) {
       throw err;
     }
 
-    const deskToken = newDeskToken();
-    const deskId = ulid();
     const deskName =
       (name != null && String(name).trim()) ||
       (claimed.name && String(claimed.name)) ||
       "desk";
+    const issued = await insertDesk({ name: deskName, kind: finalKind, now });
+    await pairingCodes.updateOne(
+      { codeHash },
+      { $set: { usedByDeskId: issued.deskId } },
+    );
+    return issued;
+  }
+
+  /** Mint a desk row + fresh token (token returned once, only its hash stored). */
+  async function insertDesk({ name, kind, walletAddress = null, now = new Date() }) {
+    const deskToken = newDeskToken();
+    const deskId = ulid();
+    const deskName = String(name).slice(0, 128);
     await desks.insertOne({
       deskId,
-      name: String(deskName).slice(0, 128),
-      kind: finalKind,
+      name: deskName,
+      kind,
       tokenHash: hashToken(deskToken),
+      ...(walletAddress ? { walletAddress } : {}),
       createdAt: now,
       lastSeen: now,
       revokedAt: null,
     });
-    await pairingCodes.updateOne(
-      { codeHash },
-      { $set: { usedByDeskId: deskId } },
-    );
     return {
       deskId,
       deskToken,
-      name: String(deskName).slice(0, 128),
-      kind: finalKind,
+      name: deskName,
+      kind,
+      ...(walletAddress ? { walletAddress } : {}),
     };
+  }
+
+  /**
+   * One-time sign-in nonce. The caller builds the message; we store it so
+   * login verifies exactly what was issued.
+   * @param {{ nonce: string, message: string, now?: Date }} input
+   */
+  async function mintWalletNonce({ nonce, message, now = new Date() }) {
+    const expiresAt = new Date(now.getTime() + WALLET_NONCE_TTL_MS);
+    await walletNonces.insertOne({ nonce, message, createdAt: now, expiresAt });
+    return { nonce, message, expiresAt };
+  }
+
+  /** Atomically consume an unexpired nonce → its message, or null. */
+  async function consumeWalletNonce(nonce) {
+    if (!nonce || typeof nonce !== "string") return null;
+    const doc = await walletNonces.findOneAndDelete({
+      nonce,
+      expiresAt: { $gt: new Date() },
+    });
+    return doc ? { nonce: doc.nonce, message: doc.message } : null;
+  }
+
+  /** Phone desk minted by a verified owner-wallet signature. */
+  async function createWalletDesk({ address, name }) {
+    const deskName = (name != null && String(name).trim()) || "iPhone";
+    return insertDesk({
+      name: deskName,
+      kind: "phone",
+      walletAddress: String(address).toLowerCase(),
+    });
   }
 
   async function listDesks() {
@@ -611,7 +669,7 @@ export async function connectStore({ mongoUri, dbName }) {
    * Phone-friendly send: one user message, optional new thread.
    * Uses pushMessages so phone scoping / hardening apply.
    */
-  async function sendMessage({ desk, threadId, clientMessageId, text, title } = {}) {
+  async function sendMessage({ desk, threadId, clientMessageId, text, title, project } = {}) {
     if (!desk) {
       const err = new Error("desk required");
       err.status = 401;
@@ -624,6 +682,7 @@ export async function connectStore({ mongoUri, dbName }) {
       throw err;
     }
     const creating = threadId == null || String(threadId).trim() === "";
+    const projectSlug = normalizeProjectSlug(project);
     const tid = creating ? ulid() : String(threadId).trim();
     const messageId = clientMessageId
       ? validateMessageId(clientMessageId)
@@ -646,6 +705,9 @@ export async function connectStore({ mongoUri, dbName }) {
       deskId: desk.deskId,
       desk,
     });
+    if (creating && projectSlug) {
+      await chatThreads.updateOne({ threadId: tid }, { $set: { project: projectSlug } });
+    }
     const row = result.results?.[0] || {};
     const replyStatus =
       row.reply?.status ||
@@ -653,6 +715,7 @@ export async function connectStore({ mongoUri, dbName }) {
     return {
       ok: true,
       threadId: tid,
+      ...(creating && projectSlug ? { project: projectSlug } : {}),
       messageId,
       seq: row.seq,
       reply: { status: replyStatus },
@@ -1065,9 +1128,19 @@ export async function connectStore({ mongoUri, dbName }) {
     };
   }
 
-  async function listThreads({ limit = 100, desk } = {}) {
+  /**
+   * @param {{ limit?: number, desk?: object, project?: string|null }} [opts]
+   * project: pstack slug, or "none" for threads with no project.
+   */
+  async function listThreads({ limit = 100, desk, project } = {}) {
     const lim = Math.min(500, Math.max(1, Number(limit) || 100));
-    const filter = visibleThreadFilter(desk);
+    const visible = visibleThreadFilter(desk);
+    let filter = visible;
+    if (project === "none") {
+      filter = { $and: [visible, { project: { $in: [null] } }] };
+    } else if (project != null && String(project).trim() !== "") {
+      filter = { $and: [visible, { project: normalizeProjectSlug(project) }] };
+    }
     const rows = await chatThreads
       .find(filter)
       .sort({ updatedAt: -1 })
@@ -1090,6 +1163,7 @@ export async function connectStore({ mongoUri, dbName }) {
               ? t.updatedAt.toISOString()
               : t.updatedAt,
           deskId: t.deskId,
+          project: t.project || null,
           lastSeq: t.lastSeq || 0,
           lastMessageAt:
             t.lastMessageAt instanceof Date
@@ -1231,6 +1305,9 @@ export async function connectStore({ mongoUri, dbName }) {
     touchLastSeen,
     mintPairingCode,
     claimPairingCode,
+    mintWalletNonce,
+    consumeWalletNonce,
+    createWalletDesk,
     listDesks,
     revokeDesk,
     pushMessages,

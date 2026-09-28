@@ -60,12 +60,19 @@ export function resolveApiConfig(env = process.env) {
       ? String(appUrlRaw).trim()
       : null;
 
+  const ownerWalletRaw = env.GOTCHIBOT_HUB_OWNER_WALLET ?? file.ownerWallet;
+  const ownerWallet =
+    ownerWalletRaw != null && /^0x[a-fA-F0-9]{40}$/.test(String(ownerWalletRaw).trim())
+      ? String(ownerWalletRaw).trim().toLowerCase()
+      : null;
+
   return {
     host,
     port,
     mongoUri,
     dbName,
     ownerLogin,
+    ownerWallet,
     configPath,
     tailscaleHost: file.tailscaleHost ? String(file.tailscaleHost) : null,
     appUrl,

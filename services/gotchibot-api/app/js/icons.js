@@ -76,3 +76,59 @@ export const iconSend = (size) =>
     `<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>`,
     size,
   );
+
+/* ── Desk app (v0.3) — original glyphs, same stroke conventions ───────── */
+
+/** Clock-with-arrow — chat history. */
+export const iconHistory = (size) =>
+  svg(
+    "History",
+    `<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>`,
+    size,
+  );
+
+/** Two heads — crew / avatar pane. */
+export const iconCrew = (size) =>
+  svg(
+    "Crew",
+    `<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M18.5 14.5A6.5 6.5 0 0 1 21.5 20"/>`,
+    size,
+  );
+
+export const iconSearch = (size) =>
+  svg("Search", `<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>`, size);
+
+export const iconClose = (size) =>
+  svg("Close", `<path d="M18 6L6 18"/><path d="M6 6l12 12"/>`, size);
+
+/** Wallet — card with clasp. */
+export const iconWallet = (size) =>
+  svg(
+    "Wallet",
+    `<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/><path d="M16 15h2"/><path d="M6 6l9-3 1 3"/>`,
+    size,
+  );
+
+/** Folder — project. */
+export const iconFolder = (size) =>
+  svg(
+    "Project",
+    `<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`,
+    size,
+  );
+
+/** Speech bubble — general chats. */
+export const iconChat = (size) =>
+  svg("Chats", `<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>`, size);
+
+/** Arrow-out-of-door — sign out. */
+export const iconSignOut = (size) =>
+  svg(
+    "Sign out",
+    `<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>`,
+    size,
+  );
+
+/** Up arrow — Grok-style round send button. */
+export const iconArrowUp = (size) =>
+  svg("Send", `<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>`, size);

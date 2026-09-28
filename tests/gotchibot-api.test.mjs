@@ -2693,7 +2693,7 @@ describe("phone app modules", () => {
     const swMatch = sw.match(/const APP_VERSION = ["']([^"']+)["']/);
     assert.ok(swMatch, "sw.js APP_VERSION");
     assert.equal(swMatch[1], verMod.APP_VERSION);
-    assert.equal(verMod.APP_VERSION, "0.2.0");
+    assert.equal(verMod.APP_VERSION, "0.3.0");
   });
 
   it("sw.js SHELL lists every app/js/*.js and has no api/vendor entries", () => {

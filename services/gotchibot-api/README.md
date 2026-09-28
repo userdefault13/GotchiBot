@@ -45,6 +45,13 @@ licensing (Mobilecode-open + jsQR, Apache-2.0).
 - `GET /api/gotchibot/hub/runner` — runner heartbeat (`ok` / `error` / `offline`).
 - Phone `push` hardens role/`op`/empty text server-side; desks unchanged. Store helpers: `claimNextPendingReply`, `completeReply`, `failReply`, …
 
+## Phone desk (0.3.0)
+
+- `POST /api/gotchibot/hub/wallet/nonce` + `POST /api/gotchibot/hub/wallet/login` — owner-wallet sign-in (`personal_sign`, checked with Foundry `cast wallet verify`). Owner = `ownerWallet` / `GOTCHIBOT_HUB_OWNER_WALLET`, else `sessions/.wallet.json`. `handoff:true` returns a phone pairing code instead of a token.
+- `GET /api/gotchibot/projects`, `GET /api/gotchibot/projects/:slug` — read-only portfolio from `sessions/pstack/<slug>/` plus hero caches ([`projects.mjs`](./projects.mjs)).
+- `GET /api/gotchibot/avatars/:heroId.svg` — gotchi SVG from `sessions/.avatars/`.
+- `chats/send` takes `project`; `chats/threads` takes `?project=<slug>|none`.
+
 ## hub-runner
 
 Hub-side process that claims pending phone messages and writes an assistant reply into the same thread using **the desk’s OpenCode CLI path** (`opencode run -m <provider/model> …`) — not a new provider HTTP client.
