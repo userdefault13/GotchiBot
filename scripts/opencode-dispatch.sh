@@ -409,17 +409,19 @@ RUNNER
   fi
   chmod +x "$runner"
 
-  ( trap 'set_field "$dir" status failed; release_hero "$dir"; teardown_sandbox "$dir" "$id"; set_field "$dir" ended "$(date -u +%FT%TZ)"; exit 143' TERM INT HUP
+  ( trap 'set_field "$dir" status failed; release_hero "$dir"; teardown_sandbox "$dir" "$id"; set_field "$dir" ended "$(date -u +%FT%TZ)"; node "$ROOT/scripts/sub-finish.mjs" "$id" failed >/dev/null 2>&1 || true; exit 143' TERM INT HUP
     if "$runner"; then set_field "$dir" status done
       release_hero "$dir"
       teardown_sandbox "$dir" "$id"
       "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id finished."
+      node "$ROOT/scripts/sub-finish.mjs" "$id" done >/dev/null 2>&1 || true
     else set_field "$dir" status failed
       release_hero "$dir"
       teardown_sandbox "$dir" "$id"
       "$ROOT/scripts/poke-avatar.sh" >/dev/null 2>&1 || true
       GOTCHIBOT_TTS_PERSONA=sub "$ROOT/scripts/tts.sh" "Sub agent $id failed."
+      node "$ROOT/scripts/sub-finish.mjs" "$id" failed >/dev/null 2>&1 || true
     fi
     set_field "$dir" ended "$(date -u +%FT%TZ)" ) >/dev/null 2>&1 </dev/null &
   echo $! > "$dir/pid"
