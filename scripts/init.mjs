@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { call, loadMeta, saveMeta, GAME_ID } from "./identity.mjs";
+import { FALLBACK_REASONS, readSepoliaHeroesForOwner, resolveWithFallback } from "./cartridge-sepolia.mjs";
 import { getTopology, setTopology, topologyFileExists } from "./topology.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,34 +28,8 @@ function connectWalletBlocking() {
   } catch {}
 }
 
-async function main() {
-  console.log("GotchiBot init — sim cartridge setup");
-  console.log("====================================");
-
-  let address = readWallet();
-  if (!address && !process.env.GOTCHIBOT_OWNER) {
-    step(1, "connect a wallet");
-    connectWalletBlocking();
-    address = readWallet();
-    if (!address) {
-      console.error("    ✗ wallet not connected — rerun init to retry");
-      process.exit(1);
-    }
-  }
-
-  const owner =
-    process.env.GOTCHIBOT_OWNER ??
-    (() => {
-      try { return JSON.parse(readFileSync(`${ROOT}/sessions/.wallet.json`, "utf8")).address; }
-      catch { return null; }
-    })();
-  if (!owner) {
-    console.error("no wallet available");
-    process.exit(1);
-  }
-  step(1, `wallet: ${owner}`);
-
-  step(2, "sim-minting gotchibot cartridge");
+async function ensureSimCartridge(owner) {
+  console.log("    sim-minting gotchibot cartridge");
   const hasToken = Boolean(String(process.env.GOTCHIBOT_INFRA_TOKEN || "").trim());
   if (!process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET && !hasToken) {
     console.log("    infra auth not in env — run the Solo one-shot:");
@@ -85,6 +60,57 @@ async function main() {
     ok(`heroes: ${heroes.length}${heroes.length ? " (" + heroes.map((h) => h.id).join(", ") + ")" : ""}`);
     ok(`portals: ${portals.length} (${portals.filter((p) => String(p.status || "").startsWith("pack")).length} packs)`);
     const active = s.activeCAavegotchi?.id ?? heroes[0]?.id;
+    if (active) {
+      saveMeta({ activeHeroId: active });
+      ok(`orchestrator hero: ${active}`);
+    }
+  }
+  return cartridgeId;
+}
+
+async function main() {
+  console.log("GotchiBot init — cartridge setup");
+  console.log("====================================");
+
+  let address = readWallet();
+  if (!address && !process.env.GOTCHIBOT_OWNER) {
+    step(1, "connect a wallet");
+    connectWalletBlocking();
+    address = readWallet();
+    if (!address) {
+      console.error("    ✗ wallet not connected — rerun init to retry");
+      process.exit(1);
+    }
+  }
+
+  const owner =
+    process.env.GOTCHIBOT_OWNER ??
+    (() => {
+      try { return JSON.parse(readFileSync(`${ROOT}/sessions/.wallet.json`, "utf8")).address; }
+      catch { return null; }
+    })();
+  if (!owner) {
+    console.error("no wallet available");
+    process.exit(1);
+  }
+  step(1, `wallet: ${owner}`);
+
+  step(2, "gotchibot cartridge (Base Sepolia first)");
+  // Minting a Sepolia cart is a MetaMask-signed page, so a wallet with no
+  // on-chain cart (or an unreachable Sepolia) still sim-mints.
+  const onChain = await resolveWithFallback("init-cartridge", {
+    sepolia: () => readSepoliaHeroesForOwner(owner),
+    accept: (sep) => Boolean(sep.cartridgeId),
+    emptyReason: FALLBACK_REASONS.NO_ONCHAIN,
+    sim: () => ensureSimCartridge(owner),
+  });
+  if (onChain.source === "sepolia") {
+    const sep = onChain.value;
+    saveMeta({ cartridgeId: sep.cartridgeId, owner, cartridgeSource: "sepolia" });
+    ok(`cartridge ${sep.cartridgeId} (Base Sepolia)`);
+    step(3, "roster summary");
+    ok(`heroes: ${sep.heroes.length}${sep.heroes.length ? " (" + sep.heroes.map((h) => h.id).join(", ") + ")" : ""}`);
+    const active = sep.activeHeroId ?? sep.heroes[0]?.id;
     if (active) {
       saveMeta({ activeHeroId: active });
       ok(`orchestrator hero: ${active}`);

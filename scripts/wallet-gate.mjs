@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Pre-spawn gate: wallet connected + cartridge + at least one cAavegotchi.
- * Exit 0 + JSON on stdout when allowed; exit 1 + human message on stderr when blocked.
+ * Pre-spawn gate: wallet + cartridge + at least one **available** cAavegotchi
+ * for a sub-agent (not orch-only, not all busy). Exit 0 + JSON when allowed;
+ * exit non-zero + human message when blocked.
  */
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -9,6 +10,8 @@ import { fileURLToPath } from "node:url";
 import { call, loadMeta, GAME_ID } from "./identity.mjs";
 import { isMainModule } from "./is-main.mjs";
 import { readGotchiBotCartridgeSepolia } from "./cartridge-sepolia.mjs";
+import { getCachedHeroStatus } from "./hero-agent-state.mjs";
+import { loadOnboarding } from "./onboarding-lib.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WALLET = `${ROOT}/sessions/.wallet.json`;
@@ -67,6 +70,155 @@ function cachedHeroIds() {
 /** Opt-in escape hatch for "the sim is down but the heroes are real". */
 const ALLOW_CACHED = process.env.GOTCHIBOT_GATE_ALLOW_CACHED === "1";
 
+const BUSY_STATUSES = new Set(["working", "watching"]);
+
+function orchestratorId() {
+  try {
+    const ob = loadOnboarding() || {};
+    if (ob.orchestratorHeroId) return String(ob.orchestratorHeroId);
+  } catch {
+    /* ignore */
+  }
+  try {
+    return loadMeta()?.activeHeroId ? String(loadMeta().activeHeroId) : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeHeroIds(heroes) {
+  return (heroes || [])
+    .map((h) => (typeof h === "string" ? h : h?.id))
+    .filter((id) => id && id !== "gotchi")
+    .map(String);
+}
+
+/**
+ * Any sub-agent spawn needs a free cAavegotchi seat — not orch alone, not all busy.
+ * GOTCHIBOT_HERO_ID when set must be on the roster and not working/watching.
+ */
+function assertAvailableSubHero(heroes) {
+  const ids = normalizeHeroIds(heroes);
+  const orch = orchestratorId();
+  const pinned = String(process.env.GOTCHIBOT_HERO_ID || "").trim();
+
+  if (!ids.length) {
+    return {
+      ok: false,
+      code: "heroes",
+      message: "No cAavegotchi on the cartridge — bind or mint one before spawning a sub-agent.",
+      fix:
+        "Cockpit: Mint another wallet gotchi (free) or Mint a base collateral cAavegotchi · Concierge: " +
+        CONCIERGE_URL,
+    };
+  }
+
+  const workers = ids.filter((id) => id !== orch && id !== "owned-954" && id !== "gotchi");
+  if (!workers.length) {
+    return {
+      ok: false,
+      code: "heroes",
+      message:
+        "Only the orchestrator is seated — every sub-agent needs its own available cAavegotchi.",
+      fix:
+        "Cockpit: Mint another wallet gotchi (free) or Mint a base collateral cAavegotchi · Concierge: " +
+        CONCIERGE_URL,
+      heroes: ids,
+      orch,
+    };
+  }
+
+  if (pinned) {
+    if (!ids.includes(pinned)) {
+      return {
+        ok: false,
+        code: "heroes",
+        message: `GOTCHIBOT_HERO_ID=${pinned} is not on this cartridge roster.`,
+        fix: "Pick a hero from the live nest (agent-focus list) or mint/bind one first.",
+        heroes: ids,
+        pinned,
+      };
+    }
+    if (orch && pinned === orch) {
+      return {
+        ok: false,
+        code: "heroes",
+        message: `${pinned} is the orchestrator — sub-agents need a different available cAavegotchi.`,
+        fix: "Mint/bind another gotchi, then spawn with GOTCHIBOT_HERO_ID=<available>.",
+        heroes: ids,
+      };
+    }
+    if (!workers.includes(pinned)) {
+      return {
+        ok: false,
+        code: "heroes",
+        message: `${pinned} cannot be used as a sub-agent seat.`,
+        fix: "Pick an available non-orch cAavegotchi.",
+        pinned,
+      };
+    }
+    const st = getCachedHeroStatus(pinned);
+    if (st && BUSY_STATUSES.has(st)) {
+      return {
+        ok: false,
+        code: "heroes",
+        message: `hero ${pinned} is ${st} — wait for it to finish or pick another available cAavegotchi.`,
+        fix: "./scripts/gotchi-orchestrate.mjs list · mint another gotchi if the nest is full",
+        pinned,
+        status: st,
+      };
+    }
+    return { ok: true, spawnHeroId: pinned };
+  }
+
+  const free = workers.filter((id) => {
+    const st = getCachedHeroStatus(id);
+    if (!st) return true; // unknown → treat as free (fresh mint)
+    return !BUSY_STATUSES.has(st);
+  });
+
+  if (!free.length) {
+    return {
+      ok: false,
+      code: "heroes",
+      message: "No available cAavegotchi for a sub-agent — every worker seat is busy.",
+      fix:
+        "Wait for a sub to finish, or mint another wallet/collateral gotchi in cockpit · Concierge: " +
+        CONCIERGE_URL,
+      heroes: ids,
+      orch,
+    };
+  }
+
+  // Prefer available/idle over assigned/active
+  const preferred =
+    free.find((id) => {
+      const st = getCachedHeroStatus(id);
+      return !st || st === "available" || st === "idle";
+    }) || free[0];
+
+  return { ok: true, spawnHeroId: preferred };
+}
+
+function withSubHeroGate(gate) {
+  if (!gate?.ok) return gate;
+  const sub = assertAvailableSubHero(gate.heroes || gate.heroIds || []);
+  if (!sub.ok) {
+    return {
+      ...gate,
+      ok: false,
+      code: sub.code || "heroes",
+      message: sub.message,
+      fix: sub.fix,
+      heroes: sub.heroes || gate.heroes,
+      orch: sub.orch,
+      pinned: sub.pinned,
+      status: sub.status,
+    };
+  }
+  return { ...gate, spawnHeroId: sub.spawnHeroId };
+}
+
 export async function checkSpawnGate({ quiet = false } = {}) {
   const owner = readWallet();
   if (!owner) {
@@ -124,7 +276,7 @@ export async function checkSpawnGate({ quiet = false } = {}) {
           source: "sepolia",
         };
       } else if (sep.ok) {
-        return {
+        return withSubHeroGate({
           ok: true,
           owner,
           cartridgeId: sep.cartridgeId,
@@ -134,7 +286,7 @@ export async function checkSpawnGate({ quiet = false } = {}) {
           source: "sepolia",
           portalStatus: sep.portalStatus,
           licenseNested: sep.licenseNested,
-        };
+        });
       } else if (sep.reason === "sealed_open_required") {
         return {
           ok: false,
@@ -304,8 +456,8 @@ export async function checkSpawnGate({ quiet = false } = {}) {
     activeHeroId,
     heroes: heroes.map((h) => ({ id: h.id, role: h.role ?? null })),
   };
-  if (!quiet) return result;
-  return result;
+  if (!quiet) return withSubHeroGate(result);
+  return withSubHeroGate(result);
 }
 
 async function main() {

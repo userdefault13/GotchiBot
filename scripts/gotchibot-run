@@ -63,12 +63,11 @@ get_active_hero() {
 
 list_heroes() {
   node -e "
-    const { call, loadMeta } = await import('$IDENTITY');
+    const { loadMeta } = await import('$IDENTITY');
+    const { fetchCartridgeHeroes } = await import('$ROOT/scripts/onboarding-lib.mjs');
     const meta = loadMeta();
     if (!meta?.cartridgeId) { console.log(''); process.exit(0); }
-    const r = await call(\`/cartridges/\${meta.cartridgeId}\`);
-    if (!r.ok) { console.log(''); process.exit(0); }
-    const heroes = (r.data.cartridge ?? r.data).cAavegotchis || [];
+    const heroes = await fetchCartridgeHeroes(meta.cartridgeId);
     heroes.forEach(h => console.log(h.id));
   " 2>/dev/null | grep -v '^$' || true
 }

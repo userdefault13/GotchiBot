@@ -7,6 +7,14 @@ import { spawnSync, spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { call, loadMeta, saveMeta, GAME_ID } from "./identity.mjs";
+import {
+  FALLBACK_REASONS,
+  isSepoliaCartridgeId,
+  readGotchiBotCartridgeSepolia,
+  readSepoliaHeroes,
+  readSepoliaHeroesForOwner,
+  resolveWithFallback,
+} from "./cartridge-sepolia.mjs";
 import { persistHeroCollateral, findCollateralColors, writeWalletGotchiCache, loadWalletGotchiIndex } from "./collateral-resolve.mjs";
 import { resolveSubgraphUrl, infraHeaders } from "./infra-client.mjs";
 import { resolveCastBin } from "./platform.mjs";
@@ -127,6 +135,8 @@ const USERS_GOTCHIS_QUERY = `query GotchisOwnedByUser($owner: String!, $first: I
       name
       collateral
       hauntId
+      numericTraits
+      withSetsNumericTraits
     }
   }
 }`;
@@ -138,6 +148,8 @@ const GOTCHIS_BY_OWNER_QUERY = `query GotchisByOwner($owner: String!, $first: In
     name
     collateral
     hauntId
+    numericTraits
+    withSetsNumericTraits
   }
 }`;
 
@@ -148,6 +160,8 @@ const GOTCHIS_BY_OWNER_NESTED_QUERY = `query GotchisByOwnerNested($owner: String
     name
     collateral
     hauntId
+    numericTraits
+    withSetsNumericTraits
   }
 }`;
 
@@ -171,16 +185,38 @@ function encodeGetAavegotchiCalldata(tokenId) {
   return `${GET_AAVEGOTCHI_SELECTOR}${id.toString(16).padStart(64, "0")}`;
 }
 
+function coerceTraits6(v) {
+  if (!Array.isArray(v) || v.length < 6) return null;
+  const out = v.slice(0, 6).map((n) => Number(n));
+  if (out.some((n) => !Number.isFinite(n))) return null;
+  return out;
+}
+
+function traitsFromGotchiFields(g = {}) {
+  return (
+    coerceTraits6(g.withSetsNumericTraits) ||
+    coerceTraits6(g.modifiedNumericTraits) ||
+    coerceTraits6(g.modifiedTraits) ||
+    coerceTraits6(g.numericTraits) ||
+    coerceTraits6(g.traits) ||
+    null
+  );
+}
+
 function parseGetAavegotchiCastJson(stdout) {
   try {
     const parsed = JSON.parse(String(stdout || "").trim());
     const row = Array.isArray(parsed?.[0]) ? parsed[0] : Array.isArray(parsed) ? parsed : null;
     if (!row) return null;
     const name = row[1] != null ? String(row[1]).trim() : "";
+    const numericTraits = coerceTraits6(row[5]);
+    const modifiedTraits = coerceTraits6(row[6]);
     return {
       name: name || null,
-      hauntId: row[17] != null ? Number(row[17]) : null,
+      hauntId: row[18] != null ? Number(row[18]) : row[17] != null ? Number(row[17]) : null,
       collateral: row[8] ? String(row[8]) : null,
+      numericTraits,
+      modifiedTraits: modifiedTraits || numericTraits,
     };
   } catch {
     return null;
@@ -245,9 +281,9 @@ async function fetchAavegotchiInfo(tokenId) {
   return fetchAavegotchiInfoFetch(tokenId);
 }
 
-async function enrichGotchiNamesFromRpc(gotchis) {
+async function enrichGotchisFromRpc(gotchis) {
   const list = Array.isArray(gotchis) ? gotchis : [];
-  const pending = list.filter((g) => !g.name);
+  const pending = list.filter((g) => !g.name || !traitsFromGotchiFields(g));
   if (!pending.length) return list;
 
   for (let i = 0; i < pending.length; i += RPC_NAME_BATCH) {
@@ -263,13 +299,23 @@ async function enrichGotchiNamesFromRpc(gotchis) {
     );
     for (let j = 0; j < chunk.length; j++) {
       const info = infos[j];
-      if (!info?.name) continue;
-      chunk[j].name = info.name;
+      if (!info) continue;
+      if (!chunk[j].name && info.name) chunk[j].name = info.name;
       if (!chunk[j].hauntId && info.hauntId) chunk[j].hauntId = info.hauntId;
       if (!chunk[j].collateral && info.collateral) chunk[j].collateral = info.collateral;
+      const traits = traitsFromGotchiFields(info);
+      if (traits && !traitsFromGotchiFields(chunk[j])) {
+        chunk[j].numericTraits = coerceTraits6(info.numericTraits) || traits;
+        chunk[j].modifiedTraits = traits;
+      }
     }
   }
   return list;
+}
+
+/** @deprecated name kept for callers — now also fills eye traits from Base RPC when missing. */
+async function enrichGotchiNamesFromRpc(gotchis) {
+  return enrichGotchisFromRpc(gotchis);
 }
 
 function baseRpcUrls() {
@@ -413,11 +459,15 @@ async function postSubgraph(query, variables, { timeoutMs = 15_000 } = {}) {
 }
 
 function normalizeGotchi(g) {
+  const traits = traitsFromGotchiFields(g);
   return {
     gotchiId: String(g.gotchiId ?? g.id),
     name: g.name ?? null,
     collateral: g.collateral ?? null,
     hauntId: g.hauntId ?? null,
+    numericTraits: coerceTraits6(g.numericTraits) || traits,
+    modifiedTraits: traits,
+    withSetsNumericTraits: coerceTraits6(g.withSetsNumericTraits) || null,
   };
 }
 
@@ -515,31 +565,48 @@ export async function fetchWalletGotchiById(address, gotchiId) {
   if (!/^\d+$/.test(id)) return null;
   const owner = address.toLowerCase();
 
+  let hit = null;
   try {
     const data = await postSubgraph(
       `query GotchiById($owner: String!, $id: String!) {
         aavegotchis(first: 1, where: { id: $id, owner: { id: $owner } }) {
-          id gotchiId name collateral hauntId
+          id gotchiId name collateral hauntId numericTraits withSetsNumericTraits
         }
       }`,
       { owner, id },
     );
-    const hit = data?.aavegotchis?.[0];
-    if (hit) return normalizeGotchi(hit);
+    const row = data?.aavegotchis?.[0];
+    if (row) hit = normalizeGotchi(row);
   } catch {}
 
-  const owned = await fetchWalletGotchis(owner);
-  const hit = owned.find((g) => String(g.gotchiId) === id) ?? null;
-  if (hit?.name) return hit;
+  if (!hit) {
+    const owned = await fetchWalletGotchis(owner);
+    hit = owned.find((g) => String(g.gotchiId) === id) ?? null;
+  }
 
-  try {
-    const info = await fetchAavegotchiInfo(id);
-    if (info?.name) {
-      return normalizeGotchi({ gotchiId: id, ...info });
-    }
-  } catch {}
+  if (!hit || !traitsFromGotchiFields(hit) || !hit.name) {
+    try {
+      const info = await fetchAavegotchiInfo(id);
+      if (info) {
+        hit = normalizeGotchi({
+          gotchiId: id,
+          name: hit?.name || info.name,
+          collateral: hit?.collateral || info.collateral,
+          hauntId: hit?.hauntId ?? info.hauntId,
+          numericTraits: info.numericTraits,
+          modifiedTraits: info.modifiedTraits,
+          withSetsNumericTraits: info.modifiedTraits,
+        });
+      }
+    } catch {}
+  }
 
   return hit;
+}
+
+/** Traits for cheeks: [4]=eyeShape, [5]=eyeColor. Prefer withSets → modified → numeric. */
+export function walletGotchiTraits(g) {
+  return traitsFromGotchiFields(g);
 }
 
 export function commandExists(cmd) {
@@ -606,13 +673,27 @@ export function runAbraNode(scriptRel, args = []) {
   });
 }
 
+/** Heroes on a cartridge: Base Sepolia for numeric ids, SIM for `sim-…` ids or when Sepolia fails. */
 export async function fetchCartridgeHeroes(cartridgeId) {
+  const { value } = await resolveWithFallback("cartridge-heroes", {
+    // SIM cartridge ids (sim-…) exist only in cartridge-sim.
+    sepolia: isSepoliaCartridgeId(cartridgeId)
+      ? async () => (await readSepoliaHeroes(cartridgeId)).heroes
+      : null,
+    sim: () => fetchSimCartridgeHeroes(cartridgeId),
+  });
+  return value;
+}
+
+export async function fetchSimCartridgeHeroes(cartridgeId) {
   const r = await call(`/cartridges/${cartridgeId}`);
   if (!r.ok) return [];
   const c = r.data.cartridge ?? r.data;
   return c.cAavegotchis ?? [];
 }
 
+// SIM only: minting a Base Sepolia cartridge is a MetaMask-signed page
+// (cartridge-mint-sepolia.mjs), with no headless on-chain equivalent.
 export async function ensureCartridgeForOwner(address) {
   const r = await call("/cartridges/ensure", {
     method: "POST",
@@ -639,6 +720,8 @@ function persistMintedHeroColors(heroId, collateral, hero = {}) {
   });
 }
 
+// SIM only: on-chain bindStarter needs a MetaMask signature + 5 ETH
+// (runBindStarter), with no headless on-chain equivalent.
 export async function bindStarterHero(cartridgeId, collateral) {
   const r = await call(`/cartridges/${cartridgeId}/bind-starter`, {
     method: "POST",
@@ -669,18 +752,34 @@ export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = n
   const colors = findCollateralColors(collAddr || walletGotchi?.collateralName || "", hauntId || 2);
   const spirit = colors?.spirit || libraryNameToSpiritId(walletGotchi?.collateralName || collAddr || "") || null;
 
-  const r = await call(`/cartridges/${cartridgeId}/bind-owned`, {
-    method: "POST",
-    body: {
-      sourceTokenId: tokenId,
-      simPay: true,
-      collateral: spirit || undefined,
-      collateralAddress: collAddr || undefined,
-      hauntId,
+  // Already bound on the owner's Base Sepolia cartridge → reuse it. Binding a
+  // new one on-chain is a MetaMask-signed page (runBindOwned), so an unbound
+  // token still goes to the SIM.
+  const bindOwner = readWalletFile();
+  const { value: c } = await resolveWithFallback("bind-owned", {
+    sepolia: bindOwner
+      ? async () => {
+          const sep = await readSepoliaHeroesForOwner(bindOwner);
+          const onChain = sep.heroes.find((h) => h.bindType === "owned" && h.sourceTokenId === tokenId);
+          return onChain ? { cAavegotchis: [onChain] } : null;
+        }
+      : null,
+    emptyReason: FALLBACK_REASONS.NO_ONCHAIN,
+    sim: async () => {
+      const r = await call(`/cartridges/${cartridgeId}/bind-owned`, {
+        method: "POST",
+        body: {
+          sourceTokenId: tokenId,
+          simPay: true,
+          collateral: spirit || undefined,
+          collateralAddress: collAddr || undefined,
+          hauntId,
+        },
+      });
+      if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
+      return r.data.cartridge ?? r.data;
     },
   });
-  if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
-  const c = r.data.cartridge ?? r.data;
   const list = Array.isArray(c.cAavegotchis) ? c.cAavegotchis : [];
   // Prefer the hero for this token — never the active/orch cAavegotchi
   // (bind leaves active as owned-954, which made mint-all report every id as 954).
@@ -700,6 +799,8 @@ export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = n
     primary: colors?.primary,
     secondary: colors?.secondary,
     sourceTokenId: tokenId,
+    modifiedTraits: walletGotchiTraits(walletGotchi) || hero?.modifiedTraits || undefined,
+    numericTraits: walletGotchi?.numericTraits || walletGotchiTraits(walletGotchi) || undefined,
   });
   try {
     const idx = loadWalletGotchiIndex();
@@ -719,6 +820,7 @@ export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = n
   return heroId;
 }
 
+// SIM only: sub-agent mint has no on-chain equivalent.
 export async function mintSubAgentHero(cartridgeId, collateral) {
   const r = await call(`/cartridges/${cartridgeId}/subagents/mint`, {
     method: "POST",
@@ -733,6 +835,7 @@ export async function mintSubAgentHero(cartridgeId, collateral) {
   return heroId;
 }
 
+// SIM only: on-chain selectHero is a signed tx; desks pin locally instead.
 export async function selectOrchestratorHero(cartridgeId, heroId) {
   const r = await call(`/cartridges/${cartridgeId}/select-hero`, {
     method: "POST",
@@ -759,14 +862,28 @@ export function pinAvatar(heroId, { asOrchestrator = true } = {}) {
   } catch {}
 }
 
+/** Onboarded when Base Sepolia has a cartridge with heroes; otherwise ask the SIM. */
 export async function isOnboarded() {
-  const ob = loadOnboarding();
-  if (!ob.complete || !ob.orchestratorHeroId) return false;
   const wallet = readWalletFile();
   if (!wallet) return false;
+  const { source, value } = await resolveWithFallback("is-onboarded", {
+    sepolia: async () => {
+      const sep = await readGotchiBotCartridgeSepolia(wallet);
+      if (sep.reason === "missing_diamond_config") throw new Error("missing_diamond_config");
+      return sep;
+    },
+    accept: (sep) => Boolean(sep.cartridgeId) && sep.heroCount > 0,
+    sim: () => isOnboardedSim(),
+  });
+  return source === "sepolia" ? true : value;
+}
+
+async function isOnboardedSim() {
+  const ob = loadOnboarding();
+  if (!ob.complete || !ob.orchestratorHeroId) return false;
   const meta = loadMeta();
   if (!meta?.cartridgeId) return false;
-  const heroes = await fetchCartridgeHeroes(meta.cartridgeId);
+  const heroes = await fetchSimCartridgeHeroes(meta.cartridgeId);
   return heroes.some((h) => h.id === ob.orchestratorHeroId);
 }
 

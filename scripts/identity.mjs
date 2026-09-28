@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { isMainModule } from "./is-main.mjs";
+import {
+  FALLBACK_REASONS,
+  isSepoliaCartridgeId,
+  readSepoliaHeroes,
+  resolveWithFallback,
+} from "./cartridge-sepolia.mjs";
 import crypto from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -413,7 +419,6 @@ async function open() {
 }
 
 async function bind() {
-  serviceKey();
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
     console.error("no cartridge yet — run: gotchibot identity ensure");
@@ -428,9 +433,26 @@ async function bind() {
     null;
 
   // Pin an already-minted cAavegotchi to a session (no new mint).
+  // Base Sepolia roster first (hero id or bytes32 key); SIM heroes such as
+  // starter-* exist only on the legacy SIM cart.
   if (sessionId && existingHero) {
-    const snap = await call(`/cartridges/${meta.cartridgeId}`);
-    const heroes = ((snap.data.cartridge ?? snap.data)?.cAavegotchis ?? []).map((h) => h.id);
+    const simCart =
+      meta.legacySimCartridgeId ||
+      (String(meta.cartridgeId).startsWith("sim-") ? meta.cartridgeId : null) ||
+      meta.cartridgeId;
+    const { value: heroes } = await resolveWithFallback("session-bind", {
+      sepolia: isSepoliaCartridgeId(meta.cartridgeId)
+        ? async () =>
+            (await readSepoliaHeroes(meta.cartridgeId)).heroes.flatMap((h) => [h.id, h.heroKey])
+        : null,
+      accept: (ids) => ids.includes(existingHero),
+      emptyReason: FALLBACK_REASONS.NO_ONCHAIN,
+      sim: async () => {
+        serviceKey();
+        const snap = await call(`/cartridges/${simCart}`);
+        return ((snap.data.cartridge ?? snap.data)?.cAavegotchis ?? []).map((h) => h.id);
+      },
+    });
     if (!heroes.includes(existingHero)) {
       console.error(`hero ${existingHero} not on cartridge ${meta.cartridgeId}`);
       process.exit(1);
@@ -443,6 +465,8 @@ async function bind() {
     return;
   }
 
+  // SIM only: minting a new starter on-chain is a MetaMask-signed bindStarter.
+  serviceKey();
   const before = await call(`/cartridges/${meta.cartridgeId}`);
   const beforeIds = new Set(
     ((before.data.cartridge ?? before.data)?.cAavegotchis ?? []).map((h) => h.id)

@@ -32,6 +32,8 @@ import {
   readGotchiBotCartridgeSepolia,
   readAbraCartridgeSepolia,
   formatAbraCartLine,
+  recordSimFallback,
+  FALLBACK_REASONS,
 } from "./cartridge-sepolia.mjs";
 import { runLayout, tmuxSessionName as layoutSession } from "./tmux-layout.mjs";
 import { withStatusBar, Progress } from "./progress-bar.mjs";
@@ -1141,6 +1143,14 @@ async function ensureCartridge(wallet) {
       return null;
     } catch (e) {
       console.log(`  · Sepolia read failed: ${e?.message || e}`);
+      // A flaky RPC must not abort a desk that already has a cartridge on file;
+      // hero reads fall back to the SIM through fetchCartridgeHeroes.
+      const cached = loadMeta()?.cartridgeId;
+      if (cached) {
+        recordSimFallback("gate-cartridge", FALLBACK_REASONS.SEPOLIA_ERROR, e?.message || String(e));
+        console.log(`  ✓ cartridge ${cached} (cached — Sepolia unreachable)`);
+        return cached;
+      }
       console.log(`  · Mint at Concierge: ${CONCIERGE_MINT_URL}`);
       return null;
     }
