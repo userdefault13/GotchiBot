@@ -1,18 +1,81 @@
-# GotchiBot pushes → Aarcade newsfeed post + tweet draft (via AarcadeGh-t's reusable Commsies workflow).
-# Every push to main is sent; Commsies itself drops admin/internal-only commits. To limit it to docs,
-# add a `paths:` filter like aarcade-game-docs' workflow.
+# GotchiBot pushes → Aarcade newsfeed post + tweet draft (Commsies).
+#
+# GotchiBot is public and AarcadeGh-t is private, and GitHub never lets a public repo call a private
+# repo's reusable workflow ("workflow file issue"). So this runs the same two steps as
+# AarcadeGh-t/.github/workflows/comms-auto.yml inline; keep them in sync if that one changes.
+# Every push to main is sent; Commsies itself drops admin/internal-only commits.
 name: Comms auto
 
 on:
   push:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      before:
+        description: Optional before SHA (exclusive)
+        required: false
+      after:
+        description: Optional after SHA (inclusive tip; default HEAD)
+        required: false
 
 jobs:
-  comms:
-    uses: userdefault13/AarcadeGh-t/.github/workflows/comms-auto.yml@main
-    with:
-      before: ${{ github.event.before }}
-      after: ${{ github.sha }}
-    secrets:
-      COMM_AUTOMATION_SECRET: ${{ secrets.COMM_AUTOMATION_SECRET }}
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve push range
+        id: range
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_AFTER: ${{ github.sha }}
+          INPUT_BEFORE: ${{ inputs.before }}
+          INPUT_AFTER: ${{ inputs.after }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          BEFORE="${INPUT_BEFORE:-}"
+          AFTER="${INPUT_AFTER:-}"
+          if [ -z "$AFTER" ]; then
+            AFTER="${EVENT_AFTER:-}"
+          fi
+          if [ -z "$BEFORE" ] && [ "$EVENT_NAME" = "push" ]; then
+            BEFORE="${EVENT_BEFORE:-}"
+          fi
+          if [ -z "$AFTER" ]; then
+            echo "Missing after SHA" >&2
+            exit 1
+          fi
+          echo "before=$BEFORE" >> "$GITHUB_OUTPUT"
+          echo "after=$AFTER" >> "$GITHUB_OUTPUT"
+          echo "owner=$REPO_OWNER" >> "$GITHUB_OUTPUT"
+          echo "repo=${REPO_FULL#*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Call communications-auto
+        env:
+          SECRET: ${{ secrets.COMM_AUTOMATION_SECRET }}
+          OWNER: ${{ steps.range.outputs.owner }}
+          REPO: ${{ steps.range.outputs.repo }}
+          BEFORE: ${{ steps.range.outputs.before }}
+          AFTER: ${{ steps.range.outputs.after }}
+        run: |
+          set -euo pipefail
+          API_BASE="https://aarcadeghst.com"
+          if [ -z "${SECRET:-}" ]; then
+            echo "COMM_AUTOMATION_SECRET is not set" >&2
+            exit 1
+          fi
+          BODY=$(jq -n \
+            --arg owner "$OWNER" \
+            --arg repo "$REPO" \
+            --arg before "$BEFORE" \
+            --arg after "$AFTER" \
+            '{owner:$owner, repo:$repo, before:$before, after:$after}')
+          echo "POST $API_BASE/api/communications-auto owner=$OWNER repo=$REPO after=${AFTER:0:7}"
+          RESP=$(curl -sS -X POST "$API_BASE/api/communications-auto" \
+            -H "Authorization: Bearer $SECRET" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
+          echo "$RESP" | jq .
+          echo "$RESP" | jq -e '.success == true' >/dev/null
