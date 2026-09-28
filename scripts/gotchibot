@@ -61,7 +61,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot orch                  restore orchestrator focus (/orch)
   gotchibot openclaw sync|list|status|chat|install|point  OpenClaw fleet + CLI
   gotchibot delegate [--json] [hint]  pick next local/remote agent (/delegate)
-  gotchibot hero-state set|sync|get   cAavegotchi agentStatus on cartridge sim
+  gotchibot hero-state set|sync|get   cAavegotchi agentStatus (local cache, Sepolia heroes)
                                       # available|active|working|assigned|idle|watching
   gotchibot status <id>...        one session's state
   gotchibot wait [<id>...]        block until sessions finish
@@ -69,7 +69,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot export [<id>] [--out PATH] [--log]   save a session transcript as Markdown
                                   # asks where to save; ~/Downloads by default, remembers your last folder
   gotchibot requests              pending skill requests
-  gotchibot init                first-run setup: connect wallet, sim-mint cartridge
+  gotchibot init                first-run setup: connect wallet, read Sepolia cartridge
   gotchibot onboard             Solo one-shot: wallet → register → init → doctor
   gotchibot setup               print Solo checklist (or run onboard above)
   gotchibot topology solo|fleet|status [--json]   Solo vs Fleet spawn host
@@ -90,7 +90,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot host register|run|status
                                   Aarcade Host Network provider (Node agent; slots)
   gotchibot slots submit|status <jobId>
-                                  enqueue / inspect slot jobs (SIM: --sim)
+                                  enqueue / inspect slot jobs (submit needs --escrow-tx)
   gotchibot infra schedule status|install|uninstall|run-now  YFI 15-min supervisor LaunchAgent (run on the iMac)
   gotchibot desk-terminals status|open|close|use|install|uninstall [hero…] [--host imac|local]
                                   driven desks stay up; workers: use → tool → close (ephemeral)
@@ -122,8 +122,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot cursor-layer check [--json]  assert Cursor desk layer (hooks, policy, skills)
   gotchibot checkpoint project [--clear] [<label>]  desk projects → cart (signed gameState; --clear on transfer)
   gotchibot checkpoint <id> <label>   push a milestone to the cartridge (+ projects)
-  gotchibot identity ensure|mint|roster   cartridge identity ops
-  gotchibot reset [--full] [--yes]      wipe gotchibot cartridge (new-user test)
+  gotchibot identity roster|bind|checkpoint   desk identity on the Sepolia cartridge
+  gotchibot reset [--full] [--yes]      wipe local desk identity (new-user test; cart stays on-chain)
   gotchibot onboarding              re-run welcome / sign-in gate
   gotchibot attach [--mini] [-c]      attach TUI to iMac orchestrator (opencode serve)
   gotchibot qr [--copy|--openlens]    iPhone connect: --copy = auth URL to clipboard; default = http QR

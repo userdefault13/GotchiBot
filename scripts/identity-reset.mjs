@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * Reset gotchibot cartridge (server SIM + local identity) for first-run testing.
+ * Reset local desk identity for first-run testing. The Base Sepolia cartridge
+ * is an NFT and stays on-chain; the next connect reads it again.
  */
 import { unlinkSync, rmSync, readdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { call, loadMeta, saveMeta, owner, serviceKey, GAME_ID } from "./identity.mjs";
+import { loadMeta, saveMeta, owner } from "./identity.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -15,12 +16,11 @@ const ONBOARDING = `${SESSIONS}/.onboarding.json`;
 const PIN = `${SESSIONS}/.pin`;
 
 function usage() {
-  console.error(`usage: identity-reset.mjs [--local-only] [--full] [--yes]
+  console.error(`usage: identity-reset.mjs [--full] [--yes]
 
-  Deletes the gotchibot SIM cartridge for your connected wallet (gameId=gotchibot only).
-  Clears local sessions/.identity.json. Keeps wallet connected unless --full.
+  Clears local sessions/.identity.json, onboarding and pin. Keeps wallet connected
+  unless --full. The Base Sepolia cartridge is not touched.
 
-  --local-only   skip server delete (clears local state only)
   --full         also remove wallet + sub-agent session dirs
   --yes          skip confirmation prompt`);
   process.exit(2);
@@ -47,19 +47,9 @@ function clearLocalIdentity({ full = false } = {}) {
   }
 }
 
-async function resetServer() {
-  serviceKey();
-  const r = await call("/cartridges/reset", {
-    method: "POST",
-    body: { owner: owner(), gameId: GAME_ID },
-  });
-  return r;
-}
-
 async function main() {
   if (process.argv.includes("-h") || process.argv.includes("--help")) usage();
 
-  const localOnly = hasFlag("--local-only");
   const full = hasFlag("--full");
   const yes = hasFlag("--yes");
 
@@ -70,7 +60,7 @@ async function main() {
     if (full) {
       console.log("no wallet connected — clearing local identity only");
       if (existsSync(IDENTITY)) unlinkSync(IDENTITY);
-      console.log("done (nothing on server without wallet)");
+      console.log("done");
       return;
     }
     throw new Error("connect wallet first: ./scripts/gotchibot connect");
@@ -80,8 +70,7 @@ async function main() {
   console.log("GotchiBot cartridge reset (gotchibot game only)");
   console.log("===============================================");
   console.log(`wallet:     ${walletAddr}`);
-  console.log(`cartridge:  ${meta?.cartridgeId ?? "(unknown — will lookup on server)"}`);
-  console.log(`local-only: ${localOnly}`);
+  console.log(`cartridge:  ${meta?.cartridgeId ?? "(none on file)"} — stays on-chain`);
   console.log(`full wipe:  ${full}${full ? " (wallet + sub-agent sessions)" : ""}`);
   console.log("");
   console.log("Other Aarcade games / cartridges are NOT touched.");
@@ -89,29 +78,6 @@ async function main() {
   if (!yes) {
     console.error("Re-run with --yes to confirm.");
     process.exit(1);
-  }
-
-  if (!localOnly) {
-    const r = await resetServer();
-    if (r.status === 404) {
-      console.error(
-        "server reset endpoint not found — deploy AarcadeGh-t cartridge-sim reset route,\n" +
-          "or use --local-only and delete the cartridge manually.",
-      );
-      process.exit(3);
-    }
-    if (!r.ok) {
-      console.error(`server reset failed (${r.status}):`, JSON.stringify(r.data).slice(0, 400));
-      process.exit(1);
-    }
-    const d = r.data;
-    if (d.deleted) {
-      console.log(`✓ deleted server cartridge ${d.cartridgeId} (${d.checkpointsDeleted ?? 0} checkpoints)`);
-    } else {
-      console.log(`✓ no server cartridge to delete (${d.reason ?? "already clean"})`);
-    }
-  } else {
-    console.log("✓ skipped server delete (--local-only)");
   }
 
   clearLocalIdentity({ full });

@@ -316,12 +316,12 @@ export function resolveHeroColors(hero = {}, heroIdArg = null) {
     (tokenId ? 2 : 1);
 
   const keys = [];
-  // Addresses first (unique, never the sim default "dai").
+  // Addresses first (unique, never the default "dai").
   if (isAddr(hero.collateralAddress)) pushUnique(keys, hero.collateralAddress);
   if (isAddr(hero.collateral)) pushUnique(keys, hero.collateral);
   if (isAddr(hero.collateralType)) pushUnique(keys, hero.collateralType);
   if (isAddr(persisted?.collateralAddress)) pushUnique(keys, persisted.collateralAddress);
-  // Wallet roster by token id (owned-22899 → amWBTC). Beats a stale "dai" on the sim hero.
+  // Wallet roster by token id (owned-22899 → amWBTC). Beats a stale "dai" on the hero record.
   if (walletHit) {
     pushUnique(keys, walletHit.collateral);
     pushUnique(keys, walletHit.collateralName);

@@ -639,7 +639,7 @@ const tui: TuiPlugin = async (api) => {
   }
 
   const runMintSub = (task: string, starter: (typeof STARTERS)[number], beforeIds: Set<string>) => {
-    showConfirm(`$5 sim — mint ${starter.label}?`, "Posts mint-sub with simPay. Not a wallet bind.", () => {
+    showConfirm(`$5 — mint ${starter.label}?`, "Opens MetaMask bindStarter on Base Sepolia. Not a wallet bind.", () => {
       void (async () => {
         toast(api, `Minting ${starter.label}…`, "info")
         log(rootDir, "mint-sub", { spirit: starter.spirit, label: starter.label })
@@ -698,11 +698,11 @@ const tui: TuiPlugin = async (api) => {
     showSelect(
       {
         title,
-        placeholder: "16 starter collaterals ($5 sim)",
+        placeholder: "16 starter collaterals ($5)",
         options: STARTERS.map((s) => ({
           title: s.label,
           value: `${s.spirit}::${s.label}`,
-          description: "mint new cAavegotchi · $5 sim",
+          description: "mint new cAavegotchi · $5",
         })),
       },
       (value) => {
@@ -759,7 +759,7 @@ const tui: TuiPlugin = async (api) => {
               {
                 title: "Mint new collateral",
                 value: "collateral",
-                description: "Mint a new cAavegotchi from the 16 starter collaterals ($5 sim)",
+                description: "Mint a new cAavegotchi from the 16 starter collaterals ($5)",
               },
               { title: "Cancel", value: "cancel", description: "Do not mint" },
             ],
@@ -872,7 +872,7 @@ const tui: TuiPlugin = async (api) => {
         options.push({
           title: s.label,
           value: `mint::${s.spirit}::${s.label}`,
-          description: "mint new cAavegotchi · $5 sim",
+          description: "mint new cAavegotchi · $5",
         })
       }
       for (const g of walletHits) {
@@ -992,7 +992,7 @@ const tui: TuiPlugin = async (api) => {
           {
             title: "Mint new collateral",
             value: "collateral",
-            description: "Mint a new cAavegotchi from the 16 starter collaterals ($5 sim)",
+            description: "Mint a new cAavegotchi from the 16 starter collaterals ($5)",
           },
         ],
       },

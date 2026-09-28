@@ -18,7 +18,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROLES_PATH = `${ROOT}/config/agent-roles.json`;
 
 /** Standing desks — never overwrite with generic worker. */
-const STANDING = new Set([
+export const STANDING = new Set([
   "starter-link-h1-1", // trader
   "starter-yfi-h1-1", // infra
   "owned-22899", // comms (when not orch pin)
@@ -119,6 +119,7 @@ export function ensureProfWorkerSeat(heroId, { force = false, dryRun = false } =
     id,
     "--yes",
   ];
+  if (force) args.push("--reassign");
   const r = spawnSync(process.execPath, args, {
     cwd: ROOT,
     encoding: "utf8",

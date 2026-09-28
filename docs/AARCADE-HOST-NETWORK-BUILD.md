@@ -151,7 +151,7 @@ Never `MONGODB_URI`; reject Hub seat work until P6.
 - `GET /api/gotchibot/slots/:jobId` (no bodies)
 
 Matcher: idle host + recent heartbeat + capacity fit.  
-Dogfood: `GOTCHIBOT_HOST_NETWORK_SIM=1` (operator). Product path needs P4.
+Every job needs a Base escrow lock (`--escrow-tx`); there is no no-chain mode.
 
 **Done when:** enqueue → assign → claim → complete in SIM.
 

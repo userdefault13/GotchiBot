@@ -229,17 +229,13 @@ Never call abra / abracadabra on the host. Secrets belong in Docker sandbox jobs
 EOF
   fi
 
-  if [ -n "${AARCADE_GOTCHIBOT_SERVICE_SECRET:-}" ]; then
-    # Optional: GOTCHIBOT_HERO_ID pins an existing cAavegotchi (e.g. starter-link-h1-1)
-    if [ -n "${GOTCHIBOT_HERO_ID:-}" ]; then
-      hero="$(node "$ROOT/scripts/identity.mjs" bind --session "$id" --hero "$GOTCHIBOT_HERO_ID" 2>/dev/null | tail -1)" || hero=""
-    else
-      hero="$(node "$ROOT/scripts/identity.mjs" bind --session "$id" 2>/dev/null | tail -1)" || hero=""
-    fi
+  # GOTCHIBOT_HERO_ID pins an existing cAavegotchi on the Sepolia cartridge (never mints).
+  if [ -n "${GOTCHIBOT_HERO_ID:-}" ]; then
+    hero="$(node "$ROOT/scripts/identity.mjs" bind --session "$id" --hero "$GOTCHIBOT_HERO_ID" 2>/dev/null | tail -1)" || hero=""
     if [ -n "$hero" ]; then
       set_field "$dir" hero "$hero"
       echo "Your gotchi identity: $hero" >> "$dir/bootstrap.txt"
-      # Sim: standing/cron → assigned, else active
+      # standing/cron → assigned, else active
       TASK_HINT="$(head -c 200 "$dir/prompt.txt" | tr '\n' ' ')"
       BIND_ST="$(standing_status "$TASK_HINT")"
       [ "$BIND_ST" = working ] && BIND_ST=active

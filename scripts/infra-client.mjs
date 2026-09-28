@@ -223,21 +223,6 @@ export function resolveSubgraphUrl(subgraphName = "aavegotchi-core-base", env = 
   return sub?.url || `${ENDPOINTS.gateway}/subgraphs/name/${subgraphName}`;
 }
 
-export function resolveCartridgeApiBase(env = process.env) {
-  if (useSoloApi(env)) {
-    return `${soloApiBase(env)}/api/cartridge-sim`;
-  }
-  const layer = ENDPOINTS.identityLayer || {};
-  const origin = String(
-    env.GOTCHIBOT_CARTRIDGE_URL || env.AARCADE_SIM_URL || env.CARTRIDGE_SIM || layer.cartridgeSim || "",
-  ).replace(/\/$/, "");
-  if (/\/api\/cartridge-sim$/i.test(origin)) return origin;
-  if (/:(8791)\b/i.test(origin) || /^https?:\/\/cartridge\.aarcadeghst\.com$/i.test(origin)) {
-    return origin;
-  }
-  return `${origin}/api/cartridge-sim`;
-}
-
 export function authMode(env = process.env) {
   if (useSoloApi(env)) return "solo_install_token";
   if (hasOperatorSubgraphKey(env) || hasOperatorServiceKey(env)) return "legacy_operator";

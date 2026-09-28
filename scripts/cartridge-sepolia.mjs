@@ -149,97 +149,12 @@ export async function readGotchiBotCartridgeSepolia(owner) {
   };
 }
 
-// ── Sepolia first, cartridge SIM as fallback ─────────────────────────────────
-// The cartridge SIM is being retired in phases. Callers consult Base Sepolia
-// first and use the SIM only when Sepolia fails / times out, reports nothing a
-// caller must double-check, or the operation has no headless on-chain form.
-
-export const FALLBACK_REASONS = Object.freeze({
-  SEPOLIA_ERROR: "sepolia-error",
-  SEPOLIA_EMPTY: "sepolia-empty",
-  NO_ONCHAIN: "no-onchain-capability",
-});
-
-const simFallbacks = { count: 0, last: null, byOp: {} };
-const warnedFallbacks = new Set();
-
-/** Record one SIM fallback; warns on stderr once per op+reason per process. */
-export function recordSimFallback(op, reason, detail = "") {
-  const at = new Date().toISOString();
-  simFallbacks.count += 1;
-  simFallbacks.last = { op, reason, detail: detail ? String(detail).slice(0, 200) : "", at };
-  const slot = (simFallbacks.byOp[op] ||= {});
-  slot[reason] = (slot[reason] || 0) + 1;
-  const key = `${op}:${reason}`;
-  if (process.env.GOTCHIBOT_QUIET_SIM_FALLBACK !== "1" && !warnedFallbacks.has(key)) {
-    warnedFallbacks.add(key);
-    console.error(`cartridge: SIM fallback for ${op} (${reason})${detail ? ` — ${simFallbacks.last.detail}` : ""}`);
-  }
-}
-
-/** Snapshot of SIM fallbacks taken by this process: { count, last, byOp }. */
-export function simFallbackStats() {
-  return JSON.parse(JSON.stringify(simFallbacks));
-}
-
 function sepoliaTimeoutMs() {
   const n = Number(process.env.GOTCHIBOT_SEPOLIA_TIMEOUT_MS);
   return Number.isFinite(n) && n > 0 ? n : 8_000;
 }
 
-function withTimeout(promise, ms, label) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label}: Base Sepolia timed out after ${ms}ms`)), ms);
-    timer.unref?.();
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
-
-/**
- * Try Base Sepolia, fall back to the cartridge SIM.
- *
- * - `sepolia` absent → the operation has no headless on-chain form; SIM runs
- *   with reason `no-onchain-capability`.
- * - `sepolia` throws / times out → SIM runs with reason `sepolia-error`.
- * - `sepolia` returns a value `accept` rejects → SIM runs with `emptyReason`
- *   (default `sepolia-empty`). Without a `sim`, the Sepolia value is returned.
- *
- * SIM errors propagate unchanged, so callers keep their existing failure modes.
- *
- * @template T
- * @param {string} op
- * @param {{ sepolia?: (() => Promise<T>) | null, sim?: (() => Promise<T>) | null,
- *   accept?: (v: T) => boolean, emptyReason?: string, timeoutMs?: number }} opts
- * @returns {Promise<{ value: T, source: "sepolia"|"sim", reason?: string, detail?: string }>}
- */
-export async function resolveWithFallback(op, {
-  sepolia = null,
-  sim = null,
-  accept = (v) => v != null,
-  emptyReason = FALLBACK_REASONS.SEPOLIA_EMPTY,
-  timeoutMs = sepoliaTimeoutMs(),
-} = {}) {
-  const viaSim = async (reason, detail = "") => {
-    recordSimFallback(op, reason, detail);
-    return { value: await sim(), source: "sim", reason, detail };
-  };
-  if (typeof sepolia !== "function") {
-    if (typeof sim !== "function") throw new Error(`${op}: no Sepolia or SIM resolver`);
-    return viaSim(FALLBACK_REASONS.NO_ONCHAIN);
-  }
-  let value;
-  try {
-    value = await withTimeout(Promise.resolve().then(sepolia), timeoutMs, op);
-  } catch (e) {
-    if (typeof sim !== "function") throw e;
-    return viaSim(FALLBACK_REASONS.SEPOLIA_ERROR, e?.shortMessage || e?.message || String(e));
-  }
-  if (accept(value) || typeof sim !== "function") return { value, source: "sepolia" };
-  return viaSim(emptyReason);
-}
-
-/** Sepolia cartridge ids are uint256 decimals; SIM ids look like `sim-…`. */
+/** Sepolia cartridge ids are uint256 decimals. */
 export function isSepoliaCartridgeId(id) {
   return /^\d+$/.test(String(id ?? "").trim()) && String(id).trim() !== "0";
 }
@@ -275,7 +190,7 @@ function heroFromChain(key, h, activeKey) {
 }
 
 /**
- * Heroes on a Base Sepolia cartridge, in the SIM hero shape callers already use.
+ * Heroes on a Base Sepolia cartridge.
  * Throws when Sepolia is unreachable or unconfigured.
  * @returns {Promise<{ cartridgeId: string, activeHeroId: string|null, heroes: object[] }>}
  */
@@ -410,7 +325,7 @@ async function main() {
   }
   if (process.argv.includes("--heroes")) {
     const snap = await readSepoliaHeroesForOwner(owner);
-    console.log(JSON.stringify({ ...snap, simFallbacks: simFallbackStats() }, null, 2));
+    console.log(JSON.stringify(snap, null, 2));
     process.exit(snap.cartridgeId && snap.heroes.length ? 0 : 1);
   }
   if (process.argv.includes("--abra")) {

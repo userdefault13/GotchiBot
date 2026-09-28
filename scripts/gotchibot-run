@@ -72,21 +72,6 @@ list_heroes() {
   " 2>/dev/null | grep -v '^$' || true
 }
 
-bind_starter_hero() {
-  step "Binding starter cAavegotchi"
-  local hero
-  hero=$(node "$IDENTITY" bind 2>/dev/null | tail -1) || return 1
-  [ -n "$hero" ] || { error "No hero bound"; return 1; }
-  ok "Bound hero: $hero"
-  echo "$hero"
-}
-
-mint_portal() {
-  step "Minting portal pack"
-  warn "This requires service key. Run with: abra run gotchibot -- ./scripts/gotchibot identity mint"
-  read -p "Press Enter after minting via abra, or Ctrl+C to skip..."
-}
-
 select_orchestrator() {
   local heroes_str=$(list_heroes)
   local heroes=()
@@ -97,23 +82,8 @@ select_orchestrator() {
 
   if [ ${#heroes[@]} -eq 0 ]; then
     warn "No cAavegotchis found in cartridge"
-    read -p "Mint a portal pack now? (y/N) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      mint_portal
-      # Re-check after mint
-      local heroes_str2=$(list_heroes)
-      heroes=()
-      while IFS= read -r line; do
-        [ -n "$line" ] && heroes+=("$line")
-      done <<< "$heroes_str2"
-    fi
-
-    if [ ${#heroes[@]} -eq 0 ]; then
-      info "Binding starter hero instead..."
-      bind_starter_hero
-      return
-    fi
+    info "Bind or mint one on Base Sepolia (MetaMask): ./scripts/gotchibot onboarding"
+    return 1
   fi
 
   if [ -n "$active" ] && printf '%s\n' "${heroes[@]}" | grep -qx "$active"; then

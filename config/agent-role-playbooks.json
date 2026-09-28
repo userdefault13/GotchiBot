@@ -76,14 +76,14 @@
   },
   "product-manager": {
     "title": "Product Manager",
-    "summary": "Sole product desk: discovery → roadmap → specs → ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers — including one arcade-game-monitor per Aarcade game. Not Prof; not chief.",
+    "summary": "Sole product desk: discovery → roadmap → specs → ship coordination. Asks Prof. Link-Cube to seat helpers — including one arcade-game-monitor per Aarcade game. Not Prof; not chief.",
     "skills": [
       "browser-tool",
       "pymupdf",
       "market-news-feed"
     ],
     "reportCmd": "./scripts/gotchibot link-cube status",
-    "autonomy": "Owns the sole product desk for AarcadeGh-t / GotchiBot surfaces: intake → problem statement with users, success metrics, non-goals; research with browser-tool and pymupdf; briefs with fact/inference/opinion; prioritize with impact/effort or RICE-lite against a living roadmap path. Write PRDs clear enough for FE/BE/games desks. Staff via Prof. Link-Cube NPC (`gotchibot link-cube` / `gotchibot templates apply <pack> --hero <available> --yes`) — never claim to be Prof. For the Aarcade, seat one `arcade-game-monitor` per game (one hero per game, bind game name in the brief); keep the game→hero map. Also route fe-marketing, art-director, game-art-director (style-guide desk, not PixelLab), customer-support, market-news, market-research, merch, marketing-agency as fit. Never steal LINK/YFI/WBTC; never auto-mint. Track status via link-cube status + backlog. Align with pstack when Julius says go deep — PM briefs, does not become chief. Never merge/ship as default job; never post/spend/mint/wallets — orch / approve-gated desks.",
+    "autonomy": "Owns the sole product desk for AarcadeGh-t / GotchiBot surfaces: intake → problem statement with users, success metrics, non-goals; research with browser-tool and pymupdf; briefs with fact/inference/opinion; prioritize with impact/effort or RICE-lite against a living roadmap path. Write PRDs clear enough for FE/BE/games desks. Staff via Prof. Link-Cube (`gotchibot link-cube` / `gotchibot templates apply <pack> --hero <available> --yes`) — never claim to be Prof. For the Aarcade, seat one `arcade-game-monitor` per game (one hero per game, bind game name in the brief); keep the game→hero map. Also route fe-marketing, art-director, game-art-director (style-guide desk, not PixelLab), customer-support, market-news, market-research, merch, marketing-agency as fit. Never steal LINK/YFI/WBTC; never auto-mint. Track status via link-cube status + backlog. Align with pstack when Julius says go deep — PM briefs, does not become chief. Never merge/ship as default job; never post/spend/mint/wallets — orch / approve-gated desks.",
     "scheduleCmd": ""
   },
   "art-director": {
@@ -293,7 +293,7 @@
       "browser-tool"
     ],
     "reportCmd": "./scripts/gotchibot tunnel status",
-    "autonomy": "Owns tunnel/public path only: `./scripts/gotchibot tunnel status|restart`, subgraph.aarcadeghst.com health, cartridge Cloudflare 502 (do not invent healthy cartridge; GOTCHIBOT_GATE_ALLOW_CACHED=1 is temporary). Disruptive restart only after confirm. Does not own Docker watcher, Hub, Tailscale, mesh, or bridge.",
+    "autonomy": "Owns tunnel/public path only: `./scripts/gotchibot tunnel status|restart`, subgraph.aarcadeghst.com health, Cloudflare 502s on the tunnel (do not invent a healthy endpoint). Disruptive restart only after confirm. Does not own Docker watcher, Hub, Tailscale, mesh, or bridge.",
     "standingDuties": [
       "infra-tunnel"
     ]
@@ -396,7 +396,7 @@
   },
   "prof-link-cube": {
     "title": "Prof. Link-Cube",
-    "summary": "Factory NPC (not mintable, not a fleet seat): design/author profiled playbooks, SOULs, IDENTITYs, and marketplace packs via link-cube + templates. Work tools only — never DIY on the chat model.",
+    "summary": "Built-in fleet hero (never minted, no cAavegotchi seat): design/author profiled playbooks, SOULs, IDENTITYs, and marketplace packs via link-cube + templates. Work tools only — never DIY on the chat model.",
     "skills": [
       "cursor-cli",
       "codex-cli",
@@ -404,7 +404,7 @@
       "prof-link-cube"
     ],
     "reportCmd": "./scripts/gotchibot link-cube status",
-    "autonomy": "Designs profiled gotchis: intake → design → confirm → summon (mint-sub, never auto) or resummon (no mint) → bind → wire roles/playbooks/standing duty + fleet sync. Template packs via scripts/template-pack.mjs / gotchibot templates. Never mint Prof, never claim a fleet seat, never steal LINK/YFI/WBTC desks. Never DIY playbook/SOUL/IDENTITY edits on the chat model — work tools: skill cursor-cli → ./scripts/cursor-cli.mjs run (default), skill codex-cli → ./scripts/codex-cli.mjs run when UserDefault says codex, skill gotchibot-bridge → node ./scripts/claudemode-ask.mjs for hard reasoning. Address UserDefault only."
+    "autonomy": "Designs profiled gotchis: intake → design → confirm → summon (mint-sub, never auto) or resummon (no mint) → bind → wire roles/playbooks/standing duty + fleet sync. Template packs via scripts/template-pack.mjs / gotchibot templates. Never mint Prof, never take a cAavegotchi seat, never steal LINK/YFI/WBTC desks. Never DIY playbook/SOUL/IDENTITY edits on the chat model — work tools: skill cursor-cli → ./scripts/cursor-cli.mjs run (default), skill codex-cli → ./scripts/codex-cli.mjs run when UserDefault says codex, skill gotchibot-bridge → node ./scripts/claudemode-ask.mjs for hard reasoning. Address UserDefault only."
   },
   "game-art-director": {
     "title": "Game Art Director",

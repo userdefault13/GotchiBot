@@ -2,8 +2,8 @@
  * Where "the host" is, for scripts that a hero may run from INSIDE the OpenClaw
  * gateway container on the iMac.
  *
- * The trader API (:4000), subgraph proxy (:8787), mongo proxy (:8788), cartridge
- * sim (:8791) and trader webhook (:8792) all listen on the iMac host. From a
+ * The trader API (:4000), subgraph proxy (:8787), mongo proxy (:8788) and
+ * trader webhook (:8792) all listen on the iMac host. From a
  * plain shell that is 127.0.0.1. From inside Docker, 127.0.0.1 is the container
  * itself, so LINK reported "the desk is down, API unreachable from the host"
  * while the desk was healthy the whole time. Docker Desktop (and the compose

@@ -21,7 +21,7 @@ import {
   normalizeAddress,
 } from "./bot-inbox.mjs";
 import { currentProjectSlug } from "./project-context.mjs";
-import { orchestratorHeroId } from "./openclaw-fleet.mjs";
+import { heroDisplayName, orchestratorHeroId } from "./openclaw-fleet.mjs";
 import { getThumb, warmThumbs } from "./meet-channel.mjs";
 import { isProfLinkCubeId } from "./gotchi-art.mjs";
 
@@ -122,11 +122,18 @@ function formatTime(iso) {
   }
 }
 
+const GOTCHI_NAMES = new Map();
+
 function displayName(id) {
   const s = String(id || "");
   if (!s || s === "userdefault") return "UserDefault";
   if (isProfLinkCubeId(s)) return "Prof. Link-Cube";
-  if (s === orchestratorHeroId() || s === "owned-954" || s === "orch" || s === "gotchi") return "Gotchi";
+  const orchId = orchestratorHeroId();
+  const hero = s === "orch" || s === "gotchi" ? orchId : s;
+  if (!GOTCHI_NAMES.has(hero)) GOTCHI_NAMES.set(hero, heroDisplayName(hero));
+  const gotchiName = GOTCHI_NAMES.get(hero);
+  if (gotchiName) return gotchiName;
+  if (s === orchId || s === "owned-954" || s === "orch" || s === "gotchi") return "Gotchi";
   if (s.startsWith("starter-")) {
     const m = s.match(/starter-([a-z0-9]+)-/i);
     if (m) return m[1].toUpperCase();

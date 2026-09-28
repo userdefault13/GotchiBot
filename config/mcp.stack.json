@@ -84,7 +84,7 @@
         "MDB_MCP_CONNECTION_STRING": "{abra:aarcadeghst:MONGODB_URI}"
       },
       "project": "AarcadeGh-t",
-      "note": "Cartridge sim / mongo-proxy data — scope connection string narrowly"
+      "note": "AarcadeGh-t mongo-proxy data — scope connection string narrowly"
     },
     "pixellab": {
       "url": "https://api.pixellab.ai/mcp",

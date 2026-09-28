@@ -11,7 +11,7 @@
  */
 import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin as input, stdout as output } from "node:process";
@@ -22,13 +22,12 @@ import {
   remotePackUrl,
   resolvePackScope,
   filterPacksByScope,
-  isNpcPack,
   isSuitePack,
   suiteMembers,
 } from "./template-pack.mjs";
+import { mintCollaterals, unassignedHeroes } from "./template-seat.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SESSIONS = join(ROOT, "sessions");
 const PACK_CLI = join(ROOT, "scripts", "template-pack.mjs");
 
 const SCOPE_LABEL = {
@@ -58,33 +57,6 @@ async function pause(rl) {
   await rl.question("\n  [enter] ");
 }
 
-function loadHeroCandidates() {
-  const ids = new Set();
-  try {
-    const meta = JSON.parse(readFileSync(join(SESSIONS, ".identity.json"), "utf8"));
-    if (meta.activeHeroId) ids.add(String(meta.activeHeroId));
-  } catch {
-    /* ignore */
-  }
-  try {
-    const roster = JSON.parse(readFileSync(join(SESSIONS, ".avatar-roster.json"), "utf8"));
-    const list = roster.heroes || roster.roster || [];
-    for (const h of list) {
-      const id = typeof h === "string" ? h : h?.id;
-      if (id) ids.add(String(id));
-    }
-  } catch {
-    /* ignore */
-  }
-  try {
-    const onboard = JSON.parse(readFileSync(join(SESSIONS, ".onboarding.json"), "utf8"));
-    if (onboard.orchestratorHeroId) ids.add(String(onboard.orchestratorHeroId));
-  } catch {
-    /* ignore */
-  }
-  return [...ids];
-}
-
 function runPack(args) {
   const r = spawnSync(process.execPath, [PACK_CLI, ...args], {
     cwd: ROOT,
@@ -108,21 +80,37 @@ function packInstalled(packId) {
   return existsSync(join(ROOT, "templates", "marketplace", "packs", packId, "pack.json"));
 }
 
-async function pickHero(rl) {
-  const heroes = loadHeroCandidates();
-  if (heroes.length === 0) {
-    const typed = (await rl.question("  Hero id (e.g. owned-22899): ")).trim();
-    return typed || null;
+/**
+ * A template seats on a new cAavegotchi ($5 mint) or one with no assignment.
+ * @returns {Promise<{ hero: string } | { mint: string } | null>}
+ */
+async function pickSeat(rl, taken = new Set()) {
+  let free = [];
+  try {
+    free = (await unassignedHeroes()).filter((h) => !taken.has(h.id));
+  } catch (e) {
+    console.log(`  · could not read cartridge heroes: ${e?.message || e}`);
   }
-  const opts = heroes.map((id) => ({ key: id, label: id }));
-  opts.push({ key: "__type", label: "Type a different hero id…" });
-  const pick = await choose(rl, "Apply to which hero?", opts);
+  const opts = [{ key: "__mint", label: "Mint a new cAavegotchi ($5)" }];
+  for (const h of free) {
+    const role = h.role ? ` · ${h.role}` : "";
+    opts.push({ key: h.id, label: h.name ? `${h.name} · ${h.id}${role}` : `${h.id}${role}` });
+  }
+  if (!free.length) console.log("  No unassigned cAavegotchis on this cartridge.");
+  const pick = await choose(rl, "Seat this template on?", opts);
   if (!pick) return null;
-  if (pick.key === "__type") {
-    const typed = (await rl.question("  Hero id: ")).trim();
-    return typed || null;
-  }
-  return pick.key;
+  if (pick.key !== "__mint") return { hero: pick.key };
+
+  const collaterals = mintCollaterals();
+  const coll = await choose(
+    rl,
+    "Collateral for the new cAavegotchi?",
+    collaterals.map((c) => ({ key: c.key, label: `${c.label || c.libraryName || c.id} · H${c.hauntId}` })),
+  );
+  if (!coll) return null;
+  const ok = (await rl.question(`\n  Mint a new ${coll.key} cAavegotchi for $5? [y/N]: `)).trim().toLowerCase();
+  if (ok !== "y" && ok !== "yes") return null;
+  return { mint: coll.key };
 }
 
 async function packDetail(rl, catalog, pack) {
@@ -132,7 +120,6 @@ async function packDetail(rl, catalog, pack) {
     const local = packInstalled(pack.id) ? "yes" : "no";
     console.log(`  id         ${pack.id}`);
     console.log(`  scope      ${resolvePackScope(pack)}`);
-    if (isNpcPack(pack)) console.log(`  kind       npc (install only — never seats a hero)`);
     if (isSuitePack(pack)) {
       console.log(`  kind       suite`);
       console.log(`  members    ${suiteMembers(pack).join(", ")}`);
@@ -149,20 +136,15 @@ async function packDetail(rl, catalog, pack) {
     console.log(`  pack URL   ${url}`);
     console.log("");
 
-    const actions = isNpcPack(pack)
+    const actions = isSuitePack(pack)
       ? [
-          { key: "install", label: "Install NPC (playbook + skill + config/npc)" },
+          { key: "install", label: "Install suite (all member playbooks + skills)" },
+          { key: "apply", label: "Seat suite (pick a hero per member)" },
           { key: "show", label: "Show pack.json / files (local)" },
         ]
-      : isSuitePack(pack)
-        ? [
-            { key: "install", label: "Install suite (all member playbooks + skills)" },
-            { key: "apply", label: "Seat suite (pick a hero per member)" },
-            { key: "show", label: "Show pack.json / files (local)" },
-          ]
       : [
           { key: "install", label: "Install pack (merge playbook / AGENTS / skills)" },
-          { key: "apply", label: "Apply to hero (install + resummon + slot 15)" },
+          { key: "apply", label: "Apply — mint a new cAavegotchi ($5) or seat an unassigned one" },
           { key: "show", label: "Show pack.json / files (local)" },
         ];
     const act = await choose(rl, "Action?", actions);
@@ -177,23 +159,20 @@ async function packDetail(rl, catalog, pack) {
     }
 
     if (act.key === "apply") {
-      if (isNpcPack(pack)) {
-        console.log("\n  NPC — use Install, not Apply-to-hero.");
-        await pause(rl);
-        continue;
-      }
       if (isSuitePack(pack)) {
         const members = suiteMembers(pack);
         const pairs = [];
+        const taken = new Set();
         for (const m of members) {
           console.log(`\n  Member ${m}:`);
-          const h = await pickHero(rl);
-          if (!h) {
+          const seat = await pickSeat(rl, taken);
+          if (!seat) {
             console.log("  cancelled suite seating");
             await pause(rl);
             return;
           }
-          pairs.push(`${m}=${h}`);
+          if (seat.hero) taken.add(seat.hero);
+          pairs.push(`${m}=${seat.hero || `mint:${seat.mint}`}`);
         }
         console.log(`\n  Seat suite ${pack.id} → ${pairs.join(", ")}…`);
         if (catalog.source === "remote" && !packInstalled(pack.id)) {
@@ -203,13 +182,14 @@ async function packDetail(rl, catalog, pack) {
         await pause(rl);
         continue;
       }
-      const hero = await pickHero(rl);
-      if (!hero) continue;
-      console.log(`\n  Apply ${pack.id} → ${hero}…`);
+      const seat = await pickSeat(rl);
+      if (!seat) continue;
+      console.log(`\n  Apply ${pack.id} → ${seat.hero || `new ${seat.mint} cAavegotchi`}…`);
       if (catalog.source === "remote" && !packInstalled(pack.id)) {
         runPackInherit(["install", url, "--yes"]);
       }
-      runPackInherit(["apply", pack.id, "--hero", hero, "--yes"]);
+      const target = seat.hero ? ["--hero", seat.hero] : ["--mint", seat.mint];
+      runPackInherit(["apply", pack.id, ...target, "--yes"]);
       await pause(rl);
       continue;
     }
@@ -258,7 +238,7 @@ async function browsePacks(rl, catalog, scope) {
     }
     const opts = packs.map((p) => ({
       key: p.id,
-      label: `${p.title || p.id}  (v${p.version || "?"} · ${resolvePackScope(p)}${isNpcPack(p) ? " · NPC" : ""}${isSuitePack(p) ? " · suite" : ""})`,
+      label: `${p.title || p.id}  (v${p.version || "?"} · ${resolvePackScope(p)}${isSuitePack(p) ? " · suite" : ""})`,
       pack: p,
     }));
     const pick = await choose(rl, "Open pack?", opts);

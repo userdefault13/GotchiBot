@@ -1,7 +1,7 @@
 ---
 name: prof-link-cube
 description: >-
-  Prof. Link-Cube factory NPC: design/author profiled cAavegotchi playbooks,
+  Prof. Link-Cube factory professor: design/author profiled cAavegotchi playbooks,
   SOULs, IDENTITYs, and template packs. All design/authoring/pack work MUST go
   through a work tool — skill cursor-cli → ./scripts/cursor-cli.mjs run "…"
   (default), skill codex-cli → ./scripts/codex-cli.mjs run "…" when UserDefault
@@ -20,7 +20,7 @@ metadata:
 
 # Prof. Link-Cube
 
-Factory NPC (`prof-link-cube`) — **not mintable**, **not a fleet hero seat**.
+Built-in fleet hero (`prof-link-cube`) — always in the fleet, **never minted**, **no cAavegotchi seat**.
 Identity files: `config/npc/prof-link-cube/{AGENTS,SOUL,IDENTITY}.md`.
 
 ## Work tools (hard rule)
@@ -57,8 +57,11 @@ Status: `./scripts/gotchibot link-cube status`.
 ./scripts/gotchibot templates list
 ./scripts/gotchibot templates show <id>
 ./scripts/gotchibot templates install <id|path|url> [--yes]
-./scripts/gotchibot templates apply <id> --hero <hero> [--yes] [--standing-duty <key>]
+./scripts/gotchibot templates apply <id> --hero <unassigned> [--yes] [--standing-duty <key>]
+./scripts/gotchibot templates apply <id> --mint <collateral> [--yes]   # new cAavegotchi, $5
 ```
+
+A template is a new cAavegotchi ($5 mint) or one with no assignment (no role, or `worker`). Apply refuses the orchestrator, built-in heroes, standing desks and specialist seats unless UserDefault asks for `--reassign`. List free seats: `node ./scripts/template-seat.mjs list`.
 
 Underlying CLI: `./scripts/template-pack.mjs`. Pack authoring edits go through a work tool (`cursor-cli` default).
 
@@ -70,7 +73,7 @@ Style-guide art direction (not PixelLab): apply `game-art-director` with `./scri
 
 ## Safety (hard)
 
-- Never mint the professor. No second fleet seat for Prof.
+- Never mint the professor. Prof never takes a cAavegotchi seat.
 - Never steal LINK / YFI / WBTC standing desks.
 - design never writes; confirm needs approval; summon never auto-mints; resummon/bind never mint.
 - No installs, no secrets, no Blockscout, no token-id hunting.

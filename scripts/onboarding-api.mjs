@@ -1,88 +1,42 @@
 #!/usr/bin/env node
 /**
- * Thin API runner — invoked via `abra run gotchibot --` when the tmux pane lacks service key.
+ * Add a cAavegotchi to the desk's Base Sepolia cartridge (MetaMask page).
+ * Prints the new hero id as the last stdout line.
+ *
+ *   node scripts/onboarding-api.mjs bind-owned <tokenId>            free — wallet gotchi
+ *   node scripts/onboarding-api.mjs mint-sub <collateral>           $5 — starter (alias: bind-starter)
  */
-import { call, loadMeta, saveMeta, GAME_ID } from "./identity.mjs";
-
-const cmd = process.argv[2];
-
-function simCartId(meta) {
-  if (meta?.legacySimCartridgeId) return meta.legacySimCartridgeId;
-  if (String(meta?.cartridgeId || "").startsWith("sim-")) return meta.cartridgeId;
-  return meta?.cartridgeId || null;
-}
+import { isMainModule } from "./is-main.mjs";
+import { loadBaseStarterCollaterals } from "./onboarding-lib.mjs";
 
 async function main() {
-  const meta = loadMeta();
-  const cartId = simCartId(meta);
+  const [cmd, arg] = process.argv.slice(2);
+  const { bindOwnedToDesk, bindStarterToDesk } = await import("./cartridge-mint-sepolia.mjs");
   switch (cmd) {
-    case "ensure": {
-      const owner = process.argv[3];
-      const r = await call("/cartridges/ensure", {
-        method: "POST",
-        body: { owner, gameId: GAME_ID, simPay: true },
-      });
-      if (!r.ok) throw new Error(JSON.stringify(r.data));
-      const c = r.data.cartridge ?? r.data;
-      const id = c.id ?? c.cartridgeId;
-      // Preserve Sepolia nest cart when ensure creates a parallel sim identity cart.
-      if (meta?.cartridgeSource === "sepolia" || (meta?.cartridgeId && !String(meta.cartridgeId).startsWith("sim-"))) {
-        saveMeta({
-          owner,
-          legacySimCartridgeId: id,
-          cartridgeId: meta.cartridgeId,
-          cartridgeSource: meta.cartridgeSource || "sepolia",
-          abraCartridgeId: meta.abraCartridgeId,
-          abraVerified: meta.abraVerified,
-        });
-      } else {
-        saveMeta({ cartridgeId: id, owner });
-      }
-      console.log(id);
-      break;
-    }
-    case "bind-starter": {
-      const collateral = process.argv[3] ?? "dai";
-      if (!cartId) throw new Error("no sim cartridge — run ensure first");
-      const { bindStarterHero } = await import("./onboarding-lib.mjs");
-      const id = await bindStarterHero(cartId, collateral);
-      console.log(id ?? "");
-      break;
-    }
     case "bind-owned": {
-      const tokenId = process.argv[3];
-      if (!cartId) throw new Error("no sim cartridge — run ensure first");
-      const { bindOwnedGotchi } = await import("./onboarding-lib.mjs");
-      const id = await bindOwnedGotchi(cartId, tokenId);
-      console.log(id ?? "");
+      if (!/^\d+$/.test(String(arg || ""))) throw new Error("usage: onboarding-api.mjs bind-owned <tokenId>");
+      console.log(await bindOwnedToDesk(arg));
       break;
     }
-    case "mint-sub": {
-      const collateral = process.argv[3] ?? "dai";
-      if (!cartId) throw new Error("no sim cartridge — run ensure first");
-      const { mintSubAgentHero } = await import("./onboarding-lib.mjs");
-      const id = await mintSubAgentHero(cartId, collateral);
-      console.log(id ?? "");
-      break;
-    }
-    case "select-hero": {
-      const heroId = process.argv[3];
-      if (!cartId) throw new Error("no sim cartridge — run ensure first");
-      const r = await call(`/cartridges/${cartId}/select-hero`, {
-        method: "POST",
-        body: { cAavegotchiId: heroId },
-      });
-      if (!r.ok) throw new Error(JSON.stringify(r.data));
-      console.log(heroId);
+    case "mint-sub":
+    case "bind-starter": {
+      const [spirit, haunt] = String(arg || "dai").toLowerCase().split(":h");
+      const option = loadBaseStarterCollaterals().find(
+        (c) => c.id === spirit && (!haunt || Number(c.hauntId) === Number(haunt)),
+      );
+      if (!option) throw new Error(`unknown starter collateral "${arg}"`);
+      console.log(await bindStarterToDesk(option));
       break;
     }
     default:
-      console.error("usage: onboarding-api.mjs ensure|bind-starter|bind-owned|mint-sub|select-hero …");
+      console.error("usage: onboarding-api.mjs bind-owned <tokenId> | mint-sub <collateral>[:h2]");
       process.exit(2);
   }
 }
 
-main().catch((e) => {
-  console.error(e.message);
-  process.exit(1);
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((e) => {
+    console.error(e.message);
+    process.exit(1);
+  });
+}

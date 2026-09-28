@@ -19,6 +19,7 @@ import { isMainModule } from "./is-main.mjs";
 import {
   readGotchiBotCartridgeSepolia,
   readAbraCartridgeSepolia,
+  readSepoliaHeroes,
   formatAbraCartLine,
 } from "./cartridge-sepolia.mjs";
 import { loadMeta, saveMeta } from "./identity.mjs";
@@ -462,10 +463,7 @@ export async function refreshDeskMeta(wallet) {
     abraVerified: Boolean(abra.verified),
   };
   const meta = loadMeta() || {};
-  if (String(meta.cartridgeId || "").startsWith("sim-") && !patch.cartridgeId) {
-    patch.legacySimCartridgeId = meta.cartridgeId;
-  }
-  // New Sepolia nest install: drop sim/OpenClaw session→hero history so avatar
+  // New Sepolia nest install: drop OpenClaw session→hero history so avatar
   // gallery doesn't preload old fleet thumbs.
   const nestHeroes = new Set((gbot.heroes || []).map((id) => String(id)));
   const cartChanged =
@@ -1292,6 +1290,67 @@ export async function runBindStarter({
       if (!settled) finish({ ok: false, error: "bindStarter timed out (5 min)" });
     }, 5 * 60 * 1000);
   });
+}
+
+function deskTarget() {
+  const meta = loadMeta() || {};
+  const wallet = String(meta.owner || readWallet() || "").toLowerCase();
+  if (!wallet) throw new Error("No wallet — run ./scripts/gotchibot connect first");
+  const cartridgeId = meta.cartridgeId ? String(meta.cartridgeId) : null;
+  if (!cartridgeId) throw new Error(`No GotchiBot cart on file — mint one: ${CONCIERGE}`);
+  return { wallet, cartridgeId };
+}
+
+async function deskHeroIds(cartridgeId) {
+  return (await readSepoliaHeroes(cartridgeId)).heroes.map((h) => String(h.id));
+}
+
+/** Bind a wallet-owned gotchi to the desk cart (MetaMask bindOwned). @returns `owned-<tokenId>` */
+export async function bindOwnedToDesk(sourceTokenId) {
+  const { wallet, cartridgeId } = deskTarget();
+  const tokenId = String(sourceTokenId);
+  const bound = await runBindOwned({ expectWallet: wallet, cartridgeId, sourceTokenId: tokenId });
+  if (!bound?.ok) throw new Error(`bindOwned #${tokenId}: ${bound?.error || "cancelled"}`);
+  await refreshDeskMeta(wallet).catch(() => {});
+  return `owned-${tokenId}`;
+}
+
+/**
+ * Mint a $5 starter cAavegotchi on the desk cart (MetaMask bindStarter).
+ * @param {{ id: string, libraryName?: string, hauntId?: number, collateralType?: string }} option
+ *   a starter collateral from loadBaseStarterCollaterals()
+ * @returns {Promise<string>} the new hero id
+ */
+export async function bindStarterToDesk(option) {
+  if (!option?.id) throw new Error("starter collateral required");
+  const { wallet, cartridgeId } = deskTarget();
+  const collateral = String(option.collateralType || "").startsWith("0x")
+    ? String(option.collateralType)
+    : "0x0000000000000000000000000000000000000000";
+  const before = new Set(await deskHeroIds(cartridgeId));
+  const bound = await runBindStarter({ expectWallet: wallet, cartridgeId, templateId: option.id, collateral });
+  if (!bound?.ok) throw new Error(`bindStarter ${option.id}: ${bound?.error || "cancelled"}`);
+  await refreshDeskMeta(wallet).catch(() => {});
+  const fresh = (await deskHeroIds(cartridgeId)).filter((id) => !before.has(id));
+  if (!fresh.length) {
+    throw new Error(`bindStarter confirmed (${bound.txHash || "no tx"}) but no new hero on cart ${cartridgeId}`);
+  }
+  const heroId = fresh[fresh.length - 1];
+  try {
+    const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
+    const colors = findCollateralColors(collateral !== "0x0000000000000000000000000000000000000000" ? collateral : option.id, option.hauntId || 1);
+    persistHeroCollateral(heroId, {
+      collateral: option.id,
+      collateralAddress: collateral,
+      collateralName: colors?.name || option.libraryName || null,
+      hauntId: option.hauntId || 1,
+      primary: colors?.primary,
+      secondary: colors?.secondary,
+    });
+  } catch {
+    /* thumb colors are cosmetic */
+  }
+  return heroId;
 }
 
 function renderBindStarterPage(plan) {

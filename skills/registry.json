@@ -782,7 +782,7 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Prof. Link-Cube NPC (not mintable): summon (portal mint) or resummon (existing hero) a profiled cAavegotchi — intake → design → confirm → summon(mint-sub from portal, never auto) or resummon(no mint) → wire agent-roles + playbooks + standing duty + fleet sync. Aliases: hatch→summon, rehatch→resummon. /link-cube · gotchibot link-cube. Never mint the professor. Design/authoring/pack work must go through cursor-cli (./scripts/cursor-cli.mjs run); never DIY playbook/SOUL/IDENTITY edits on the chat model.",
+      "description": "Prof. Link-Cube, built-in fleet hero (never minted): summon (portal mint) or resummon (existing hero) a profiled cAavegotchi — intake → design → confirm → summon(mint-sub from portal, never auto) or resummon(no mint) → wire agent-roles + playbooks + standing duty + fleet sync. Aliases: hatch→summon, rehatch→resummon. /link-cube · gotchibot link-cube. Never mint the professor. Design/authoring/pack work must go through cursor-cli (./scripts/cursor-cli.mjs run); never DIY playbook/SOUL/IDENTITY edits on the chat model.",
       "path": ".opencode/skills/prof-link-cube/SKILL.md",
       "script": "scripts/prof-link-cube.mjs",
       "addedAt": "2026-09-16"

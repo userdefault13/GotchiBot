@@ -69,11 +69,7 @@
     },
     "escrowTx": {
       "type": ["string", "null"],
-      "description": "Base lock tx hash; null allowed only when SIM mode"
-    },
-    "sim": {
-      "type": "boolean",
-      "description": "true when GOTCHIBOT_HOST_NETWORK_SIM dogfood (no chain)"
+      "description": "Base lock tx hash; null only before the job is funded"
     },
     "error": {
       "type": ["string", "null"],

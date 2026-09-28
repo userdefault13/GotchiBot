@@ -371,7 +371,7 @@ async function cmdVerify(opts) {
 
 /**
  * Prompt after git commit (TTY). Skip unless GOTCHIBOT_CHAT_CHECKPOINT=1 or --onchain.
- * On yes: Hub snapshot → identity checkpoint (local/SIM) → optional Sepolia checkpointSave.
+ * On yes: Hub snapshot → identity checkpoint (local snapshot) → optional Sepolia checkpointSave.
  */
 export async function promptChatCheckpointAfterCommit({
   commitSha,

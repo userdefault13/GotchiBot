@@ -109,7 +109,7 @@ async function cmdHostStatus() {
 }
 
 /**
- * Local artifact HTTP for SIM / same-machine dogfood.
+ * Local artifact HTTP for same-machine dogfood.
  * GET/PUT /a/:token
  */
 function ensureLocalArtifactServer() {
@@ -256,8 +256,12 @@ async function cmdHostRun(argv) {
 }
 
 async function cmdSlotsSubmit(argv) {
-  const prompt = argv.filter((a) => !a.startsWith("--")).join(" ") || "ping";
-  const sim = argv.includes("--sim") || process.env.GOTCHIBOT_HOST_NETWORK_SIM === "1";
+  const valueFlags = new Set(["--escrow-tx", "--artifact-put", "--artifact-get"]);
+  const prompt =
+    argv.filter((a, i) => !a.startsWith("--") && !valueFlags.has(argv[i - 1])).join(" ") || "ping";
+  const escrowIdx = argv.indexOf("--escrow-tx");
+  const escrowTx = escrowIdx >= 0 ? argv[escrowIdx + 1] : null;
+  if (!escrowTx) throw new Error("usage: gotchibot slots submit <prompt> --escrow-tx <baseLockTxHash>");
   const promptBuf = Buffer.from(prompt, "utf8");
   const promptHash = sha256Hex(promptBuf);
 
@@ -274,7 +278,7 @@ async function cmdSlotsSubmit(argv) {
     const token = `t_${randomBytes(8).toString("hex")}`;
     artifactPutUrl = server.putUrl(token);
     artifactGetUrl = server.getUrl(token);
-    // Seed GET body (same URL for local SIM)
+    // Seed GET body (same URL when host and renter share a machine)
     await putArtifact(artifactGetUrl, promptBuf);
   }
 
@@ -284,15 +288,8 @@ async function cmdSlotsSubmit(argv) {
     promptHash,
     maxCoreMinutes: 30,
     priceGhstWei: "0",
-    sim: true,
+    escrowTx,
   };
-  if (argv.includes("--escrow-tx")) {
-    const i = argv.indexOf("--escrow-tx");
-    body.escrowTx = argv[i + 1];
-    body.sim = false;
-  } else if (!sim && process.env.GOTCHIBOT_HOST_NETWORK_SIM !== "1") {
-    body.sim = Boolean(sim);
-  }
 
   const out = await api("POST", "/api/gotchibot/slots/enqueue", { body });
   console.log(JSON.stringify(out, null, 2));

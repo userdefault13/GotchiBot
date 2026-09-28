@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * prof.link-cube — NPC professor in GotchiBot (not mintable, not a cAavegotchi seat).
+ * prof.link-cube — built-in fleet hero in GotchiBot (never minted, no cAavegotchi seat).
  * He runs the summoning desk: summon (portal mint) or resummon (existing hero)
- * a profiled cAavegotchi. The professor himself is never minted or assigned a hero id.
+ * a profiled cAavegotchi. The professor himself is never minted and never takes a cAavegotchi seat.
  *
  * Portal language (Aavegotchi summoning). Legacy aliases: hatch → summon, rehatch → resummon.
  *
@@ -16,7 +16,7 @@
  *   node scripts/prof-link-cube.mjs confirm [--dry-run] [--yes] # applies; refuses without --yes / GOTCHIBOT_AUTO_APPROVE=1 / interactive y
  *   node scripts/prof-link-cube.mjs summon --confirmed [--auto-mint gotchi|wallet|none] [--yes]
  *        # prints portal mint plan, then prompts (or uses --auto-mint) to optionally
- *        # mint-sub a collateral gotchi OR ensure wallet+cartridge. Never mints the professor.
+ *        # mint a $5 collateral gotchi (MetaMask) OR check the wallet's cartridge. Never mints the professor.
  *   node scripts/prof-link-cube.mjs resummon --hero <id> [--role <role>] [--standing-duty <key>] [--dry-run] [--yes]
  *   node scripts/prof-link-cube.mjs bind --hero <id> [--role <role>] [--standing-duty <key>] [--yes]
  *   node scripts/prof-link-cube.mjs status
@@ -27,7 +27,7 @@
  *   - summon refuses without a confirmed design AND --confirmed; default is plan-only.
  *     Auto-mint (gotchi|wallet) needs a second yes: interactive pick, or --auto-mint + --yes.
  *   - resummon never mints; it only rewires an existing hero (no wallet, no cartridge writes).
- *   - Prof. Link-Cube is an NPC — never minted, never assigned a hero id.
+ *   - Prof. Link-Cube is a built-in fleet hero — never minted, never a cAavegotchi seat.
  *   - No installs, no secrets, no Blockscout, no token-id hunting.
  */
 
@@ -36,15 +36,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import readline from "node:readline";
-import {
-  commandExists,
-  ensureCartridgeForOwner,
-  hasServiceKey,
-  mintSubAgentHero,
-  readWalletFile,
-  runAbraNode,
-} from "./onboarding-lib.mjs";
-import { loadMeta } from "./identity.mjs";
+import { loadBaseStarterCollaterals, readWalletFile } from "./onboarding-lib.mjs";
+import { readGotchiBotCartridgeSepolia } from "./cartridge-sepolia.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_DIR = join(ROOT, "sessions", "link-cube");
@@ -54,7 +47,7 @@ const PLAYBOOKS_PATH = join(ROOT, "config", "agent-role-playbooks.json");
 const STANDING_PATH = join(ROOT, "config", "agent-standing-duties.json");
 const FLEET_SYNC = join(ROOT, "scripts", "openclaw-fleet.mjs");
 
-/** spirit ids for the 16 starter collaterals (cartridge mint-sub). */
+/** spirit ids for the 16 starter collaterals (bindStarter template ids). */
 const SPIRIT_IDS = {
   dai: "dai", weth: "weth", aave: "aave", link: "link", usdt: "usdt",
   usdc: "usdc", tusd: "tusd", uni: "uni", yfi: "yfi", wbtc: "wbtc",
@@ -154,11 +147,11 @@ function normalizeMode(mode) {
 }
 
 function usage() {
-  console.log(`prof.link-cube — NPC professor (not mintable). Summons/resummons profiled cAavegotchis.
+  console.log(`prof.link-cube — built-in fleet hero (never minted). Summons/resummons profiled cAavegotchis.
 
 Flow: intake → design → confirm → summon(portal) OR resummon(existing) → wire role/playbook/SOUL/IDENTITY + fleet sync.
 Portal language (Aavegotchi summoning). Aliases: hatch→summon, rehatch→resummon.
-Prof. Link-Cube is a GotchiBot NPC — never a hero seat, never mint-sub for the professor himself.
+Prof. Link-Cube is a built-in fleet hero — never a cAavegotchi seat, never minted himself.
 `);
   console.log(`
   link-cube intake [flags]                     collect prefs (job, coding|non-coding, voice, anti-jobs, collateral, mode, hero)
@@ -167,7 +160,7 @@ Prof. Link-Cube is a GotchiBot NPC — never a hero seat, never mint-sub for the
                                                refuses without --yes / GOTCHIBOT_AUTO_APPROVE=1 / interactive y
   link-cube summon --confirmed [--auto-mint gotchi|wallet|none] [--yes]
                                                print portal mint plan, then ask (or use --auto-mint) to
-                                               mint-sub a collateral gotchi OR ensure wallet+cartridge.
+                                               mint a $5 collateral gotchi (MetaMask) OR check the wallet's cartridge.
                                                Default: plan only. Auto-mint needs interactive pick or --yes.
   link-cube resummon --hero <id> [--role <r>] [--standing-duty <key>] [--keep-playbook] [--dry-run] [--yes]
                                                existing hero: design + confirm, no mint (the LINK proof path)
@@ -187,7 +180,7 @@ intake flags:
 standing-duty keys: ${Object.keys(STANDING_DUTIES).join(", ")}
 
 Safety: design never writes; confirm needs approval; summon defaults to plan-only;
-auto-mint gotchi|wallet needs a second yes. resummon/bind never mint. Prof is NPC.
+auto-mint gotchi|wallet needs a second yes. resummon/bind never mint. Prof is never minted.
 No installs, no secrets.`);
 }
 
@@ -437,32 +430,10 @@ function normalizeAutoMint(raw) {
   return null;
 }
 
-async function apiOpSummon(op, ...args) {
-  if (hasServiceKey()) {
-    if (op === "mint-sub") {
-      const meta = loadMeta();
-      if (!meta?.cartridgeId) {
-        die("summon: no cartridge on file — run auto-mint wallet first, or ./scripts/gotchibot connect");
-      }
-      return mintSubAgentHero(meta.cartridgeId, args[0]);
-    }
-    if (op === "ensure") return ensureCartridgeForOwner(args[0]);
-    die(`summon: unknown api op ${op}`);
-  }
-  if (!commandExists("abra")) {
-    die("summon: abra required for mint without AARCADE_GOTCHIBOT_SERVICE_SECRET — Julius: abra run gotchibot -- …");
-  }
-  const r = runAbraNode("scripts/onboarding-api.mjs", [op, ...args.map(String)]);
-  if (r.status !== 0) {
-    die(`summon: ${op} failed — ${(r.stderr || r.stdout || "API call failed").trim().slice(0, 400)}`);
-  }
-  return (r.stdout || "").trim();
-}
-
 async function promptAutoMint(spirit) {
-  console.log("\nAuto-mint now? (Prof. Link-Cube stays NPC — this mints a hero or ensures wallet, not the professor.)");
-  console.log(`  g) new collateral gotchi — mint-sub ${spirit} (sim $5)`);
-  console.log("  w) wallet + cartridge ensure (uses sessions/.wallet.json; connect first if missing)");
+  console.log("\nAuto-mint now? (Prof. Link-Cube is never minted — this mints a hero or ensures wallet, not the professor.)");
+  console.log(`  g) new collateral gotchi — MetaMask bindStarter ${spirit} ($5)`);
+  console.log("  w) check this wallet's GotchiBot cartridge on Base Sepolia");
   console.log("  n) no — plan only (default)");
   const a = await ask("Choice [g/w/N]: ");
   if (/^g/i.test(a) || /^gotchi/i.test(a) || /^collateral/i.test(a)) return "gotchi";
@@ -471,9 +442,16 @@ async function promptAutoMint(spirit) {
 }
 
 async function runAutoMintGotchi(design, spirit) {
-  console.log(`\n[summon] minting collateral gotchi (mint-sub ${spirit})…`);
-  const heroId = await apiOpSummon("mint-sub", spirit);
-  if (!heroId) die("summon: mint-sub returned empty hero id");
+  const option = loadBaseStarterCollaterals().find((c) => c.id === spirit);
+  if (!option) die(`summon: unknown starter collateral "${spirit}"`);
+  console.log(`\n[summon] minting collateral gotchi (MetaMask bindStarter ${option.libraryName})…`);
+  const { bindStarterToDesk } = await import("./cartridge-mint-sepolia.mjs");
+  let heroId;
+  try {
+    heroId = await bindStarterToDesk(option);
+  } catch (e) {
+    die(`summon: mint failed — ${e?.message || e}`);
+  }
   console.log(`[summon] minted ${heroId}`);
   const state = loadState();
   state.summonedAt = new Date().toISOString();
@@ -493,8 +471,15 @@ async function runAutoMintWallet() {
         "Then re-run: link-cube summon --confirmed --auto-mint wallet --yes",
     );
   }
-  console.log(`\n[summon] ensuring cartridge for wallet ${wallet.slice(0, 6)}…${wallet.slice(-4)}…`);
-  const cartridgeId = await apiOpSummon("ensure", wallet);
+  console.log(`\n[summon] reading Base Sepolia cartridge for wallet ${wallet.slice(0, 6)}…${wallet.slice(-4)}…`);
+  const sep = await readGotchiBotCartridgeSepolia(wallet);
+  const cartridgeId = sep.cartridgeId ? String(sep.cartridgeId) : null;
+  if (!cartridgeId) {
+    die(
+      "summon: no GotchiBot cartridge on Base Sepolia for this wallet. Mint one (MetaMask):\n" +
+        "  node scripts/cartridge-mint-sepolia.mjs --product gotchibot --pay usdc",
+    );
+  }
   console.log(`[summon] cartridge ${cartridgeId}`);
   const state = loadState();
   state.walletEnsuredAt = new Date().toISOString();
@@ -522,9 +507,9 @@ async function cmdSummon(args) {
   console.log(`\n=== summon plan (from portal): ${design.title} (${design.roleId}) ===`);
   console.log(`collateral: ${design.collateral || "(default link)"} → spirit id: ${spirit}`);
   console.log("\nPortal mint options:");
-  console.log("  1. /spawn overlay (cartridge sim :8791) — pick collateral, confirm ($5 sim)");
-  console.log(`  2. Manual: abra run gotchibot -- node scripts/onboarding-api.mjs mint-sub ${spirit}`);
-  console.log("  3. This CLI — auto-mint prompt below (gotchi or wallet+cartridge)");
+  console.log("  1. /spawn overlay — pick collateral, confirm ($5, MetaMask)");
+  console.log(`  2. Manual: node scripts/onboarding-api.mjs mint-sub ${spirit}`);
+  console.log("  3. This CLI — auto-mint prompt below (gotchi or wallet cartridge check)");
   console.log("\nAfter a hero exists:");
   console.log(`  ./scripts/gotchibot link-cube bind --hero <new-hero-id> --role ${design.roleId} --yes`);
 

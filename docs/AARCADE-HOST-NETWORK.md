@@ -156,8 +156,7 @@ Arcade **never** stores prompt or result bodies — only hashes and renter artif
 | `artifactPutUrl` / `artifactGetUrl` | **Renter** |
 | `promptHash` / `resultHash` | Hashes only (`0x` + 64 hex) |
 | `maxCoreMinutes` / `priceGhstWei` | Renter at enqueue |
-| `escrowTx` | Base lock tx; null only in SIM |
-| `sim` | `true` when `GOTCHIBOT_HOST_NETWORK_SIM` dogfood |
+| `escrowTx` | Base lock tx (required at enqueue) |
 
 APIs: `POST /api/gotchibot/slots/enqueue|claim|complete`, `GET /api/gotchibot/slots/:jobId`  
 Hosts: `POST /api/gotchibot/host/register|heartbeat`, `GET /api/gotchibot/host/me|list`

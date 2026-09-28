@@ -9,6 +9,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadMeta } from "./identity.mjs";
 import { resolveThumbCollateral, persistHeroCollateral } from "./collateral-resolve.mjs";
+import { builtinHeroes, heroDisplayName } from "./openclaw-fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -91,7 +92,7 @@ function isSepoliaNestDesk(meta) {
   if (!meta) return false;
   if (meta.cartridgeSource === "sepolia") return true;
   const id = meta.cartridgeId != null ? String(meta.cartridgeId) : "";
-  return Boolean(id) && !id.startsWith("sim-") && /^\d+$/.test(id);
+  return /^\d+$/.test(id) && id !== "0";
 }
 
 async function heroesFresh() {
@@ -100,19 +101,21 @@ async function heroesFresh() {
     // No cartridge yet (new mint path) — don't leak the old fleet into the roster.
     if (!meta?.cartridgeId) return [];
 
-    // Sepolia nest desk: only on-chain nested heroes — never focus-list / sim fleet.
+    // Sepolia nest desk: only on-chain nested heroes — never the focus-list fleet.
     if (isSepoliaNestDesk(meta)) {
-      const { readGotchiBotCartridgeSepolia } = await import("./cartridge-sepolia.mjs");
+      // Hero objects, not raw bytes32 keys: owned/rented keys map back to `owned-<tokenId>`.
+      const { readSepoliaHeroesForOwner } = await import("./cartridge-sepolia.mjs");
       const owner = meta.owner || null;
       if (!owner) return [];
-      const sep = await readGotchiBotCartridgeSepolia(owner);
+      const sep = await readSepoliaHeroesForOwner(String(owner).toLowerCase());
       if (!sep?.cartridgeId || String(sep.cartridgeId) !== String(meta.cartridgeId)) return [];
-      return (sep.heroes || []).map((id) => ({
-        id: String(id),
+      return (sep.heroes || []).map((h) => ({
+        id: String(h.id),
         collateral: null,
         hauntId: null,
         bindType: "nested",
-        name: null,
+        name: heroDisplayName(h.id),
+        sourceTokenId: h.sourceTokenId || null,
         agentStatus: "available",
       }));
     }
@@ -168,6 +171,10 @@ async function build() {
     list = heroesFromCache();
     if (!list.length) list = await heroesFresh();
   }
+  for (const b of builtinHeroes()) {
+    if (list.some((h) => h.id === b.id)) continue;
+    list.push({ id: b.id, name: b.name, collateral: null, hauntId: null, bindType: b.bindType, agentStatus: "available" });
+  }
   const busy = busyHeroIds();
 
   const others = list
@@ -186,7 +193,7 @@ async function build() {
       }
       return {
         id: h.id,
-        name: h.name || null,
+        name: h.name || heroDisplayName(h.id),
         collateral: thumb.collateral || h.collateral || null,
         hauntId: thumb.hauntId || h.hauntId || null,
         bindType: h.bindType || null,
@@ -203,6 +210,7 @@ async function build() {
   const payload = {
     role,
     pinned,
+    pinnedName: pinned ? heroDisplayName(pinned) : null,
     pinnedStatus,
     pinnedSvg: pinned && existsSync(`${AVATARS}/${pinned}.svg`) ? `${AVATARS}/${pinned}.svg` : null,
     others,
@@ -230,6 +238,6 @@ if (json) {
   console.log(`role:   ${payload.role}`);
   console.log(`pinned: ${payload.pinned || "—"}`);
   for (const o of payload.others) {
-    console.log(`  ${o.id}  ${o.status}`);
+    console.log(`  ${o.id}  ${o.name || ""}  ${o.status}`);
   }
 }

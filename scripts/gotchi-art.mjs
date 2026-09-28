@@ -22,7 +22,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
-import { call, loadMeta } from "./identity.mjs";
+import { loadMeta } from "./identity.mjs";
+import { isSepoliaCartridgeId, readSepoliaHeroes } from "./cartridge-sepolia.mjs";
 import {
   collateralCharacter,
   findCollateralColors,
@@ -346,15 +347,13 @@ async function loadCartridgeHero(heroId) {
   const meta = loadMeta();
   if (!meta?.cartridgeId || !existsSync(`${ROOT}/sessions/.identity.json`)) return null;
   try {
-    const r = await call(`/cartridges/${meta.cartridgeId}`);
-    if (!r.ok) return null;
-    const s = r.data.cartridge ?? r.data;
-    const roster = s.cAavegotchis ?? [];
+    if (!isSepoliaCartridgeId(meta.cartridgeId)) return null;
+    const { heroes: roster } = await readSepoliaHeroes(meta.cartridgeId);
     return (
       roster.find((h) => h.id === heroId) ||
       roster.find((h) => String(h.sourceTokenId) === String(tokenIdFromHeroId(heroId) || "")) ||
       roster.find((h) => h.id === meta.activeHeroId) ||
-      s.activeCAavegotchi ||
+      roster.find((h) => h.active) ||
       roster[0] ||
       null
     );

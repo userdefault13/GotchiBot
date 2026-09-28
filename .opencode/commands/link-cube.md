@@ -25,7 +25,7 @@ Rules:
 
 - **Summon gate:** `summon` needs a confirmed design AND `--confirmed`. Default is
   plan-only; auto-mint gotchi|wallet needs interactive pick or `--auto-mint` + `--yes`.
-  Never mints the professor NPC.
+  Never mints the professor.
 - **Confirm gate:** `confirm`/`resummon`/`bind` refuse without `--yes`,
   `GOTCHIBOT_AUTO_APPROVE=1`, or an interactive y. `design` never writes.
 - **Resummon never mints** — it only rewires an existing hero.

@@ -7,8 +7,10 @@
  *   node scripts/template-pack.mjs show <id>                print pack.json + file tree
  *   node scripts/template-pack.mjs install <id|path|url> [--yes]
  *                                                           merge playbook + AGENTS template + vendored skills
- *   node scripts/template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]
- *                                                           install if needed, then prof-link-cube resummon
+ *   node scripts/template-pack.mjs apply <id> --hero <unassigned> | --mint <collateral> [--yes] [--standing-duty <key>]
+ *                                                           install if needed, then prof-link-cube resummon.
+ *                                                           A template is a new cAavegotchi ($5 mint) or one
+ *                                                           with no assignment; --reassign moves a seated hero.
  *
  * Pack format (full desk = C):
  *   templates/marketplace/packs/<id>/
@@ -101,7 +103,6 @@ const TAG_MAP = {
   "accountant": ["finance", "ap", "ar"],
   "mail-courier": ["mail", "courier", "inbox", "email", "agentmail"],
   "kanban-manager": ["kanban", "project", "boards", "tasks"],
-  "prof-link-cube": ["starter", "npc", "factory", "professor"],
   "bend-chief": ["bend", "crew", "routing"],
   "bend-laws": ["bend", "laws", "LAWS"],
   "bend-proofs": ["bend", "proofs", "PROOF"],
@@ -126,25 +127,13 @@ const STARTER_PACK_IDS = new Set([
   "mail-courier",
   "marketing-agency",
   "product-manager",
-  "prof-link-cube",
   "social-media-manager",
 ]);
-
-/** NPC packs: install playbook/skills/npc home — never seat on a hero. */
-const NPC_PACK_IDS = new Set(["prof-link-cube"]);
 
 /** Suite packs: one catalog entry that installs/applies member role packs. */
 const SUITE_PACK_MEMBERS = {
   "bend-crew": ["bend-chief", "bend-laws", "bend-proofs"],
 };
-
-export function isNpcPack(packOrId) {
-  const id = typeof packOrId === "string" ? packOrId : packOrId?.id || packOrId?.roleId;
-  if (packOrId && typeof packOrId === "object" && String(packOrId.kind || "").toLowerCase() === "npc") {
-    return true;
-  }
-  return Boolean(id && NPC_PACK_IDS.has(id));
-}
 
 export function isSuitePack(packOrId) {
   const id = typeof packOrId === "string" ? packOrId : packOrId?.id || packOrId?.roleId;
@@ -465,19 +454,6 @@ function buildPack(roleId) {
   // cron hints
   writeFileSync(join(packDir, "cron-hints.md"), `# cron-hints — ${roleId}\n\n${cronHintsFromPlaybook(playbook).map((h) => `- ${h}`).join("\n")}\n`);
 
-  // NPC home files (Prof. Link-Cube et al.)
-  if (NPC_PACK_IDS.has(roleId)) {
-    const npcSrc = join(ROOT, "config", "npc", roleId);
-    const npcDst = join(packDir, "npc");
-    if (existsSync(npcSrc)) {
-      mkdirSync(npcDst, { recursive: true });
-      for (const f of ["AGENTS.md", "SOUL.md", "IDENTITY.md"]) {
-        const src = join(npcSrc, f);
-        if (existsSync(src)) writeFileSync(join(npcDst, f), readFileSync(src, "utf8"));
-      }
-    }
-  }
-
   // pack.json
   const prev = readJson(join(packDir, "pack.json"), null);
   const version = prev?.version || VERSION;
@@ -488,13 +464,6 @@ function buildPack(roleId) {
     title: playbook.title || roleId,
     summary: playbook.summary || "",
     scope: resolvePackScope(roleId),
-    ...(NPC_PACK_IDS.has(roleId)
-      ? {
-          kind: "npc",
-          applyHint:
-            "NPC — install only; never seat on a hero. Use ./scripts/gotchibot link-cube …",
-        }
-      : {}),
     ...(SUITE_PACK_MEMBERS[roleId]
       ? {
           kind: "suite",
@@ -796,7 +765,10 @@ function parseHeroesMap(raw) {
   return out;
 }
 
-async function cmdApply(arg, { hero, heroes = null, yes = false, standingDuty = null } = {}) {
+async function cmdApply(
+  arg,
+  { hero, heroes = null, yes = false, standingDuty = null, mint = null, reassign = false } = {},
+) {
   const catalog = loadCatalog();
   const entry = catalog.packs.find((p) => p.id === arg || p.roleId === arg);
   const roleId = entry?.roleId || arg;
@@ -816,13 +788,6 @@ async function cmdApply(arg, { hero, heroes = null, yes = false, standingDuty = 
   }
 
   const packJson = readJson(join(packDir, "pack.json"), {});
-  if (isNpcPack(packJson) || isNpcPack(roleId)) {
-    console.log(`apply: ${packJson.title || roleId} is an NPC — install only (never seats a hero)`);
-    cmdInstallFrom(packDir, `catalog:${roleId}`, { yes });
-    console.log(`  use: ./scripts/gotchibot link-cube status`);
-    console.log(`  home: config/npc/${roleId}/`);
-    return;
-  }
 
   if (isSuitePack(packJson) || isSuitePack(roleId)) {
     const members = suiteMembers(packJson).length ? suiteMembers(packJson) : suiteMembers(roleId);
@@ -842,15 +807,60 @@ async function cmdApply(arg, { hero, heroes = null, yes = false, standingDuty = 
         process.exit(2);
       }
       console.log(`\n── suite member ${member} → ${h} ──`);
-      await cmdApply(member, { hero: h, yes, standingDuty: null });
+      const memberMint = h.startsWith("mint:") ? h.slice("mint:".length) : null;
+      await cmdApply(member, {
+        hero: memberMint ? null : h,
+        mint: memberMint,
+        yes,
+        standingDuty: null,
+        reassign,
+      });
     }
     console.log(`\n✓ suite ${roleId} seated (${members.length} members)`);
     return;
   }
 
-  if (!hero) {
-    console.error("apply: --hero <hero> required (e.g. starter-dai-h1-2)");
+  const seat = await import("./template-seat.mjs");
+  if (hero && mint) {
+    console.error("apply: pass --hero <unassigned> or --mint <collateral>, not both");
     process.exit(2);
+  }
+  if (!hero && !mint) {
+    const free = await seat.unassignedHeroes().catch(() => []);
+    console.error(
+      "apply: a template needs a cAavegotchi — --hero <unassigned> or --mint <collateral> ($5)\n" +
+        (free.length
+          ? `  unassigned: ${free.map((h) => h.id).join(", ")}`
+          : "  no unassigned cAavegotchis on this cartridge — use --mint"),
+    );
+    process.exit(2);
+  }
+  if (hero) {
+    const check = seat.seatCheck(hero, roleId);
+    if (!check.ok && !reassign) {
+      console.error(`apply: ${check.reason} — pick an unassigned cAavegotchi, --mint one, or pass --reassign`);
+      process.exit(2);
+    }
+  }
+  if (mint) {
+    const known = seat.mintCollaterals().map((c) => c.key);
+    if (!known.includes(mint)) {
+      console.error(`apply: unknown collateral "${mint}" — one of: ${known.join(", ")}`);
+      process.exit(2);
+    }
+    if (!yes) {
+      console.log(`apply ${roleId} → new cAavegotchi (${mint}, $5) (dry-run, no --yes)`);
+      console.log("  pass --yes to mint and seat the template on the new hero.");
+      return;
+    }
+    console.log(`apply ${roleId}: minting a new ${mint} cAavegotchi ($5)…`);
+    try {
+      hero = await seat.mintTemplateHero(mint);
+    } catch (e) {
+      console.error(`apply: mint failed — ${e?.message || e}`);
+      process.exit(1);
+    }
+    console.log(`  ✓ minted ${hero}`);
   }
 
   const resummon = [
@@ -896,8 +906,9 @@ async function main() {
   template-pack.mjs show <id>                print pack.json + file tree
   template-pack.mjs stamp-scopes             set scope=starter|aarcade on packs + catalog
   template-pack.mjs install <id|path|url> [--yes]   merge playbook + AGENTS + skills (+ standing duties with --yes)
-  template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]
-  template-pack.mjs apply <suite> --heroes role=hero,… [--yes]   seat every suite member
+  template-pack.mjs apply <id> --hero <unassigned> [--yes] [--standing-duty <key>] [--reassign]
+  template-pack.mjs apply <id> --mint <collateral> [--yes]   mint a new cAavegotchi ($5) and seat it
+  template-pack.mjs apply <suite> --heroes role=hero|mint:<collateral>,… [--yes]   seat every suite member
   template-pack.mjs equip <id> --hero <hero>   nest + equip pack wearable only (no resummon)
   template-pack.mjs cdn deploy|status|undeploy [--yes]   home-infra CDN (templates.aarcadeghst.com)
   template-pack.mjs menu                     interactive Marketplace (pulls public catalog)`);
@@ -967,8 +978,8 @@ async function main() {
       const arg = rest[0];
       if (!arg) {
         console.error(
-          "usage: template-pack.mjs apply <id> --hero <hero> [--yes]\n" +
-            "       template-pack.mjs apply <suite> --heroes role=hero,… [--yes]",
+          "usage: template-pack.mjs apply <id> --hero <unassigned> | --mint <collateral> [--yes] [--reassign]\n" +
+            "       template-pack.mjs apply <suite> --heroes role=hero|mint:<collateral>,… [--yes]",
         );
         process.exit(2);
       }
@@ -976,7 +987,9 @@ async function main() {
       const heroes = parseHeroesMap(flagValue(rest, "--heroes"));
       const yes = rest.includes("--yes");
       const standingDuty = flagValue(rest, "--standing-duty");
-      await cmdApply(arg, { hero, heroes, yes, standingDuty });
+      const mint = flagValue(rest, "--mint");
+      const reassign = rest.includes("--reassign");
+      await cmdApply(arg, { hero, heroes, yes, standingDuty, mint, reassign });
       break;
     }
     case "equip": {
@@ -1059,24 +1072,6 @@ function cmdInstallFrom(dir, source, { yes = false } = {}) {
         rmSync(cdst, { recursive: true, force: true });
         cpSync(src, cdst, { recursive: true });
         changes.push(`skill mirrored: .cursor/skills/${name}`);
-      }
-    }
-  }
-
-  // 3b) NPC home → config/npc/<id>/
-  const npcSrc = join(dir, "npc");
-  if (isNpcPack(packJson) && existsSync(npcSrc)) {
-    const npcDst = join(ROOT, "config", "npc", roleId);
-    mkdirSync(npcDst, { recursive: true });
-    for (const f of ["AGENTS.md", "SOUL.md", "IDENTITY.md"]) {
-      const src = join(npcSrc, f);
-      if (!existsSync(src)) continue;
-      const dst = join(npcDst, f);
-      if (!existsSync(dst) || yes) {
-        writeFileSync(dst, readFileSync(src, "utf8"));
-        changes.push(`npc written: config/npc/${roleId}/${f}`);
-      } else {
-        changes.push(`npc exists (kept; --yes to overwrite): config/npc/${roleId}/${f}`);
       }
     }
   }
