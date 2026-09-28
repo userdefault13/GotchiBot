@@ -207,22 +207,27 @@ function serviceCommand(action) {
     writeFileSync(join(unitDir, unit), body);
   }
   // The OpenCode server runs under abra like the phone runner: reuse its drop-ins
-  // (abra agent wait, keystore) so both get provider keys the same way.
+  // (vault unlock gate, keystore) so both get provider keys the same way.
   const runnerDropins = join(unitDir, "gotchibot-hub-runner.service.d");
   if (existsSync(runnerDropins)) {
     const dest = join(unitDir, "gotchibot-opencode.service.d");
     mkdirSync(dest, { recursive: true });
-    for (const f of readdirSync(runnerDropins)) copyFileSync(join(runnerDropins, f), join(dest, f));
+    for (const f of readdirSync(runnerDropins)) {
+      if (f.endsWith(".conf")) copyFileSync(join(runnerDropins, f), join(dest, f));
+    }
   }
   systemctl("daemon-reload");
   for (const unit of DESK_UNITS) {
-    const r = systemctl("enable", "--now", unit);
+    const r = systemctl("enable", unit);
     if (r.status !== 0) {
       console.error(`${unit}: ${r.stderr.trim()}`);
       return 1;
     }
+    // --no-block: the OpenCode unit waits on the abra vault and retries until it is unlocked.
+    systemctl("restart", "--no-block", unit);
   }
-  console.log(`desk services running: OpenCode on 127.0.0.1:${vars.PORT}, desk runner`);
+  console.log(`desk services enabled: OpenCode on 127.0.0.1:${vars.PORT}, desk runner`);
+  console.log("check: gotchibot hub desk service status");
   return 0;
 }
 
