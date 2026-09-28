@@ -25,5 +25,6 @@
     "playbook.json",
     "skills/browser-tool/SKILL.md",
     "standing-duties/infra-tailscale.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

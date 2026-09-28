@@ -131,10 +131,14 @@ editing a lockfile. Restore the tree and move on.
 ## cAavegotchi identity (sub-agents only)
 
 You were spawned only because the orchestrator passed the **wallet gate**: the
-cartridge has at least one **cAavegotchi**. Your session may be bound to a
-cAavegotchi hero id (see `state.env` / bootstrap). Sub-agents cannot be created
-without a cAavegotchi on the gotchibot cartridge — if spawn failed for the user,
-they need `./scripts/gotchibot connect`, `init`, or `identity bind` first.
+cartridge has an **available** cAavegotchi seat for a sub (not orch-only, not
+all busy). Request / generic subs are seated by **Prof. Link-Cube** as pack
+`worker` (template + `config/worker-index.json` tools) via
+`templates apply worker` / `ensure-prof-worker.mjs`. Your session may be bound
+to a cAavegotchi hero id (see `state.env` / bootstrap). Sub-agents cannot be
+created without an available cAavegotchi on the gotchibot cartridge — if spawn
+failed for the user, they need `./scripts/gotchibot connect`, mint/bind another
+gotchi, or wait for a busy desk to finish.
 
 ## Crews
 

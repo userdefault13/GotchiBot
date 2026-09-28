@@ -395,8 +395,8 @@
     "scheduleCmd": ""
   },
   "prof-link-cube": {
-    "title": "Professor / factory NPC",
-    "summary": "Factory NPC (not mintable, not a fleet seat) that designs and authors profiled cAavegotchi playbooks, SOULs, IDENTITYs, and template packs via link-cube + template-pack. All design/authoring/pack work goes through a work tool: cursor-cli (default), codex-cli (when UserDefault says codex), gotchibot-bridge (hard reasoning).",
+    "title": "Prof. Link-Cube",
+    "summary": "Factory NPC (not mintable, not a fleet seat): design/author profiled playbooks, SOULs, IDENTITYs, and marketplace packs via link-cube + templates. Work tools only — never DIY on the chat model.",
     "skills": [
       "cursor-cli",
       "codex-cli",
@@ -583,5 +583,71 @@
     ],
     "reportCmd": "./scripts/gotchibot link-cube status",
     "autonomy": "Answers architect questions from the news feed and repo data; writes notes to memory. Never executes trades, never posts publicly. A standing duty (config/agent-standing-duties.json) can add a second desk on top of this role."
+  },
+  "bend-chief": {
+    "title": "Bend chief",
+    "summary": "Routes and merges Bend crew work: intake → bend-laws (LAWS.bend) / bend-proofs (PROOF.bend). Does not author laws or proofs by default.",
+    "skills": [
+      "bend-2",
+      "cursor-cli",
+      "browser-tool"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "scheduleCmd": "",
+    "autonomy": "Bend crew chief for the current project: intake, route, merge. Laws → bend-laws; proofs/checker → bend-proofs. Does not DIY LAWS/PROOF unless UserDefault says so. Seated via bend-crew suite / Prof. Link-Cube. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post."
+  },
+  "bend-laws": {
+    "title": "Bend laws",
+    "summary": "Owns LAWS.bend authorship. Does not write proofs — hands proof work to bend-proofs.",
+    "skills": [
+      "bend-2",
+      "cursor-cli",
+      "browser-tool"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "scheduleCmd": "",
+    "autonomy": "Owns LAWS.bend for the current project only. No PROOF.bend authorship. Reports to bend-chief. Staffed via bend-crew suite. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post."
+  },
+  "bend-proofs": {
+    "title": "Bend proofs",
+    "summary": "Owns PROOF.bend and bend PROOF.bend green. Does not rewrite laws — hands law gaps to bend-laws.",
+    "skills": [
+      "bend-2",
+      "cursor-cli",
+      "browser-tool"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "scheduleCmd": "",
+    "autonomy": "Owns PROOF.bend / checker-green for the current project only. No LAWS.bend rewrites. Reports to bend-chief. Staffed via bend-crew suite. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post."
+  },
+  "bend-crew": {
+    "title": "Bend crew (chief · laws · proofs)",
+    "summary": "Suite pack: seats the full Bend crew — bend-chief (route/merge), bend-laws (LAWS.bend), bend-proofs (PROOF.bend / checker green). One install, three roles.",
+    "skills": [
+      "bend-2",
+      "cursor-cli",
+      "browser-tool"
+    ],
+    "skillsExternal": [],
+    "reportCmd": "./scripts/gotchibot link-cube status",
+    "scheduleCmd": "",
+    "autonomy": "Marketplace suite for the Bend crew (CREWS.md). Install merges all three role playbooks + AGENTS + bend-2 skill. Apply with --heroes bend-chief=<h>,bend-laws=<h>,bend-proofs=<h>. Never auto-mints; never steals LINK/YFI/WBTC desks."
+  },
+  "jev": {
+    "title": "Jev (TypeSafe System One)",
+    "summary": "Structured decisions via TypeSafe Jev — Choice, Score, Noul with confidence. Not chat; not a work tool for edits.",
+    "skills": [
+      "jev",
+      "browser-tool"
+    ],
+    "skillsExternal": [
+      "typesafe-ai"
+    ],
+    "reportCmd": "./scripts/gotchibot jev smoke --json",
+    "scheduleCmd": "",
+    "autonomy": "Owns teaching and applying TypeSafe Jev System One: atomic Choice/Score/Noul questions, branch in code on answers+confidence. Does not write chat copy or DIY file edits. Never prints API keys. Staffed via marketplace pack jev / Prof. Link-Cube on available heroes only."
   }
 }

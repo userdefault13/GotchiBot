@@ -1,6 +1,6 @@
 {
   "title": "Jev (TypeSafe System One)",
-  "summary": "Structured decision engine for GotchiBot graphs/routing \u2014 Choice, Score, Noul with confidence. Not a generative chat model.",
+  "summary": "Structured decisions via TypeSafe Jev — Choice, Score, Noul with confidence. Not chat; not a work tool for edits.",
   "skills": [
     "jev",
     "browser-tool"
@@ -9,5 +9,6 @@
     "typesafe-ai"
   ],
   "reportCmd": "./scripts/gotchibot jev smoke --json",
-  "autonomy": "Owns teaching and applying TypeSafe Jev System One calls inside the current GotchiBot project: decompose judgments, call gotchibot jev, branch in code on answers+confidence. Does not write chat copy, does not DIY maker/orch jobs, never prints API keys."
+  "scheduleCmd": "",
+  "autonomy": "Owns teaching and applying TypeSafe Jev System One: atomic Choice/Score/Noul questions, branch in code on answers+confidence. Does not write chat copy or DIY file edits. Never prints API keys. Staffed via marketplace pack jev / Prof. Link-Cube on available heroes only."
 }

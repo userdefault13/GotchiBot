@@ -1,12 +1,10 @@
 ---
 name: jev
 description: >-
-  Use when GotchiBot needs a fast structured decision inside a workflow:
-  route/classify (Choice), yes/no gate (Noul), graded rubric (Score), or
-  confidence-gated auto-act. TypeSafe Jev is System One — not chat, not
-  System 2 reasoning, not text generation. Load for gotchibot jev CLI,
-  graph/passoff routing, guardrails, and decomposing prompt-and-parse into
-  typed questions. Anti-jobs: writing prose/PRs/skills; long reasoning;
+  TypeSafe Jev (System One): fast structured decisions — Choice (closed set),
+  Noul (yes/no probability), Score (ordered rubric) with confidence. Use for
+  routing, guardrails, and ranking candidates the code already listed. Not chat,
+  not System 2, not a work tool for file edits. Anti-jobs: prose/PRs/skills;
   printing API keys.
 license: MIT
 compatibility: opencode
@@ -24,32 +22,17 @@ Live docs are source of truth: https://docs.typesafe.ai/llms.txt
 
 ## When to load
 
-- "route this ticket / passoff / graph edge"
-- "should we auto-act?" / confidence gate
-- "score these candidates" / pick one from a list the code already has
-- Replacing fragile LLM prompt → regex parse for a judgment
+- Route / classify from a closed set
+- "Should we auto-act?" confidence gate
+- Score or pick among candidates the code already has
+- Replace fragile prompt → regex parse for a judgment
 
 ## Anti-jobs
 
 - Chat, drafting, coding, Bend LAWS/PROOF authorship
 - Multi-hop reasoning that needs intermediate text
 - Inventing API shapes — read docs.typesafe.ai before changing contracts
-
-## CLI (GotchiBot)
-
-```bash
-# smoke (uses abra general → JEV_DEV_API_KEY when env empty)
-./scripts/gotchibot jev smoke --json
-
-# ask from files
-./scripts/gotchibot jev ask --state "…" --questions ./tmp/q.json --json
-./scripts/gotchibot jev ask --file ./tmp/req.json --json
-
-./scripts/gotchibot jev models
-```
-
-Env: `TYPESAFE_API_KEY` | `JEV_API_KEY` | `JEV_DEV_API_KEY`  
-Abra: project `general`, name `JEV_DEV_API_KEY` (never print values).
+- File edits (use a work tool)
 
 ## Question types
 
@@ -60,23 +43,36 @@ Abra: project `general`, name `JEV_DEV_API_KEY` (never print values).
 | Degree on ordered levels | `score` | `score`, `probabilities`, `confidence` |
 
 Ask **atomic** questions; compose in code. Batch independent questions in one
-request (parallel). Use confidence to escalate low-certainty answers to a human
-or a work tool (Claude → Cursor → Codex).
+request. Escalate low confidence to a human or a work tool.
 
-## GotchiBot patterns
+## Auth
 
-1. **Intent / desk routing** — Choice over closed desk ids; code calls passoff/graph
+Env (any one): `TYPESAFE_API_KEY` | `JEV_API_KEY` | `JEV_DEV_API_KEY`  
+Never print key values. Prefer model `jev-latest` unless pinned.
+
+### GotchiBot desk (optional)
+
+```bash
+./scripts/gotchibot jev smoke --json
+./scripts/gotchibot jev ask --state "…" --questions ./tmp/q.json --json
+./scripts/gotchibot jev models
+```
+
+Abra: project `general`, name `JEV_DEV_API_KEY` (names only).
+
+## Patterns
+
+1. **Routing** — Choice over closed ids; code dispatches
 2. **Confidence-gated mutation** — Noul or Choice + threshold before write/spend
-3. **Composite score** — several Scores → weighted formula in code (not one mega-prompt)
-4. **Graph next-edge** — Choice among legal edges from `gotchibot graph get`
+3. **Composite score** — several Scores → weighted formula in code
+4. **Next step from a graph** — Choice among legal edges the code enumerated
 
 ## Optional upstream skill
 
-For deep cookbooks: install TypeSafe skill (`typesafe-ai/skills`) or read
-https://raw.githubusercontent.com/typesafe-ai/skills/main/skills/typesafe-ai/SKILL.md
+https://github.com/typesafe-ai/skills · https://docs.typesafe.ai/llms.txt
 
 ## Hard rules
 
-- Never print API keys or `abra get` values
+- Never print API keys
 - Never treat Jev as a work tool for file edits
-- Pin/model: prefer `jev-latest` unless Julius pins a version
+- Never auto-mint or steal standing desks when seating this pack on a cart

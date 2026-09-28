@@ -1,1 +1,3 @@
-No schedule declared — this desk is wake-on-demand only.
+# cron-hints — jev
+
+- No schedule declared in the playbook — this desk is wake-on-demand only.

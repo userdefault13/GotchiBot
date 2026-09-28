@@ -30,5 +30,6 @@
     "skills/cron-manager/SKILL.md",
     "skills/data-ai-cron-site/SKILL.md",
     "skills/pstack/SKILL.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

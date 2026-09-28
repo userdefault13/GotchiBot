@@ -3,7 +3,8 @@
   "roleId": "jev",
   "version": "1.0.0",
   "title": "Jev (TypeSafe System One)",
-  "summary": "Teach desks to use TypeSafe Jev for structured decisions (choice/score/noul + confidence) inside GotchiBot workflows \u2014 not chat.",
+  "summary": "Structured decisions via TypeSafe Jev — Choice, Score, Noul with confidence. Not chat; not a work tool for edits.",
+  "scope": "starter",
   "skills": [
     "jev",
     "browser-tool"
@@ -13,9 +14,10 @@
   ],
   "standingDuties": [],
   "cronHints": [
-    "No schedule \u2014 wake-on-demand decision helper."
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
   ],
   "tags": [
+    "starter",
     "typesafe",
     "jev",
     "system-one",
@@ -27,7 +29,7 @@
     "AGENTS.md",
     "cron-hints.md",
     "playbook.json",
-    "skills/jev/SKILL.md",
-    "skills/browser-tool/SKILL.md"
+    "skills/browser-tool/SKILL.md",
+    "skills/jev/SKILL.md"
   ]
 }

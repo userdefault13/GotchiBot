@@ -3,23 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="GotchiBot agent template marketplace — Prof. Link-Cube packs for AarcadeGh-t desks.">
+<meta name="description" content="GotchiBot agent template marketplace — starter role packs plus optional AarcadeGh-t desk packs.">
 <title>GotchiBot templates — Prof. Link-Cube</title>
 <link rel="icon" href="./bg.svg">
 <style>
   :root {
     --ag-bg: #1a0a2e;
     --ag-bg-pattern-color: #ffffff;
-    --ag-bg-pattern-opacity: 0.1;
-    --panel: rgba(26, 20, 45, 0.9);
-    --panel-hover: rgba(40, 28, 70, 0.95);
+    --ag-bg-pattern-opacity: 0.07;
+    --panel: rgba(30, 18, 56, 0.72);
+    --panel-hover: rgba(46, 26, 84, 0.85);
     --border: rgba(255, 255, 255, 0.12);
     --text: #ffffff;
     --muted: rgba(255, 255, 255, 0.62);
     --accent: #fa34f3;
     --accent-2: #6d18f8;
-    --code-bg: rgba(10, 6, 22, 0.85);
+    --code-bg: rgba(10, 6, 22, 0.88);
     --ok: #3dffb5;
+    --radius: 14px;
   }
   * { box-sizing: border-box; }
   html { background: var(--ag-bg); min-height: 100%; }
@@ -36,75 +37,161 @@
     -webkit-mask-size: 307px 326px; mask-size: 307px 326px;
     opacity: var(--ag-bg-pattern-opacity); z-index: 0; pointer-events: none;
   }
+  body::after {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(55% 38% at 50% -6%, rgba(250, 52, 243, 0.18), transparent 72%),
+      radial-gradient(42% 30% at 88% -4%, rgba(109, 24, 248, 0.16), transparent 70%);
+  }
   .shell { position: relative; z-index: 1; }
-  header { padding: 36px 24px 12px; max-width: 1100px; margin: 0 auto; }
-  header h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: 0.02em; }
-  header p { margin: 0 0 8px; color: var(--muted); max-width: 62ch; }
+  header {
+    padding: 56px 24px 16px; max-width: 1100px; margin: 0 auto;
+    text-align: center;
+  }
+  header h1 {
+    margin: 0 0 10px; font-size: 42px; line-height: 1.08; letter-spacing: 0.01em;
+    background: linear-gradient(94deg, var(--accent) 0%, #d05cff 48%, var(--accent-2) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 20px rgba(250, 52, 243, 0.35));
+  }
+  header p { margin: 0 auto 14px; color: var(--muted); max-width: 62ch; font-size: 14.5px; }
+  header p strong { color: var(--text); }
+  header code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em;
+    background: rgba(250, 52, 243, 0.12); border: 1px solid rgba(250, 52, 243, 0.28);
+    color: #ffd0fc; border-radius: 6px; padding: 1px 6px;
+  }
   header .meta { font-size: 13px; color: var(--muted); }
-  header a { color: var(--accent); }
+  header a { color: var(--accent); text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 0 0 14px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 11.5px; letter-spacing: 0.03em; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 4px 12px; background: rgba(255, 255, 255, 0.04);
+  }
+  .badge-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ok); box-shadow: 0 0 8px var(--ok);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .toolbar {
-    max-width: 1100px; margin: 0 auto; padding: 12px 24px 8px;
+    max-width: 1100px; margin: 0 auto; padding: 12px 24px 10px;
     display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
   }
   .toolbar input[type="search"] {
     flex: 1 1 220px; min-width: 180px;
-    background: var(--code-bg); border: 1px solid var(--border);
-    color: var(--text); border-radius: 8px; padding: 10px 12px; font: inherit;
+    background: rgba(10, 6, 22, 0.72); border: 1px solid var(--border);
+    color: var(--text); border-radius: 999px; padding: 11px 16px; font: inherit;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    transition: border-color .15s, box-shadow .15s;
   }
-  .toolbar input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+  .toolbar input::placeholder { color: rgba(255, 255, 255, 0.35); }
+  .toolbar input:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(250, 52, 243, 0.16), 0 0 20px rgba(250, 52, 243, 0.14);
+  }
   .chipbar { display: flex; flex-wrap: wrap; gap: 6px; flex: 2 1 280px; }
   .chip {
-    border: 1px solid var(--border); background: transparent; color: var(--muted);
-    border-radius: 999px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04); color: var(--muted);
+    border-radius: 999px; padding: 6px 13px; font-size: 12px; cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s, box-shadow .15s;
   }
-  .chip.active { color: var(--text); border-color: var(--accent); background: rgba(250,52,243,0.15); }
-  #status { max-width: 1100px; margin: 0 auto; padding: 4px 24px 12px; color: var(--muted); font-size: 13px; }
+  .chip:hover { color: var(--text); border-color: rgba(250, 52, 243, 0.4); background: rgba(250, 52, 243, 0.1); }
+  .chip.active {
+    color: #fff; border-color: transparent;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 2px 12px rgba(250, 52, 243, 0.35);
+  }
+  #status {
+    max-width: 1100px; margin: 0 auto; padding: 6px 24px 14px;
+    color: var(--muted); font-size: 12.5px; letter-spacing: 0.02em;
+  }
   main {
     max-width: 1100px; margin: 0 auto; padding: 4px 24px 72px;
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 16px;
   }
   .card {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 16px 18px; display: flex; flex-direction: column; gap: 8px;
-    backdrop-filter: blur(8px); transition: border-color .15s, background .15s;
+    background: linear-gradient(160deg, rgba(46, 26, 84, 0.5), rgba(26, 16, 48, 0.72));
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; display: flex; flex-direction: column; gap: 8px;
+    backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 4px 18px rgba(0, 0, 0, 0.28);
+    transition: transform .18s ease, border-color .18s, background .18s, box-shadow .18s;
   }
-  .card:hover { border-color: rgba(250,52,243,0.45); background: var(--panel-hover); }
-  .card h2 { margin: 0; font-size: 17px; }
-  .card .id { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-  .card .summary { color: var(--muted); font-size: 13.5px; flex: 1; }
+  .card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(250, 52, 243, 0.45);
+    background: linear-gradient(160deg, rgba(54, 32, 98, 0.58), rgba(30, 18, 56, 0.78));
+    box-shadow: inset 0 0 0 1px rgba(250, 52, 243, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 12px 32px rgba(250, 52, 243, 0.14), 0 4px 18px rgba(0, 0, 0, 0.32);
+  }
+  .card h2 { margin: 0; font-size: 17px; letter-spacing: 0.01em; }
+  .card .id {
+    color: var(--accent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  .card .summary { color: var(--muted); font-size: 13.5px; flex: 1; line-height: 1.5; }
   .tags { display: flex; flex-wrap: wrap; gap: 5px; }
   .tag {
-    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; padding: 2px 9px; border-radius: 999px;
     border: 1px solid var(--border); color: var(--muted);
+    background: rgba(255, 255, 255, 0.03);
   }
   .cmd {
-    margin-top: 4px; background: var(--code-bg); border-radius: 8px;
-    padding: 8px 10px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-    word-break: break-all; border: 1px solid var(--border);
+    margin-top: 4px; background: rgba(8, 5, 18, 0.92); border-radius: 10px;
+    padding: 10px 12px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all; border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 2px solid rgba(250, 52, 243, 0.4);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
-  .cmd .prompt { color: var(--ok); margin-right: 6px; }
-  details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .cmd .prompt { color: var(--ok); margin-right: 6px; font-weight: 700; }
+  details { margin-top: 2px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; transition: color .15s; }
+  details summary:hover { color: var(--accent); }
   .urlform { display: flex; gap: 6px; margin-top: 8px; }
   .urlform input {
-    flex: 1; background: var(--code-bg); border: 1px solid var(--border);
-    color: var(--text); border-radius: 6px; padding: 6px 8px; font: 11px ui-monospace, monospace;
+    flex: 1; background: rgba(10, 6, 22, 0.8); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 7px 9px; font: 11px ui-monospace, monospace;
   }
+  .urlform input:focus { outline: none; border-color: var(--accent); }
   .urlform button {
-    background: var(--accent-2); color: #fff; border: 0; border-radius: 6px;
-    padding: 6px 10px; cursor: pointer; font-size: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff; border: 0; border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 12px;
+    font-weight: 600; letter-spacing: 0.02em;
+    box-shadow: 0 2px 10px rgba(109, 24, 248, 0.35);
+    transition: transform .15s, box-shadow .15s, filter .15s;
   }
+  .urlform button:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(250, 52, 243, 0.4); filter: brightness(1.08); }
+  .urlform button:active { transform: translateY(0); }
   footer {
-    max-width: 1100px; margin: 0 auto; padding: 0 24px 40px;
-    color: var(--muted); font-size: 12px;
+    max-width: 1100px; margin: 0 auto; padding: 18px 24px 40px;
+    color: rgba(255, 255, 255, 0.45); font-size: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
   .empty { grid-column: 1 / -1; color: var(--muted); padding: 24px; text-align: center; }
+  @media (max-width: 640px) {
+    header { padding: 42px 20px 14px; }
+    header h1 { font-size: 30px; }
+    .toolbar { padding: 10px 16px 8px; }
+    main { padding: 4px 16px 56px; }
+    #status { padding: 6px 16px 12px; }
+    footer { padding: 16px 16px 32px; }
+  }
 </style>
 </head>
 <body>
 <div class="shell">
   <header>
     <h1>GotchiBot template marketplace</h1>
-    <p>Prof. Link-Cube packs for AarcadeGh-t desks. Install into a fleet with <code>gotchibot templates install &lt;id&gt;</code> or apply onto an available hero.</p>
+    <p>Default view: <strong>starter</strong> templates. Switch to AarcadeGh-t for home-desk packs. Install with <code>gotchibot templates install &lt;id&gt;</code> or apply onto an available hero.</p>
+    <div class="badges">
+      <span class="badge"><span class="badge-dot"></span>live from the cartridge</span>
+      <span class="badge">starter + AarcadeGh-t scopes</span>
+      <span class="badge">offline-safe · single file</span>
+    </div>
     <div class="meta">CDN: <a href="https://templates.aarcadeghst.com">templates.aarcadeghst.com</a> · agent↔agent = bot-inbox · external mail = mail-courier</div>
   </header>
   <div class="toolbar">
@@ -115,7 +202,9 @@
   <main id="cards"></main>
   <footer>Packs are generated from GotchiBot live playbooks + AGENTS templates. Seating never steals LINK/YFI/WBTC desks; never auto-mints.</footer>
 </div>
-<script type="application/json" id="catalog-fallback"><!--CATALOG_START-->{"version":1,"baseUrl":"https://templates.aarcadeghst.com","packs":[{"id":"aarcade-comms-handler","roleId":"aarcade-comms-handler","title":"Aarcade daily comms","summary":"Own newsfeed + tweet-draft pipeline: a real Claude terminal on the iMac drafts, the Aarcade API publishes, tweets stay approve-gated.","version":"1.0.0","path":"packs/aarcade-comms-handler","tags":["marketplace"],"skills":["aarcade-comms","browser-tool"],"skillsExternal":[]},{"id":"abra-vault","roleId":"abra-vault","title":"Abracadabra Vault","summary":"Secrets desk: passwords, API keys, wallets, SSH keys via abracadabra (abra). Promote the vault \u2014 names in chat, values never. Touch ID / scoped ABRA_KEY; Desk host abra denied for agents.","version":"1.0.0","path":"packs/abra-vault","tags":["secrets","vault"],"skills":["abra-vault","browser-tool"],"skillsExternal":["abra","abracadabra"]},{"id":"accountant","roleId":"accountant","title":"Accountant","summary":"Own the merch ops ledger: vendor quotes, POs, AP/AR, invoices \u2014 sourced amounts, aging clarity. Tracks and reconciles; never spends or invents balances.","version":"1.0.0","path":"packs/accountant","tags":["finance","ap","ar"],"skills":["browser-tool","pymupdf"],"skillsExternal":[]},{"id":"arcade-game-monitor","roleId":"arcade-game-monitor","title":"Arcade Game Monitor","summary":"Monitor one Aarcade game / named arcade project: health, blockers, tickets, status digests. One hero per game. Seated by Prof / Product Manager.","version":"1.0.0","path":"packs/arcade-game-monitor","tags":["arcade","game","monitor"],"skills":["browser-tool"],"skillsExternal":[]},{"id":"art-director","roleId":"art-director","title":"Art Director","summary":"Owns the AarcadeGh-t pixel-art studio AND branding kits: generate and iterate pixel art for arcade games, haunts, UI sprites, and in-world assets, plus brand-kit / design-system deliverables (logo lockups, color/type tokens, social templates, pitch decks, one-sheets, leave-behinds, merch art-ready exports).","version":"1.0.0","path":"packs/art-director","tags":["art","pixel","studio","brand"],"skills":["browser-tool","aseprite-tool"],"skillsExternal":["mcp-pixellab"]},{"id":"auditor","roleId":"auditor","title":"Auditor","summary":"Independent audit/attestation for the current GotchiBot/Aarcade tree: evidence-backed findings, control checks, fix reviews. Does not implement production fixes.","version":"1.0.0","path":"packs/auditor","tags":["audit","attestation","controls","review","evidence"],"skills":["browser-tool","pymupdf","pstack"],"skillsExternal":[]},{"id":"brand-design","roleId":"brand-design","title":"Brand Design","summary":"Own brand kits / design-system deliverables for clients and partners: logo lockups, color/type tokens, social templates, pitch decks, one-sheets, leave-behinds, merch art-ready exports.","version":"1.0.0","path":"packs/brand-design","tags":["design","brand","kits"],"skills":["browser-tool","aseprite-tool"],"skillsExternal":["mcp-pixellab"]},{"id":"central-bot","roleId":"central-bot","title":"Central Bot (Maker Desk)","summary":"Manages the maker fleet (tool/skill/policy/rule/mcp). Routes jobs, asks Prof. Link-Cube to seat makers or roadblock-reviewer, decides path for repeated roadblocks.","version":"1.0.0","path":"packs/central-bot","tags":["central","makers","routing","orchestration-lite"],"skills":["pstack","browser-tool","prof-link-cube"],"skillsExternal":[]},{"id":"cron-manager","roleId":"cron-manager","title":"Cron Manager","summary":"Fleet cron desk: schedule/pause/topup/delete wakes for any GotchiBot agent via ai-cron-site (cron402 x402 USDC on Base). Local launchd is fallback only.","version":"1.0.0","path":"packs/cron-manager","tags":["cron","scheduler"],"skills":["cron-manager","browser-tool"],"skillsExternal":["mcp-cron402"]},{"id":"customer-support","roleId":"customer-support","title":"Customer Support","summary":"Own the client-facing support desk: manage a web chat bot that clients use to get help \u2014 configure/monitor the bot, triage conversations, draft replies, escalate blockers, keep a support ledger. On GotchiBot/AarcadeGh-t installs, also owns the project messaging system (AgentMail + desk mailboxes + tickets until a web widget is wired). Never posts marketing; never spends.","version":"1.0.0","path":"packs/customer-support","tags":["support","chat","clients"],"skills":["browser-tool","project-mailbox"],"skillsExternal":[]},{"id":"data-ai-cron-site","roleId":"data-ai-cron-site","title":"Data ai-cron-site","summary":"ai-cron-site / cron402 data layer for patch dossier: schedules, success/fail history, result logging.","version":"1.0.0","path":"packs/data-ai-cron-site","tags":["marketplace"],"skills":["data-ai-cron-site","cron-manager","pstack","browser-tool"],"skillsExternal":["mcp-cron402"]},{"id":"dossier-ai-cron-site","roleId":"dossier-ai-cron-site","title":"Dossier AI-Cron Site (pane UI)","summary":"Owns the GotchiBot pstack dossier pane UI for ai-cron-site: render agents registered on ai-cron-site, each agent's cron schedule, success/fail run history, and logged results. Partner data-ai-cron-site owns fetch/persist/log-result; this role owns render + pane UX only.","version":"1.0.0","path":"packs/dossier-ai-cron-site","tags":["cron","dossier","ui","ai-cron-site"],"skills":["dossier-ai-cron-site","browser-tool"],"skillsExternal":[]},{"id":"fe-marketing","roleId":"fe-marketing","title":"FE Marketing","summary":"Landing pages, conversion UX, brand web polish and campaign microsites \u2014 FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.","version":"1.0.0","path":"packs/fe-marketing","tags":["web","design"],"skills":["browser-tool"],"skillsExternal":[]},{"id":"financial-analyst","roleId":"financial-analyst","title":"Financial Analyst / Trade Desk","summary":"Owns the Gotchi-Trader trade desk (monitor, improve, waker health) as main priority. Staffs market-news and market-research children for headlines and deep memos. Analysis/paper only \u2014 no live execution.","version":"1.0.0","path":"packs/financial-analyst","tags":["analysis","news","trader"],"skills":["market-news-feed","browser-tool","pymupdf"],"skillsExternal":[]},{"id":"game-art-director","roleId":"game-art-director","title":"Game Art Director","summary":"Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels \u2014 the user owns image gen.","version":"1.0.0","path":"packs/game-art-director","tags":["art","direction","style-guide","prompts","audit"],"skills":["browser-tool","aseprite-tool"],"skillsExternal":[]},{"id":"infra-bridge","roleId":"infra-bridge","title":"Desk\u2192Hub Claude bridge","summary":"Own Desk\u2192Hub Claude bridge: ensure/check, VS Code open, claude pane init, short claude-ask. Stay on big-pickle \u2014 never /model @claudemode.","version":"1.0.0","path":"packs/infra-bridge","tags":["infra","bridge"],"skills":["hub-sop","browser-tool"],"skillsExternal":[]},{"id":"infra-docker","roleId":"infra-docker","title":"Docker / watched stack","summary":"Own Docker watched containers and the infra watcher/verifier loop. Paper recover on DEGRADED. Subset of home infra for operators who only run the container stack.","version":"1.0.0","path":"packs/infra-docker","tags":["infra","docker"],"skills":["infra-recover","browser-tool"],"skillsExternal":[]},{"id":"infra-hub","roleId":"infra-hub","title":"Hub / OpenClaw gateway","summary":"Own Hub OpenClaw gateway health: status, restart-gateway, doctor, roster. Subset of home infra.","version":"1.0.0","path":"packs/infra-hub","tags":["infra","hub"],"skills":["hub-sop","browser-tool"],"skillsExternal":[]},{"id":"infra-mesh","roleId":"infra-mesh","title":"Agent mesh / remote Hub","summary":"Own GotchiBot cross-machine agent mesh and remote Hub ops (status, ping, remote-setup, remote run/push/serve, topology). On path fail, defer to Tailscale / infra-tailscale first.","version":"1.0.0","path":"packs/infra-mesh","tags":["infra","mesh"],"skills":["gotchibot-mesh","browser-tool"],"skillsExternal":[]},{"id":"infra-monitor","roleId":"infra-monitor","title":"Home infra (full stack)","summary":"Own the complete GotchiBot home stack: Docker watched set, Cloudflare tunnel/public subgraph, Hub/OpenClaw, Tailscale path, agent mesh/remote, and Desk\u2192Hub Claude bridge. Watch, probe, recover paper-only. Public operators who run a subset install the piece packs: infra-docker, infra-tunnel, infra-hub, infra-tailscale, infra-mesh, infra-bridge.","version":"1.0.0","path":"packs/infra-monitor","tags":["infra","ops","home"],"skills":["infra-recover","hub-sop","gotchibot-mesh","browser-tool"],"skillsExternal":[]},{"id":"infra-tailscale","roleId":"infra-tailscale","title":"Tailscale path","summary":"Own the Tailscale tailnet path to the always-on Hub: peers online, MagicDNS / 100.x. Never invent LAN IPs. Subset of home infra.","version":"1.0.0","path":"packs/infra-tailscale","tags":["infra","tailscale"],"skills":["browser-tool"],"skillsExternal":[]},{"id":"infra-tunnel","roleId":"infra-tunnel","title":"Cloudflare tunnel / public subgraph","summary":"Own Cloudflare tunnel health and public subgraph endpoints. Cartridge Cloudflare 502 awareness. Subset of home infra.","version":"1.0.0","path":"packs/infra-tunnel","tags":["infra","tunnel"],"skills":["infra-recover","browser-tool"],"skillsExternal":[]},{"id":"kanban-manager","roleId":"kanban-manager","title":"Project Kanban Manager","summary":"Own the sealed project's main task kanban and every desk's mini headless board: show/add/move cards, sync desk minis into the main board, pull assigned cards onto desks. Owns the project ticket lifecycle (accept/rework/close/digest) for agent request/claim/submit work.","version":"1.0.0","path":"packs/kanban-manager","tags":["kanban","project","boards","tasks"],"skills":["project-kanban","project-tickets"],"skillsExternal":[]},{"id":"mail-courier","roleId":"mail-courier","title":"Mail Courier","summary":"Own one AgentMail inbox per GotchiBot project: accept outbound from agents, send via AgentMail (abra AGENT_MAIL_API_KEY), monitor inbox/outbox, relay replies, track owed agent responses, remind after 24h, keep the orchestrator informed.","version":"1.0.0","path":"packs/mail-courier","tags":["mail","courier","inbox","email","agentmail"],"skills":["agentmail","abra-vault","project-mailbox"],"skillsExternal":[]},{"id":"market-news","roleId":"market-news","title":"Market News","summary":"Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only \u2014 not the trader monitor.","version":"1.0.0","path":"packs/market-news","tags":["news","headlines","regime"],"skills":["market-news-feed","browser-tool"],"skillsExternal":[]},{"id":"market-research","roleId":"market-research","title":"Market Research","summary":"Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only \u2014 not the trader monitor.","version":"1.0.0","path":"packs/market-research","tags":["research","ic","filings"],"skills":["browser-tool","pymupdf","market-news-feed"],"skillsExternal":[]},{"id":"marketing-agency","roleId":"marketing-agency","title":"Marketing Agency","summary":"Research & analyze market trends, then staff web, social, merch and brand-design children \u2014 Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.","version":"1.0.0","path":"packs/marketing-agency","tags":["marketing","agency"],"skills":["browser-tool","market-news-feed","pymupdf"],"skillsExternal":[]},{"id":"mcp-maker","roleId":"mcp-maker","title":"MCP Maker","summary":"Authors MCP server stubs/configs and tool descriptors for GotchiBot \u2014 safe schemas, no secrets in repo, auth via abra.","version":"1.0.0","path":"packs/mcp-maker","tags":["maker","mcp","connector","tools"],"skills":["pstack","browser-tool","abra-vault"],"skillsExternal":[]},{"id":"merch-desk","roleId":"merch-desk","title":"Merch Desk","summary":"Own the merch store supplier desk: research print-on-demand companies that make custom plushies and toys, rank API-capable vendors, approve-gated outreach to every shortlisted supplier, and pull brand kits / one-sheets / mocks from brand-design and product desks. Never sends without approval; never spends.","version":"1.0.0","path":"packs/merch-desk","tags":["merch","pod","plush","toys","quotes"],"skills":["browser-tool","market-news-feed","pymupdf"],"skillsExternal":["mcp-pixellab","resend"]},{"id":"moltbook-watch","roleId":"moltbook-watch","title":"Moltbook watch desk","summary":"15-min radar for Moltbook replies-to-us and api-key / secrets / user-pain topics. Queue only \u2014 no posting.","version":"1.0.0","path":"packs/moltbook-watch","tags":["marketplace"],"skills":["browser-tool"],"skillsExternal":[]},{"id":"orchestrator","roleId":"orchestrator","title":"Orchestrator","summary":"Chair/delegate \u2014 do not DIY sub-agent jobs.","version":"1.0.0","path":"packs/orchestrator","tags":["marketplace"],"skills":["delegate-first","browser-tool","pstack"],"skillsExternal":[]},{"id":"policy-maker","roleId":"policy-maker","title":"Policy Maker","summary":"Authors durable policy docs (allow/deny, approve-gates, escalation). Policies guide agents; they are not runtime code.","version":"1.0.0","path":"packs/policy-maker","tags":["maker","policy","governance","gates"],"skills":["pstack","browser-tool"],"skillsExternal":[]},{"id":"product-manager","roleId":"product-manager","title":"Product Manager","summary":"Sole product desk: discovery \u2192 roadmap \u2192 specs \u2192 ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers \u2014 including one arcade-game-monitor per Aarcade game. Not Prof; not chief.","version":"1.0.0","path":"packs/product-manager","tags":["product","pm","roadmap"],"skills":["browser-tool","pymupdf","market-news-feed"],"skillsExternal":[]},{"id":"roadblock-reviewer","roleId":"roadblock-reviewer","title":"Roadblock Reviewer","summary":"Reviews sessions for repeated roadblocks that already have a working solution; IDs them; passes packets to central-bot for path decision.","version":"1.0.0","path":"packs/roadblock-reviewer","tags":["review","roadblock","sessions","central"],"skills":["pstack","browser-tool"],"skillsExternal":[]},{"id":"rule-maker","roleId":"rule-maker","title":"Rule Maker","summary":"Authors concrete enforceable rules (lint/CI/hooks/checklists) that implement policy intent with a verify command.","version":"1.0.0","path":"packs/rule-maker","tags":["maker","rules","lint","hooks","ci"],"skills":["pstack","browser-tool"],"skillsExternal":[]},{"id":"security-engineer","roleId":"security-engineer","title":"Security Engineer","summary":"Find and fix real vulns in the current GotchiBot/Aarcade tree: threat notes, hardening, secret hygiene, approve-gate checks. Implements fixes; auditor attests.","version":"1.0.0","path":"packs/security-engineer","tags":["security","hardening","vuln","secrets","gates"],"skills":["browser-tool","pstack","abra-vault"],"skillsExternal":[]},{"id":"skill-maker","roleId":"skill-maker","title":"Skill Maker","summary":"Authors SKILL.md packs (frontmatter, when-to-use, steps, anti-jobs) for GotchiBot agents. Clear, reusable, no secrets.","version":"1.0.0","path":"packs/skill-maker","tags":["maker","skill","skillmd","workflow"],"skills":["pstack","browser-tool"],"skillsExternal":[]},{"id":"social-media-manager","roleId":"social-media-manager","title":"Social Media Manager","summary":"Calendar, voice, channel strategy and drafts for web + social \u2014 channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.","version":"1.0.0","path":"packs/social-media-manager","tags":["social","content"],"skills":["browser-tool"],"skillsExternal":["mcp-snapshot"]},{"id":"tool-maker","roleId":"tool-maker","title":"Deterministic Tool Maker","summary":"Authors small deterministic CLI/tools with clear I/O, exit codes, and verify steps. No LLM-in-the-loop for the tool itself.","version":"1.0.0","path":"packs/tool-maker","tags":["maker","tool","deterministic","cli"],"skills":["pstack","browser-tool"],"skillsExternal":[]},{"id":"trader-desk","roleId":"trader-desk","title":"Trader desk","summary":"Own Gotchi-Trader paper desk health, cycle decisions and PnL reporting.","version":"1.0.0","path":"packs/trader-desk","tags":["marketplace"],"skills":["gotchi-trader-monitor","gotchi-trader-improve","market-news-feed","browser-tool"],"skillsExternal":[]},{"id":"worker","roleId":"worker","title":"Worker","summary":"Prof-seated worker desks request. Deep lanes: dispatch I/O (sessions/<id>), skill-requests.jsonl helper, ephemeral desk-terminals use/close.","version":"1.0.0","path":"packs/worker","tags":["worker","dispatch","desk-request","prof"],"skills":["cursor-cli","codex-cli","gotchibot-bridge","desk-wake","passoff","pstack"],"skillsExternal":[]}],"updatedAt":"2026-09-19T08:59:44.292798+00:00"}<!--CATALOG_END--></script>
+<script type="application/json" id="catalog-fallback"><!--CATALOG_START-->
+{"version":1,"baseUrl":"https://aarcadeghst.com/gotchibot-templates","packs":[{"id":"aarcade-comms-handler","roleId":"aarcade-comms-handler","title":"Aarcade daily comms","summary":"Own newsfeed + tweet-draft pipeline: a real Claude terminal on the iMac drafts, the Aarcade API publishes, tweets stay approve-gated.","version":"1.0.0","path":"packs/aarcade-comms-handler","tags":["marketplace"],"skills":["aarcade-comms","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"abra-vault","roleId":"abra-vault","title":"Abracadabra Vault","summary":"Secrets desk: passwords, API keys, wallets, SSH keys via abracadabra (abra). Promote the vault — names in chat, values never. Touch ID / scoped ABRA_KEY; Desk host abra denied for agents.","version":"1.0.0","path":"packs/abra-vault","tags":["secrets","vault"],"skills":["abra-vault","browser-tool"],"skillsExternal":["abra","abracadabra"],"scope":"aarcade"},{"id":"accountant","roleId":"accountant","title":"Accountant","summary":"Own the merch ops ledger: vendor quotes, POs, AP/AR, invoices — sourced amounts, aging clarity. Tracks and reconciles; never spends or invents balances.","version":"1.0.0","path":"packs/accountant","tags":["finance","ap","ar"],"skills":["browser-tool","pymupdf"],"skillsExternal":[],"scope":"starter"},{"id":"arcade-game-monitor","roleId":"arcade-game-monitor","title":"Arcade Game Monitor","summary":"Monitor one Aarcade game / named arcade project: health, blockers, tickets, status digests. One hero per game. Seated by Prof / Product Manager.","version":"1.0.0","path":"packs/arcade-game-monitor","tags":["arcade","game","monitor"],"skills":["browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"architect","roleId":"architect","title":"Architect","summary":"Exhaust design space; ranked best + alternatives; hand off build. Does not implement.","version":"1.0.0","path":"packs/architect","tags":["architecture","design","infra","options"],"skills":["architect","browser-tool"],"skillsExternal":[],"scope":"starter"},{"id":"art-director","roleId":"art-director","title":"Art Director","summary":"Owns the AarcadeGh-t pixel-art studio AND branding kits: generate and iterate pixel art for arcade games, haunts, UI sprites, and in-world assets, plus brand-kit / design-system deliverables (logo lockups, color/type tokens, social templates, pitch decks, one-sheets, leave-behinds, merch art-ready exports).","version":"1.0.0","path":"packs/art-director","tags":["art","pixel","studio","brand"],"skills":["browser-tool","aseprite-tool"],"skillsExternal":["mcp-pixellab"],"scope":"aarcade"},{"id":"auditor","roleId":"auditor","title":"Auditor","summary":"Independent audit/attestation for the current GotchiBot/Aarcade tree: evidence-backed findings, control checks, fix reviews. Does not implement production fixes.","version":"1.0.0","path":"packs/auditor","tags":["audit","attestation","controls","review","evidence"],"skills":["browser-tool","pymupdf","pstack"],"skillsExternal":[],"scope":"aarcade"},{"id":"bend-chief","roleId":"bend-chief","title":"Bend chief","summary":"Routes and merges Bend crew work: intake → bend-laws (LAWS.bend) / bend-proofs (PROOF.bend). Does not author laws or proofs by default.","scope":"aarcade","version":"1.0.0","path":"packs/bend-chief","tags":["bend","crew","routing"],"skills":["bend-2","cursor-cli","browser-tool"]},{"id":"bend-crew","roleId":"bend-crew","title":"Bend crew (chief · laws · proofs)","summary":"Suite pack: seats the full Bend crew — bend-chief (route/merge), bend-laws (LAWS.bend), bend-proofs (PROOF.bend / checker green). One install, three roles.","scope":"starter","kind":"suite","members":["bend-chief","bend-laws","bend-proofs"],"version":"1.0.0","path":"packs/bend-crew","tags":["starter","bend","suite","laws","proofs"],"skills":["bend-2","cursor-cli","browser-tool"]},{"id":"bend-laws","roleId":"bend-laws","title":"Bend laws","summary":"Owns LAWS.bend authorship. Does not write proofs — hands proof work to bend-proofs.","scope":"aarcade","version":"1.0.0","path":"packs/bend-laws","tags":["bend","laws","LAWS"],"skills":["bend-2","cursor-cli","browser-tool"]},{"id":"bend-proofs","roleId":"bend-proofs","title":"Bend proofs","summary":"Owns PROOF.bend and bend PROOF.bend green. Does not rewrite laws — hands law gaps to bend-laws.","scope":"aarcade","version":"1.0.0","path":"packs/bend-proofs","tags":["bend","proofs","PROOF"],"skills":["bend-2","cursor-cli","browser-tool"]},{"id":"brand-design","roleId":"brand-design","title":"Brand Design","summary":"Own brand kits / design-system deliverables for clients and partners: logo lockups, color/type tokens, social templates, pitch decks, one-sheets, leave-behinds, merch art-ready exports.","version":"1.0.0","path":"packs/brand-design","tags":["design","brand","kits"],"skills":["browser-tool","aseprite-tool"],"skillsExternal":["mcp-pixellab"],"scope":"starter"},{"id":"central-bot","roleId":"central-bot","title":"Central Bot (Maker Desk)","summary":"Manages the maker fleet (tool/skill/policy/rule/mcp). Routes jobs, asks Prof. Link-Cube to seat makers or roadblock-reviewer, decides path for repeated roadblocks.","version":"1.0.0","path":"packs/central-bot","tags":["central","makers","routing","orchestration-lite"],"skills":["pstack","browser-tool","prof-link-cube"],"skillsExternal":[],"scope":"aarcade"},{"id":"cron-manager","roleId":"cron-manager","title":"Cron Manager","summary":"Fleet cron desk: schedule/pause/topup/delete wakes for any GotchiBot agent via ai-cron-site (cron402 x402 USDC on Base). Local launchd is fallback only.","version":"1.0.0","path":"packs/cron-manager","tags":["cron","scheduler"],"skills":["cron-manager","browser-tool"],"skillsExternal":["mcp-cron402"],"scope":"aarcade"},{"id":"customer-support","roleId":"customer-support","title":"Customer Support","summary":"Own the client-facing support desk: manage a web chat bot that clients use to get help — configure/monitor the bot, triage conversations, draft replies, escalate blockers, keep a support ledger. On GotchiBot/AarcadeGh-t installs, also owns the project messaging system (AgentMail + desk mailboxes + tickets until a web widget is wired). Never posts marketing; never spends.","version":"1.0.0","path":"packs/customer-support","tags":["support","chat","clients"],"skills":["browser-tool","project-mailbox"],"skillsExternal":[],"scope":"starter"},{"id":"data-ai-cron-site","roleId":"data-ai-cron-site","title":"Data ai-cron-site","summary":"ai-cron-site / cron402 data layer for patch dossier: schedules, success/fail history, result logging.","version":"1.0.0","path":"packs/data-ai-cron-site","tags":["marketplace"],"skills":["data-ai-cron-site","cron-manager","pstack","browser-tool"],"skillsExternal":["mcp-cron402"],"scope":"aarcade"},{"id":"dossier-ai-cron-site","roleId":"dossier-ai-cron-site","title":"Dossier AI-Cron Site (pane UI)","summary":"Owns the GotchiBot pstack dossier pane UI for ai-cron-site: render agents registered on ai-cron-site, each agent's cron schedule, success/fail run history, and logged results. Partner data-ai-cron-site owns fetch/persist/log-result; this role owns render + pane UX only.","version":"1.0.0","path":"packs/dossier-ai-cron-site","tags":["cron","dossier","ui","ai-cron-site"],"skills":["dossier-ai-cron-site","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"fe-marketing","roleId":"fe-marketing","title":"FE Marketing","summary":"Landing pages, conversion UX, brand web polish and campaign microsites — FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.","version":"1.0.0","path":"packs/fe-marketing","tags":["web","design"],"skills":["browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"financial-analyst","roleId":"financial-analyst","title":"Financial Analyst / Trade Desk","summary":"Owns the Gotchi-Trader trade desk (monitor, improve, waker health) as main priority. Staffs market-news and market-research children for headlines and deep memos. Analysis/paper only — no live execution.","version":"1.0.0","path":"packs/financial-analyst","tags":["analysis","news","trader"],"skills":["market-news-feed","browser-tool","pymupdf"],"skillsExternal":[],"scope":"aarcade"},{"id":"game-art-director","roleId":"game-art-director","title":"Game Art Director","summary":"Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels — the user owns image gen.","version":"1.0.0","path":"packs/game-art-director","tags":["art","direction","style-guide","prompts","audit"],"skills":["browser-tool","aseprite-tool"],"skillsExternal":[],"scope":"starter"},{"id":"infra-bridge","roleId":"infra-bridge","title":"Desk→Hub Claude bridge","summary":"Own Desk→Hub Claude bridge: ensure/check, VS Code open, claude pane init, short claude-ask. Stay on big-pickle — never /model @claudemode.","version":"1.0.0","path":"packs/infra-bridge","tags":["infra","bridge"],"skills":["hub-sop","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"infra-docker","roleId":"infra-docker","title":"Docker / watched stack","summary":"Own Docker watched containers and the infra watcher/verifier loop. Paper recover on DEGRADED. Subset of home infra for operators who only run the container stack.","version":"1.0.0","path":"packs/infra-docker","tags":["infra","docker"],"skills":["infra-recover","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"infra-hub","roleId":"infra-hub","title":"Hub / OpenClaw gateway","summary":"Own Hub OpenClaw gateway health: status, restart-gateway, doctor, roster. Subset of home infra.","version":"1.0.0","path":"packs/infra-hub","tags":["infra","hub"],"skills":["hub-sop","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"infra-mesh","roleId":"infra-mesh","title":"Agent mesh / remote Hub","summary":"Own GotchiBot cross-machine agent mesh and remote Hub ops (status, ping, remote-setup, remote run/push/serve, topology). On path fail, defer to Tailscale / infra-tailscale first.","version":"1.0.0","path":"packs/infra-mesh","tags":["infra","mesh"],"skills":["gotchibot-mesh","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"infra-monitor","roleId":"infra-monitor","title":"Home infra (full stack)","summary":"Own the complete GotchiBot home stack: Docker watched set, Cloudflare tunnel/public subgraph, Hub/OpenClaw, Tailscale path, agent mesh/remote, and Desk→Hub Claude bridge. Watch, probe, recover paper-only. Public operators who run a subset install the piece packs: infra-docker, infra-tunnel, infra-hub, infra-tailscale, infra-mesh, infra-bridge.","version":"1.0.0","path":"packs/infra-monitor","tags":["infra","ops","home"],"skills":["infra-recover","hub-sop","gotchibot-mesh","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"infra-tailscale","roleId":"infra-tailscale","title":"Tailscale path","summary":"Own the Tailscale tailnet path to the always-on Hub: peers online, MagicDNS / 100.x. Never invent LAN IPs. Subset of home infra.","version":"1.0.0","path":"packs/infra-tailscale","tags":["infra","tailscale"],"skills":["browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"infra-tunnel","roleId":"infra-tunnel","title":"Cloudflare tunnel / public subgraph","summary":"Own Cloudflare tunnel health and public subgraph endpoints. Cartridge Cloudflare 502 awareness. Subset of home infra.","version":"1.0.0","path":"packs/infra-tunnel","tags":["infra","tunnel"],"skills":["infra-recover","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"jev","roleId":"jev","title":"Jev (TypeSafe System One)","summary":"Structured decisions via TypeSafe Jev — Choice, Score, Noul with confidence. Not chat; not a work tool for edits.","scope":"starter","version":"1.0.0","path":"packs/jev","tags":["starter","typesafe","jev","system-one","routing","decisions"],"skills":["jev","browser-tool"],"skillsExternal":["typesafe-ai"]},{"id":"kanban-manager","roleId":"kanban-manager","title":"Project Kanban Manager","summary":"Own the sealed project's main task kanban and every desk's mini headless board: show/add/move cards, sync desk minis into the main board, pull assigned cards onto desks. Owns the project ticket lifecycle (accept/rework/close/digest) for agent request/claim/submit work.","version":"1.0.0","path":"packs/kanban-manager","tags":["kanban","project","boards","tasks"],"skills":["project-kanban","project-tickets"],"skillsExternal":[],"scope":"starter"},{"id":"mail-courier","roleId":"mail-courier","title":"Mail Courier","summary":"Own one AgentMail inbox per GotchiBot project: accept outbound from agents, send via AgentMail (abra AGENT_MAIL_API_KEY), monitor inbox/outbox, relay replies, track owed agent responses, remind after 24h, keep the orchestrator informed.","version":"1.0.0","path":"packs/mail-courier","tags":["mail","courier","inbox","email","agentmail"],"skills":["agentmail","abra-vault","project-mailbox"],"skillsExternal":[],"scope":"starter"},{"id":"market-news","roleId":"market-news","title":"Market News","summary":"Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only — not the trader monitor.","version":"1.0.0","path":"packs/market-news","tags":["news","headlines","regime"],"skills":["market-news-feed","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"market-research","roleId":"market-research","title":"Market Research","summary":"Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only — not the trader monitor.","version":"1.0.0","path":"packs/market-research","tags":["research","ic","filings"],"skills":["browser-tool","pymupdf","market-news-feed"],"skillsExternal":[],"scope":"aarcade"},{"id":"marketing-agency","roleId":"marketing-agency","title":"Marketing Agency","summary":"Research & analyze market trends, then staff web, social, merch and brand-design children — Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.","version":"1.0.0","path":"packs/marketing-agency","tags":["marketing","agency"],"skills":["browser-tool","market-news-feed","pymupdf"],"skillsExternal":[],"scope":"starter"},{"id":"mcp-maker","roleId":"mcp-maker","title":"MCP Maker","summary":"Authors MCP server stubs/configs and tool descriptors for GotchiBot — safe schemas, no secrets in repo, auth via abra.","version":"1.0.0","path":"packs/mcp-maker","tags":["maker","mcp","connector","tools"],"skills":["pstack","browser-tool","abra-vault"],"skillsExternal":[],"scope":"aarcade"},{"id":"merch-desk","roleId":"merch-desk","title":"Merch Desk","summary":"Own the merch store supplier desk: research print-on-demand companies that make custom plushies and toys, rank API-capable vendors, approve-gated outreach to every shortlisted supplier, and pull brand kits / one-sheets / mocks from brand-design and product desks. Never sends without approval; never spends.","version":"1.0.0","path":"packs/merch-desk","tags":["merch","pod","plush","toys","quotes"],"skills":["browser-tool","market-news-feed","pymupdf"],"skillsExternal":["mcp-pixellab","resend"],"scope":"aarcade"},{"id":"moltbook-watch","roleId":"moltbook-watch","title":"Moltbook watch desk","summary":"15-min radar for Moltbook replies-to-us and api-key / secrets / user-pain topics. Queue only — no posting.","version":"1.0.0","path":"packs/moltbook-watch","tags":["marketplace"],"skills":["browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"orchestrator","roleId":"orchestrator","title":"Orchestrator","summary":"Chair/delegate — do not DIY sub-agent jobs.","version":"1.0.0","path":"packs/orchestrator","tags":["marketplace"],"skills":["delegate-first","browser-tool","pstack"],"skillsExternal":[],"scope":"aarcade"},{"id":"policy-maker","roleId":"policy-maker","title":"Policy Maker","summary":"Authors durable policy docs (allow/deny, approve-gates, escalation). Policies guide agents; they are not runtime code.","version":"1.0.0","path":"packs/policy-maker","tags":["maker","policy","governance","gates"],"skills":["pstack","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"product-manager","roleId":"product-manager","title":"Product Manager","summary":"Sole product desk: discovery → roadmap → specs → ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers — including one arcade-game-monitor per Aarcade game. Not Prof; not chief.","version":"1.0.0","path":"packs/product-manager","tags":["product","pm","roadmap"],"skills":["browser-tool","pymupdf","market-news-feed"],"skillsExternal":[],"scope":"starter"},{"id":"prof-link-cube","roleId":"prof-link-cube","title":"Prof. Link-Cube","summary":"Factory NPC (not mintable, not a fleet seat): design/author profiled playbooks, SOULs, IDENTITYs, and marketplace packs via link-cube + templates. Work tools only — never DIY on the chat model.","scope":"starter","kind":"npc","version":"1.0.0","path":"packs/prof-link-cube","tags":["starter","npc","factory","professor"],"skills":["cursor-cli","codex-cli","gotchibot-bridge","prof-link-cube"]},{"id":"roadblock-reviewer","roleId":"roadblock-reviewer","title":"Roadblock Reviewer","summary":"Reviews sessions for repeated roadblocks that already have a working solution; IDs them; passes packets to central-bot for path decision.","version":"1.0.0","path":"packs/roadblock-reviewer","tags":["review","roadblock","sessions","central"],"skills":["pstack","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"rule-maker","roleId":"rule-maker","title":"Rule Maker","summary":"Authors concrete enforceable rules (lint/CI/hooks/checklists) that implement policy intent with a verify command.","version":"1.0.0","path":"packs/rule-maker","tags":["maker","rules","lint","hooks","ci"],"skills":["pstack","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"security-engineer","roleId":"security-engineer","title":"Security Engineer","summary":"Find and fix real vulns in the current GotchiBot/Aarcade tree: threat notes, hardening, secret hygiene, approve-gate checks. Implements fixes; auditor attests.","version":"1.0.0","path":"packs/security-engineer","tags":["security","hardening","vuln","secrets","gates"],"skills":["browser-tool","pstack","abra-vault"],"skillsExternal":[],"scope":"aarcade"},{"id":"skill-maker","roleId":"skill-maker","title":"Skill Maker","summary":"Authors SKILL.md packs (frontmatter, when-to-use, steps, anti-jobs) for GotchiBot agents. Clear, reusable, no secrets.","version":"1.0.0","path":"packs/skill-maker","tags":["maker","skill","skillmd","workflow"],"skills":["pstack","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"social-media-manager","roleId":"social-media-manager","title":"Social Media Manager","summary":"Calendar, voice, channel strategy and drafts for web + social — channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.","version":"1.0.0","path":"packs/social-media-manager","tags":["social","content"],"skills":["browser-tool"],"skillsExternal":["mcp-snapshot"],"scope":"starter"},{"id":"tool-maker","roleId":"tool-maker","title":"Deterministic Tool Maker","summary":"Authors small deterministic CLI/tools with clear I/O, exit codes, and verify steps. No LLM-in-the-loop for the tool itself.","version":"1.0.0","path":"packs/tool-maker","tags":["maker","tool","deterministic","cli"],"skills":["pstack","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"trader-desk","roleId":"trader-desk","title":"Trader desk","summary":"Own Gotchi-Trader paper desk health, cycle decisions and PnL reporting.","version":"1.0.0","path":"packs/trader-desk","tags":["marketplace"],"skills":["gotchi-trader-monitor","gotchi-trader-improve","market-news-feed","browser-tool"],"skillsExternal":[],"scope":"aarcade"},{"id":"worker","roleId":"worker","title":"Worker","summary":"Prof-seated worker desks request. Deep lanes: dispatch I/O (sessions/\u003cid>), skill-requests.jsonl helper, ephemeral desk-terminals use/close.","version":"1.0.0","path":"packs/worker","tags":["worker","dispatch","desk-request","prof"],"skills":["cursor-cli","codex-cli","gotchibot-bridge","desk-wake","passoff","pstack"],"skillsExternal":[],"scope":"aarcade"}],"updatedAt":"2026-09-23T20:15:33.845Z"}
+<!--CATALOG_END--></script>
 <script>
 (function () {
   const cardsEl = document.getElementById("cards");
@@ -124,10 +213,21 @@
   const chipsEl = document.getElementById("chips");
   let catalog = null;
   let activeTag = "all";
+  let activeScope = "starter"; // default public offer
 
-  const FEATURED = ["worker","mail-courier","kanban-manager","central-bot","tool-maker","skill-maker","security-engineer","auditor","orchestrator","roadblock-reviewer"];
+  const STARTER_IDS = new Set(["accountant","architect","bend-crew","brand-design","customer-support","game-art-director","jev","kanban-manager","mail-courier","marketing-agency","product-manager","prof-link-cube","social-media-manager"]);
+  const FEATURED = ["prof-link-cube","bend-crew","jev","architect","product-manager","marketing-agency","brand-design","social-media-manager","accountant","customer-support","kanban-manager","mail-courier","game-art-director"];
 
   function packs() { return (catalog && catalog.packs) || []; }
+
+  function packScope(p) {
+    const s = String(p.scope || "").toLowerCase();
+    if (s === "starter" || s === "aarcade") return s;
+    if (s === "generic") return "starter";
+    if ((p.tags || []).includes("starter") || (p.tags || []).includes("generic")) return "starter";
+    if ((p.tags || []).includes("aarcade")) return "aarcade";
+    return STARTER_IDS.has(p.id) ? "starter" : "aarcade";
+  }
 
   function allTags() {
     const s = new Set();
@@ -137,11 +237,23 @@
 
   function renderChips() {
     chipsEl.innerHTML = "";
+    for (const sc of ["starter", "aarcade", "all"]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip" + (sc === activeScope ? " active" : "");
+      b.textContent = sc === "starter" ? "starter" : sc === "aarcade" ? "AarcadeGh-t" : "all scopes";
+      b.addEventListener("click", () => { activeScope = sc; renderChips(); paint(); });
+      chipsEl.appendChild(b);
+    }
+    const sep = document.createElement("span");
+    sep.style.cssText = "color:var(--muted);font-size:12px;padding:0 4px";
+    sep.textContent = "·";
+    chipsEl.appendChild(sep);
     for (const t of allTags()) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "chip" + (t === activeTag ? " active" : "");
-      b.textContent = t === "all" ? "all" : t;
+      b.textContent = t === "all" ? "all tags" : t;
       b.addEventListener("click", () => { activeTag = t; renderChips(); paint(); });
       chipsEl.appendChild(b);
     }
@@ -150,9 +262,10 @@
   function filtered() {
     const q = (qEl.value || "").trim().toLowerCase();
     return packs().filter((p) => {
+      if (activeScope !== "all" && packScope(p) !== activeScope) return false;
       if (activeTag !== "all" && !(p.tags || []).includes(activeTag)) return false;
       if (!q) return true;
-      const blob = [p.id, p.title, p.summary, ...(p.tags||[]), ...(p.skills||[]), ...(p.skillsExternal||[])].join(" ").toLowerCase();
+      const blob = [p.id, p.title, p.summary, p.scope, ...(p.tags||[]), ...(p.skills||[]), ...(p.skillsExternal||[])].join(" ").toLowerCase();
       return blob.includes(q);
     }).sort((a,b) => {
       const fa = FEATURED.indexOf(a.id), fb = FEATURED.indexOf(b.id);

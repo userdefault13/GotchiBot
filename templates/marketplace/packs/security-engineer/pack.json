@@ -29,5 +29,6 @@
     "skills/abra-vault/SKILL.md",
     "skills/browser-tool/SKILL.md",
     "skills/pstack/SKILL.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

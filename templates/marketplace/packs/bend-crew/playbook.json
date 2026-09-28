@@ -1,0 +1,13 @@
+{
+  "title": "Bend crew (chief · laws · proofs)",
+  "summary": "Suite pack: seats the full Bend crew — bend-chief (route/merge), bend-laws (LAWS.bend), bend-proofs (PROOF.bend / checker green). One install, three roles.",
+  "skills": [
+    "bend-2",
+    "cursor-cli",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "scheduleCmd": "",
+  "autonomy": "Marketplace suite for the Bend crew (CREWS.md). Install merges all three role playbooks + AGENTS + bend-2 skill. Apply with --heroes bend-chief=<h>,bend-laws=<h>,bend-proofs=<h>. Never auto-mints; never steals LINK/YFI/WBTC desks."
+}

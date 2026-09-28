@@ -64,6 +64,8 @@ Underlying CLI: `./scripts/template-pack.mjs`. Pack authoring edits go through a
 
 Known packs UserDefault often asks for: `worker`, `game-art-director`, `security-engineer`, `auditor`, `dossier-ai-cron-site`, `data-ai-cron-site`, `central-bot`, `tool-maker`, `skill-maker`, `policy-maker`, `rule-maker`, `mcp-maker`, `roadblock-reviewer` — apply with `gotchibot templates apply <id> --hero <available> --yes`. Worker tool index: `node ./scripts/worker-index.mjs --text`.
 
+**Request / generic subs:** seat pack `worker` only (template + Prof tools). Orch spawn runs `ensure-prof-worker.mjs` so bare request heroes still get the worker pack. Never overwrite LINK/YFI/WBTC standing desks.
+
 ## Safety (hard)
 
 - Never mint the professor. No second fleet seat for Prof.

@@ -27,5 +27,6 @@
     "playbook.json",
     "skills/abra-vault/SKILL.md",
     "skills/browser-tool/SKILL.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

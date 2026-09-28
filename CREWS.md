@@ -21,7 +21,7 @@ When a specialty is needed, check here before DIY.
 | **Chief** | Grok Bot `bend-chief` — intake, route, merge Bend work |
 | **Workers** | `bend-laws` → `LAWS.bend` · `bend-proofs` → `PROOF.bend` / `bend PROOF.bend` green |
 | **Playbook** | Fleet skill `bend-2`; install Bend via `curl -fsSL https://bend-lang.com/install.sh | sh` |
-| **Desk** | Prefer the Grok bend crew for LAWS/PROOF authorship. Do not invent a parallel Bend maker pack unless Julius asks. |
+| **Desk** | Marketplace suite `bend-crew` (starter): `gotchibot templates install bend-crew --yes` then `apply bend-crew --heroes bend-chief=<h>,bend-laws=<h>,bend-proofs=<h> --yes`. Grok bend crew remains fine for LAWS/PROOF authorship. |
 
 Route laws → laws worker. Route proofs / checker fails → proofs worker. Do not
 have laws write proofs or proofs rewrite laws.
@@ -87,11 +87,11 @@ CoS opinion round: `gotchibot meet colabo --ring design "…"` (not all-hands).
 
 | | |
 |---|---|
-| **Desk pack** | `templates/marketplace/packs/jev` — `gotchibot templates apply jev --hero <available> --yes` |
-| **CLI** | `./scripts/gotchibot jev ask|smoke|models` |
-| **Secret** | abra `general` / `JEV_DEV_API_KEY` (names only); optional mirror `gotchibot` / `TYPESAFE_API_KEY` |
+| **Fleet** | Common skill on every hero (`COMMON_SKILLS` → fleet sync). Desk pack `jev` remains for a dedicated Jev seat if wanted. |
+| **CLI** | `./scripts/gotchibot jev ask|smoke|models` (or TypeSafe API via env `TYPESAFE_API_KEY`) |
+| **Secret** | `TYPESAFE_API_KEY` / `JEV_API_KEY` / `JEV_DEV_API_KEY` (names only); abra `general` / `JEV_DEV_API_KEY` on GotchiBot desks |
 | **Playbook** | Pack skill `jev`; live docs https://docs.typesafe.ai/llms.txt |
 | **Anti-jobs** | Not chat / not System 2 / not a work tool for edits |
 
-Use for graph/passoff routing, guardrails, and closed-set judgments. Compose
-atomic answers in code; escalate low confidence to Julius or a work tool.
+Use for closed-set routing, guardrails, and ranking. Compose atomic answers in
+code; escalate low confidence to a human or a work tool.

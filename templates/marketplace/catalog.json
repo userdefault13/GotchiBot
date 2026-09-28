@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "baseUrl": "https://templates.aarcadeghst.com",
+  "baseUrl": "https://aarcadeghst.com/gotchibot-templates",
   "packs": [
     {
       "id": "aarcade-comms-handler",
@@ -16,13 +16,14 @@
         "aarcade-comms",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "abra-vault",
       "roleId": "abra-vault",
       "title": "Abracadabra Vault",
-      "summary": "Secrets desk: passwords, API keys, wallets, SSH keys via abracadabra (abra). Promote the vault \u2014 names in chat, values never. Touch ID / scoped ABRA_KEY; Desk host abra denied for agents.",
+      "summary": "Secrets desk: passwords, API keys, wallets, SSH keys via abracadabra (abra). Promote the vault — names in chat, values never. Touch ID / scoped ABRA_KEY; Desk host abra denied for agents.",
       "version": "1.0.0",
       "path": "packs/abra-vault",
       "tags": [
@@ -36,13 +37,14 @@
       "skillsExternal": [
         "abra",
         "abracadabra"
-      ]
+      ],
+      "scope": "aarcade"
     },
     {
       "id": "accountant",
       "roleId": "accountant",
       "title": "Accountant",
-      "summary": "Own the merch ops ledger: vendor quotes, POs, AP/AR, invoices \u2014 sourced amounts, aging clarity. Tracks and reconciles; never spends or invents balances.",
+      "summary": "Own the merch ops ledger: vendor quotes, POs, AP/AR, invoices — sourced amounts, aging clarity. Tracks and reconciles; never spends or invents balances.",
       "version": "1.0.0",
       "path": "packs/accountant",
       "tags": [
@@ -54,7 +56,8 @@
         "browser-tool",
         "pymupdf"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "starter"
     },
     {
       "id": "arcade-game-monitor",
@@ -71,7 +74,8 @@
       "skills": [
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "architect",
@@ -90,7 +94,8 @@
         "architect",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "starter"
     },
     {
       "id": "art-director",
@@ -111,7 +116,8 @@
       ],
       "skillsExternal": [
         "mcp-pixellab"
-      ]
+      ],
+      "scope": "aarcade"
     },
     {
       "id": "auditor",
@@ -132,7 +138,92 @@
         "pymupdf",
         "pstack"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
+    },
+    {
+      "id": "bend-chief",
+      "roleId": "bend-chief",
+      "title": "Bend chief",
+      "summary": "Routes and merges Bend crew work: intake → bend-laws (LAWS.bend) / bend-proofs (PROOF.bend). Does not author laws or proofs by default.",
+      "scope": "aarcade",
+      "version": "1.0.0",
+      "path": "packs/bend-chief",
+      "tags": [
+        "bend",
+        "crew",
+        "routing"
+      ],
+      "skills": [
+        "bend-2",
+        "cursor-cli",
+        "browser-tool"
+      ]
+    },
+    {
+      "id": "bend-crew",
+      "roleId": "bend-crew",
+      "title": "Bend crew (chief · laws · proofs)",
+      "summary": "Suite pack: seats the full Bend crew — bend-chief (route/merge), bend-laws (LAWS.bend), bend-proofs (PROOF.bend / checker green). One install, three roles.",
+      "scope": "starter",
+      "kind": "suite",
+      "members": [
+        "bend-chief",
+        "bend-laws",
+        "bend-proofs"
+      ],
+      "version": "1.0.0",
+      "path": "packs/bend-crew",
+      "tags": [
+        "starter",
+        "bend",
+        "suite",
+        "laws",
+        "proofs"
+      ],
+      "skills": [
+        "bend-2",
+        "cursor-cli",
+        "browser-tool"
+      ]
+    },
+    {
+      "id": "bend-laws",
+      "roleId": "bend-laws",
+      "title": "Bend laws",
+      "summary": "Owns LAWS.bend authorship. Does not write proofs — hands proof work to bend-proofs.",
+      "scope": "aarcade",
+      "version": "1.0.0",
+      "path": "packs/bend-laws",
+      "tags": [
+        "bend",
+        "laws",
+        "LAWS"
+      ],
+      "skills": [
+        "bend-2",
+        "cursor-cli",
+        "browser-tool"
+      ]
+    },
+    {
+      "id": "bend-proofs",
+      "roleId": "bend-proofs",
+      "title": "Bend proofs",
+      "summary": "Owns PROOF.bend and bend PROOF.bend green. Does not rewrite laws — hands law gaps to bend-laws.",
+      "scope": "aarcade",
+      "version": "1.0.0",
+      "path": "packs/bend-proofs",
+      "tags": [
+        "bend",
+        "proofs",
+        "PROOF"
+      ],
+      "skills": [
+        "bend-2",
+        "cursor-cli",
+        "browser-tool"
+      ]
     },
     {
       "id": "brand-design",
@@ -152,7 +243,8 @@
       ],
       "skillsExternal": [
         "mcp-pixellab"
-      ]
+      ],
+      "scope": "starter"
     },
     {
       "id": "central-bot",
@@ -172,7 +264,8 @@
         "browser-tool",
         "prof-link-cube"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "cron-manager",
@@ -191,13 +284,14 @@
       ],
       "skillsExternal": [
         "mcp-cron402"
-      ]
+      ],
+      "scope": "aarcade"
     },
     {
       "id": "customer-support",
       "roleId": "customer-support",
       "title": "Customer Support",
-      "summary": "Own the client-facing support desk: manage a web chat bot that clients use to get help \u2014 configure/monitor the bot, triage conversations, draft replies, escalate blockers, keep a support ledger. On GotchiBot/AarcadeGh-t installs, also owns the project messaging system (AgentMail + desk mailboxes + tickets until a web widget is wired). Never posts marketing; never spends.",
+      "summary": "Own the client-facing support desk: manage a web chat bot that clients use to get help — configure/monitor the bot, triage conversations, draft replies, escalate blockers, keep a support ledger. On GotchiBot/AarcadeGh-t installs, also owns the project messaging system (AgentMail + desk mailboxes + tickets until a web widget is wired). Never posts marketing; never spends.",
       "version": "1.0.0",
       "path": "packs/customer-support",
       "tags": [
@@ -209,7 +303,8 @@
         "browser-tool",
         "project-mailbox"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "starter"
     },
     {
       "id": "data-ai-cron-site",
@@ -229,7 +324,8 @@
       ],
       "skillsExternal": [
         "mcp-cron402"
-      ]
+      ],
+      "scope": "aarcade"
     },
     {
       "id": "dossier-ai-cron-site",
@@ -248,13 +344,14 @@
         "dossier-ai-cron-site",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "fe-marketing",
       "roleId": "fe-marketing",
       "title": "FE Marketing",
-      "summary": "Landing pages, conversion UX, brand web polish and campaign microsites \u2014 FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.",
+      "summary": "Landing pages, conversion UX, brand web polish and campaign microsites — FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.",
       "version": "1.0.0",
       "path": "packs/fe-marketing",
       "tags": [
@@ -264,13 +361,14 @@
       "skills": [
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "financial-analyst",
       "roleId": "financial-analyst",
       "title": "Financial Analyst / Trade Desk",
-      "summary": "Owns the Gotchi-Trader trade desk (monitor, improve, waker health) as main priority. Staffs market-news and market-research children for headlines and deep memos. Analysis/paper only \u2014 no live execution.",
+      "summary": "Owns the Gotchi-Trader trade desk (monitor, improve, waker health) as main priority. Staffs market-news and market-research children for headlines and deep memos. Analysis/paper only — no live execution.",
       "version": "1.0.0",
       "path": "packs/financial-analyst",
       "tags": [
@@ -283,13 +381,14 @@
         "browser-tool",
         "pymupdf"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "game-art-director",
       "roleId": "game-art-director",
       "title": "Game Art Director",
-      "summary": "Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels \u2014 the user owns image gen.",
+      "summary": "Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels — the user owns image gen.",
       "version": "1.0.0",
       "path": "packs/game-art-director",
       "tags": [
@@ -303,13 +402,14 @@
         "browser-tool",
         "aseprite-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "starter"
     },
     {
       "id": "infra-bridge",
       "roleId": "infra-bridge",
-      "title": "Desk\u2192Hub Claude bridge",
-      "summary": "Own Desk\u2192Hub Claude bridge: ensure/check, VS Code open, claude pane init, short claude-ask. Stay on big-pickle \u2014 never /model @claudemode.",
+      "title": "Desk→Hub Claude bridge",
+      "summary": "Own Desk→Hub Claude bridge: ensure/check, VS Code open, claude pane init, short claude-ask. Stay on big-pickle — never /model @claudemode.",
       "version": "1.0.0",
       "path": "packs/infra-bridge",
       "tags": [
@@ -320,7 +420,8 @@
         "hub-sop",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "infra-docker",
@@ -337,7 +438,8 @@
         "infra-recover",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "infra-hub",
@@ -354,7 +456,8 @@
         "hub-sop",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "infra-mesh",
@@ -371,13 +474,14 @@
         "gotchibot-mesh",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "infra-monitor",
       "roleId": "infra-monitor",
       "title": "Home infra (full stack)",
-      "summary": "Own the complete GotchiBot home stack: Docker watched set, Cloudflare tunnel/public subgraph, Hub/OpenClaw, Tailscale path, agent mesh/remote, and Desk\u2192Hub Claude bridge. Watch, probe, recover paper-only. Public operators who run a subset install the piece packs: infra-docker, infra-tunnel, infra-hub, infra-tailscale, infra-mesh, infra-bridge.",
+      "summary": "Own the complete GotchiBot home stack: Docker watched set, Cloudflare tunnel/public subgraph, Hub/OpenClaw, Tailscale path, agent mesh/remote, and Desk→Hub Claude bridge. Watch, probe, recover paper-only. Public operators who run a subset install the piece packs: infra-docker, infra-tunnel, infra-hub, infra-tailscale, infra-mesh, infra-bridge.",
       "version": "1.0.0",
       "path": "packs/infra-monitor",
       "tags": [
@@ -391,7 +495,8 @@
         "gotchibot-mesh",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "infra-tailscale",
@@ -407,7 +512,8 @@
       "skills": [
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "infra-tunnel",
@@ -424,16 +530,19 @@
         "infra-recover",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "jev",
       "roleId": "jev",
       "title": "Jev (TypeSafe System One)",
-      "summary": "Structured decisions (Choice/Score/Noul + confidence) for GotchiBot workflows \u2014 not chat.",
+      "summary": "Structured decisions via TypeSafe Jev — Choice, Score, Noul with confidence. Not chat; not a work tool for edits.",
+      "scope": "starter",
       "version": "1.0.0",
       "path": "packs/jev",
       "tags": [
+        "starter",
         "typesafe",
         "jev",
         "system-one",
@@ -465,7 +574,8 @@
         "project-kanban",
         "project-tickets"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "starter"
     },
     {
       "id": "mail-courier",
@@ -486,13 +596,14 @@
         "abra-vault",
         "project-mailbox"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "starter"
     },
     {
       "id": "market-news",
       "roleId": "market-news",
       "title": "Market News",
-      "summary": "Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only \u2014 not the trader monitor.",
+      "summary": "Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only — not the trader monitor.",
       "version": "1.0.0",
       "path": "packs/market-news",
       "tags": [
@@ -504,13 +615,14 @@
         "market-news-feed",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "market-research",
       "roleId": "market-research",
       "title": "Market Research",
-      "summary": "Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only \u2014 not the trader monitor.",
+      "summary": "Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only — not the trader monitor.",
       "version": "1.0.0",
       "path": "packs/market-research",
       "tags": [
@@ -523,13 +635,14 @@
         "pymupdf",
         "market-news-feed"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "marketing-agency",
       "roleId": "marketing-agency",
       "title": "Marketing Agency",
-      "summary": "Research & analyze market trends, then staff web, social, merch and brand-design children \u2014 Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.",
+      "summary": "Research & analyze market trends, then staff web, social, merch and brand-design children — Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.",
       "version": "1.0.0",
       "path": "packs/marketing-agency",
       "tags": [
@@ -541,13 +654,14 @@
         "market-news-feed",
         "pymupdf"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "starter"
     },
     {
       "id": "mcp-maker",
       "roleId": "mcp-maker",
       "title": "MCP Maker",
-      "summary": "Authors MCP server stubs/configs and tool descriptors for GotchiBot \u2014 safe schemas, no secrets in repo, auth via abra.",
+      "summary": "Authors MCP server stubs/configs and tool descriptors for GotchiBot — safe schemas, no secrets in repo, auth via abra.",
       "version": "1.0.0",
       "path": "packs/mcp-maker",
       "tags": [
@@ -561,7 +675,8 @@
         "browser-tool",
         "abra-vault"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "merch-desk",
@@ -585,13 +700,14 @@
       "skillsExternal": [
         "mcp-pixellab",
         "resend"
-      ]
+      ],
+      "scope": "aarcade"
     },
     {
       "id": "moltbook-watch",
       "roleId": "moltbook-watch",
       "title": "Moltbook watch desk",
-      "summary": "15-min radar for Moltbook replies-to-us and api-key / secrets / user-pain topics. Queue only \u2014 no posting.",
+      "summary": "15-min radar for Moltbook replies-to-us and api-key / secrets / user-pain topics. Queue only — no posting.",
       "version": "1.0.0",
       "path": "packs/moltbook-watch",
       "tags": [
@@ -600,13 +716,14 @@
       "skills": [
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "orchestrator",
       "roleId": "orchestrator",
       "title": "Orchestrator",
-      "summary": "Chair/delegate \u2014 do not DIY sub-agent jobs.",
+      "summary": "Chair/delegate — do not DIY sub-agent jobs.",
       "version": "1.0.0",
       "path": "packs/orchestrator",
       "tags": [
@@ -617,7 +734,8 @@
         "browser-tool",
         "pstack"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "policy-maker",
@@ -636,13 +754,14 @@
         "pstack",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "product-manager",
       "roleId": "product-manager",
       "title": "Product Manager",
-      "summary": "Sole product desk: discovery \u2192 roadmap \u2192 specs \u2192 ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers \u2014 including one arcade-game-monitor per Aarcade game. Not Prof; not chief.",
+      "summary": "Sole product desk: discovery → roadmap → specs → ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers — including one arcade-game-monitor per Aarcade game. Not Prof; not chief.",
       "version": "1.0.0",
       "path": "packs/product-manager",
       "tags": [
@@ -655,7 +774,30 @@
         "pymupdf",
         "market-news-feed"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "starter"
+    },
+    {
+      "id": "prof-link-cube",
+      "roleId": "prof-link-cube",
+      "title": "Prof. Link-Cube",
+      "summary": "Factory NPC (not mintable, not a fleet seat): design/author profiled playbooks, SOULs, IDENTITYs, and marketplace packs via link-cube + templates. Work tools only — never DIY on the chat model.",
+      "scope": "starter",
+      "kind": "npc",
+      "version": "1.0.0",
+      "path": "packs/prof-link-cube",
+      "tags": [
+        "starter",
+        "npc",
+        "factory",
+        "professor"
+      ],
+      "skills": [
+        "cursor-cli",
+        "codex-cli",
+        "gotchibot-bridge",
+        "prof-link-cube"
+      ]
     },
     {
       "id": "roadblock-reviewer",
@@ -674,7 +816,8 @@
         "pstack",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "rule-maker",
@@ -694,7 +837,8 @@
         "pstack",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "security-engineer",
@@ -715,7 +859,8 @@
         "pstack",
         "abra-vault"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "skill-maker",
@@ -734,13 +879,14 @@
         "pstack",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "social-media-manager",
       "roleId": "social-media-manager",
       "title": "Social Media Manager",
-      "summary": "Calendar, voice, channel strategy and drafts for web + social \u2014 channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.",
+      "summary": "Calendar, voice, channel strategy and drafts for web + social — channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.",
       "version": "1.0.0",
       "path": "packs/social-media-manager",
       "tags": [
@@ -752,7 +898,8 @@
       ],
       "skillsExternal": [
         "mcp-snapshot"
-      ]
+      ],
+      "scope": "starter"
     },
     {
       "id": "tool-maker",
@@ -771,7 +918,8 @@
         "pstack",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "trader-desk",
@@ -789,7 +937,8 @@
         "market-news-feed",
         "browser-tool"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     },
     {
       "id": "worker",
@@ -812,8 +961,9 @@
         "passoff",
         "pstack"
       ],
-      "skillsExternal": []
+      "skillsExternal": [],
+      "scope": "aarcade"
     }
   ],
-  "updatedAt": "2026-09-19T08:59:44.292798+00:00"
+  "updatedAt": "2026-09-23T20:15:33.845Z"
 }

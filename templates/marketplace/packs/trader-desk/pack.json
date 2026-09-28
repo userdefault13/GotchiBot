@@ -29,5 +29,6 @@
     "skills/gotchi-trader-improve/SKILL.md",
     "skills/gotchi-trader-monitor/SKILL.md",
     "skills/market-news-feed/SKILL.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

@@ -11,7 +11,7 @@
   "skillsExternal": [],
   "standingDuties": [],
   "cronHints": [
-    "No schedule \u2014 wake-on-demand architecture desk."
+    "No schedule — wake-on-demand architecture desk."
   ],
   "tags": [
     "architecture",
@@ -26,5 +26,6 @@
     "playbook.json",
     "skills/architect/SKILL.md",
     "skills/browser-tool/SKILL.md"
-  ]
+  ],
+  "scope": "starter"
 }

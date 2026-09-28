@@ -27,5 +27,6 @@
     "playbook.json",
     "skills/browser-tool/SKILL.md",
     "skills/cron-manager/SKILL.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

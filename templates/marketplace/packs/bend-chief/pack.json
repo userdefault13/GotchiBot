@@ -1,0 +1,32 @@
+{
+  "id": "bend-chief",
+  "roleId": "bend-chief",
+  "version": "1.0.0",
+  "title": "Bend chief",
+  "summary": "Routes and merges Bend crew work: intake → bend-laws (LAWS.bend) / bend-proofs (PROOF.bend). Does not author laws or proofs by default.",
+  "scope": "aarcade",
+  "skills": [
+    "bend-2",
+    "cursor-cli",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "bend",
+    "crew",
+    "routing"
+  ],
+  "downloadPath": "packs/bend-chief",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/bend-2/SKILL.md",
+    "skills/browser-tool/SKILL.md",
+    "skills/cursor-cli/SKILL.md"
+  ]
+}

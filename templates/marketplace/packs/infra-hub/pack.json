@@ -27,5 +27,6 @@
     "skills/browser-tool/SKILL.md",
     "skills/hub-sop/SKILL.md",
     "standing-duties/infra-hub.md"
-  ]
+  ],
+  "scope": "aarcade"
 }
