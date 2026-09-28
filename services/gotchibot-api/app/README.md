@@ -56,8 +56,15 @@ chrome are adapted from [Mobilecode-open](https://github.com/elkir0/Mobilecode-o
 - **Runner** — while waiting, `GET /hub/runner` at most every ~10s; settings
   shows status · model. Non-blocking notice when offline/error.
 - **Version** — bump `APP_VERSION` in **both** `sw.js` and `js/version.js`
-  together (currently `0.3.0`). New JS modules must be listed in the SW
+  together (currently `0.3.1`). New JS modules must be listed in the SW
   `SHELL` precache.
+
+## 0.3.1: shared project desk
+
+- Opening a project (`#/p/<slug>` with no thread) asks `GET /projects/<slug>/desk`
+  and lands on the project's `desk-<slug>` thread: one orchestrator conversation
+  shared by every paired device and by terminals (`gotchibot hub desk open`).
+  Other chats stay in the history sheet, where the desk is pinned first as "Desk".
 
 ## 0.3.0: project desk
 

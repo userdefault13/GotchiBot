@@ -23,6 +23,13 @@ const REPLY_STALE_MS = 5 * 60 * 1000;
 /** Runner considered offline if lastBeatAt older than this. */
 const RUNNER_OFFLINE_MS = 90_000;
 const MSG_ID_RE = /^[A-Za-z0-9_-]+$/;
+/** Owner of project desk threads (created by the Hub, visible to every desk). */
+const HUB_DESK_ID = "hub-desk";
+const DESK_THREAD_PREFIX = "desk-";
+
+export function deskThreadId(slug) {
+  return `${DESK_THREAD_PREFIX}${slug}`;
+}
 
 /** Strip obvious secret-looking substrings from error/detail strings. */
 function sanitizePublicText(value, max = 200) {
@@ -118,6 +125,8 @@ export async function connectStore({ mongoUri, dbName }) {
   const hubRunner = db.collection("hub_runner");
   const walletNonces = db.collection("wallet_nonces");
   const projectSnapshot = db.collection("project_snapshot");
+  /** slug → { sessionId, threadId, lastMirroredId }: the project's OpenCode desk session. */
+  const deskSessions = db.collection("desk_sessions");
 
   async function ensureIndexes() {
     await chatMessages.createIndex({ threadId: 1, messageId: 1 }, { unique: true });
@@ -145,6 +154,7 @@ export async function connectStore({ mongoUri, dbName }) {
 
   function threadAccessibleToPhone(thread, deskId) {
     if (!thread) return false;
+    if (thread.kind === "desk") return true;
     if (thread.createdByDeskId === deskId) return true;
     const shared = Array.isArray(thread.sharedWithDeskIds)
       ? thread.sharedWithDeskIds
@@ -165,6 +175,11 @@ export async function connectStore({ mongoUri, dbName }) {
         throw err;
       }
       return;
+    }
+    if (threadId.startsWith(DESK_THREAD_PREFIX)) {
+      const err = new Error("open the project to start its desk");
+      err.status = 403;
+      throw err;
     }
     const incomingTitle =
       title != null ? String(title).trim().slice(0, 200) : null;
@@ -385,6 +400,7 @@ export async function connectStore({ mongoUri, dbName }) {
       $or: [
         { createdByDeskId: deskId },
         { sharedWithDeskIds: deskId },
+        { kind: "desk" },
       ],
     };
   }
@@ -394,12 +410,7 @@ export async function connectStore({ mongoUri, dbName }) {
     const id = String(threadId || "").trim();
     if (!id) return false;
     const thread = await chatThreads.findOne({ threadId: id });
-    if (!thread) return false;
-    if (thread.createdByDeskId === desk.deskId) return true;
-    const shared = Array.isArray(thread.sharedWithDeskIds)
-      ? thread.sharedWithDeskIds
-      : [];
-    return shared.includes(desk.deskId);
+    return threadAccessibleToPhone(thread, desk.deskId);
   }
 
   async function shareThread(threadId, deskId) {
@@ -512,11 +523,14 @@ export async function connectStore({ mongoUri, dbName }) {
 
     // Phone must not push into an existing unshared thread; claim ownership
     // of a new threadId before inserts so a race cannot steal the id.
+    let inDeskThread = false;
     if (isPhone) {
       await ensurePhoneCanWriteThread(desk, threadId, {
         title: input.title ?? input.thread?.title,
         now,
       });
+      const meta = await chatThreads.findOne({ threadId }, { projection: { kind: 1 } });
+      inDeskThread = meta?.kind === "desk";
     }
 
     const results = [];
@@ -598,6 +612,7 @@ export async function connectStore({ mongoUri, dbName }) {
         };
         if (isPhone && op === "message") {
           doc.originKind = "phone";
+          if (inDeskThread) doc.threadKind = "desk";
           doc.reply = {
             status: "pending",
             requestedAt: now,
@@ -797,18 +812,22 @@ export async function connectStore({ mongoUri, dbName }) {
   }
 
   /**
-   * Atomically claim the oldest phone user message awaiting a hub-runner reply.
+   * Atomically claim the oldest phone user message awaiting a reply.
+   * threadKind "desk" claims project-desk turns (desk runner); anything else
+   * claims the rest (hub-runner), so the two never answer the same message.
    * @returns {object|null} claimed message doc or null
    */
   async function claimNextPendingReply({
     runnerId = HUB_RUNNER_DESK_ID,
     staleMs = REPLY_STALE_MS,
+    threadKind = null,
   } = {}) {
     const now = new Date();
     const staleBefore = new Date(now.getTime() - (Number(staleMs) || REPLY_STALE_MS));
     const filter = {
       originKind: "phone",
       role: "user",
+      threadKind: threadKind === "desk" ? "desk" : { $ne: "desk" },
       $and: [
         {
           $or: [
@@ -990,6 +1009,107 @@ export async function connectStore({ mongoUri, dbName }) {
       files: Array.isArray(doc.files) ? doc.files : [],
       heroNames: doc.heroNames || {},
     };
+  }
+
+  /** The project's shared desk thread; created on first open, never owned by a phone. */
+  async function ensureDeskThread({ slug, title }) {
+    const projectSlug = normalizeProjectSlug(slug);
+    if (!projectSlug) {
+      const err = new Error("project required");
+      err.status = 400;
+      throw err;
+    }
+    const threadId = deskThreadId(projectSlug);
+    const now = new Date();
+    await chatThreads.updateOne(
+      { threadId },
+      {
+        $setOnInsert: {
+          threadId,
+          kind: "desk",
+          project: projectSlug,
+          title: String(title || `${projectSlug} desk`).slice(0, 200),
+          deskId: HUB_DESK_ID,
+          createdByDeskId: HUB_DESK_ID,
+          sharedWithDeskIds: [],
+          lastSeq: 0,
+          lastMessageAt: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+      { upsert: true },
+    );
+    await linkDeskThread(projectSlug, threadId);
+    return { threadId, project: projectSlug };
+  }
+
+  async function getThread(threadId) {
+    const t = await chatThreads.findOne({ threadId: String(threadId || "").trim() });
+    if (!t) return null;
+    return { threadId: t.threadId, title: t.title, project: t.project || null, kind: t.kind || null };
+  }
+
+  function deskSessionView(doc) {
+    if (!doc) return null;
+    return {
+      slug: doc._id,
+      sessionId: doc.sessionId || null,
+      threadId: doc.threadId || deskThreadId(doc._id),
+      lastMirroredId: doc.lastMirroredId || null,
+    };
+  }
+
+  async function getDeskSession(slug) {
+    return deskSessionView(await deskSessions.findOne({ _id: String(slug) }));
+  }
+
+  async function listDeskSessions() {
+    const rows = await deskSessions.find({ sessionId: { $nin: [null, ""] } }).toArray();
+    return rows.map(deskSessionView);
+  }
+
+  async function linkDeskThread(slug, threadId) {
+    await deskSessions.updateOne(
+      { _id: String(slug) },
+      { $set: { threadId }, $setOnInsert: { sessionId: null, lastMirroredId: null } },
+      { upsert: true },
+    );
+  }
+
+  /** Record sessionId unless another caller got there first; returns the winner. */
+  async function claimDeskSession(slug, sessionId) {
+    const now = new Date();
+    try {
+      const doc = await deskSessions.findOneAndUpdate(
+        { _id: String(slug), sessionId: { $in: [null, ""] } },
+        {
+          $set: { sessionId, lastMirroredId: null, updatedAt: now },
+          $setOnInsert: { threadId: deskThreadId(slug) },
+        },
+        { upsert: true, returnDocument: "after" },
+      );
+      return doc?.sessionId || sessionId;
+    } catch (err) {
+      if (err?.code !== 11000) throw err;
+      const existing = await deskSessions.findOne({ _id: String(slug) });
+      return existing?.sessionId || sessionId;
+    }
+  }
+
+  /** Forget a session OpenCode no longer has (only if it is still the recorded one). */
+  async function resetDeskSession(slug, sessionId) {
+    await deskSessions.updateOne(
+      { _id: String(slug), sessionId },
+      { $set: { sessionId: null, lastMirroredId: null } },
+    );
+  }
+
+  async function setDeskMirrored(slug, sessionId, lastMirroredId) {
+    await deskSessions.updateOne(
+      { _id: String(slug), sessionId },
+      { $set: { lastMirroredId, updatedAt: new Date() } },
+    );
   }
 
   async function getRunnerStatus() {
@@ -1190,6 +1310,7 @@ export async function connectStore({ mongoUri, dbName }) {
               : t.updatedAt,
           deskId: t.deskId,
           project: t.project || null,
+          ...(t.kind ? { kind: t.kind } : {}),
           lastSeq: t.lastSeq || 0,
           lastMessageAt:
             t.lastMessageAt instanceof Date
@@ -1354,6 +1475,14 @@ export async function connectStore({ mongoUri, dbName }) {
     getRunnerStatus,
     putProjectSnapshot,
     getProjectSnapshot,
+    ensureDeskThread,
+    getThread,
+    getDeskSession,
+    listDeskSessions,
+    linkDeskThread,
+    claimDeskSession,
+    resetDeskSession,
+    setDeskMirrored,
     createSnapshot,
     getSnapshot,
     close,

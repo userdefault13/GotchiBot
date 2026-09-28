@@ -13,6 +13,7 @@ import { resolveApiConfig } from "./config.mjs";
 import { checkOrigin } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
 import { createProjectSource, validateProjectSnapshot } from "./projects.mjs";
+import { createOpencodeClient, deskThreadTitle, ensureDeskSession } from "./desk-runner.mjs";
 import {
   createCastVerifier,
   isAddress,
@@ -143,10 +144,11 @@ async function loadHeroName() {
  *   projects?: ReturnType<typeof createProjectSource>,
  *   verifyWallet?: (input: { address: string, message: string, signature: string }) => Promise<boolean>,
  *   ownerWallet?: () => string|null,
+ *   opencode?: ReturnType<typeof createOpencodeClient>,
  * }} opts
  * @returns {import('node:http').Server}
  */
-export function createApiServer({ store, config, projects, verifyWallet, ownerWallet }) {
+export function createApiServer({ store, config, projects, verifyWallet, ownerWallet, opencode }) {
   const ownerLogin = config.ownerLogin;
   /** Desk-pushed portfolio, loaded from Mongo once and replaced on each push. */
   let projectSnapshot = null;
@@ -172,6 +174,14 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
       root: config.projectsRoot || ROOT,
       heroName: (id) => (heroNameFn ? heroNameFn(id) : null),
       snapshot: () => projectSnapshot,
+    });
+  const repoDir = config.projectsRoot || ROOT;
+  const opencodeClient =
+    opencode ||
+    createOpencodeClient({
+      baseUrl: config.opencodeUrl,
+      directory: repoDir,
+      password: process.env.OPENCODE_SERVER_PASSWORD || null,
     });
   const verifySignature = verifyWallet || createCastVerifier();
   const resolveOwner = ownerWallet || (() => resolveOwnerWallet(config, config.projectsRoot || ROOT));
@@ -501,6 +511,37 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
           await loadProjectSnapshot();
           await loadHeroName();
           return json(res, 200, { ok: true, projects: projectSource.listProjects() });
+        }
+
+        const deskMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)\/desk$/);
+        if (req.method === "GET" && deskMatch) {
+          await loadProjectSnapshot();
+          await loadHeroName();
+          let slug;
+          try {
+            slug = decodeURIComponent(deskMatch[1]);
+          } catch {
+            slug = "";
+          }
+          const project = projectSource.getProject(slug);
+          if (!project) {
+            return json(res, 404, { ok: false, error: "project not found" });
+          }
+          const title = deskThreadTitle(project, slug);
+          const { threadId } = await store.ensureDeskThread({ slug, title });
+          const out = { ok: true, project: slug, threadId, title };
+          if (deskKind === "desk") {
+            let sessionId = (await store.getDeskSession(slug))?.sessionId || null;
+            if (url.searchParams.get("session") === "1") {
+              try {
+                sessionId = await ensureDeskSession({ store, client: opencodeClient, slug, title });
+              } catch {
+                out.sessionError = "the Hub's OpenCode server is not reachable — gotchibot hub desk service status";
+              }
+            }
+            Object.assign(out, { sessionId, repoDir, opencodeUrl: opencodeClient.baseUrl });
+          }
+          return json(res, 200, out);
         }
 
         const projectMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)$/);

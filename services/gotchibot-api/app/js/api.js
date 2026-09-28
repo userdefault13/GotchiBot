@@ -190,6 +190,11 @@ export function getProject(token, slug) {
   return apiFetch(`/api/gotchibot/projects/${encodeURIComponent(slug)}`, { token });
 }
 
+/** The project's shared desk thread (same conversation on every device). */
+export function getProjectDesk(token, slug) {
+  return apiFetch(`/api/gotchibot/projects/${encodeURIComponent(slug)}/desk`, { token });
+}
+
 /**
  * Hero avatar SVG as a blob: URL (img tags can't send the desk token header).
  * @returns {Promise<string|null>}

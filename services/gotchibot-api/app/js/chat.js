@@ -17,6 +17,7 @@ import { createPoller } from "./poller.js";
 import {
   ApiError,
   getProject,
+  getProjectDesk,
   listThreads,
   pullMessages,
   retryReply,
@@ -86,13 +87,25 @@ export async function renderChatView(root, route) {
   clearPoller();
   const project = route.project || GENERAL;
 
-  // No thread in the URL → open the latest one for this project, else a draft.
+  // No thread in the URL → a project opens its desk; General opens its latest chat, else a draft.
   if (!route.threadId) {
     let latest = null;
     try {
-      const data = await listThreads(app.desk.deskToken, 1, threadFilter(project));
-      rememberThreadTitles(data?.threads);
-      latest = data?.threads?.[0]?.threadId || null;
+      if (project !== GENERAL) {
+        const desk = await getProjectDesk(app.desk.deskToken, project).catch((err) => {
+          if (err instanceof ApiError && err.kind === "unpaired") throw err;
+          return null;
+        });
+        if (desk?.threadId) {
+          app.threadTitles.set(desk.threadId, "Desk");
+          latest = desk.threadId;
+        }
+      }
+      if (!latest) {
+        const data = await listThreads(app.desk.deskToken, 1, threadFilter(project));
+        rememberThreadTitles(data?.threads);
+        latest = data?.threads?.[0]?.threadId || null;
+      }
     } catch (err) {
       if (err instanceof ApiError && err.kind === "unpaired") {
         await handleUnpaired("This phone was signed out on the Hub");
@@ -207,7 +220,9 @@ export async function renderChatView(root, route) {
     });
     try {
       const data = await listThreads(app.desk.deskToken, 100, threadFilter(project));
-      const threads = data?.threads || [];
+      const threads = [...(data?.threads || [])].sort(
+        (a, b) => Number(b.kind === "desk") - Number(a.kind === "desk"),
+      );
       rememberThreadTitles(threads);
       listEl.replaceChildren();
       if (!threads.length) listEl.appendChild(el("li", "subtle", "No chats yet."));
@@ -216,7 +231,7 @@ export async function renderChatView(root, route) {
         const li = el("li", `history-item${t.threadId === currentThreadId ? " active" : ""}`);
         const btn = el("button", "history-btn");
         btn.type = "button";
-        btn.appendChild(el("span", "history-title", t.title || t.threadId));
+        btn.appendChild(el("span", "history-title", app.threadTitles.get(t.threadId) || t.threadId));
         const when = t.lastMessageAt || t.updatedAt;
         btn.appendChild(el("span", "history-when", when ? relativeTime(when, now) : ""));
         if (t.shared) btn.appendChild(el("span", "badge shared", "shared"));

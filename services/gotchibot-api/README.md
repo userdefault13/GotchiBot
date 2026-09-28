@@ -53,6 +53,10 @@ licensing (Mobilecode-open + jsQR, Apache-2.0).
 - `GET /api/gotchibot/avatars/:heroId.svg` — gotchi SVG from `sessions/.avatars/`.
 - `chats/send` takes `project`; `chats/threads` takes `?project=<slug>|none`.
 
+## Project desks (0.3.1)
+
+One orchestrator conversation per project, the same on every device. The desk runner (`desk-runner.mjs`) answers phone turns in `desk-<slug>` threads with the project's OpenCode session and mirrors every turn back. Terminals attach with `gotchibot hub desk open`. Hub services: `gotchibot hub desk service install` (templates in `systemd/`). Details: [`docs/GOTCHIBOT-API.md`](../../docs/GOTCHIBOT-API.md) § Project desks.
+
 ## hub-runner
 
 Hub-side process that claims pending phone messages and writes an assistant reply into the same thread using **the desk’s OpenCode CLI path** (`opencode run -m <provider/model> …`) — not a new provider HTTP client.

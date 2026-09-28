@@ -1,0 +1,32 @@
+# GotchiBot Hub OpenCode server (systemd user unit template)
+#
+# Hosts every project desk session. Loopback only: phones reach it through the
+# desk runner, terminals through `gotchibot hub desk open` (Tailscale SSH), so
+# nothing is exposed on the network.
+#
+# Installed by `gotchibot hub desk service install` (Linux Hub), which fills:
+#   @REPO@      absolute path to the GotchiBot checkout
+#   @HOME@      hub user home
+#   @NODE_DIR@  directory containing node (abra is a `#!/usr/bin/env node` script)
+#   @ABRA@      absolute path to abra
+#   @OPENCODE@  absolute path to opencode
+#   @PORT@      loopback port (default 4096)
+#
+# ExecStart runs under abra so provider keys reach the orchestrator — never put
+# secrets in this unit file.
+
+[Unit]
+Description=GotchiBot Hub OpenCode server (project desks)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+Environment=HOME=@HOME@
+Environment=PATH=@HOME@/.local/bin:@NODE_DIR@:/usr/local/bin:/usr/bin:/bin
+ExecStart=@ABRA@ run -p gotchibot -- @OPENCODE@ serve --hostname 127.0.0.1 --port @PORT@
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

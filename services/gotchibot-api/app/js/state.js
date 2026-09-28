@@ -64,7 +64,7 @@ export function rememberThreadTitles(threads) {
   for (const t of threads || []) {
     if (!t?.threadId) continue;
     const id = String(t.threadId);
-    app.threadTitles.set(id, t.title ? String(t.title) : id);
+    app.threadTitles.set(id, t.kind === "desk" ? "Desk" : t.title ? String(t.title) : id);
   }
 }
 

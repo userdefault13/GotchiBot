@@ -1,0 +1,31 @@
+# GotchiBot Hub desk runner (systemd user unit template)
+#
+# Answers phone messages in project desk threads with the orchestrator's
+# OpenCode session and mirrors every desk turn back into the thread.
+# Needs no provider keys itself: the OpenCode server holds them.
+#
+# Installed by `gotchibot hub desk service install` (Linux Hub), which fills:
+#   @REPO@      absolute path to the GotchiBot checkout
+#   @HOME@      hub user home
+#   @NODE@      absolute path to node
+#   @NODE_DIR@  directory containing node
+#   @PORT@      OpenCode loopback port (default 4096)
+
+[Unit]
+Description=GotchiBot Hub desk runner (project desks)
+After=network-online.target gotchibot-api.service gotchibot-opencode.service
+Wants=gotchibot-api.service gotchibot-opencode.service
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+Environment=GOTCHIBOT_HUB_CONFIG=@REPO@/sessions/.hub-api.json
+Environment=GOTCHIBOT_OPENCODE_URL=http://127.0.0.1:@PORT@
+Environment=HOME=@HOME@
+Environment=PATH=@HOME@/.local/bin:@NODE_DIR@:/usr/local/bin:/usr/bin:/bin
+ExecStart=@NODE@ @REPO@/scripts/hub-desk.mjs run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

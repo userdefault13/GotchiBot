@@ -140,6 +140,10 @@ Prefer the install wizard’s service unit for always-on. Manual start is for de
 | `GOTCHIBOT_OPENCODE_MODEL` | (from `sessions/.gotchi-model.env`) | Hub | Desk chat pin reused by hub-runner |
 | `GOTCHIBOT_HUB_RUNNER_TIMEOUT_MS` | `120000` | Hub | Per opencode call timeout |
 | `GOTCHIBOT_HUB_RUNNER_ALLOW_NO_KEY` | (unset) | Hub | `1` skips provider-key preflight (tests / free models only) |
+| `GOTCHIBOT_OPENCODE_URL` | `http://127.0.0.1:4096` (config `opencodeUrl`) | Hub | OpenCode server holding the project desk sessions |
+| `GOTCHIBOT_OPENCODE_PORT` | `4096` | Hub | Port `hub desk service install` puts in the units |
+| `GOTCHIBOT_DESK_AGENT` | `gotchi` | Hub | OpenCode agent that answers desk turns |
+| `GOTCHIBOT_HUB_SSH` | (from `sessions/.hub-desk.json`) | Desk | `user@host` for `hub desk open` over Tailscale SSH |
 | `GOTCHIBOT_DESK_API_BASE` | (from pin) | Desk | Hub API base, e.g. `http://<MagicDNS>:8793` |
 | `GOTCHIBOT_DESK_TOKEN` | (from pin) | Desk | Desk token override |
 | `GOTCHIBOT_HUB_PIN` | `sessions/.hub.json` | Desk | Absolute path override for the pin file |
@@ -178,6 +182,7 @@ JSON in/out. Body limit 2 MB. Unknown route → `404` `{ok:false,error}`. Errors
 | `GET` | `/api/gotchibot/chats/threads?limit=&project=` | desk token | `{ok, threads:[…]}` sorted `updatedAt` desc; each thread has `project` (slug or null). `project=<slug>` filters to that project, `project=none` to untagged threads |
 | `POST` | `/api/gotchibot/projects/push` | desk token (desk kind only) | body `{files:[{path, text, mtime?}], heroNames?}` → `{ok, pushedAt, files, projects}` — replaces the stored portfolio snapshot; paths are whitelisted (see *Project snapshots*), bad path / oversize → `400`; phone → `403` |
 | `GET` | `/api/gotchibot/projects` | desk token | `{ok, projects:[{slug, title, goal, playbook, status, current, heroCount, kanban, units, updatedAt, accent, working, heroes:[…≤5]}]}` — read-only view of `sessions/pstack/<slug>/` (pushed snapshot first, then the Hub's disk); current project first, then newest; `*smoke*` rooms hidden |
+| `GET` | `/api/gotchibot/projects/:slug/desk` | desk token | `{ok, project, threadId:"desk-<slug>", title}`; desk kind also gets `{sessionId, repoDir, opencodeUrl}`, and `?session=1` creates the OpenCode session if missing (`sessionError` when the server is down). Unknown slug → `404` |
 | `GET` | `/api/gotchibot/projects/:slug` | desk token | `{ok, project:{…summary, scope, roster:[…], cards:[…≤60]}}`; unknown slug → `404` |
 | `GET` | `/api/gotchibot/avatars/:heroId.svg` | desk token | `image/svg+xml` from `sessions/.avatars/<heroId>.svg` (JSON-escaped caches are unescaped); missing or not an SVG → `404` |
 | `POST` | `/api/gotchibot/chats/snapshot` | desk token (desk kind only) | `{ok, snapshotId, contentHash, stateUri, messageCount, threadIds, upToSeq, createdAt}` — phone → `403` |
@@ -222,6 +227,17 @@ pstack rooms, hero caches and avatars live on the **desk**, so the phone portfol
 - **Keep it running:** `gotchibot hub projects service install | uninstall | status` — macOS LaunchAgent `com.gotchibot.hub-projects-watch` (`KeepAlive`, logs in `sessions/hub-projects-push-logs/`), or Linux systemd user unit `gotchibot-hub-projects-watch.service` (`Restart=always`, logs in `journalctl --user`).
 - **Whitelist:** `sessions/pstack/<slug>/{dossier.json,overview.md,status.md,roster.json,kanban.json}`, `sessions/.pstack-dossier-current`, `sessions/.project-current`, `sessions/.hero-agent-state.json`, `config/agent-roles.json`, `sessions/.avatars/<heroId>.svg` (roster heroes only). Anything else → `400`. Max 2000 files, 256 KB each, 2 MB body. `heroNames` (`{heroId: name}`) carries desk-side display names.
 - **Hub:** one Mongo doc (`project_snapshot`, `_id: "current"`), replaced per push, cached in memory. Reads prefer the snapshot, then the Hub's own disk, so Hub-local rooms still appear.
+
+## Project desks
+
+Each project has one orchestrator conversation that every device shares: the phone, the MBP, the iMacs.
+
+- **Session:** one OpenCode session per project on the Hub's `opencode serve` (loopback, `GOTCHIBOT_OPENCODE_URL`, default `http://127.0.0.1:4096`), agent `gotchi` (`GOTCHIBOT_DESK_AGENT`), working in the Hub's checkout, with the orchestrator's tools and memory. Mongo `desk_sessions` maps `slug → sessionId`. Two callers creating it at once get the same session; the loser deletes its copy.
+- **Thread:** `desk-<slug>` (`kind: "desk"`), created by the Hub on first open and visible to every paired desk and phone. Phones can't create `desk-*` threads themselves (`403`).
+- **Phone turns:** messages a phone sends in a desk thread are stamped `threadKind: "desk"`. hub-runner skips them and the desk runner (`services/gotchibot-api/desk-runner.mjs`, `gotchibot hub desk run`) claims them instead. It posts each one to the project session with a phone-context system note, waits up to 10 min (on timeout it aborts the turn and fails the reply), then completes the reply.
+- **Mirror:** every ~5s the desk runner copies finished session turns into the thread under their OpenCode message ids, so re-mirroring is idempotent. That covers prompts typed at a terminal and every assistant reply. User turns whose text the phone already wrote are skipped.
+- **Terminals:** `gotchibot hub desk open [slug] [--ssh user@hub]` asks the Hub for the session (`?session=1`) and runs `opencode attach` on it: directly on the Hub, over Tailscale SSH from anywhere else (the `--ssh` target is remembered in `sessions/.hub-desk.json`). The OpenCode server never listens on the network.
+- **Services (Linux Hub):** `gotchibot hub desk service install | uninstall | status` renders `systemd/gotchibot-opencode.service` (`abra run -p gotchibot -- opencode serve`, reusing hub-runner's drop-ins) and `systemd/gotchibot-desk-runner.service`.
 
 ## Checkpoint snapshots
 

@@ -66,6 +66,9 @@ export function resolveApiConfig(env = process.env) {
       ? String(ownerWalletRaw).trim().toLowerCase()
       : null;
 
+  const opencodeUrl =
+    String(env.GOTCHIBOT_OPENCODE_URL || file.opencodeUrl || "http://127.0.0.1:4096").trim();
+
   return {
     host,
     port,
@@ -76,5 +79,6 @@ export function resolveApiConfig(env = process.env) {
     configPath,
     tailscaleHost: file.tailscaleHost ? String(file.tailscaleHost) : null,
     appUrl,
+    opencodeUrl,
   };
 }
