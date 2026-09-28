@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 import { hostServiceUrl } from "./lib/host-services.mjs";
-const URL = process.env.GOTCHIBOT_TRADER_URL || hostServiceUrl(4000);
+const DESK = (() => { try { return JSON.parse(readFileSync(ROOT + "/config/trader-desk.json", "utf8")); } catch { return null; } })();
+const URL = process.env.GOTCHIBOT_TRADER_URL || DESK?.url || hostServiceUrl(4000);
 const Q = "query{paperCronSummary{status lastRunAt totalFills skippedFills realizedPnlUsdc openMarkPnlUsdc quoteBackedPct ethBetaWarning bots{strategyId realizedPnlUsdc roundTrips pnlUsdc}}}";
 const argv = process.argv.slice(2);
 const json = argv.includes("--json");
@@ -33,7 +34,7 @@ async function news() {
 const newsOut = cmd === "news" ? await news() : null;
 if (cmd === "news") { if (json) console.log(JSON.stringify(newsOut)); else { console.log("regime " + newsOut.regime); for (const i of newsOut.items) console.log("- " + i); } process.exit(0); }
 let use = host;
-if (use === "auto") { try { const h = JSON.parse(await (await fetch(URL + "/health")).text()); use = h.ok ? "local" : "imac"; } catch { use = "imac"; } }
+if (use === "auto") { try { const h = JSON.parse(await (await fetch(URL + "/health")).text()); use = h.ok ? (process.env.GOTCHIBOT_TRADER_URL ? "local" : DESK?.host || "local") : "imac"; } catch { use = "imac"; } }
 const healthTxt = use === "imac" ? remoteGet("/health") : await (await fetch(URL + "/health")).text();
 let healthOk = false; try { healthOk = JSON.parse(healthTxt).ok === true; } catch {}
 const gqlBody = JSON.stringify({ query: Q });

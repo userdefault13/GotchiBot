@@ -1,0 +1,6 @@
+{
+  "$comment": "Where the Gotchi-Trader paper desk runs. scripts/gotchi-trader-desk.mjs reads url unless GOTCHIBOT_TRADER_URL is set. Tailscale IP, not the MagicDNS name, so it resolves from inside the gateway container too.",
+  "host": "omarchyimac",
+  "url": "http://100.110.220.76:4000",
+  "statusPage": "http://100.110.220.76:4000/status"
+}
