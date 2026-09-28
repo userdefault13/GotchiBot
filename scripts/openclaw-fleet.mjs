@@ -50,6 +50,7 @@ import { fileURLToPath } from "node:url";
 import { loadMeta } from "./identity.mjs";
 import {
   fetchCartridgeHeroes,
+  fetchGotchiNames,
   loadOnboarding,
   ROOT,
   SESSIONS,
@@ -370,6 +371,20 @@ function buildEntry(hero, { isOrchestrator, orchId }) {
   return { id, entry, rendered };
 }
 
+function heroTokenId(hero) {
+  const tok = hero?.sourceTokenId || String(hero?.id || "").match(/^(?:owned|rental)-(\d+)$/)?.[1];
+  return tok ? String(tok) : null;
+}
+
+/** tokenId → gotchi name from the core subgraph; empty map when unreachable. */
+async function gotchiNamesFor(heroes) {
+  try {
+    return await fetchGotchiNames(heroes.map(heroTokenId).filter(Boolean));
+  } catch {
+    return new Map();
+  }
+}
+
 async function loadHeroes() {
   const meta = loadMeta();
   let heroes = [];
@@ -381,10 +396,16 @@ async function loadHeroes() {
     (meta?.cartridgeId && !String(meta.cartridgeId).startsWith("sim-"));
   if (sepolia && meta?.owner && meta?.cartridgeId && !String(meta.cartridgeId).startsWith("sim-")) {
     try {
-      const { readGotchiBotCartridgeSepolia } = await import("./cartridge-sepolia.mjs");
-      const sep = await readGotchiBotCartridgeSepolia(String(meta.owner).toLowerCase());
+      // Hero objects, not raw bytes32 keys: owned/rented keys map back to `owned-<tokenId>`.
+      const { readSepoliaHeroesForOwner } = await import("./cartridge-sepolia.mjs");
+      const sep = await readSepoliaHeroesForOwner(String(meta.owner).toLowerCase());
       if (sep.cartridgeId && String(sep.cartridgeId) === String(meta.cartridgeId)) {
-        heroes = (sep.heroes || []).map((id) => ({ id: String(id), name: null, bindType: null }));
+        heroes = (sep.heroes || []).map((h) => ({
+          id: String(h.id),
+          name: null,
+          bindType: h.bindType || null,
+          sourceTokenId: h.sourceTokenId || null,
+        }));
       }
     } catch {
       heroes = [];
@@ -509,7 +530,9 @@ export async function syncFleet({ quiet = false } = {}) {
   const map = {};
 
   const rendered = {};
-  for (const hero of heroes) {
+  const gotchiNames = await gotchiNamesFor(heroes);
+  for (const loaded of heroes) {
+    const hero = { ...loaded, name: gotchiNames.get(heroTokenId(loaded)) || loaded.name };
     const isOrchestrator = hero.id === orchId;
     const { id, entry, rendered: r } = buildEntry(hero, { isOrchestrator, orchId });
     entries[id] = entry;
@@ -612,14 +635,16 @@ export async function refreshAllWorkspaces({ quiet = false } = {}) {
   }
 
   const rendered = {};
+  const gotchiNames = await gotchiNamesFor(ids.map((id) => ({ id })));
   for (const id of ids) {
     const hero = byId.get(id) || { id, name: null, bindType: null };
     const isOrchestrator = id === orchId;
     // The fleet list is nest-sized on Sepolia, so most heroes are missing from
-    // it; the name already rendered on disk is the one to keep.
+    // it; without a subgraph name, keep the one already rendered on disk.
     const onDisk = readWorkspaceIdentity(`${root}/${id}`, id);
     const listName = hero.name && hero.name !== id.toUpperCase() ? hero.name : null;
     const name =
+      gotchiNames.get(heroTokenId({ id })) ||
       onDisk.name ||
       listName ||
       (isOrchestrator ? "Gotchi" : String(hero.collateral || id).toUpperCase());

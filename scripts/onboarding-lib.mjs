@@ -604,6 +604,39 @@ export async function fetchWalletGotchiById(address, gotchiId) {
   return hit;
 }
 
+/**
+ * Gotchi names by token id — core subgraph first, Base RPC for any it misses.
+ * @returns {Promise<Map<string, string>>} tokenId → name (unnamed/unknown ids omitted)
+ */
+export async function fetchGotchiNames(tokenIds) {
+  const ids = [...new Set((tokenIds || []).map((t) => String(t).trim()).filter((t) => /^\d+$/.test(t)))];
+  const names = new Map();
+  if (!ids.length) return names;
+  try {
+    const data = await postSubgraph(
+      `query GotchiNames($ids: [String!]!) {
+        aavegotchis(first: 1000, where: { id_in: $ids }) { id gotchiId name }
+      }`,
+      { ids },
+    );
+    for (const g of data?.aavegotchis ?? []) {
+      const name = String(g.name || "").trim();
+      if (name) names.set(String(g.gotchiId ?? g.id), name);
+    }
+  } catch {}
+
+  const missing = ids.filter((id) => !names.has(id));
+  for (let i = 0; i < missing.length; i += RPC_NAME_BATCH) {
+    const chunk = missing.slice(i, i + RPC_NAME_BATCH);
+    const infos = await Promise.all(chunk.map((id) => fetchAavegotchiInfo(id).catch(() => null)));
+    chunk.forEach((id, j) => {
+      const name = String(infos[j]?.name || "").trim();
+      if (name) names.set(id, name);
+    });
+  }
+  return names;
+}
+
 /** Traits for cheeks: [4]=eyeShape, [5]=eyeColor. Prefer withSets → modified → numeric. */
 export function walletGotchiTraits(g) {
   return traitsFromGotchiFields(g);
