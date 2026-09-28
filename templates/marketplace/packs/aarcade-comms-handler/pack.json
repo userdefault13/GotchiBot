@@ -24,5 +24,6 @@
     "playbook.json",
     "skills/aarcade-comms/SKILL.md",
     "skills/browser-tool/SKILL.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

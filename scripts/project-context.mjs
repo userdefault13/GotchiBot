@@ -76,6 +76,60 @@ export function currentProjectSlug() {
   return null;
 }
 
+/** True for leftover nest/smoke dossiers — never auto-select as desk current. */
+export function isSmokeProjectSlug(slug) {
+  if (!slug) return false;
+  return /smoke/i.test(String(slug));
+}
+
+function dossierExists(slug) {
+  if (!slugOk(slug)) return false;
+  try {
+    return existsSync(join(PSTACK_ROOT, slug));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Desk project for cockpit: Sepolia cart/local checkpoint first, then local pointer.
+ * Ignores smoke-test leftovers. Syncs pointers when Sepolia wins.
+ */
+export function resolveDeskProjectSlug({ preferSepolia = true } = {}) {
+  const localSlugs = new Set(listProjectSlugsOnDisk());
+  const accept = (slug) =>
+    Boolean(slug && slugOk(slug) && !isSmokeProjectSlug(slug) && (localSlugs.has(slug) || dossierExists(slug)));
+
+  let sepoliaCurrent = null;
+  if (preferSepolia) {
+    try {
+      const snapPath = join(SESSIONS, ".checkpoint-local.json");
+      if (existsSync(snapPath)) {
+        const snap = JSON.parse(readFileSync(snapPath, "utf8"));
+        const cur = snap?.gameState?.projects?.current;
+        if (accept(cur)) sepoliaCurrent = String(cur);
+      }
+    } catch {
+      /* no sepolia snapshot */
+    }
+  }
+
+  const pointer = currentProjectSlug();
+  if (pointer && isSmokeProjectSlug(pointer)) {
+    clearCurrentProject();
+  }
+
+  const chosen = sepoliaCurrent || (accept(pointer) ? pointer : null);
+  if (chosen && chosen !== pointer) {
+    try {
+      setCurrentProject(chosen);
+    } catch {
+      /* read-only ok */
+    }
+  }
+  return chosen;
+}
+
 /** Keep both pointers identical so passoff / pstack / cockpit agree. */
 export function setCurrentProject(slug) {
   if (!slugOk(slug)) throw new Error(`invalid project slug: ${slug}`);
@@ -479,7 +533,7 @@ export function resolveInboxRoot() {
 
 function usage() {
   console.error(`usage:
-  project-context current [--json]
+  project-context current [--json] [--resolve|--desk]
   project-context set <slug>
   project-context clear
   project-context root [<slug>]
@@ -501,7 +555,8 @@ async function main() {
   if (!cmd) usage();
 
   if (cmd === "current") {
-    const slug = currentProjectSlug();
+    const resolve = args.includes("--resolve") || args.includes("--desk");
+    const slug = resolve ? resolveDeskProjectSlug() : currentProjectSlug();
     if (json) console.log(JSON.stringify({ project: slug }, null, 2));
     else console.log(slug || "");
     return;

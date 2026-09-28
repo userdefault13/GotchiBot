@@ -1,76 +1,19 @@
 #!/usr/bin/env node
+/**
+ * Desk identity: sessions/.identity.json + the Base Sepolia cartridge.
+ *
+ *   node scripts/identity.mjs roster                         heroes on the desk cartridge
+ *   node scripts/identity.mjs bind --session <id> [--hero <id>]   pin a cartridge hero to a session
+ *   node scripts/identity.mjs checkpoint                     local snapshot for checkpointSave
+ */
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { isMainModule } from "./is-main.mjs";
+import { isSepoliaCartridgeId, readSepoliaHeroes } from "./cartridge-sepolia.mjs";
 import crypto from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  resolveCartridgeApiBase,
-  infraHeaders,
-  hasInstallToken,
-  hasOperatorServiceKey,
-} from "./infra-client.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const cfg = JSON.parse(readFileSync(`${ROOT}/config/subgraph.endpoints.json`, "utf8"));
-
-/**
- * Cartridge SIM origin for mint-sub / bind-owned / bind-starter / roster.
- * Solo: www /api/cartridge-sim + install token. Legacy: operator service key.
- */
-function resolveCartridgeOrigin() {
-  if (hasInstallToken()) {
-    return resolveCartridgeApiBase().replace(/\/api\/cartridge-sim$/i, "");
-  }
-  const envUrl = [
-    process.env.GOTCHIBOT_CARTRIDGE_URL,
-    process.env.AARCADE_SIM_URL,
-    process.env.CARTRIDGE_SIM,
-  ].map((v) => String(v || "").trim()).find(Boolean);
-  const fallback = cfg.identityLayer?.cartridgeSim || "https://www.aarcadeghst.com";
-  return String(envUrl || fallback).replace(/\/$/, "");
-}
-
-function resolveCartridgeApi(origin) {
-  if (hasInstallToken()) return resolveCartridgeApiBase();
-  const o = String(origin || "").replace(/\/$/, "");
-  if (/\/api\/cartridge-sim$/i.test(o)) return o;
-  if (/:(8791)\b/i.test(o) || /^https?:\/\/cartridge\.aarcadeghst\.com$/i.test(o)) {
-    return o;
-  }
-  return `${o}/api/cartridge-sim`;
-}
-
-function cartridgeApi() {
-  return resolveCartridgeApi(resolveCartridgeOrigin());
-}
-
-const GAME_ID = "gotchibot";
-
-function serviceKey() {
-  if (hasInstallToken()) return null;
-  const key = process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET;
-  if (!key) {
-    console.error(
-      "service key missing. Either:\n" +
-      "  ./scripts/gotchibot onboard   # Solo install token\n" +
-      "  abra run gotchibot -- ./scripts/gotchibot identity ensure  # operator path",
-    );
-    process.exit(1);
-  }
-  return key;
-}
-
-function requireInfraAuth() {
-  if (!hasInstallToken() && !hasOperatorServiceKey()) {
-    console.error(
-      "infra auth missing. Run:\n" +
-      "  ./scripts/gotchibot onboard   # Solo one-shot\n" +
-      "  abra run gotchibot -- ./scripts/gotchibot init   # operator path",
-    );
-    process.exit(1);
-  }
-}
 
 function owner() {
   // Headless/service only (abra run gotchibot -- …). Interactive flows use sessions/.wallet.json.
@@ -84,92 +27,30 @@ function owner() {
   process.exit(1);
 }
 
-async function call(path, { method = "GET", body, timeoutMs = 10_000 } = {}) {
-  const headers = { "Content-Type": "application/json", ...infraHeaders() };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let res;
-  try {
-    res = await fetch(`${cartridgeApi()}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-    });
-  } catch (e) {
-    clearTimeout(timer);
-    const msg = e?.name === "AbortError" ? "cartridge API timed out" : String(e.message || e);
-    return { status: 0, ok: false, data: { error: msg } };
-  }
-  clearTimeout(timer);
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 500) }; }
-  return { status: res.status, ok: res.ok, data };
-}
-
-function print(result) {
-  console.log(JSON.stringify(result.data, null, 2));
-  if (!result.ok) process.exitCode = 1;
-}
-
-async function ensure() {
-  serviceKey();
-  const r = await call("/cartridges/ensure", {
-    method: "POST",
-    body: { owner: owner(), gameId: GAME_ID },
-  });
-  if (r.ok) {
-    const c = r.data.cartridge ?? r.data;
-    saveMeta({ cartridgeId: c.id ?? c.cartridgeId, owner: owner() });
-  }
-  print(r);
-}
-
-async function mint() {
-  serviceKey();
-  const meta = loadMeta();
+function requireSepoliaCart(meta) {
   if (!meta?.cartridgeId) {
-    console.error("no cartridge yet — run: gotchibot identity ensure");
+    console.error("no cartridge yet — run: ./scripts/gotchibot connect");
     process.exit(1);
   }
-  const r = await call(`/cartridges/${meta.cartridgeId}/portals/mint`, {
-    method: "POST",
-    body: { quantity: 10, gameId: GAME_ID },
-  });
-  if (r.status === 401 || r.status === 403) {
-    console.error(
-      "portals/mint does not accept service keys yet (session-auth only).\n" +
-      "Server-side work pending: add x-aarcade-service-key acceptance to\n" +
-      "AarcadeGh-t api/routes/cartridge-sim.js portals/mint route."
-    );
-    process.exit(2);
+  if (!isSepoliaCartridgeId(meta.cartridgeId)) {
+    console.error(`not a Base Sepolia cartridge id: ${meta.cartridgeId} — run: ./scripts/gotchibot connect`);
+    process.exit(1);
   }
-  print(r);
+  return String(meta.cartridgeId);
 }
 
 async function roster() {
-  const r = await call(`/cartridges?owner=${encodeURIComponent(owner())}&gameId=${GAME_ID}`);
-  print(r);
-}
-
-async function rules() {
-  const r = await call(`/rules/${GAME_ID}`);
-  print(r);
+  const cartridgeId = requireSepoliaCart(loadMeta());
+  const { activeHeroId, heroes } = await readSepoliaHeroes(cartridgeId);
+  console.log(JSON.stringify({ cartridgeId, activeHeroId, heroes }, null, 2));
 }
 
 async function checkpoint() {
   const meta = loadMeta();
   if (!meta?.cartridgeId) {
-    console.error("no cartridge yet — run: gotchibot identity ensure");
+    console.error("no cartridge yet — run: ./scripts/gotchibot connect");
     process.exit(1);
   }
-
-  const preferSepolia =
-    meta.cartridgeSource === "sepolia" ||
-    (meta.cartridgeId && !String(meta.cartridgeId).startsWith("sim-") &&
-      process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "sim" &&
-      process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "local");
 
   const sessionId = process.env.GOTCHIBOT_CHECKPOINT_SESSION;
   const label = process.env.GOTCHIBOT_CHECKPOINT_LABEL ?? "milestone";
@@ -272,74 +153,42 @@ async function checkpoint() {
     gameState.projects?.storage?.stateUri ||
     "";
 
-  // Sepolia nest: no SIM POST — keep desk snapshot + hash for later on-chain checkpointSave.
-  if (preferSepolia) {
-    const snapPath = `${ROOT}/sessions/.checkpoint-local.json`;
-    mkdirSync(dirname(snapPath), { recursive: true });
-    writeFileSync(
-      snapPath,
-      `${JSON.stringify(
-        {
-          cartridgeId: meta.cartridgeId,
-          label,
-          stateHash,
-          stateUri: stateUri || null,
-          gameState,
-          savedAt: new Date().toISOString(),
-          note: chatPin
-            ? "Chat-sync checkpoint — run chats onchain / MetaMask checkpointSave to finalize."
-            : "Local Sepolia checkpoint — on-chain SaveStateFacet / Concierge when wired; SIM disabled.",
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    console.log(
-      JSON.stringify(
-        {
-          ok: true,
-          source: "local-sepolia",
-          cartridgeId: meta.cartridgeId,
-          stateHash,
-          stateUri: stateUri || null,
-          path: "sessions/.checkpoint-local.json",
-          chatSync: Boolean(chatPin),
-        },
-        null,
-        2,
-      ),
-    );
-    return;
-  }
-
-  serviceKey();
-  const cartridgeId = meta.cartridgeId;
-
-  const r0 = await call(`/cartridges/${cartridgeId}`);
-  if (!r0.ok) { print(r0); return; }
-  const snap = r0.data.cartridge ?? r0.data;
-  const nonce = (snap.checkpoint?.nonce || 0) + 1;
-
-  const message = [
-    "Aarcade cartridge checkpoint",
-    `cartridgeId: ${cartridgeId}`,
-    `nonce: ${nonce}`,
-    `stateHash: ${stateHash}`,
-  ].join("\n");
-
-  const r = await call(`/cartridges/${cartridgeId}/checkpoint`, {
-    method: "POST",
-    body: {
-      gameId: GAME_ID,
-      gameState,
-      stateUri,
-      stateHash,
-      signature: "service-key",
-      message,
-      label,
-    },
-  });
-  print(r);
+  // Desk snapshot + hash for a later on-chain checkpointSave.
+  const snapPath = `${ROOT}/sessions/.checkpoint-local.json`;
+  mkdirSync(dirname(snapPath), { recursive: true });
+  writeFileSync(
+    snapPath,
+    `${JSON.stringify(
+      {
+        cartridgeId: meta.cartridgeId,
+        label,
+        stateHash,
+        stateUri: stateUri || null,
+        gameState,
+        savedAt: new Date().toISOString(),
+        note: chatPin
+          ? "Chat-sync checkpoint — run chats onchain / MetaMask checkpointSave to finalize."
+          : "Local Sepolia checkpoint — on-chain SaveStateFacet / Concierge when wired.",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        source: "local-sepolia",
+        cartridgeId: meta.cartridgeId,
+        stateHash,
+        stateUri: stateUri || null,
+        path: "sessions/.checkpoint-local.json",
+        chatSync: Boolean(chatPin),
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 function metaPath() { return `${ROOT}/sessions/.identity.json`; }
@@ -352,73 +201,9 @@ function saveMeta(m) {
   writeFileSync(metaPath(), JSON.stringify({ ...prev, ...m }, null, 2));
 }
 
-async function seal() {
-  serviceKey();
-  const meta = loadMeta();
-  if (!meta?.cartridgeId) {
-    console.error("no cartridge yet — run: gotchibot identity ensure");
-    process.exit(1);
-  }
-  const batchId = process.env.GOTCHIBOT_BATCH_ID;
-  if (!batchId) {
-    console.error("set GOTCHIBOT_BATCH_ID to the pack batchId to seal");
-    process.exit(1);
-  }
-  const words = Array.from({ length: 30 }, () =>
-    `0x${crypto.randomBytes(32).toString("hex")}`
-  );
-  const r = await call(`/cartridges/${meta.cartridgeId}/portals/fulfill`, {
-    method: "POST",
-    body: { batchId, entropyWords: words, requestId: `dev-${Date.now()}` },
-  });
-  print(r);
-}
-
-async function unpack() {
-  serviceKey();
-  const meta = loadMeta();
-  if (!meta?.cartridgeId) {
-    console.error("no cartridge yet — run: gotchibot identity ensure");
-    process.exit(1);
-  }
-  const batchId = process.env.GOTCHIBOT_BATCH_ID;
-  if (!batchId) {
-    console.error("set GOTCHIBOT_BATCH_ID to the sealed pack batchId");
-    process.exit(1);
-  }
-  const r = await call(`/cartridges/${meta.cartridgeId}/portals/open-pack`, {
-    method: "POST",
-    body: { packId: batchId },
-  });
-  print(r);
-}
-
-async function open() {
-  serviceKey();
-  const meta = loadMeta();
-  if (!meta?.cartridgeId) {
-    console.error("no cartridge yet — run: gotchibot identity ensure");
-    process.exit(1);
-  }
-  const portalId = process.argv[3] ?? process.env.GOTCHIBOT_PORTAL_ID;
-  if (!portalId) {
-    console.error("usage: identity.mjs open <portalId>");
-    process.exit(1);
-  }
-  const r = await call(`/cartridges/${meta.cartridgeId}/portals/${portalId}/open`, {
-    method: "POST",
-    body: {},
-  });
-  print(r);
-}
-
 async function bind() {
-  serviceKey();
   const meta = loadMeta();
-  if (!meta?.cartridgeId) {
-    console.error("no cartridge yet — run: gotchibot identity ensure");
-    process.exit(1);
-  }
+  const cartridgeId = requireSepoliaCart(meta);
   const sessionIdx = process.argv.indexOf("--session");
   const sessionId = sessionIdx > -1 ? process.argv[sessionIdx + 1] : null;
   const heroIdx = process.argv.indexOf("--hero");
@@ -426,86 +211,33 @@ async function bind() {
     (heroIdx > -1 ? process.argv[heroIdx + 1] : null) ||
     process.env.GOTCHIBOT_HERO_ID ||
     null;
-
-  // Pin an already-minted cAavegotchi to a session (no new mint).
-  if (sessionId && existingHero) {
-    const snap = await call(`/cartridges/${meta.cartridgeId}`);
-    const heroes = ((snap.data.cartridge ?? snap.data)?.cAavegotchis ?? []).map((h) => h.id);
-    if (!heroes.includes(existingHero)) {
-      console.error(`hero ${existingHero} not on cartridge ${meta.cartridgeId}`);
-      process.exit(1);
-    }
-    saveMeta({
-      activeHeroId: existingHero,
-      sessionHeroes: { ...(meta.sessionHeroes ?? {}), [sessionId]: existingHero },
-    });
-    process.stdout.write(existingHero);
-    return;
-  }
-
-  const before = await call(`/cartridges/${meta.cartridgeId}`);
-  const beforeIds = new Set(
-    ((before.data.cartridge ?? before.data)?.cAavegotchis ?? []).map((h) => h.id)
-  );
-  const r = await call(`/cartridges/${meta.cartridgeId}/bind-starter`, {
-    method: "POST",
-    body: { gameId: GAME_ID },
-  });
-  if (!r.ok) {
-    if (sessionId) { console.error(JSON.stringify(r.data)); process.exit(1); }
-    print(r);
-    return;
-  }
-  const after = r.data.cartridge ?? r.data;
-  const newHero = (after.cAavegotchis ?? []).find((h) => !beforeIds.has(h.id));
-  if (sessionId) {
-    if (!newHero) { console.error("no new hero in roster after bind"); process.exit(1); }
-    saveMeta({ sessionHeroes: { ...(meta.sessionHeroes ?? {}), [sessionId]: newHero.id } });
-    process.stdout.write(newHero.id);
-    return;
-  }
-  print(r);
-}
-
-async function apply() {
-  serviceKey();
-  const meta = loadMeta();
-  if (!meta?.cartridgeId) {
-    console.error("no cartridge yet — run: gotchibot identity ensure");
+  if (!sessionId || !existingHero) {
+    console.error(
+      "identity bind pins an existing cartridge hero: --session <id> --hero <id>\n" +
+        "  new cAavegotchis: cockpit mint, or templates apply <id> --mint <collateral>",
+    );
     process.exit(1);
   }
-  const portalId = process.argv[3] ?? process.env.GOTCHIBOT_PORTAL_ID;
-  const heroId = process.argv[4] ?? process.env.GOTCHIBOT_HERO_ID;
-  if (!portalId || !heroId) {
-    console.error("usage: identity.mjs apply <portalId> <cAavegotchiId>");
+  const { heroes } = await readSepoliaHeroes(cartridgeId);
+  if (!heroes.some((h) => h.id === existingHero || h.heroKey === existingHero)) {
+    console.error(`hero ${existingHero} not on cartridge ${cartridgeId}`);
     process.exit(1);
   }
-  const r = await call(`/cartridges/${meta.cartridgeId}/portals/${portalId}/apply`, {
-    method: "POST",
-    body: { cAavegotchiId: heroId },
+  saveMeta({
+    activeHeroId: existingHero,
+    sessionHeroes: { ...(meta.sessionHeroes ?? {}), [sessionId]: existingHero },
   });
-  print(r);
+  process.stdout.write(existingHero);
 }
 
-export {
-  call,
-  loadMeta,
-  saveMeta,
-  owner,
-  serviceKey,
-  requireInfraAuth,
-  GAME_ID,
-  cartridgeApi,
-  resolveCartridgeOrigin,
-  resolveCartridgeApi,
-};
+export { loadMeta, saveMeta, owner };
 
 
 if (isMainModule(import.meta.url)) {
   const cmd = process.argv[2];
-  const handlers = { ensure, mint, seal, unpack, open, bind, apply, roster, rules, checkpoint };
+  const handlers = { bind, roster, checkpoint };
   if (!handlers[cmd]) {
-    console.error("usage: identity.mjs ensure|mint|seal|unpack|open|bind|apply|roster|rules|checkpoint");
+    console.error("usage: identity.mjs roster|bind|checkpoint");
     process.exit(2);
   }
   handlers[cmd]().catch((e) => { console.error(e.message); process.exit(1); });

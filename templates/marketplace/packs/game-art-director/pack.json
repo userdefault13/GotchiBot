@@ -27,5 +27,6 @@
     "playbook.json",
     "skills/aseprite-tool/SKILL.md",
     "skills/browser-tool/SKILL.md"
-  ]
+  ],
+  "scope": "starter"
 }

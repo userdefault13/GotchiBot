@@ -30,5 +30,6 @@
     "skills/market-news-feed/SKILL.md",
     "skills/pymupdf/SKILL.md",
     "standing-duties/trader-monitor.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

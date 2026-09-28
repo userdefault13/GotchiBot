@@ -14,7 +14,8 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { spawnSync, execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { call, loadMeta } from "./identity.mjs";
+import { loadMeta } from "./identity.mjs";
+import { isSepoliaCartridgeId, readSepoliaHeroes } from "./cartridge-sepolia.mjs";
 import { resolveSubgraphUrl, infraHeaders } from "./infra-client.mjs";
 import { resolveCastBin, commandExists } from "./platform.mjs";
 
@@ -68,22 +69,22 @@ async function resolveHero(arg) {
   let tokenId = arg && /^\d+$/.test(arg) ? arg : tokenIdFromHeroId(heroId);
 
   let hero = null;
-  if (meta?.cartridgeId) {
-    const r = await call(`/cartridges/${meta.cartridgeId}`);
-    if (r.ok) {
-      const c = r.data.cartridge ?? r.data;
-      const roster = c.cAavegotchis ?? [];
+  if (meta?.cartridgeId && isSepoliaCartridgeId(meta.cartridgeId)) {
+    try {
+      const { heroes: roster } = await readSepoliaHeroes(meta.cartridgeId);
       hero =
         roster.find((h) => h.id === heroId) ||
         roster.find((h) => String(h.sourceTokenId) === String(tokenId)) ||
         roster.find((h) => h.id === meta.activeHeroId) ||
-        c.activeCAavegotchi ||
+        roster.find((h) => h.active) ||
         roster[0] ||
         null;
       if (hero) {
         heroId = hero.id;
         tokenId = tokenId || hero.sourceTokenId || tokenIdFromHeroId(hero.id);
       }
+    } catch {
+      /* Sepolia unreachable — resolve from the pin / token id alone */
     }
   }
 

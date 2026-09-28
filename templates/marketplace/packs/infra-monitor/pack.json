@@ -43,5 +43,6 @@
     "standing-duties/infra-mesh.md",
     "standing-duties/infra-tailscale.md",
     "standing-duties/infra-tunnel.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

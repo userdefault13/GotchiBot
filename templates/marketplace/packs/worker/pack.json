@@ -10,7 +10,8 @@
     "gotchibot-bridge",
     "desk-wake",
     "passoff",
-    "pstack"
+    "pstack",
+    "jev"
   ],
   "skillsExternal": [],
   "standingDuties": [],
@@ -34,5 +35,6 @@
     "skills/gotchibot-bridge/SKILL.md",
     "skills/passoff/SKILL.md",
     "skills/pstack/SKILL.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

@@ -26,5 +26,6 @@
     "playbook.json",
     "skills/project-kanban/SKILL.md",
     "skills/project-tickets/SKILL.md"
-  ]
+  ],
+  "scope": "starter"
 }

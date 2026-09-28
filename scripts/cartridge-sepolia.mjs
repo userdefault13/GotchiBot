@@ -50,6 +50,8 @@ const CART_ABI = [
   "function portalStatus(uint256 cartridgeId) view returns (uint8)",
   "function licenseNested(uint256 cartridgeId) view returns (bool)",
   "function isSoulbound(uint256 cartridgeId) view returns (bool)",
+  "function getActiveHeroId(uint256 cartridgeId) view returns (bytes32)",
+  "function getHero(uint256 cartridgeId, bytes32 heroId) view returns (tuple(bytes32 id, uint256 sourceTokenId, uint8 bindType, int16[6] numericTraits, int16[6] modifiedTraits, uint16[16] equippedWearables, uint256 level, uint256 kinship, uint256 experience, bytes32 svgIsoHash, bytes32 svgTopdownHash, bytes32 svgSidescrollHash, string svgBundleUri))",
 ];
 
 async function loadProvider() {
@@ -61,8 +63,10 @@ async function loadProvider() {
     return { cfg, consoleAddr: "", cartAddr: "", ethers: null, provider: null };
   }
   const ethers = await getEthers();
-  const rpc = process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org";
-  const provider = new ethers.JsonRpcProvider(rpc, CHAIN_ID);
+  const rpc = new ethers.FetchRequest(process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org");
+  rpc.timeout = sepoliaTimeoutMs();
+  // staticNetwork: an unreachable RPC must reject, not retry network detection forever.
+  const provider = new ethers.JsonRpcProvider(rpc, CHAIN_ID, { staticNetwork: true });
   return { cfg, consoleAddr, cartAddr, ethers, provider };
 }
 
@@ -143,6 +147,91 @@ export async function readGotchiBotCartridgeSepolia(owner) {
         ? "no_heroes_bind_required"
         : undefined,
   };
+}
+
+function sepoliaTimeoutMs() {
+  const n = Number(process.env.GOTCHIBOT_SEPOLIA_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : 8_000;
+}
+
+/** Sepolia cartridge ids are uint256 decimals. */
+export function isSepoliaCartridgeId(id) {
+  return /^\d+$/.test(String(id ?? "").trim()) && String(id).trim() !== "0";
+}
+
+const BIND_TYPES = ["none", "owned", "rented", "starter"];
+
+/**
+ * Chain hero keys are keccak256("owned-", tokenId) / ("rental-", tokenId) /
+ * ("starter-", templateId, "-", index). Owned + rented keys map back to the
+ * desk's hero id (`owned-22899`); starter keys stay as the bytes32 hex.
+ */
+function heroFromChain(key, h, activeKey) {
+  const bindType = BIND_TYPES[Number(h?.bindType ?? 0)] || null;
+  const tok = h?.sourceTokenId != null ? BigInt(h.sourceTokenId) : 0n;
+  const id =
+    bindType === "owned" && tok > 0n ? `owned-${tok}`
+      : bindType === "rented" && tok > 0n ? `rental-${tok}`
+        : key;
+  return {
+    id,
+    heroKey: key,
+    source: "sepolia",
+    bindType: bindType === "none" ? null : bindType,
+    sourceTokenId: tok > 0n ? tok.toString() : null,
+    level: h ? Number(h.level) : null,
+    kinship: h ? Number(h.kinship) : null,
+    experience: h ? Number(h.experience) : null,
+    numericTraits: h ? [...h.numericTraits].map(Number) : null,
+    modifiedTraits: h ? [...h.modifiedTraits].map(Number) : null,
+    equippedWearables: h ? [...h.equippedWearables].map(Number) : null,
+    active: Boolean(activeKey) && activeKey === key,
+  };
+}
+
+/**
+ * Heroes on a Base Sepolia cartridge.
+ * Throws when Sepolia is unreachable or unconfigured.
+ * @returns {Promise<{ cartridgeId: string, activeHeroId: string|null, heroes: object[] }>}
+ */
+export async function readSepoliaHeroes(cartridgeId) {
+  if (!isSepoliaCartridgeId(cartridgeId)) {
+    throw new Error(`not a Base Sepolia cartridge id: ${cartridgeId}`);
+  }
+  const { cartAddr, ethers, provider } = await loadProvider();
+  if (!cartAddr || !ethers || !provider) throw new Error("missing_diamond_config");
+  const cartC = new ethers.Contract(cartAddr, CART_ABI, provider);
+  const cartId = BigInt(cartridgeId);
+  const keys = ((await cartC.heroIds(cartId)) || []).map((k) => String(k));
+  let activeKey = null;
+  try {
+    activeKey = String(await cartC.getActiveHeroId(cartId));
+  } catch {
+    activeKey = null;
+  }
+  const heroes = await Promise.all(
+    keys.map(async (key) => {
+      try {
+        return heroFromChain(key, await cartC.getHero(cartId, key), activeKey);
+      } catch {
+        return heroFromChain(key, null, activeKey);
+      }
+    }),
+  );
+  const active = heroes.find((h) => h.active);
+  return { cartridgeId: cartId.toString(), activeHeroId: active?.id ?? null, heroes };
+}
+
+/**
+ * Owner's gotchibot cartridge + heroes on Base Sepolia (null cartridgeId when
+ * none minted). Throws when Sepolia is unreachable or unconfigured.
+ */
+export async function readSepoliaHeroesForOwner(owner) {
+  const snap = await readGotchiBotCartridgeSepolia(owner);
+  if (snap.reason === "missing_diamond_config") throw new Error("missing_diamond_config");
+  if (!snap.cartridgeId) return { ...snap, activeHeroId: null, heroes: [] };
+  const { activeHeroId, heroes } = await readSepoliaHeroes(snap.cartridgeId);
+  return { ...snap, heroKeys: snap.heroes, activeHeroId, heroes };
 }
 
 /**
@@ -231,8 +320,13 @@ export function formatAbraCartLine(abra) {
 async function main() {
   const owner = process.argv[2];
   if (!owner) {
-    console.error("usage: cartridge-sepolia.mjs <wallet> [--abra]");
+    console.error("usage: cartridge-sepolia.mjs <wallet> [--abra|--heroes]");
     process.exit(1);
+  }
+  if (process.argv.includes("--heroes")) {
+    const snap = await readSepoliaHeroesForOwner(owner);
+    console.log(JSON.stringify(snap, null, 2));
+    process.exit(snap.cartridgeId && snap.heroes.length ? 0 : 1);
   }
   if (process.argv.includes("--abra")) {
     const abra = await readAbraCartridgeSepolia(owner);

@@ -28,13 +28,26 @@ Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`.
 
 If it needs files edited, a tool running for more than a minute, or investigation: delegate. If I'm unsure: delegate.
 
-## Spawning a worker
+## Spawning a worker (Prof. Link-Cube seats first)
 
-`./scripts/gotchi-orchestrate.mjs spawn --model auto "<task in Julius's words>"` — the script picks an available cAavegotchi; every worker wears one. I never mint one. I never take LINK, YFI, or WBTC's standing desk for unrelated work. New project → add `--sandbox` (hero must be `available`).
+**Hard rule:** request / generic subs are spun up **by Prof. Link-Cube**, not by raw orch DIY seating.
+
+1. Pick an **available** non-orch cAavegotchi (wallet gate). Never mint. Never steal LINK/YFI/WBTC.
+2. Ask **Prof. Link-Cube** to seat pack **`worker`** (template + Prof tool index `config/worker-index.json`):
+   `./scripts/gotchibot templates apply worker --hero <available> --yes`
+   (or `link-cube resummon --hero <available> --role worker --yes`)
+3. Then dispatch: `GOTCHIBOT_HERO_ID=<that-hero> ./scripts/gotchi-orchestrate.mjs spawn --model auto "<task>"`
+   Spawn itself calls `ensure-prof-worker.mjs` so a bare request hero still gets the worker pack.
+
+Specialized desks (trader / infra / makers / …) keep their Prof-applied role — I do not overwrite them with `worker`.
 
 Every spawn brief must tell the worker: **do the work via a work tool** — skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` (default), skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when UserDefault says codex, skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` for hard reasoning (never `/model @claudemode`). Workers must not DIY edits on big-pickle/Nemotron/Hy3. I do not DIY product work myself either — if I must touch files for orch tooling, I also use a work tool.
 
 While workers run I keep Julius posted: what spawned, what's running, what merged. I never vanish.
+
+When a sub finishes, the host restores ORCH focus and drops a bot-inbox **report** to me (`sub-finish.mjs`). I **expect** that packet: `./scripts/gotchibot inbox list --to orch --unread`, then `./scripts/gotchi-orchestrate.mjs output <id>` / merge. If I spawned it myself I also `wait` / poll — I do not assume Julius heard the TTS alone.
+
+`./scripts/gotchi-orchestrate.mjs spawn` is blocked unless an **available** cAavegotchi seat exists (wallet gate). I never spawn on orch alone and I never skip the gate.
 
 ## Models
 

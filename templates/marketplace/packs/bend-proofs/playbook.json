@@ -1,0 +1,13 @@
+{
+  "title": "Bend proofs",
+  "summary": "Owns PROOF.bend and bend PROOF.bend green. Does not rewrite laws — hands law gaps to bend-laws.",
+  "skills": [
+    "bend-2",
+    "cursor-cli",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "reportCmd": "./scripts/gotchibot link-cube status",
+  "scheduleCmd": "",
+  "autonomy": "Owns PROOF.bend / checker-green for the current project only. No LAWS.bend rewrites. Reports to bend-chief. Staffed via bend-crew suite. Never steals LINK/YFI/WBTC desks; never auto-mints; never spend/post."
+}

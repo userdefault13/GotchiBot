@@ -6,7 +6,13 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { call, loadMeta, saveMeta, GAME_ID } from "./identity.mjs";
+import { saveMeta } from "./identity.mjs";
+import {
+  isSepoliaCartridgeId,
+  readGotchiBotCartridgeSepolia,
+  readSepoliaHeroes,
+  readSepoliaHeroesForOwner,
+} from "./cartridge-sepolia.mjs";
 import { persistHeroCollateral, findCollateralColors, writeWalletGotchiCache, loadWalletGotchiIndex } from "./collateral-resolve.mjs";
 import { resolveSubgraphUrl, infraHeaders } from "./infra-client.mjs";
 import { resolveCastBin } from "./platform.mjs";
@@ -26,7 +32,7 @@ const ATOKEN_SPIRITS = new Set([
   "dai", "weth", "aave", "link", "usdt", "usdc", "tusd", "uni", "yfi",
 ]);
 
-/** Strip ma/am/a prefixes → spirit id used by cartridge sim fee ledger. */
+/** Strip ma/am/a prefixes → spirit id (bindStarter template id). */
 export function libraryNameToSpiritId(name) {
   const raw = String(name || "").trim().toLowerCase();
   if (!raw) return "";
@@ -596,6 +602,39 @@ export async function fetchWalletGotchiById(address, gotchiId) {
   return hit;
 }
 
+/**
+ * Gotchi names by token id — core subgraph first, Base RPC for any it misses.
+ * @returns {Promise<Map<string, string>>} tokenId → name (unnamed/unknown ids omitted)
+ */
+export async function fetchGotchiNames(tokenIds) {
+  const ids = [...new Set((tokenIds || []).map((t) => String(t).trim()).filter((t) => /^\d+$/.test(t)))];
+  const names = new Map();
+  if (!ids.length) return names;
+  try {
+    const data = await postSubgraph(
+      `query GotchiNames($ids: [String!]!) {
+        aavegotchis(first: 1000, where: { id_in: $ids }) { id gotchiId name }
+      }`,
+      { ids },
+    );
+    for (const g of data?.aavegotchis ?? []) {
+      const name = String(g.name || "").trim();
+      if (name) names.set(String(g.gotchiId ?? g.id), name);
+    }
+  } catch {}
+
+  const missing = ids.filter((id) => !names.has(id));
+  for (let i = 0; i < missing.length; i += RPC_NAME_BATCH) {
+    const chunk = missing.slice(i, i + RPC_NAME_BATCH);
+    const infos = await Promise.all(chunk.map((id) => fetchAavegotchiInfo(id).catch(() => null)));
+    chunk.forEach((id, j) => {
+      const name = String(infos[j]?.name || "").trim();
+      if (name) names.set(id, name);
+    });
+  }
+  return names;
+}
+
 /** Traits for cheeks: [4]=eyeShape, [5]=eyeColor. Prefer withSets → modified → numeric. */
 export function walletGotchiTraits(g) {
   return traitsFromGotchiFields(g);
@@ -665,51 +704,12 @@ export function runAbraNode(scriptRel, args = []) {
   });
 }
 
+/** Heroes on the desk's Base Sepolia cartridge. */
 export async function fetchCartridgeHeroes(cartridgeId) {
-  const r = await call(`/cartridges/${cartridgeId}`);
-  if (!r.ok) return [];
-  const c = r.data.cartridge ?? r.data;
-  return c.cAavegotchis ?? [];
-}
-
-export async function ensureCartridgeForOwner(address) {
-  const r = await call("/cartridges/ensure", {
-    method: "POST",
-    body: { owner: address, gameId: GAME_ID, simPay: true },
-  });
-  if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
-  const c = r.data.cartridge ?? r.data;
-  const cartridgeId = c.id ?? c.cartridgeId;
-  saveMeta({ cartridgeId, owner: address });
-  saveOnboarding({ wallet: address, cartridgeId });
-  return cartridgeId;
-}
-
-function persistMintedHeroColors(heroId, collateral, hero = {}) {
-  if (!heroId) return;
-  const hauntId = Number(hero.hauntId) || 1;
-  const colors = findCollateralColors(collateral || hero.collateral, hauntId);
-  persistHeroCollateral(heroId, {
-    collateral: colors?.spirit || collateral || hero.collateral,
-    collateralName: colors?.name || null,
-    hauntId: hauntId || colors?.hauntId || 1,
-    primary: colors?.primary,
-    secondary: colors?.secondary,
-  });
-}
-
-export async function bindStarterHero(cartridgeId, collateral) {
-  const r = await call(`/cartridges/${cartridgeId}/bind-starter`, {
-    method: "POST",
-    body: { gameId: GAME_ID, collateral, simPay: true },
-  });
-  if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
-  const c = r.data.cartridge ?? r.data;
-  const heroes = c.cAavegotchis ?? [];
-  const hero = heroes[heroes.length - 1];
-  const heroId = hero?.id ?? null;
-  persistMintedHeroColors(heroId, collateral, hero);
-  return heroId;
+  if (!isSepoliaCartridgeId(cartridgeId)) {
+    throw new Error(`not a Base Sepolia cartridge id: ${cartridgeId} — run ./scripts/gotchibot connect`);
+  }
+  return (await readSepoliaHeroes(cartridgeId)).heroes;
 }
 
 export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = null) {
@@ -728,18 +728,19 @@ export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = n
   const colors = findCollateralColors(collAddr || walletGotchi?.collateralName || "", hauntId || 2);
   const spirit = colors?.spirit || libraryNameToSpiritId(walletGotchi?.collateralName || collAddr || "") || null;
 
-  const r = await call(`/cartridges/${cartridgeId}/bind-owned`, {
-    method: "POST",
-    body: {
-      sourceTokenId: tokenId,
-      simPay: true,
-      collateral: spirit || undefined,
-      collateralAddress: collAddr || undefined,
-      hauntId,
-    },
-  });
-  if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
-  const c = r.data.cartridge ?? r.data;
+  // Already bound on the owner's Base Sepolia cartridge → reuse it; otherwise
+  // bind on-chain through the MetaMask bindOwned page.
+  const bindOwner = readWalletFile();
+  let onChain = null;
+  if (bindOwner) {
+    const sep = await readSepoliaHeroesForOwner(bindOwner);
+    onChain = sep.heroes.find((h) => h.bindType === "owned" && h.sourceTokenId === tokenId) || null;
+  }
+  if (!onChain) {
+    const { bindOwnedToDesk } = await import("./cartridge-mint-sepolia.mjs");
+    onChain = { id: await bindOwnedToDesk(tokenId), sourceTokenId: tokenId };
+  }
+  const c = { cAavegotchis: [onChain] };
   const list = Array.isArray(c.cAavegotchis) ? c.cAavegotchis : [];
   // Prefer the hero for this token — never the active/orch cAavegotchi
   // (bind leaves active as owned-954, which made mint-all report every id as 954).
@@ -780,28 +781,6 @@ export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = n
   return heroId;
 }
 
-export async function mintSubAgentHero(cartridgeId, collateral) {
-  const r = await call(`/cartridges/${cartridgeId}/subagents/mint`, {
-    method: "POST",
-    body: { collateral, simPay: true },
-  });
-  if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
-  const c = r.data.cartridge ?? r.data;
-  const heroes = c.cAavegotchis ?? [];
-  const hero = heroes[heroes.length - 1];
-  const heroId = hero?.id ?? null;
-  persistMintedHeroColors(heroId, collateral, hero);
-  return heroId;
-}
-
-export async function selectOrchestratorHero(cartridgeId, heroId) {
-  const r = await call(`/cartridges/${cartridgeId}/select-hero`, {
-    method: "POST",
-    body: { cAavegotchiId: heroId },
-  });
-  if (!r.ok) throw new Error(JSON.stringify(r.data).slice(0, 300));
-}
-
 export function pinAvatar(heroId, { asOrchestrator = true } = {}) {
   mkdirSync(SESSIONS, { recursive: true });
   writeFileSync(PIN_PATH, `${heroId}\n`);
@@ -820,15 +799,13 @@ export function pinAvatar(heroId, { asOrchestrator = true } = {}) {
   } catch {}
 }
 
+/** Onboarded when the wallet's Base Sepolia cartridge has heroes. */
 export async function isOnboarded() {
-  const ob = loadOnboarding();
-  if (!ob.complete || !ob.orchestratorHeroId) return false;
   const wallet = readWalletFile();
   if (!wallet) return false;
-  const meta = loadMeta();
-  if (!meta?.cartridgeId) return false;
-  const heroes = await fetchCartridgeHeroes(meta.cartridgeId);
-  return heroes.some((h) => h.id === ob.orchestratorHeroId);
+  const sep = await readGotchiBotCartridgeSepolia(wallet);
+  if (sep.reason === "missing_diamond_config") throw new Error("missing_diamond_config");
+  return Boolean(sep.cartridgeId) && sep.heroCount > 0;
 }
 
 export function readWelcomeArt(maxLines = 18) {

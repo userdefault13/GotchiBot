@@ -7,8 +7,10 @@
  *   node scripts/template-pack.mjs show <id>                print pack.json + file tree
  *   node scripts/template-pack.mjs install <id|path|url> [--yes]
  *                                                           merge playbook + AGENTS template + vendored skills
- *   node scripts/template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]
- *                                                           install if needed, then prof-link-cube resummon
+ *   node scripts/template-pack.mjs apply <id> --hero <unassigned> | --mint <collateral> [--yes] [--standing-duty <key>]
+ *                                                           install if needed, then prof-link-cube resummon.
+ *                                                           A template is a new cAavegotchi ($5 mint) or one
+ *                                                           with no assignment; --reassign moves a seated hero.
  *
  * Pack format (full desk = C):
  *   templates/marketplace/packs/<id>/
@@ -45,7 +47,15 @@ const STANDING_DUTIES_FILE = join(ROOT, "config", "agent-standing-duties.json");
 const TMP = join(ROOT, "tmp", "template-pack");
 
 const VERSION = "1.0.0";
+/** Public marketplace origin (Vercel / aarcadeghst.com). Home tunnel aliases still work as fallback. */
 const BASE_URL = "https://aarcadeghst.com/gotchibot-templates";
+const REMOTE_CATALOG_URL =
+  process.env.GOTCHIBOT_TEMPLATES_CATALOG_URL || `${BASE_URL}/catalog.json`;
+const REMOTE_CATALOG_FALLBACKS = [
+  REMOTE_CATALOG_URL,
+  "https://templates.aarcadeghst.com/catalog.json",
+  "https://www.aarcadeghst.com/gotchibot-templates/catalog.json",
+].filter((u, i, a) => a.indexOf(u) === i);
 
 /** Product desk roles — standing duties owned by these heroes are never overwritten without --yes. */
 const PRODUCT_DESK_ROLES = new Set([
@@ -93,7 +103,76 @@ const TAG_MAP = {
   "accountant": ["finance", "ap", "ar"],
   "mail-courier": ["mail", "courier", "inbox", "email", "agentmail"],
   "kanban-manager": ["kanban", "project", "boards", "tasks"],
+  "bend-chief": ["bend", "crew", "routing"],
+  "bend-laws": ["bend", "laws", "LAWS"],
+  "bend-proofs": ["bend", "proofs", "PROOF"],
+  "bend-crew": ["starter", "bend", "suite", "laws", "proofs"],
+  "jev": ["starter", "typesafe", "jev", "system-one", "routing", "decisions"],
 };
+
+/**
+ * Marketplace scope:
+ *   starter  — portable starter templates (default browse / public offer)
+ *   aarcade  — AarcadeGh-t / GotchiBot home-desk packs (opt-in)
+ */
+const STARTER_PACK_IDS = new Set([
+  "accountant",
+  "architect",
+  "bend-crew",
+  "brand-design",
+  "customer-support",
+  "game-art-director",
+  "jev",
+  "kanban-manager",
+  "mail-courier",
+  "marketing-agency",
+  "product-manager",
+  "social-media-manager",
+]);
+
+/** Suite packs: one catalog entry that installs/applies member role packs. */
+const SUITE_PACK_MEMBERS = {
+  "bend-crew": ["bend-chief", "bend-laws", "bend-proofs"],
+};
+
+export function isSuitePack(packOrId) {
+  const id = typeof packOrId === "string" ? packOrId : packOrId?.id || packOrId?.roleId;
+  if (packOrId && typeof packOrId === "object" && String(packOrId.kind || "").toLowerCase() === "suite") {
+    return true;
+  }
+  return Boolean(id && SUITE_PACK_MEMBERS[id]);
+}
+
+export function suiteMembers(packOrId) {
+  const id = typeof packOrId === "string" ? packOrId : packOrId?.id || packOrId?.roleId;
+  if (packOrId && typeof packOrId === "object" && Array.isArray(packOrId.members)) {
+    return packOrId.members.map(String);
+  }
+  return SUITE_PACK_MEMBERS[id] ? [...SUITE_PACK_MEMBERS[id]] : [];
+}
+
+export function resolvePackScope(packOrId) {
+  const id = typeof packOrId === "string" ? packOrId : packOrId?.id || packOrId?.roleId;
+  // Explicit starter roster wins over a stale scope field on disk / CDN.
+  if (id && STARTER_PACK_IDS.has(id)) return "starter";
+  if (packOrId && typeof packOrId === "object") {
+    const s = String(packOrId.scope || "").toLowerCase();
+    if (s === "aarcade") return "aarcade";
+    if (s === "starter" || s === "generic") {
+      // legacy/stale starter stamp — only honor if still on the roster (checked above)
+      return "aarcade";
+    }
+    const tags = packOrId.tags || [];
+    if (tags.includes("aarcade") || tags.includes("gotchibot-desk")) return "aarcade";
+  }
+  return "aarcade";
+}
+
+export function filterPacksByScope(packs, scope = "starter") {
+  const list = Array.isArray(packs) ? packs : [];
+  if (!scope || scope === "all") return list;
+  return list.filter((p) => resolvePackScope(p) === scope);
+}
 
 /** Built-in standing-duty stubs (markdown). Unknown keys get a generic stub. */
 const STANDING_DUTY_STUBS = {
@@ -190,6 +269,66 @@ function writeJson(file, obj) {
 
 function loadCatalog() {
   return readJson(CATALOG, { version: 1, baseUrl: BASE_URL, packs: [] });
+}
+
+/** Pull catalog from public marketplace; try Vercel path then templates.* tunnel. */
+export async function fetchRemoteCatalog({ timeoutMs = 12_000 } = {}) {
+  let lastErr = null;
+  for (const url of REMOTE_CATALOG_FALLBACKS) {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        redirect: "follow",
+        signal: ac.signal,
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const ct = String(res.headers.get("content-type") || "");
+      const j = await res.json();
+      if (!j || !Array.isArray(j.packs)) throw new Error("catalog missing packs[]");
+      // Reject SPA HTML mistaken as JSON (vercel fallback)
+      if (!ct.includes("json") && typeof j.version === "undefined") {
+        throw new Error("not a catalog JSON response");
+      }
+      const fetchedFrom = new URL(url).origin + new URL(url).pathname.replace(/\/catalog\.json$/, "");
+      return {
+        ...j,
+        baseUrl: BASE_URL || fetchedFrom,
+        source: "remote",
+        fetchedAt: new Date().toISOString(),
+        catalogUrl: url,
+      };
+    } catch (e) {
+      lastErr = e;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+  throw lastErr || new Error("catalog fetch failed");
+}
+
+export async function loadCatalogPreferRemote() {
+  try {
+    return await fetchRemoteCatalog();
+  } catch (e) {
+    const local = loadCatalog();
+    return {
+      ...local,
+      baseUrl: local.baseUrl || BASE_URL,
+      source: "local",
+      remoteError: String(e?.message || e),
+      catalogUrl: REMOTE_CATALOG_URL,
+    };
+  }
+}
+
+/** CDN pack root: <baseUrl>/packs/<id>/ */
+export function remotePackUrl(catalog, packId) {
+  const base = String(catalog?.baseUrl || BASE_URL).replace(/\/+$/, "");
+  const entry = (catalog?.packs || []).find((p) => p.id === packId || p.roleId === packId);
+  const path = entry?.path || `packs/${packId}`;
+  return `${base}/${String(path).replace(/^\/+/, "")}/`;
 }
 
 function saveCatalog(catalog) {
@@ -324,6 +463,15 @@ function buildPack(roleId) {
     version,
     title: playbook.title || roleId,
     summary: playbook.summary || "",
+    scope: resolvePackScope(roleId),
+    ...(SUITE_PACK_MEMBERS[roleId]
+      ? {
+          kind: "suite",
+          members: [...SUITE_PACK_MEMBERS[roleId]],
+          applyHint:
+            "Suite — apply with --heroes role=hero,… for each member (never one hero for the whole crew).",
+        }
+      : {}),
     skills,
     skillsExternal: external,
     standingDuties,
@@ -341,6 +489,9 @@ function buildPack(roleId) {
     roleId,
     title: packJson.title,
     summary: packJson.summary,
+    scope: packJson.scope,
+    ...(packJson.kind ? { kind: packJson.kind } : {}),
+    ...(packJson.members ? { members: packJson.members } : {}),
     version,
     path: packJson.downloadPath,
     tags: packJson.tags,
@@ -374,6 +525,7 @@ function buildPack(roleId) {
 }
 
 function cmdList(json) {
+  // sync wrapper — prefer async path from marketplace-menu / list --remote
   const catalog = loadCatalog();
   if (json) {
     console.log(JSON.stringify(catalog, null, 2));
@@ -382,12 +534,70 @@ function cmdList(json) {
   console.log(`GotchiBot template marketplace — ${catalog.packs.length} pack(s)  (baseUrl: ${catalog.baseUrl})`);
   console.log("");
   for (const p of catalog.packs) {
-    console.log(`  ${p.id.padEnd(20)} v${p.version.padEnd(7)} ${p.title}`);
+    const scope = resolvePackScope(p);
+    console.log(`  ${p.id.padEnd(28)} v${String(p.version).padEnd(7)} [${scope}] ${p.title}`);
     console.log(`    ${p.summary}`);
     console.log(`    tags: ${(p.tags || []).join(", ") || "-"}   skills: ${(p.skills || []).join(", ") || "-"}${p.skillsExternal?.length ? `   external: ${p.skillsExternal.join(", ")}` : ""}`);
     console.log(`    install: gotchibot templates install ${p.id}`);
     console.log("");
   }
+}
+
+async function cmdListRemote(json) {
+  const catalog = await loadCatalogPreferRemote();
+  if (json) {
+    console.log(JSON.stringify(catalog, null, 2));
+    return;
+  }
+  const src = catalog.source === "remote" ? "CDN" : `local (CDN: ${catalog.remoteError || "unavailable"})`;
+  console.log(
+    `GotchiBot template marketplace — ${catalog.packs.length} pack(s)  · ${src}`,
+  );
+  console.log(`  catalog  ${catalog.catalogUrl || REMOTE_CATALOG_URL}`);
+  console.log(`  baseUrl  ${catalog.baseUrl}`);
+  console.log("");
+  for (const p of catalog.packs) {
+    const scope = resolvePackScope(p);
+    console.log(`  ${p.id.padEnd(28)} v${String(p.version).padEnd(7)} [${scope}] ${p.title}`);
+    console.log(`    ${p.summary}`);
+    console.log(`    tags: ${(p.tags || []).join(", ") || "-"}`);
+    console.log(`    remote: ${remotePackUrl(catalog, p.id)}`);
+    console.log(`    install: gotchibot templates install ${remotePackUrl(catalog, p.id)}`);
+    console.log("");
+  }
+}
+
+/** Stamp scope on every pack.json + catalog (+ embedded web fallback). */
+function cmdStampScopes() {
+  const catalog = loadCatalog();
+  let nStarter = 0;
+  let nAarcade = 0;
+  for (const entry of catalog.packs) {
+    const scope = resolvePackScope(entry);
+    entry.scope = scope;
+    if (scope === "starter") nStarter += 1;
+    else nAarcade += 1;
+    const packFile = join(PACKS, entry.id, "pack.json");
+    if (existsSync(packFile)) {
+      const pj = readJson(packFile, {});
+      pj.scope = scope;
+      writeJson(packFile, pj);
+    }
+  }
+  catalog.packs.sort((a, b) => a.id.localeCompare(b.id));
+  saveCatalog(catalog);
+  try {
+    const html = readFileSync(WEB, "utf8");
+    const embedded = JSON.stringify(catalog).replace(/</g, "\\u003c");
+    const updated = html.replace(
+      /<!--CATALOG_START-->[\s\S]*?<!--CATALOG_END-->/,
+      `<!--CATALOG_START-->\n${embedded}\n<!--CATALOG_END-->`,
+    );
+    writeFileSync(WEB, updated);
+  } catch {
+    /* web page absent — fine */
+  }
+  console.log(`stamped scope on ${catalog.packs.length} packs → ${nStarter} starter, ${nAarcade} aarcade`);
 }
 
 function cmdShow(id) {
@@ -414,23 +624,47 @@ async function resolvePackSource(arg) {
   }
   const s = arg.trim();
 
-  // catalog id
-  const catalog = loadCatalog();
-  const entry = catalog.packs.find((p) => p.id === s || p.roleId === s || p.path === s);
-  if (entry) {
-    const dir = join(PACKS, entry.id);
-    if (existsSync(join(dir, "pack.json"))) return { dir, source: `catalog:${entry.id}` };
-  }
-
   // file:// URL
   if (s.startsWith("file://")) {
     const p = s.slice("file://".length);
     return resolveLocal(p);
   }
 
-  // http(s) URL
+  // http(s) URL (CDN pack root or pack.json)
   if (/^https?:\/\//i.test(s)) {
     return fetchPackUrl(s);
+  }
+
+  // catalog id — local pack dir first, then remote CDN
+  const localCatalog = loadCatalog();
+  const localEntry = localCatalog.packs.find(
+    (p) => p.id === s || p.roleId === s || p.path === s,
+  );
+  if (localEntry) {
+    const dir = join(PACKS, localEntry.id);
+    if (existsSync(join(dir, "pack.json"))) {
+      return { dir, source: `catalog:${localEntry.id}` };
+    }
+  }
+
+  // Prefer remote catalog when CDN is up (or id only exists remotely)
+  try {
+    const remote = await fetchRemoteCatalog();
+    const entry = (remote.packs || []).find(
+      (p) => p.id === s || p.roleId === s || p.path === s,
+    );
+    if (entry) {
+      return fetchPackUrl(remotePackUrl(remote, entry.id));
+    }
+  } catch {
+    /* CDN down — fall through */
+  }
+
+  if (localEntry) {
+    console.error(
+      `install: pack "${localEntry.id}" missing under templates/marketplace/packs/ and CDN unreachable`,
+    );
+    process.exit(2);
   }
 
   // local path
@@ -517,26 +751,116 @@ function saveStandingDuties(duties) {
   writeJson(STANDING_DUTIES_FILE, duties);
 }
 
-async function cmdApply(arg, { hero, yes = false, standingDuty = null } = {}) {
+function parseHeroesMap(raw) {
+  // bend-chief=h1,bend-laws=h2,bend-proofs=h3
+  const out = {};
+  if (!raw || typeof raw !== "string") return out;
+  for (const part of raw.split(",")) {
+    const s = part.trim();
+    if (!s) continue;
+    const i = s.indexOf("=");
+    if (i <= 0) continue;
+    out[s.slice(0, i).trim()] = s.slice(i + 1).trim();
+  }
+  return out;
+}
+
+async function cmdApply(
+  arg,
+  { hero, heroes = null, yes = false, standingDuty = null, mint = null, reassign = false } = {},
+) {
   const catalog = loadCatalog();
   const entry = catalog.packs.find((p) => p.id === arg || p.roleId === arg);
   const roleId = entry?.roleId || arg;
-  const packDir = entry ? join(PACKS, entry.id) : null;
+  let packDir = entry ? join(PACKS, entry.id) : null;
 
   if (!packDir || !existsSync(join(packDir, "pack.json"))) {
     if (entry) {
       console.log(`apply: pack ${entry.id} not built yet — installing first`);
       const { dir, source } = await resolvePackSource(entry.id);
       cmdInstallFrom(dir, source, { yes });
+      packDir = join(PACKS, entry.id);
+      if (!existsSync(join(packDir, "pack.json"))) packDir = dir;
     } else {
       console.error(`apply: unknown pack "${arg}" (not in catalog)`);
       process.exit(2);
     }
   }
 
-  if (!hero) {
-    console.error("apply: --hero <hero> required (e.g. starter-dai-h1-2)");
+  const packJson = readJson(join(packDir, "pack.json"), {});
+
+  if (isSuitePack(packJson) || isSuitePack(roleId)) {
+    const members = suiteMembers(packJson).length ? suiteMembers(packJson) : suiteMembers(roleId);
+    const map = heroes && Object.keys(heroes).length ? heroes : {};
+    if (!Object.keys(map).length) {
+      console.error(
+        `apply suite ${roleId}: need --heroes ${members.map((m) => `${m}=<hero>`).join(",")}`,
+      );
+      process.exit(2);
+    }
+    // Ensure suite + members installed first
+    cmdInstallFrom(packDir, `catalog:${roleId}`, { yes });
+    for (const member of members) {
+      const h = map[member];
+      if (!h) {
+        console.error(`apply suite: missing hero for member ${member}`);
+        process.exit(2);
+      }
+      console.log(`\n── suite member ${member} → ${h} ──`);
+      const memberMint = h.startsWith("mint:") ? h.slice("mint:".length) : null;
+      await cmdApply(member, {
+        hero: memberMint ? null : h,
+        mint: memberMint,
+        yes,
+        standingDuty: null,
+        reassign,
+      });
+    }
+    console.log(`\n✓ suite ${roleId} seated (${members.length} members)`);
+    return;
+  }
+
+  const seat = await import("./template-seat.mjs");
+  if (hero && mint) {
+    console.error("apply: pass --hero <unassigned> or --mint <collateral>, not both");
     process.exit(2);
+  }
+  if (!hero && !mint) {
+    const free = await seat.unassignedHeroes().catch(() => []);
+    console.error(
+      "apply: a template needs a cAavegotchi — --hero <unassigned> or --mint <collateral> ($5)\n" +
+        (free.length
+          ? `  unassigned: ${free.map((h) => h.id).join(", ")}`
+          : "  no unassigned cAavegotchis on this cartridge — use --mint"),
+    );
+    process.exit(2);
+  }
+  if (hero) {
+    const check = seat.seatCheck(hero, roleId);
+    if (!check.ok && !reassign) {
+      console.error(`apply: ${check.reason} — pick an unassigned cAavegotchi, --mint one, or pass --reassign`);
+      process.exit(2);
+    }
+  }
+  if (mint) {
+    const known = seat.mintCollaterals().map((c) => c.key);
+    if (!known.includes(mint)) {
+      console.error(`apply: unknown collateral "${mint}" — one of: ${known.join(", ")}`);
+      process.exit(2);
+    }
+    if (!yes) {
+      console.log(`apply ${roleId} → new cAavegotchi (${mint}, $5) (dry-run, no --yes)`);
+      console.log("  pass --yes to mint and seat the template on the new hero.");
+      return;
+    }
+    console.log(`apply ${roleId}: minting a new ${mint} cAavegotchi ($5)…`);
+    try {
+      hero = await seat.mintTemplateHero(mint);
+    } catch (e) {
+      console.error(`apply: mint failed — ${e?.message || e}`);
+      process.exit(1);
+    }
+    console.log(`  ✓ minted ${hero}`);
   }
 
   const resummon = [
@@ -578,12 +902,16 @@ async function main() {
   if (!cmd) {
     console.error(`usage:
   template-pack.mjs pack <roleId>            build/overwrite packs/<roleId> from live config
-  template-pack.mjs list [--json]            print the catalog
+  template-pack.mjs list [--remote] [--json] print the catalog (CDN first with --remote)
   template-pack.mjs show <id>                print pack.json + file tree
+  template-pack.mjs stamp-scopes             set scope=starter|aarcade on packs + catalog
   template-pack.mjs install <id|path|url> [--yes]   merge playbook + AGENTS + skills (+ standing duties with --yes)
-  template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]   install + resummon + equip pack wearable (slot 15 = assignment)
+  template-pack.mjs apply <id> --hero <unassigned> [--yes] [--standing-duty <key>] [--reassign]
+  template-pack.mjs apply <id> --mint <collateral> [--yes]   mint a new cAavegotchi ($5) and seat it
+  template-pack.mjs apply <suite> --heroes role=hero|mint:<collateral>,… [--yes]   seat every suite member
   template-pack.mjs equip <id> --hero <hero>   nest + equip pack wearable only (no resummon)
-  template-pack.mjs cdn deploy|status|undeploy [--yes]   home-infra CDN (templates.aarcadeghst.com)`);
+  template-pack.mjs cdn deploy|status|undeploy [--yes]   home-infra CDN (templates.aarcadeghst.com)
+  template-pack.mjs menu                     interactive Marketplace (pulls public catalog)`);
     process.exit(2);
   }
 
@@ -597,6 +925,19 @@ async function main() {
       process.exit(r.status ?? 1);
       break;
     }
+    case "menu":
+    case "marketplace": {
+      const r = spawnSync(
+        process.execPath,
+        [join(ROOT, "scripts", "marketplace-menu.mjs"), ...rest],
+        { stdio: "inherit", cwd: ROOT },
+      );
+      process.exit(r.status ?? 1);
+      break;
+    }
+    case "stamp-scopes":
+      cmdStampScopes();
+      break;
     case "pack": {
       const roleId = rest[0];
       if (!roleId) {
@@ -607,7 +948,11 @@ async function main() {
       break;
     }
     case "list":
-      cmdList(rest.includes("--json"));
+      if (rest.includes("--remote")) {
+        await cmdListRemote(rest.includes("--json"));
+      } else {
+        cmdList(rest.includes("--json"));
+      }
       break;
     case "show": {
       const id = rest[0];
@@ -632,13 +977,19 @@ async function main() {
     case "apply": {
       const arg = rest[0];
       if (!arg) {
-        console.error("usage: template-pack.mjs apply <id> --hero <hero> [--yes] [--standing-duty <key>]");
+        console.error(
+          "usage: template-pack.mjs apply <id> --hero <unassigned> | --mint <collateral> [--yes] [--reassign]\n" +
+            "       template-pack.mjs apply <suite> --heroes role=hero|mint:<collateral>,… [--yes]",
+        );
         process.exit(2);
       }
       const hero = flagValue(rest, "--hero");
+      const heroes = parseHeroesMap(flagValue(rest, "--heroes"));
       const yes = rest.includes("--yes");
       const standingDuty = flagValue(rest, "--standing-duty");
-      await cmdApply(arg, { hero, yes, standingDuty });
+      const mint = flagValue(rest, "--mint");
+      const reassign = rest.includes("--reassign");
+      await cmdApply(arg, { hero, heroes, yes, standingDuty, mint, reassign });
       break;
     }
     case "equip": {
@@ -760,9 +1111,37 @@ function cmdInstallFrom(dir, source, { yes = false } = {}) {
 
   console.log(`installed ${packJson.id} v${packJson.version} from ${source}`);
   for (const c of changes) console.log(`  - ${c}`);
+
+  // 6) suite → install each member pack from local marketplace
+  if (isSuitePack(packJson) || isSuitePack(roleId)) {
+    const members = suiteMembers(packJson).length ? suiteMembers(packJson) : suiteMembers(roleId);
+    for (const member of members) {
+      if (member === roleId) continue;
+      const memberDir = join(PACKS, member);
+      if (!existsSync(join(memberDir, "pack.json"))) {
+        console.log(`  · suite member ${member}: pack not built yet (run templates pack ${member})`);
+        continue;
+      }
+      console.log(`\n── suite member install ${member} ──`);
+      cmdInstallFrom(memberDir, `suite:${roleId}/${member}`, { yes });
+    }
+  }
 }
 
-main().catch((e) => {
-  console.error(e.message || e);
-  process.exit(1);
-});
+export {
+  BASE_URL,
+  REMOTE_CATALOG_URL,
+  loadCatalog,
+  STARTER_PACK_IDS,
+};
+
+const isMain =
+  process.argv[1] &&
+  resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1]);
+
+if (isMain) {
+  main().catch((e) => {
+    console.error(e.message || e);
+    process.exit(1);
+  });
+}

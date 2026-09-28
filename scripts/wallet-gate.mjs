@@ -1,17 +1,29 @@
 #!/usr/bin/env node
 /**
- * Pre-spawn gate: wallet connected + cartridge + at least one cAavegotchi.
- * Exit 0 + JSON on stdout when allowed; exit 1 + human message on stderr when blocked.
+ * Pre-spawn gate: wallet + cartridge + at least one **available** cAavegotchi
+ * for a sub-agent (not orch-only, not all busy). Exit 0 + JSON when allowed;
+ * exit non-zero + human message when blocked.
  */
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { call, loadMeta, GAME_ID } from "./identity.mjs";
+import { loadMeta } from "./identity.mjs";
 import { isMainModule } from "./is-main.mjs";
-import { readGotchiBotCartridgeSepolia } from "./cartridge-sepolia.mjs";
+import { readGotchiBotCartridgeSepolia, readSepoliaHeroes } from "./cartridge-sepolia.mjs";
+import { getCachedHeroStatus } from "./hero-agent-state.mjs";
+import { loadOnboarding } from "./onboarding-lib.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WALLET = `${ROOT}/sessions/.wallet.json`;
+
+function heroRole(heroId) {
+  try {
+    const row = JSON.parse(readFileSync(`${ROOT}/config/agent-roles.json`, "utf8"))?.[heroId];
+    return typeof row === "string" ? row : row?.roleId || row?.role || null;
+  } catch {
+    return null;
+  }
+}
 
 const CONCIERGE_URL = "https://www.aarcadeghst.com/concierge/terminal";
 const SETUP_URL = "https://www.aarcadeghst.com/gotchibot/setup";
@@ -48,24 +60,154 @@ function fail(code, message, fix, extra = {}) {
   process.exit(code === "wallet" ? 10 : code === "cartridge" || code === "sealed" ? 11 : 12);
 }
 
-/** Heroes this desk has seen before — used only when the API is unreachable. */
-function cachedHeroIds() {
-  const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
-  for (const rel of ["sessions/.hero-agent-state.json", "sessions/.openclaw-agent-map.json"]) {
-    try {
-      const raw = JSON.parse(readFileSync(`${ROOT_DIR}/${rel}`, "utf8"));
-      const ids = rel.includes("agent-map") ? Object.keys(raw?.agents || {}) : Object.keys(raw || {});
-      const real = ids.filter((id) => id && id !== "gotchi");
-      if (real.length) return real;
-    } catch {
-      /* try the next cache */
-    }
+const BUSY_STATUSES = new Set(["working", "watching"]);
+
+function orchestratorId() {
+  try {
+    const ob = loadOnboarding() || {};
+    if (ob.orchestratorHeroId) return String(ob.orchestratorHeroId);
+  } catch {
+    /* ignore */
   }
-  return [];
+  try {
+    return loadMeta()?.activeHeroId ? String(loadMeta().activeHeroId) : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Opt-in escape hatch for "the sim is down but the heroes are real". */
-const ALLOW_CACHED = process.env.GOTCHIBOT_GATE_ALLOW_CACHED === "1";
+function normalizeHeroIds(heroes) {
+  return (heroes || [])
+    .map((h) => (typeof h === "string" ? h : h?.id))
+    .filter((id) => id && id !== "gotchi")
+    .map(String);
+}
+
+/**
+ * Any sub-agent spawn needs a free cAavegotchi seat — not orch alone, not all busy.
+ * GOTCHIBOT_HERO_ID when set must be on the roster and not working/watching.
+ */
+function assertAvailableSubHero(heroes) {
+  const ids = normalizeHeroIds(heroes);
+  const orch = orchestratorId();
+  const pinned = String(process.env.GOTCHIBOT_HERO_ID || "").trim();
+
+  if (!ids.length) {
+    return {
+      ok: false,
+      code: "heroes",
+      message: "No cAavegotchi on the cartridge — bind or mint one before spawning a sub-agent.",
+      fix:
+        "Cockpit: Mint another wallet gotchi (free) or Mint a base collateral cAavegotchi · Concierge: " +
+        CONCIERGE_URL,
+    };
+  }
+
+  const workers = ids.filter((id) => id !== orch && id !== "owned-954" && id !== "gotchi");
+  if (!workers.length) {
+    return {
+      ok: false,
+      code: "heroes",
+      message:
+        "Only the orchestrator is seated — every sub-agent needs its own available cAavegotchi.",
+      fix:
+        "Cockpit: Mint another wallet gotchi (free) or Mint a base collateral cAavegotchi · Concierge: " +
+        CONCIERGE_URL,
+      heroes: ids,
+      orch,
+    };
+  }
+
+  if (pinned) {
+    if (!ids.includes(pinned)) {
+      return {
+        ok: false,
+        code: "heroes",
+        message: `GOTCHIBOT_HERO_ID=${pinned} is not on this cartridge roster.`,
+        fix: "Pick a hero from the live nest (agent-focus list) or mint/bind one first.",
+        heroes: ids,
+        pinned,
+      };
+    }
+    if (orch && pinned === orch) {
+      return {
+        ok: false,
+        code: "heroes",
+        message: `${pinned} is the orchestrator — sub-agents need a different available cAavegotchi.`,
+        fix: "Mint/bind another gotchi, then spawn with GOTCHIBOT_HERO_ID=<available>.",
+        heroes: ids,
+      };
+    }
+    if (!workers.includes(pinned)) {
+      return {
+        ok: false,
+        code: "heroes",
+        message: `${pinned} cannot be used as a sub-agent seat.`,
+        fix: "Pick an available non-orch cAavegotchi.",
+        pinned,
+      };
+    }
+    const st = getCachedHeroStatus(pinned);
+    if (st && BUSY_STATUSES.has(st)) {
+      return {
+        ok: false,
+        code: "heroes",
+        message: `hero ${pinned} is ${st} — wait for it to finish or pick another available cAavegotchi.`,
+        fix: "./scripts/gotchi-orchestrate.mjs list · mint another gotchi if the nest is full",
+        pinned,
+        status: st,
+      };
+    }
+    return { ok: true, spawnHeroId: pinned };
+  }
+
+  const free = workers.filter((id) => {
+    const st = getCachedHeroStatus(id);
+    if (!st) return true; // unknown → treat as free (fresh mint)
+    return !BUSY_STATUSES.has(st);
+  });
+
+  if (!free.length) {
+    return {
+      ok: false,
+      code: "heroes",
+      message: "No available cAavegotchi for a sub-agent — every worker seat is busy.",
+      fix:
+        "Wait for a sub to finish, or mint another wallet/collateral gotchi in cockpit · Concierge: " +
+        CONCIERGE_URL,
+      heroes: ids,
+      orch,
+    };
+  }
+
+  // Prefer available/idle over assigned/active
+  const preferred =
+    free.find((id) => {
+      const st = getCachedHeroStatus(id);
+      return !st || st === "available" || st === "idle";
+    }) || free[0];
+
+  return { ok: true, spawnHeroId: preferred };
+}
+
+function withSubHeroGate(gate) {
+  if (!gate?.ok) return gate;
+  const sub = assertAvailableSubHero(gate.heroes || gate.heroIds || []);
+  if (!sub.ok) {
+    return {
+      ...gate,
+      ok: false,
+      code: sub.code || "heroes",
+      message: sub.message,
+      fix: sub.fix,
+      heroes: sub.heroes || gate.heroes,
+      orch: sub.orch,
+      pinned: sub.pinned,
+      status: sub.status,
+    };
+  }
+  return { ...gate, spawnHeroId: sub.spawnHeroId };
+}
 
 export async function checkSpawnGate({ quiet = false } = {}) {
   const owner = readWallet();
@@ -78,234 +220,115 @@ export async function checkSpawnGate({ quiet = false } = {}) {
     };
   }
 
-  const meta = loadMeta();
-  let cartridgeId = meta?.cartridgeId ?? null;
-  let heroes = [];
-  let activeHeroId = meta?.activeHeroId ?? null;
+  const activeHeroId = loadMeta()?.activeHeroId ?? null;
 
-  // Base Sepolia nest is authoritative. SIM is legacy — only used when Sepolia
-  // is explicitly opted out (GOTCHIBOT_CARTRIDGE_CHAIN=sim) or diamond config is missing.
-  const preferSepolia =
-    process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "sim" &&
-    process.env.GOTCHIBOT_CARTRIDGE_CHAIN !== "local" &&
-    (process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "sepolia" ||
-      process.env.GOTCHIBOT_CARTRIDGE_CHAIN === "84532" ||
-      process.env.GOTCHIBOT_PREFER_SEPOLIA === "1" ||
-      process.env.GOTCHIBOT_PREFER_SEPOLIA !== "0");
-  if (preferSepolia) {
-    try {
-      const sep = await readGotchiBotCartridgeSepolia(owner);
-      if (sep.reason === "missing_diamond_config") {
-        return {
-          ok: false,
-          code: "cartridge",
-          message: "Base Sepolia diamond config missing — cannot use nest desk.",
-          fix: "Set cartridgeDiamond / nest in config/cartridgeChain.base-sepolia.json · Concierge: " + CONCIERGE_URL,
-          fixUrl: CONCIERGE_URL,
-          setupUrl: SETUP_URL,
-          howto: LICENSE_STEPS,
-          source: "sepolia",
-        };
-      } else if (!sep.cartridgeId) {
-        return {
-          ok: false,
-          code: "cartridge",
-          message: "No gotchibot cartridge on Base Sepolia yet — mint and open one first.",
-          fix:
-            "Mint at Concierge: " +
-            CONCIERGE_URL +
-            " · setup: " +
-            SETUP_URL +
-            " · steps: " +
-            LICENSE_STEPS.join(" → "),
-          fixUrl: CONCIERGE_URL,
-          setupUrl: SETUP_URL,
-          howto: LICENSE_STEPS,
-          source: "sepolia",
-        };
-      } else if (sep.ok) {
-        return {
-          ok: true,
-          owner,
-          cartridgeId: sep.cartridgeId,
-          heroCount: sep.heroCount,
-          activeHeroId: sep.heroes[0] || activeHeroId,
-          heroes: sep.heroes.map((id) => ({ id, role: null })),
-          source: "sepolia",
-          portalStatus: sep.portalStatus,
-          licenseNested: sep.licenseNested,
-        };
-      } else if (sep.reason === "sealed_open_required") {
-        return {
-          ok: false,
-          code: "sealed",
-          message: "GotchiBot cartridge is sealed — open it before binding heroes.",
-          fix:
-            "Open on-chain (GotchiBotNestFacet.open) then bind owned/starter/rental. Mint/open at Concierge: " +
-            CONCIERGE_URL +
-            " · setup: " +
-            SETUP_URL,
-          fixUrl: CONCIERGE_URL,
-          setupUrl: SETUP_URL,
-          howto: LICENSE_STEPS,
-          owner,
-          cartridgeId: sep.cartridgeId,
-          portalStatus: sep.portalStatus,
-          licenseNested: sep.licenseNested,
-          source: "sepolia",
-        };
-      } else if (sep.reason === "no_heroes_bind_required") {
-        return {
-          ok: false,
-          code: "heroes",
-          message: "Open cartridge has no cAavegotchis — bind a starter or owned gotchi.",
-          fix:
-            "Bind via Aarcade / ChainCartridgeProvider bindStarter|bindOwned. Mint/open at Concierge: " +
-            CONCIERGE_URL +
-            " · setup: " +
-            SETUP_URL,
-          fixUrl: CONCIERGE_URL,
-          setupUrl: SETUP_URL,
-          howto: LICENSE_STEPS,
-          owner,
-          cartridgeId: sep.cartridgeId,
-          portalStatus: sep.portalStatus,
-          licenseNested: sep.licenseNested,
-          source: "sepolia",
-        };
-      }
-    } catch (e) {
-      if (!quiet) {
-        console.error(`[gate] sepolia read failed: ${e?.message || e} — not falling back to SIM`);
-      }
+  try {
+    const sep = await readGotchiBotCartridgeSepolia(owner);
+    if (sep.reason === "missing_diamond_config") {
       return {
         ok: false,
         code: "cartridge",
-        message: `Base Sepolia read failed: ${e?.message || e}`,
-        fix: "Check RPC / diamond config, or mint/open at Concierge: " + CONCIERGE_URL,
+        message: "Base Sepolia diamond config missing — cannot use nest desk.",
+        fix: "Set cartridgeDiamond / nest in config/cartridgeChain.base-sepolia.json · Concierge: " + CONCIERGE_URL,
         fixUrl: CONCIERGE_URL,
         setupUrl: SETUP_URL,
         howto: LICENSE_STEPS,
         source: "sepolia",
       };
+    } else if (!sep.cartridgeId) {
+      return {
+        ok: false,
+        code: "cartridge",
+        message: "No gotchibot cartridge on Base Sepolia yet — mint and open one first.",
+        fix:
+          "Mint at Concierge: " +
+          CONCIERGE_URL +
+          " · setup: " +
+          SETUP_URL +
+          " · steps: " +
+          LICENSE_STEPS.join(" → "),
+        fixUrl: CONCIERGE_URL,
+        setupUrl: SETUP_URL,
+        howto: LICENSE_STEPS,
+        source: "sepolia",
+      };
+    } else if (sep.ok) {
+      const { heroes } = await readSepoliaHeroes(sep.cartridgeId);
+      return withSubHeroGate({
+        ok: true,
+        owner,
+        cartridgeId: sep.cartridgeId,
+        heroCount: heroes.length,
+        activeHeroId: activeHeroId || heroes[0]?.id || null,
+        heroes: heroes.map((h) => ({ id: h.id, role: heroRole(h.id) })),
+        source: "sepolia",
+        portalStatus: sep.portalStatus,
+        licenseNested: sep.licenseNested,
+      });
+    } else if (sep.reason === "sealed_open_required") {
+      return {
+        ok: false,
+        code: "sealed",
+        message: "GotchiBot cartridge is sealed — open it before binding heroes.",
+        fix:
+          "Open on-chain (GotchiBotNestFacet.open) then bind owned/starter/rental. Mint/open at Concierge: " +
+          CONCIERGE_URL +
+          " · setup: " +
+          SETUP_URL,
+        fixUrl: CONCIERGE_URL,
+        setupUrl: SETUP_URL,
+        howto: LICENSE_STEPS,
+        owner,
+        cartridgeId: sep.cartridgeId,
+        portalStatus: sep.portalStatus,
+        licenseNested: sep.licenseNested,
+        source: "sepolia",
+      };
+    } else if (sep.reason === "no_heroes_bind_required") {
+      return {
+        ok: false,
+        code: "heroes",
+        message: "Open cartridge has no cAavegotchis — bind a starter or owned gotchi.",
+        fix:
+          "Bind via Aarcade / ChainCartridgeProvider bindStarter|bindOwned. Mint/open at Concierge: " +
+          CONCIERGE_URL +
+          " · setup: " +
+          SETUP_URL,
+        fixUrl: CONCIERGE_URL,
+        setupUrl: SETUP_URL,
+        howto: LICENSE_STEPS,
+        owner,
+        cartridgeId: sep.cartridgeId,
+        portalStatus: sep.portalStatus,
+        licenseNested: sep.licenseNested,
+        source: "sepolia",
+      };
     }
-    // Prefer Sepolia but no usable cart result above — fail closed (no SIM).
+  } catch (e) {
+    if (!quiet) {
+      console.error(`[gate] sepolia read failed: ${e?.message || e}`);
+    }
     return {
       ok: false,
       code: "cartridge",
-      message: "No usable GotchiBot cartridge on Base Sepolia.",
-      fix: "Mint/open at Concierge: " + CONCIERGE_URL + " · setup: " + SETUP_URL,
+      message: `Base Sepolia read failed: ${e?.message || e}`,
+      fix: "Check RPC / diamond config, or mint/open at Concierge: " + CONCIERGE_URL,
       fixUrl: CONCIERGE_URL,
       setupUrl: SETUP_URL,
       howto: LICENSE_STEPS,
       source: "sepolia",
     };
   }
-
-  // Track reachability separately: "the API said you have no heroes" and "the
-  // API never answered" are different problems with different fixes, and the
-  // second one used to be reported as the first — which sends you to
-  // `identity bind`, i.e. towards minting, over a container that is merely down.
-  let apiReachable = false;
-  let apiError = null;
-
-  if (cartridgeId) {
-    const snap = await call(`/cartridges/${cartridgeId}`);
-    if (snap.ok) {
-      apiReachable = true;
-      const c = snap.data.cartridge ?? snap.data;
-      heroes = c.cAavegotchis ?? [];
-      activeHeroId = activeHeroId ?? c.activeCAavegotchi?.id ?? heroes[0]?.id ?? null;
-    } else {
-      apiError = snap.data?.error || `HTTP ${snap.status}`;
-    }
-  }
-
-  if (!cartridgeId || heroes.length === 0) {
-    const roster = await call(`/cartridges?owner=${encodeURIComponent(owner)}&gameId=${GAME_ID}`);
-    if (roster.ok) {
-      const list = roster.data.cartridges ?? roster.data ?? [];
-      const cart = Array.isArray(list) ? list[0] : list.cartridge ?? list;
-      if (cart) {
-        cartridgeId = cart.id ?? cart.cartridgeId ?? cartridgeId;
-        heroes = cart.cAavegotchis ?? heroes;
-        activeHeroId = activeHeroId ?? cart.activeCAavegotchi?.id ?? heroes[0]?.id ?? null;
-      }
-    }
-  }
-
-  if (!cartridgeId) {
-    return {
-      ok: false,
-      code: "cartridge",
-      message: "No gotchibot cartridge yet — mint and open one first.",
-      fix:
-        "Mint at Concierge: " +
-        CONCIERGE_URL +
-        " · setup: " +
-        SETUP_URL +
-        " · steps: " +
-        LICENSE_STEPS.join(" → "),
-      fixUrl: CONCIERGE_URL,
-      setupUrl: SETUP_URL,
-      howto: LICENSE_STEPS,
-    };
-  }
-
-  if (heroes.length === 0 && !apiReachable) {
-    const cached = cachedHeroIds();
-    if (ALLOW_CACHED && cached.length) {
-      console.error(
-        `[gate] cartridge API unreachable (${apiError || "no answer"}) — proceeding on ${cached.length} cached hero(es) ` +
-          `because GOTCHIBOT_GATE_ALLOW_CACHED=1. Hero state may be stale.`,
-      );
-      heroes = cached.map((id) => ({ id, role: null }));
-      activeHeroId = activeHeroId ?? cached[0];
-    } else {
-      return {
-        ok: false,
-        code: "cartridge-unreachable",
-        message: `Cartridge API did not answer (${apiError || "no answer"}) — this is an infra problem, not a missing hero.`,
-        fix:
-          "Check the sim: ./scripts/gotchibot remote -- docker ps --filter name=cartridge (load skill infra-recover). " +
-          "If you know your heroes exist and need to work now: GOTCHIBOT_GATE_ALLOW_CACHED=1",
-        owner,
-        cartridgeId,
-        cachedHeroes: cached.length,
-      };
-    }
-  }
-
-  if (heroes.length === 0) {
-    return {
-      ok: false,
-      code: "heroes",
-      message: "Cartridge has no cAavegotchis — bind a starter or open a portal pack.",
-      fix:
-        "Mint/open at Concierge: " +
-        CONCIERGE_URL +
-        " · setup: " +
-        SETUP_URL +
-        " · steps: " +
-        LICENSE_STEPS.join(" → "),
-      fixUrl: CONCIERGE_URL,
-      setupUrl: SETUP_URL,
-      howto: LICENSE_STEPS,
-      owner,
-      cartridgeId,
-    };
-  }
-
-  const result = {
-    ok: true,
-    owner,
-    cartridgeId,
-    heroCount: heroes.length,
-    activeHeroId,
-    heroes: heroes.map((h) => ({ id: h.id, role: h.role ?? null })),
+  return {
+    ok: false,
+    code: "cartridge",
+    message: "No usable GotchiBot cartridge on Base Sepolia.",
+    fix: "Mint/open at Concierge: " + CONCIERGE_URL + " · setup: " + SETUP_URL,
+    fixUrl: CONCIERGE_URL,
+    setupUrl: SETUP_URL,
+    howto: LICENSE_STEPS,
+    source: "sepolia",
   };
-  if (!quiet) return result;
-  return result;
 }
 
 async function main() {

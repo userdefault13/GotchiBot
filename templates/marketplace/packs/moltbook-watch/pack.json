@@ -23,5 +23,6 @@
     "cron-hints.md",
     "playbook.json",
     "skills/browser-tool/SKILL.md"
-  ]
+  ],
+  "scope": "aarcade"
 }

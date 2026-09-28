@@ -72,7 +72,6 @@ const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 // the machine marked infra DEGRADED, which made the alert meaningless.
 const DEFAULT_WATCHED = [
   "aarcade-mongo",
-  "aarcade-cartridge-sim",
   "aarcade-subgraph-api",
   "aavegotchi-monolith-base-graphql-proxy-1",
   "aarcade-cartridge-base-envio-indexer-1",

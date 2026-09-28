@@ -143,7 +143,7 @@ async function main() {
     }
   }
 
-  step(4, total, "sim-mint cartridge");
+  step(4, total, "Base Sepolia cartridge");
   if (hasCartridge()) {
     ok("cartridge already cached — skipping init");
   } else {

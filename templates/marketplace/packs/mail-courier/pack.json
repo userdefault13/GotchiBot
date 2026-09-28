@@ -29,5 +29,6 @@
     "skills/abra-vault/SKILL.md",
     "skills/agentmail/SKILL.md",
     "skills/project-mailbox/SKILL.md"
-  ]
+  ],
+  "scope": "starter"
 }

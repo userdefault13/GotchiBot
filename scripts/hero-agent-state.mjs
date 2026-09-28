@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Push cAavegotchi agentStatus to the AarcadeGh-t cartridge sim.
+ * cAavegotchi agentStatus, kept in sessions/.hero-agent-state.json for the
+ * heroes on the desk's Base Sepolia cartridge.
  *
  * Statuses:
  *   available — not spun up as an agent
@@ -11,16 +12,16 @@
  *   watching  — cron / wait loop
  *
  * usage:
- *   abra run gotchibot -- node scripts/hero-agent-state.mjs set <heroId> <status> [--session id] [--task "…"] [--model m] [--host local|imac]
- *   abra run gotchibot -- node scripts/hero-agent-state.mjs sync
- *   abra run gotchibot -- node scripts/hero-agent-state.mjs get [heroId]
+ *   node scripts/hero-agent-state.mjs set <heroId> <status> [--session id] [--task "…"] [--model m] [--host local|imac]
+ *   node scripts/hero-agent-state.mjs sync
+ *   node scripts/hero-agent-state.mjs get [heroId]
  */
 import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readJsonMap, writeJsonAtomic } from "./json-store.mjs";
-import { call } from "./identity.mjs";
+import { isSepoliaCartridgeId, readSepoliaHeroes } from "./cartridge-sepolia.mjs";
 import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -92,25 +93,17 @@ export async function assertSandboxHeroAvailable(heroId) {
 
   let status = getCachedHeroStatus(id);
   try {
-    const meta = loadMeta();
-    if (meta?.cartridgeId && process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET) {
-      const snap = await call(`/cartridges/${meta.cartridgeId}`);
-      if (snap.ok) {
-        const heroes = (snap.data.cartridge ?? snap.data)?.cAavegotchis ?? [];
-        const h = heroes.find((x) => x.id === id);
-        if (!h) {
-          return {
-            ok: false,
-            code: "hero",
-            message: `hero ${id} not on cartridge — never auto-mint`,
-            fix: "Use /spawn overlay yourself to mint/bind, then retry when status is available",
-          };
-        }
-        status = String(h.agentStatus || "available").toLowerCase();
-      }
+    const heroes = await cartridgeHeroes();
+    if (!heroes.some((h) => h.id === id || h.heroKey === id)) {
+      return {
+        ok: false,
+        code: "hero",
+        message: `hero ${id} not on cartridge — never auto-mint`,
+        fix: "Use /spawn overlay yourself to mint/bind, then retry when status is available",
+      };
     }
   } catch {
-    // fall through to cache
+    // Sepolia unreachable — fall through to the local cache
   }
 
   if (status && status !== "available") {
@@ -131,19 +124,29 @@ export async function assertSandboxHeroAvailable(heroId) {
           ok: false,
           code: "hero",
           message: `cannot confirm ${id} is available (unknown hero)`,
-          fix: "abra run gotchibot -- node scripts/hero-agent-state.mjs sync  then retry with an available hero",
+          fix: "node scripts/hero-agent-state.mjs sync  then retry with an available hero",
         };
       }
     } catch {
       return {
         ok: false,
         code: "hero",
-        message: `cannot confirm ${id} is available (no cache/sim status)`,
+        message: `cannot confirm ${id} is available (no cached status)`,
         fix: "Sync hero state, then retry",
       };
     }
   }
   return { ok: true, heroId: id, agentStatus: status || "available" };
+}
+
+/** Heroes on the desk's Base Sepolia cartridge (throws when unreachable). */
+async function cartridgeHeroes() {
+  const meta = loadMeta();
+  if (!meta?.cartridgeId) throw new Error("no cartridge");
+  if (!isSepoliaCartridgeId(meta.cartridgeId)) {
+    throw new Error(`not a Base Sepolia cartridge id: ${meta.cartridgeId} — run ./scripts/gotchibot connect`);
+  }
+  return (await readSepoliaHeroes(meta.cartridgeId)).heroes;
 }
 
 function orchestratorHeroId(heroes = []) {
@@ -288,51 +291,13 @@ export async function setHeroAgentStatus(heroId, status, extra = {}) {
   if (!STATUSES.includes(st)) {
     throw new Error(`invalid status "${status}" (want ${STATUSES.join("|")})`);
   }
-  const body = {
-    status: st,
-    sessionId: extra.sessionId || undefined,
-    task: extra.task || undefined,
-    model: extra.model || undefined,
-    host: extra.host || undefined,
-  };
-  // Local cache first so the avatar pane flips even if the sim POST fails.
   writeLocalCache(heroId, st, extra);
-
-  const meta = loadMeta();
-  if (!meta?.cartridgeId) {
-    return { ok: true, cached: true, heroId, agentStatus: st };
-  }
-  if (!process.env.AARCADE_GOTCHIBOT_SERVICE_SECRET) {
-    return { ok: true, cached: true, heroId, agentStatus: st };
-  }
-
-  const r = await call(`/cartridges/${meta.cartridgeId}/heroes/${encodeURIComponent(heroId)}/agent-status`, {
-    method: "POST",
-    body,
-  });
-  if (!r.ok) {
-    return {
-      ok: true,
-      cached: true,
-      heroId,
-      agentStatus: st,
-      simError:
-        r.data?.error ||
-        (typeof r.data?.raw === "string" ? r.data.raw.slice(0, 120) : null) ||
-        `HTTP ${r.status}`,
-    };
-  }
-  return r.data;
+  return { ok: true, heroId, agentStatus: st };
 }
 
-/** Derive status from local (+cached remote) sessions and push to sim. */
+/** Derive status from local (+cached remote) sessions into the local cache. */
 export async function syncHeroAgentStatuses() {
-  const meta = loadMeta();
-  if (!meta?.cartridgeId) throw new Error("no cartridge");
-
-  const snap = await call(`/cartridges/${meta.cartridgeId}`);
-  if (!snap.ok) throw new Error(snap.data?.error || `GET cartridge HTTP ${snap.status}`);
-  const heroes = (snap.data.cartridge ?? snap.data)?.cAavegotchis ?? [];
+  const heroes = await cartridgeHeroes();
 
   /** @type {Map<string, { status: string, sessionId?: string, task?: string, model?: string }>} */
   const derived = new Map();
@@ -510,19 +475,21 @@ export async function syncHeroAgentStatuses() {
 }
 
 async function cmdGet(heroId) {
-  const meta = loadMeta();
-  if (!meta?.cartridgeId) throw new Error("no cartridge");
-  const snap = await call(`/cartridges/${meta.cartridgeId}`);
-  if (!snap.ok) throw new Error(snap.data?.error || `HTTP ${snap.status}`);
-  const heroes = (snap.data.cartridge ?? snap.data)?.cAavegotchis ?? [];
+  const heroes = await cartridgeHeroes();
+  let cache = {};
+  try {
+    cache = JSON.parse(readFileSync(CACHE, "utf8")) || {};
+  } catch {
+    /* no cache yet */
+  }
   const rows = heroes
     .filter((h) => !heroId || h.id === heroId)
     .map((h) => ({
       id: h.id,
-      agentStatus: h.agentStatus || "available",
-      agentSessionId: h.agentSessionId || null,
-      agentTask: h.agentTask || null,
-      agentUpdatedAt: h.agentUpdatedAt || null,
+      agentStatus: cache[h.id]?.status || "available",
+      agentSessionId: cache[h.id]?.sessionId || null,
+      agentTask: cache[h.id]?.task || null,
+      agentUpdatedAt: cache[h.id]?.at || null,
     }));
   console.log(JSON.stringify(rows, null, 2));
 }
@@ -549,19 +516,7 @@ async function main() {
       else if (rest[i] === "--host" && rest[i + 1]) extra.host = rest[++i];
     }
     const data = await setHeroAgentStatus(heroId, status, extra);
-    const hero = (data.cartridge ?? data)?.cAavegotchis?.find((h) => h.id === heroId);
-    console.log(
-      JSON.stringify(
-        {
-          ok: true,
-          heroId,
-          agentStatus: hero?.agentStatus || status,
-          agentSessionId: hero?.agentSessionId || null,
-        },
-        null,
-        2,
-      ),
-    );
+    console.log(JSON.stringify({ ...data, agentSessionId: extra.sessionId || null }, null, 2));
     return;
   }
   if (cmd === "sync") {

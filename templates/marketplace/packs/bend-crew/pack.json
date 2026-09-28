@@ -1,0 +1,41 @@
+{
+  "id": "bend-crew",
+  "roleId": "bend-crew",
+  "version": "1.0.0",
+  "title": "Bend crew (chief · laws · proofs)",
+  "summary": "Suite pack: seats the full Bend crew — bend-chief (route/merge), bend-laws (LAWS.bend), bend-proofs (PROOF.bend / checker green). One install, three roles.",
+  "scope": "starter",
+  "kind": "suite",
+  "members": [
+    "bend-chief",
+    "bend-laws",
+    "bend-proofs"
+  ],
+  "applyHint": "Suite — apply with --heroes role=hero,… for each member (never one hero for the whole crew).",
+  "skills": [
+    "bend-2",
+    "cursor-cli",
+    "browser-tool"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "No schedule declared in the playbook — this desk is wake-on-demand only."
+  ],
+  "tags": [
+    "starter",
+    "bend",
+    "suite",
+    "laws",
+    "proofs"
+  ],
+  "downloadPath": "packs/bend-crew",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/bend-2/SKILL.md",
+    "skills/browser-tool/SKILL.md",
+    "skills/cursor-cli/SKILL.md"
+  ]
+}

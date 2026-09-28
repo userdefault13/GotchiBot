@@ -83,7 +83,7 @@ function cmdSetup() {
   console.log("  What onboard does:");
   console.log("    1. wallet connect (MetaMask in browser)");
   console.log("    2. register install → saves GOTCHIBOT_INFRA_TOKEN in abra");
-  console.log("    3. sim-mint gotchibot cartridge");
+  console.log("    3. read your Base Sepolia gotchibot cartridge");
   console.log("    4. doctor checklist");
   console.log("");
   console.log("  Before onboard: node ≥ 18, tmux, abra on PATH — see docs/SOLO-LINUX-WINDOWS.md");

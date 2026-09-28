@@ -648,14 +648,15 @@ refresh_roster_async() {
   ) &
 }
 
-# Roster JSON -> "id\tstatus\tsvg\tcollateral\thaunt" rows.
+# Roster JSON -> "id␟status␟svg␟collateral␟haunt␟name" rows (US-separated:
+# `read` collapses runs of tab, so an empty tab field shifts every later one).
 roster_ids() {
   printf '%s' "${1:-}" | node -e '
     let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
       try {
         const j=JSON.parse(d);
         for (const o of (j.others||[])) {
-          console.log([o.id, o.status, o.svg||"", o.collateral||"", o.hauntId||""].join("\t"));
+          console.log([o.id, o.status, o.svg||"", o.collateral||"", o.hauntId||"", o.name||""].join("\x1f"));
         }
       } catch {}
     });
@@ -845,7 +846,7 @@ blank_block() {
 }
 
 cell_block() {
-  local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}"
+  local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}"
   local art label status_color
   case "$status" in
     working)
@@ -893,7 +894,8 @@ cell_block() {
     done < <(printf '%s' "$art")
   fi
   printf '%b%s%b\n' "$status_color" "$(center_pad "$label" "$cell_w")" "$AV_RST"
-  id_show="${id:0:$cell_w}"
+  id_show="${name:-$id}"
+  id_show="${id_show:0:$cell_w}"
   printf '%b%s%b\n' "$AV_ROSTER" "$(center_pad "$id_show" "$cell_w")" "$AV_RST"
 }
 
@@ -1044,8 +1046,8 @@ warm_other_cells() {
   local i v
   dbg "warm: $WARM_N tiles @ ${WARM_W}x${WARM_H}"
   for ((i = 0; i < WARM_N; i++)); do
-    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|$WARM_W|$WARM_H" \
-      cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}"
+    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|${W_NAME[i]}|$WARM_W|$WARM_H" \
+      cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}" "${W_NAME[i]}"
   done
   WARM_DONE=1
   dbg "warm: done"
@@ -1116,13 +1118,18 @@ render_body() {
   pin_id="$(focus_hero)"
   [ -z "$pin_id" ] && [ -f "$PIN" ] && pin_id="$(tr -d '[:space:]' < "$PIN")"
   [ -z "$pin_id" ] && pin_id="$(orch_id)"
+  local pin_name="" pin_show
+  pin_name="$(sed -n 's/^- \*\*Name:\*\* //p' "$ROOT/config/openclaw/workspaces/$pin_id/IDENTITY.md" 2>/dev/null | head -1)"
+  [ "$pin_name" = "$(printf '%s' "$pin_id" | tr '[:lower:]' '[:upper:]')" ] && pin_name=""
+  pin_show="$pin_id"
+  [ -n "$pin_name" ] && pin_show="$pin_name · $pin_id"
   local caption
-  caption="$(printf '%b%s %s %s%b  %b%s%b  %s' "$role_color" "$AV_RULE" "$role" "$AV_RULE" "$AV_RST" "$status_color" "$status" "$AV_RST" "${pin_id}")"
+  caption="$(printf '%b%s %s %s%b  %b%s%b  %s' "$role_color" "$AV_RULE" "$role" "$AV_RULE" "$AV_RST" "$status_color" "$status" "$AV_RST" "${pin_show}")"
 
   # Framed orch (art + caption) padded once per (art, caption, width); a page
   # flip or a repaint only replays the lines. Do not clip the face.
   local hdr
-  memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_id" \
+  memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_show" \
     render_header_block "$main" "$caption" "$cols" "$main_budget"
   while IFS= read -r line || [ -n "$line" ]; do
     put_line "$row" "$line"
@@ -1160,14 +1167,15 @@ render_body() {
   local cell_h=10
   [ "$cols" -ge 90 ] && cell_h=12
 
-  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR
-  while IFS=$'\t' read -r iid ist isvg icol ihaunt; do
+  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR
+  while IFS=$'\x1f' read -r iid ist isvg icol ihaunt iname; do
     [ -z "$iid" ] && continue
     ID_ARR+=("$iid")
     ST_ARR+=("$ist")
     SVG_ARR+=("$isvg")
     COL_ARR+=("$icol")
     HAUNT_ARR+=("$ihaunt")
+    NAME_ARR+=("$iname")
   done < <(printf '%s\n' "$ids")
 
   load_page
@@ -1187,6 +1195,7 @@ render_body() {
   W_SVG=("${SVG_ARR[@]}")
   W_COL=("${COL_ARR[@]}")
   W_HAUNT=("${HAUNT_ARR[@]}")
+  W_NAME=("${NAME_ARR[@]}")
 
   local i left mid right pair k1="" k2="" k3=""
   i=$((PAGE * page_size))
@@ -1195,19 +1204,19 @@ render_body() {
   right=""
   if [ "$i" -lt "$n_ids" ]; then
     # r| = roster traits on large thumb; bump if roster tile art format changes
-    k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|$cell_w|$cell_h"
+    k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|$cell_w|$cell_h"
     memo_call left "$k1" \
-      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}"
+      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}"
   fi
   if [ $((i + 1)) -lt "$n_ids" ]; then
-    k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|$cell_w|$cell_h"
+    k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|$cell_w|$cell_h"
     memo_call mid "$k2" \
-      cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}"
+      cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}"
   fi
   if [ $((i + 2)) -lt "$n_ids" ]; then
-    k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|$cell_w|$cell_h"
+    k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|$cell_w|$cell_h"
     memo_call right "$k3" \
-      cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}"
+      cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}"
   fi
   memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
   while IFS= read -r line || [ -n "$line" ]; do

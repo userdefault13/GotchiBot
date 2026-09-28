@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { checkSpawnGate } from "./wallet-gate.mjs";
 import { getTopology } from "./topology.mjs";
 import { assertSandboxHeroAvailable } from "./hero-agent-state.mjs";
+import { ensureProfWorkerSeat } from "./ensure-prof-worker.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DISPATCH = `${ROOT}/scripts/opencode-dispatch.sh`;
@@ -155,6 +156,28 @@ async function cmdSpawn(argv) {
     console.error(`spawn blocked (${gate.code}): ${gate.message}`);
     if (gate.fix) console.error(`fix: ${gate.fix}`);
     process.exit(gate.code === "wallet" ? 10 : gate.code === "cartridge" ? 11 : 12);
+  }
+
+  // Request/generic subs: Prof. Link-Cube seats pack `worker` (+ Prof tool index).
+  const seatHero =
+    String(process.env.GOTCHIBOT_HERO_ID || "").trim() || gate.spawnHeroId || "";
+  if (seatHero && !process.env.GOTCHIBOT_HERO_ID) {
+    process.env.GOTCHIBOT_HERO_ID = seatHero;
+  }
+  if (seatHero) {
+    const seat = ensureProfWorkerSeat(seatHero);
+    if (!seat.ok) {
+      console.error(`spawn blocked (prof-worker): ${seat.reason}`);
+      console.error(
+        "fix: ./scripts/gotchibot templates apply worker --hero <available> --yes  (Prof. Link-Cube)",
+      );
+      process.exit(14);
+    }
+    if (seat.applied) {
+      console.error(`Prof. Link-Cube seated worker → ${seat.heroId} (tools: config/worker-index.json)`);
+    } else if (seat.skipped && process.env.GOTCHIBOT_SPAWN_VERBOSE === "1") {
+      console.error(`prof-worker skip: ${seat.reason}`);
+    }
   }
 
   let model = "sub";

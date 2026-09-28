@@ -27,5 +27,6 @@
     "skills/browser-tool/SKILL.md",
     "skills/market-news-feed/SKILL.md",
     "skills/pymupdf/SKILL.md"
-  ]
+  ],
+  "scope": "starter"
 }

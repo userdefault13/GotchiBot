@@ -19,16 +19,163 @@ import { isMainModule } from "./is-main.mjs";
 import {
   readGotchiBotCartridgeSepolia,
   readAbraCartridgeSepolia,
+  readSepoliaHeroes,
   formatAbraCartLine,
 } from "./cartridge-sepolia.mjs";
 import { loadMeta, saveMeta } from "./identity.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WALLET_PATH = `${ROOT}/sessions/.wallet.json`;
+const AARCADE_ASSETS = resolve(ROOT, "assets/aarcade");
 const PORT = Number(process.env.GOTCHIBOT_MINT_PORT ?? 8789);
 const CHAIN_ID = 84532;
 const CHAIN_HEX = "0x14a34";
 const CONCIERGE = "https://www.aarcadeghst.com/concierge/terminal";
+
+/** Shared AarcadeGh-t chrome: Pixelar + ghost-mask bg (same as aarcadeghst.com body::before). */
+function aarcadePageStyles() {
+  return `
+@font-face {
+  font-display: swap;
+  font-family: Pixelar;
+  font-style: normal;
+  font-weight: 400;
+  src: url('/assets/PixelarRegular.woff2') format('woff2');
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { background: #1a0a2e; min-height: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  font-family: 'Pixelar', monospace;
+  color: #fff;
+  background: #1a0a2e;
+  image-rendering: pixelated;
+  -webkit-font-smoothing: none;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: #ffffff;
+  -webkit-mask-image: url('/assets/bg.svg');
+  mask-image: url('/assets/bg.svg');
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  -webkit-mask-size: 307px 326px;
+  mask-size: 307px 326px;
+  opacity: 0.12;
+}
+.shell { position: relative; z-index: 1; width: min(100%, 520px); }
+.card {
+  background: #12032e;
+  border: 4px solid #8b57ff;
+  box-shadow: 0 6px 0 0 #5a2d9e;
+  border-radius: 6px;
+  padding: 1.5rem 1.75rem 1.75rem;
+  color: #e9e0ff;
+}
+.kicker {
+  margin: 0 0 0.35rem;
+  color: #d8b4fe;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 1rem;
+  font-family: 'Pixelar', monospace;
+}
+h2 {
+  margin: 0 0 0.65rem;
+  color: #fff;
+  text-transform: uppercase;
+  line-height: 1.15;
+  font-size: 1.85rem;
+  font-family: 'Pixelar', monospace;
+  font-weight: 400;
+}
+.hint, p.hint {
+  margin: 0;
+  color: #c4b5fd;
+  font-size: 1.15rem;
+  line-height: 1.45;
+  font-family: 'Pixelar', monospace;
+}
+.hint code, code {
+  font-family: 'Pixelar', monospace;
+  color: #f9a8d4;
+  font-size: 1.05em;
+}
+.legs { margin: 1rem 0 0; padding: 0; list-style: none; }
+.legs li {
+  padding: 0.65rem 0;
+  border-bottom: 1px solid rgba(139, 87, 255, 0.35);
+  font-size: 1.1rem;
+  color: #e9e0ff;
+  font-family: 'Pixelar', monospace;
+  line-height: 1.35;
+}
+.legs li b { color: #fff; font-weight: 400; text-transform: uppercase; }
+button, .btn {
+  display: block;
+  width: 100%;
+  margin-top: 1.1rem;
+  padding: 0.85rem 1.25rem;
+  border: 3px solid #3a0d8a;
+  border-radius: 4px;
+  background: #6d18f8;
+  color: #fff;
+  font-family: 'Pixelar', monospace;
+  font-size: 1.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  image-rendering: pixelated;
+  box-shadow: 0 3px 0 0 #3a0d8a;
+}
+button:hover:not(:disabled), .btn:hover:not(:disabled) { background: #7c3aed; }
+button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 0 #3a0d8a; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.status {
+  margin-top: 1rem;
+  min-height: 1.4em;
+  font-size: 1.15rem;
+  line-height: 1.4;
+  color: #d8b4fe;
+  font-family: 'Pixelar', monospace;
+}
+.status.ok { color: #4ade80; }
+.status.err { color: #f9a8d4; }
+`.trim();
+}
+
+function tryServeAarcadeAsset(pathname, res) {
+  const map = {
+    "/assets/bg.svg": { file: "bg.svg", type: "image/svg+xml" },
+    "/assets/PixelarRegular.woff2": { file: "PixelarRegular.woff2", type: "font/woff2" },
+  };
+  const hit = map[pathname];
+  if (!hit) return false;
+  const full = resolve(AARCADE_ASSETS, hit.file);
+  if (!full.startsWith(AARCADE_ASSETS)) return false;
+  try {
+    const buf = readFileSync(full);
+    res.writeHead(200, {
+      "Content-Type": hit.type,
+      "Cache-Control": "public, max-age=86400",
+      "Access-Control-Allow-Origin": "*",
+    });
+    res.end(buf);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const TIER_ENUM = { golden: 0, silver: 1, standard: 2 };
 const GBOT_LICENSE_ABI = [
@@ -111,6 +258,7 @@ function mintConfig() {
       process.env.VITE_ABRA_CARTRIDGE_MINTER ||
       cfg.abraCartridgeMinter ||
       "",
+    l1AavegotchiDiamond: cfg.l1AavegotchiDiamond || process.env.L1_AAVEGOTCHI_DIAMOND || "",
     usdc,
     ghst,
   };
@@ -315,10 +463,7 @@ export async function refreshDeskMeta(wallet) {
     abraVerified: Boolean(abra.verified),
   };
   const meta = loadMeta() || {};
-  if (String(meta.cartridgeId || "").startsWith("sim-") && !patch.cartridgeId) {
-    patch.legacySimCartridgeId = meta.cartridgeId;
-  }
-  // New Sepolia nest install: drop sim/OpenClaw session→hero history so avatar
+  // New Sepolia nest install: drop OpenClaw session→hero history so avatar
   // gallery doesn't preload old fleet thumbs.
   const nestHeroes = new Set((gbot.heroes || []).map((id) => String(id)));
   const cartChanged =
@@ -357,29 +502,16 @@ function renderMintPage(plan) {
   const planJson = JSON.stringify(plan);
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>GotchiBot sealed mint</title>
-<style>
-  body{font-family:-apple-system,sans-serif;background:#141220;color:#eee;display:flex;
-       align-items:center;justify-content:center;min-height:100vh;margin:0;padding:1rem}
-  .card{background:#1e1b2e;padding:2rem 2.5rem;border-radius:16px;max-width:520px;width:100%}
-  h2{margin:0 0 .5rem}
-  .hint{color:#888;font-size:.85rem;line-height:1.4}
-  .legs{margin:1rem 0;padding:0;list-style:none}
-  .legs li{padding:.5rem 0;border-bottom:1px solid #2a2640;font-size:.9rem}
-  button{background:#8b5cf6;color:#fff;border:0;border-radius:10px;padding:.9rem 2rem;
-         font-size:1rem;cursor:pointer;width:100%;margin-top:.75rem}
-  button:hover{background:#7c3aed}
-  button:disabled{opacity:.5;cursor:not-allowed}
-  .status{margin-top:1rem;font-size:.9rem;line-height:1.4;color:#a78bfa;min-height:1.4em}
-  .ok{color:#4ade80}.err{color:#f87171}
-</style></head>
-<body><div class="card">
+<style>${aarcadePageStyles()}</style></head>
+<body><div class="shell"><div class="card">
+  <p class="kicker">AarcadeGh-t · Base Sepolia</p>
   <h2>Mint sealed cartridge</h2>
-  <p class="hint">Base Sepolia · MetaMask will ask you to switch chain, approve spend, then mint.
+  <p class="hint">MetaMask will ask you to switch chain, approve spend, then mint.
   GotchiBot never sees your private key.</p>
   <ul class="legs" id="legs"></ul>
   <button type="button" id="go">Connect &amp; mint</button>
   <div class="status" id="status"></div>
-</div>
+</div></div>
 <script>
 const PLAN = ${planJson};
 const CHAIN_ID = ${CHAIN_ID};
@@ -544,6 +676,7 @@ function runMintServer(plan) {
     };
 
     const server = http.createServer((req, res) => {
+      const u = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
       if (req.method === "OPTIONS") {
         res.writeHead(204, {
           "Access-Control-Allow-Origin": "*",
@@ -553,12 +686,13 @@ function runMintServer(plan) {
         res.end();
         return;
       }
-      if (req.url === "/" || req.url === "/index.html") {
+      if (tryServeAarcadeAsset(u.pathname, res)) return;
+      if (u.pathname === "/" || u.pathname === "/index.html") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderMintPage(plan));
         return;
       }
-      if (req.url === "/callback" && req.method === "POST") {
+      if (u.pathname === "/callback" && req.method === "POST") {
         let body = "";
         req.on("data", (c) => (body += c));
         req.on("end", () => {
@@ -737,6 +871,7 @@ export async function runOpenSealedCart({ expectWallet, cartridgeId, auto = true
 
     const server = http.createServer((req, res) => {
       const u = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+      if (tryServeAarcadeAsset(u.pathname, res)) return;
       if (u.pathname === "/" || u.pathname === "/open") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderOpenPage(plan));
@@ -782,26 +917,15 @@ function renderOpenPage(plan) {
   const planJson = JSON.stringify(plan);
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Open sealed GotchiBot cart</title>
-<style>
-  body{font-family:-apple-system,sans-serif;background:#141220;color:#eee;display:flex;
-       align-items:center;justify-content:center;min-height:100vh;margin:0;padding:1rem}
-  .card{background:#1e1b2e;padding:2rem 2.5rem;border-radius:16px;max-width:480px;width:100%}
-  h2{margin:0 0 .5rem}
-  .hint{color:#888;font-size:.85rem;line-height:1.4}
-  button{background:#8b5cf6;color:#fff;border:0;border-radius:10px;padding:.9rem 2rem;
-         font-size:1rem;cursor:pointer;width:100%;margin-top:.75rem}
-  button:hover{background:#7c3aed}
-  button:disabled{opacity:.5;cursor:not-allowed}
-  .status{margin-top:1rem;font-size:.9rem;line-height:1.4;color:#a78bfa;min-height:1.4em}
-  .ok{color:#4ade80}.err{color:#f87171}
-</style></head>
-<body><div class="card">
+<style>${aarcadePageStyles()}</style></head>
+<body><div class="shell"><div class="card">
+  <p class="kicker">AarcadeGh-t · Base Sepolia</p>
   <h2>Open sealed cartridge</h2>
-  <p class="hint">Base Sepolia · MetaMask will ask you to switch chain, then call
+  <p class="hint">MetaMask will ask you to switch chain, then call
   <code>open(#${plan.cartridgeId})</code>. After this you can bind a gotchi as orch.</p>
   <button type="button" id="go">Connect &amp; open</button>
   <div class="status" id="status"></div>
-</div>
+</div></div>
 <script type="module">
 const PLAN = ${planJson};
 const CHAIN_ID = ${CHAIN_ID};
@@ -870,6 +994,455 @@ document.getElementById('go').onclick = async () => {
     const receipt = await tx.wait();
     status.className = 'status ok';
     status.textContent = 'Opened · ' + (receipt?.hash || tx.hash);
+    await postDone({ ok: true, txHash: receipt?.hash || tx.hash });
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = friendlyError(e);
+    await postDone({ ok: false, error: friendlyError(e) });
+    btn.disabled = false;
+  }
+};
+</script></body></html>`;
+}
+
+/**
+ * MetaMask page: CAavegotchiFacet.bindOwned(cartridgeId, sourceTokenId) on Base Sepolia.
+ */
+export async function runBindOwned({
+  expectWallet,
+  cartridgeId,
+  sourceTokenId,
+  auto = true,
+} = {}) {
+  const cfg = mintConfig();
+  const diamond = cfg.cartridgeDiamond;
+  if (!diamond) throw new Error("cartridgeDiamond missing from chain config");
+  if (!cartridgeId) throw new Error("cartridgeId required to bind");
+  if (!sourceTokenId) throw new Error("sourceTokenId required to bind");
+
+  // Preflight: bindOwned needs L1 (or Sepolia Mock L1) ownerOf on this chain.
+  try {
+    const ethers = await getEthers();
+    const rpc = process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org";
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const l1Cfg = String(cfg.l1AavegotchiDiamond || "").trim();
+    if (!l1Cfg || l1Cfg === ethers.ZeroAddress) {
+      return {
+        ok: false,
+        error:
+          "No l1AavegotchiDiamond in config — set Mock L1 (Sepolia) or real Base diamond. Or use bindStarter (collateral).",
+      };
+    }
+    const code = await provider.getCode(l1Cfg);
+    if (!code || code === "0x") {
+      return {
+        ok: false,
+        error:
+          "l1AavegotchiDiamond has no code on this chain — bindOwned will revert. Check config or use bindStarter.",
+      };
+    }
+  } catch {
+    /* continue to MetaMask; page friendlyError covers call failures */
+  }
+
+  freePort();
+  const plan = {
+    expectWallet: String(expectWallet || "").toLowerCase(),
+    cartridgeId: String(cartridgeId),
+    sourceTokenId: String(sourceTokenId),
+    diamond,
+  };
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (out) => {
+      if (settled) return;
+      settled = true;
+      try {
+        server.close();
+      } catch {
+        /* ignore */
+      }
+      resolve(out);
+    };
+
+    const server = http.createServer((req, res) => {
+      const u = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+      if (tryServeAarcadeAsset(u.pathname, res)) return;
+      if (u.pathname === "/" || u.pathname === "/bind") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderBindPage(plan));
+        return;
+      }
+      if (u.pathname === "/done" && req.method === "POST") {
+        let body = "";
+        req.on("data", (c) => {
+          body += c;
+        });
+        req.on("end", () => {
+          try {
+            const j = JSON.parse(body || "{}");
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true }));
+            finish({ ok: Boolean(j.ok), txHash: j.txHash || null, error: j.error || null });
+          } catch (e) {
+            res.writeHead(400);
+            res.end("bad json");
+            finish({ ok: false, error: String(e?.message || e) });
+          }
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end("not found");
+    });
+
+    server.listen(PORT, "127.0.0.1", () => {
+      const url = `http://127.0.0.1:${PORT}/bind`;
+      console.log(`\n  Opening MetaMask bind page → ${url}`);
+      console.log("  Confirm bindOwned in the browser, then return here.\n");
+      if (auto) openBrowser(url);
+    });
+
+    setTimeout(() => {
+      if (!settled) finish({ ok: false, error: "bind timed out (5 min)" });
+    }, 5 * 60 * 1000);
+  });
+}
+
+function renderBindPage(plan) {
+  const planJson = JSON.stringify(plan);
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Bind gotchi into cart</title>
+<style>${aarcadePageStyles()}</style></head>
+<body><div class="shell"><div class="card">
+  <p class="kicker">AarcadeGh-t · Base Sepolia</p>
+  <h2>Bind owned gotchi</h2>
+  <p class="hint">MetaMask will ask you to switch chain, then call
+  <code>bindOwned(#${plan.cartridgeId}, #${plan.sourceTokenId})</code>
+  — adds owned-${plan.sourceTokenId} to the cart roster (#${plan.cartridgeId}).</p>
+  <button type="button" id="go">Connect &amp; bind</button>
+  <div class="status" id="status"></div>
+</div></div>
+<script type="module">
+const PLAN = ${planJson};
+const CHAIN_HEX = '${CHAIN_HEX}';
+
+function friendlyError(e) {
+  const msg = String(e?.message || e || '');
+  if (/user rejected|rejected the request|4001/i.test(msg)) return 'Cancelled in wallet.';
+  if (/metamask extension not found/i.test(msg)) return 'Install MetaMask in Chrome/Brave, reload, retry.';
+  if (/!owner/i.test(msg)) return 'Wallet does not own that gotchi.';
+  if (/bound/i.test(msg)) return 'Already bound on this cart.';
+  if (/!open|sealed|requireOpen|SEALED/i.test(msg)) return 'Cart must be open before bind.';
+  if (/LINE_A_UNPAID/i.test(msg)) return 'Cart Line A unpaid — finish mint first.';
+  if (/missing revert data|CALL_EXCEPTION|estimateGas/i.test(msg)) {
+    return 'bindOwned reverted — check Mock L1 ownership (ownerOf) for this token id, or use Mint collateral cAavegotchi.';
+  }
+  // Truncate giant ethers dumps
+  if (msg.length > 220) return msg.slice(0, 200) + '…';
+  return msg || 'Unknown error';
+}
+
+function pickWallet() {
+  if (window.ethereum?.isMetaMask) return window.ethereum;
+  if (window.ethereum) return window.ethereum;
+  throw new Error('MetaMask extension not found');
+}
+
+async function ensureChain(eth) {
+  try {
+    await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_HEX }] });
+  } catch (e) {
+    if (e?.code === 4902) {
+      await eth.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: CHAIN_HEX,
+          chainName: 'Base Sepolia',
+          nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+          rpcUrls: ['https://sepolia.base.org'],
+          blockExplorerUrls: ['https://sepolia.basescan.org'],
+        }],
+      });
+    } else throw e;
+  }
+}
+
+async function postDone(payload) {
+  await fetch('/done', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+}
+
+document.getElementById('go').onclick = async () => {
+  const status = document.getElementById('status');
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Connecting…';
+  try {
+    const eth = pickWallet();
+    await ensureChain(eth);
+    const accounts = await eth.request({ method: 'eth_requestAccounts' });
+    const from = String(accounts[0] || '').toLowerCase();
+    if (PLAN.expectWallet && from !== PLAN.expectWallet) {
+      throw new Error('Wrong wallet — desk expects ' + PLAN.expectWallet + ', MetaMask has ' + from);
+    }
+    status.textContent = 'Confirm bindOwned in MetaMask…';
+    const { BrowserProvider, Contract } = await import('https://cdn.jsdelivr.net/npm/ethers@6.13.4/+esm');
+    const provider = new BrowserProvider(eth);
+    const signer = await provider.getSigner();
+    const abi = ['function bindOwned(uint256 cartridgeId, uint256 sourceTokenId)'];
+    const c = new Contract(PLAN.diamond, abi, signer);
+    const tx = await c.bindOwned(BigInt(PLAN.cartridgeId), BigInt(PLAN.sourceTokenId));
+    status.textContent = 'Waiting for confirmation…';
+    const receipt = await tx.wait();
+    status.className = 'status ok';
+    status.textContent = 'Bound · ' + (receipt?.hash || tx.hash);
+    await postDone({ ok: true, txHash: receipt?.hash || tx.hash });
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = friendlyError(e);
+    await postDone({ ok: false, error: friendlyError(e) });
+    btn.disabled = false;
+  }
+};
+</script></body></html>`;
+}
+
+/**
+ * MetaMask page: CAavegotchiFacet.bindStarter(cartridgeId, templateId, collateral) payable 5 ETH.
+ */
+export async function runBindStarter({
+  expectWallet,
+  cartridgeId,
+  templateId,
+  collateral = "0x0000000000000000000000000000000000000000",
+  auto = true,
+} = {}) {
+  const cfg = mintConfig();
+  const diamond = cfg.cartridgeDiamond;
+  if (!diamond) throw new Error("cartridgeDiamond missing from chain config");
+  if (!cartridgeId) throw new Error("cartridgeId required to bind starter");
+  if (!templateId) throw new Error("templateId required to bind starter");
+
+  freePort();
+  const plan = {
+    expectWallet: String(expectWallet || "").toLowerCase(),
+    cartridgeId: String(cartridgeId),
+    templateId: String(templateId),
+    collateral: String(collateral || "0x0000000000000000000000000000000000000000"),
+    diamond,
+    feeEth: "5",
+  };
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (out) => {
+      if (settled) return;
+      settled = true;
+      try {
+        server.close();
+      } catch {
+        /* ignore */
+      }
+      resolve(out);
+    };
+
+    const server = http.createServer((req, res) => {
+      const u = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+      if (tryServeAarcadeAsset(u.pathname, res)) return;
+      if (u.pathname === "/" || u.pathname === "/bind-starter") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderBindStarterPage(plan));
+        return;
+      }
+      if (u.pathname === "/done" && req.method === "POST") {
+        let body = "";
+        req.on("data", (c) => {
+          body += c;
+        });
+        req.on("end", () => {
+          try {
+            const j = JSON.parse(body || "{}");
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true }));
+            finish({ ok: Boolean(j.ok), txHash: j.txHash || null, error: j.error || null });
+          } catch (e) {
+            res.writeHead(400);
+            res.end("bad json");
+            finish({ ok: false, error: String(e?.message || e) });
+          }
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end("not found");
+    });
+
+    server.listen(PORT, "127.0.0.1", () => {
+      const url = `http://127.0.0.1:${PORT}/bind-starter`;
+      console.log(`\n  Opening MetaMask bindStarter page → ${url}`);
+      console.log("  Confirm bindStarter (5 ETH) in the browser, then return here.\n");
+      if (auto) openBrowser(url);
+    });
+
+    setTimeout(() => {
+      if (!settled) finish({ ok: false, error: "bindStarter timed out (5 min)" });
+    }, 5 * 60 * 1000);
+  });
+}
+
+function deskTarget() {
+  const meta = loadMeta() || {};
+  const wallet = String(meta.owner || readWallet() || "").toLowerCase();
+  if (!wallet) throw new Error("No wallet — run ./scripts/gotchibot connect first");
+  const cartridgeId = meta.cartridgeId ? String(meta.cartridgeId) : null;
+  if (!cartridgeId) throw new Error(`No GotchiBot cart on file — mint one: ${CONCIERGE}`);
+  return { wallet, cartridgeId };
+}
+
+async function deskHeroIds(cartridgeId) {
+  return (await readSepoliaHeroes(cartridgeId)).heroes.map((h) => String(h.id));
+}
+
+/** Bind a wallet-owned gotchi to the desk cart (MetaMask bindOwned). @returns `owned-<tokenId>` */
+export async function bindOwnedToDesk(sourceTokenId) {
+  const { wallet, cartridgeId } = deskTarget();
+  const tokenId = String(sourceTokenId);
+  const bound = await runBindOwned({ expectWallet: wallet, cartridgeId, sourceTokenId: tokenId });
+  if (!bound?.ok) throw new Error(`bindOwned #${tokenId}: ${bound?.error || "cancelled"}`);
+  await refreshDeskMeta(wallet).catch(() => {});
+  return `owned-${tokenId}`;
+}
+
+/**
+ * Mint a $5 starter cAavegotchi on the desk cart (MetaMask bindStarter).
+ * @param {{ id: string, libraryName?: string, hauntId?: number, collateralType?: string }} option
+ *   a starter collateral from loadBaseStarterCollaterals()
+ * @returns {Promise<string>} the new hero id
+ */
+export async function bindStarterToDesk(option) {
+  if (!option?.id) throw new Error("starter collateral required");
+  const { wallet, cartridgeId } = deskTarget();
+  const collateral = String(option.collateralType || "").startsWith("0x")
+    ? String(option.collateralType)
+    : "0x0000000000000000000000000000000000000000";
+  const before = new Set(await deskHeroIds(cartridgeId));
+  const bound = await runBindStarter({ expectWallet: wallet, cartridgeId, templateId: option.id, collateral });
+  if (!bound?.ok) throw new Error(`bindStarter ${option.id}: ${bound?.error || "cancelled"}`);
+  await refreshDeskMeta(wallet).catch(() => {});
+  const fresh = (await deskHeroIds(cartridgeId)).filter((id) => !before.has(id));
+  if (!fresh.length) {
+    throw new Error(`bindStarter confirmed (${bound.txHash || "no tx"}) but no new hero on cart ${cartridgeId}`);
+  }
+  const heroId = fresh[fresh.length - 1];
+  try {
+    const { persistHeroCollateral, findCollateralColors } = await import("./collateral-resolve.mjs");
+    const colors = findCollateralColors(collateral !== "0x0000000000000000000000000000000000000000" ? collateral : option.id, option.hauntId || 1);
+    persistHeroCollateral(heroId, {
+      collateral: option.id,
+      collateralAddress: collateral,
+      collateralName: colors?.name || option.libraryName || null,
+      hauntId: option.hauntId || 1,
+      primary: colors?.primary,
+      secondary: colors?.secondary,
+    });
+  } catch {
+    /* thumb colors are cosmetic */
+  }
+  return heroId;
+}
+
+function renderBindStarterPage(plan) {
+  const planJson = JSON.stringify(plan);
+  const collShort =
+    plan.collateral && plan.collateral !== "0x0000000000000000000000000000000000000000"
+      ? `${plan.collateral.slice(0, 8)}…`
+      : "zero address";
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Mint collateral cAavegotchi</title>
+<style>${aarcadePageStyles()}</style></head>
+<body><div class="shell"><div class="card">
+  <p class="kicker">AarcadeGh-t · Base Sepolia</p>
+  <h2>Mint collateral cAavegotchi</h2>
+  <p class="hint">MetaMask will call
+  <code>bindStarter(#${plan.cartridgeId}, ${plan.templateId}, ${collShort})</code>
+  with <code>${plan.feeEth} ETH</code> — adds a starter cGotchi to the cart roster.</p>
+  <button type="button" id="go">Connect &amp; mint</button>
+  <div class="status" id="status"></div>
+</div></div>
+<script type="module">
+const PLAN = ${planJson};
+const CHAIN_HEX = '${CHAIN_HEX}';
+
+function friendlyError(e) {
+  const msg = String(e?.message || e || '');
+  if (/user rejected|rejected the request|4001/i.test(msg)) return 'Cancelled in wallet.';
+  if (/metamask extension not found/i.test(msg)) return 'Install MetaMask in Chrome/Brave, reload, retry.';
+  if (/bind fee|insufficient funds/i.test(msg)) return 'Need 5 ETH on Base Sepolia for starter bind fee.';
+  if (/!open|sealed|requireOpen/i.test(msg)) return 'Cart must be open before bind.';
+  return msg || 'Unknown error';
+}
+
+function pickWallet() {
+  if (window.ethereum?.isMetaMask) return window.ethereum;
+  if (window.ethereum) return window.ethereum;
+  throw new Error('MetaMask extension not found');
+}
+
+async function ensureChain(eth) {
+  try {
+    await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_HEX }] });
+  } catch (e) {
+    if (e?.code === 4902) {
+      await eth.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: CHAIN_HEX,
+          chainName: 'Base Sepolia',
+          nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+          rpcUrls: ['https://sepolia.base.org'],
+          blockExplorerUrls: ['https://sepolia.basescan.org'],
+        }],
+      });
+    } else throw e;
+  }
+}
+
+async function postDone(payload) {
+  await fetch('/done', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+}
+
+document.getElementById('go').onclick = async () => {
+  const status = document.getElementById('status');
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Connecting…';
+  try {
+    const eth = pickWallet();
+    await ensureChain(eth);
+    const accounts = await eth.request({ method: 'eth_requestAccounts' });
+    const from = String(accounts[0] || '').toLowerCase();
+    if (PLAN.expectWallet && from !== PLAN.expectWallet) {
+      throw new Error('Wrong wallet — desk expects ' + PLAN.expectWallet + ', MetaMask has ' + from);
+    }
+    status.textContent = 'Confirm bindStarter (5 ETH) in MetaMask…';
+    const { BrowserProvider, Contract, id, parseEther } = await import('https://cdn.jsdelivr.net/npm/ethers@6.13.4/+esm');
+    const provider = new BrowserProvider(eth);
+    const signer = await provider.getSigner();
+    const abi = ['function bindStarter(uint256 cartridgeId, bytes32 templateId, address collateral) payable'];
+    const c = new Contract(PLAN.diamond, abi, signer);
+    const tx = await c.bindStarter(
+      BigInt(PLAN.cartridgeId),
+      id(PLAN.templateId),
+      PLAN.collateral,
+      { value: parseEther(PLAN.feeEth) }
+    );
+    status.textContent = 'Waiting for confirmation…';
+    const receipt = await tx.wait();
+    status.className = 'status ok';
+    status.textContent = 'Minted · ' + (receipt?.hash || tx.hash);
     await postDone({ ok: true, txHash: receipt?.hash || tx.hash });
   } catch (e) {
     status.className = 'status err';

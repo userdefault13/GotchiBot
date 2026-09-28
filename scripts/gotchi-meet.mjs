@@ -1536,7 +1536,7 @@ function profLinkCubeMeetDigest() {
   const soul = readCap("SOUL.md", 12);
   const identity = readCap("IDENTITY.md", 12);
   let digest = [
-    "--- factory NPC digest (prof-link-cube) ---",
+    "--- factory professor digest (prof-link-cube) ---",
     agents,
     "",
     "--- SOUL (excerpt) ---",
