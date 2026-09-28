@@ -236,6 +236,13 @@ export function loadHeroState(heroId) {
 /**
  * Merge collateral + colors onto the hero cache without clobbering status.
  */
+function coerceTraits6Local(v) {
+  if (!Array.isArray(v) || v.length < 6) return null;
+  const out = v.slice(0, 6).map((n) => Number(n));
+  if (out.some((n) => !Number.isFinite(n))) return null;
+  return out;
+}
+
 export function persistHeroCollateral(heroId, info = {}) {
   if (!heroId) return null;
   mkdirSync(SESSIONS, { recursive: true });
@@ -260,6 +267,9 @@ export function persistHeroCollateral(heroId, info = {}) {
     primary: hexNormalize(info.primary) || colors?.primary || prev.primary || null,
     secondary: hexNormalize(info.secondary) || colors?.secondary || prev.secondary || null,
     sourceTokenId: info.sourceTokenId || prev.sourceTokenId || tokenIdFromHeroId(heroId) || null,
+    // Eye cheeks: traits[4]=eyeShape, traits[5]=eyeColor (00–99).
+    modifiedTraits: coerceTraits6Local(info.modifiedTraits) || coerceTraits6Local(info.numericTraits) || prev.modifiedTraits || null,
+    numericTraits: coerceTraits6Local(info.numericTraits) || prev.numericTraits || null,
     at: new Date().toISOString(),
   };
   all[heroId] = next;

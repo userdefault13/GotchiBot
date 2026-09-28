@@ -314,7 +314,7 @@ function usage() {
   bot-inbox.mjs archive <id>
   bot-inbox.mjs digest [--json]
   bot-inbox.mjs unread [--to userdefault]
-  bot-inbox.mjs tui                  # interactive list+body (cockpit / tty)
+  bot-inbox.mjs tui                  # iMessage layout: agents | thread (cockpit / tty)
 
 Internal only — never AgentMail. Address UserDefault in bodies.`);
   process.exit(2);
