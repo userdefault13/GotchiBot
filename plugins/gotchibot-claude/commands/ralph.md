@@ -7,7 +7,7 @@ allowed-tools: Bash(./scripts/gotchibot ralph:*), Bash(node scripts/ralph-orch.m
 Load and follow **ralph** now:
 
 1. Read `.opencode/skills/ralph/SKILL.md` in full (Cursor pointer: `.cursor/skills/ralph`).
-2. You are the **chief** (owned-954) — frame the loop prompt, the completion promise, and max-iterations (default 20, never unlimited).
+2. You are the **chief** (orchestrator) — frame the loop prompt, the completion promise, and max-iterations (default 20, never unlimited).
 3. Start the loop:
    ```bash
    ./scripts/gotchibot ralph start --prompt "…" --max-iterations 20 --completion-promise "DONE"

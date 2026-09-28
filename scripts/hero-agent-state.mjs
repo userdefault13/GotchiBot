@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { readJsonMap, writeJsonAtomic } from "./json-store.mjs";
 import { isSepoliaCartridgeId, readSepoliaHeroes } from "./cartridge-sepolia.mjs";
 import { isMainModule } from "./is-main.mjs";
+import { isOrchestratorId } from "./openclaw-fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -67,7 +68,7 @@ export async function assertSandboxHeroAvailable(heroId) {
       fix: "Pick an available hero via ./scripts/agent-focus.mjs list — do not mint",
     };
   }
-  if (id === "owned-954" || id === "gotchi") {
+  if (isOrchestratorId(id)) {
     return {
       ok: false,
       code: "hero",

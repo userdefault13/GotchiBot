@@ -12,7 +12,7 @@ Load and follow the full GotchiBot-adapted protocol:
 
 **Read** [`.opencode/skills/ralph/SKILL.md`](../../../.opencode/skills/ralph/SKILL.md)
 
-While active: you are the **chief** (owned-954) — frames the loop prompt +
+While active: you are the **chief** (orchestrator) — frames the loop prompt +
 completion promise + max-iterations (default 20, never unlimited). Workers
 iterate (prefer spare DAI; never LINK/YFI/WBTC). Store:
 `./scripts/gotchibot ralph …` → `sessions/ralph/<slug>/` + `sessions/ralph/ACTIVE`.

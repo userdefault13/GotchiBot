@@ -21,7 +21,7 @@ import {
   normalizeAddress,
 } from "./bot-inbox.mjs";
 import { currentProjectSlug } from "./project-context.mjs";
-import { heroDisplayName, orchestratorHeroId } from "./openclaw-fleet.mjs";
+import { heroDisplayName, orchestratorHeroId, isOrchestratorId, ORCH_DEFAULT_NAME } from "./openclaw-fleet.mjs";
 import { getThumb, warmThumbs } from "./meet-channel.mjs";
 import { isProfLinkCubeId } from "./gotchi-art.mjs";
 
@@ -133,7 +133,7 @@ function displayName(id) {
   if (!GOTCHI_NAMES.has(hero)) GOTCHI_NAMES.set(hero, heroDisplayName(hero));
   const gotchiName = GOTCHI_NAMES.get(hero);
   if (gotchiName) return gotchiName;
-  if (s === orchId || s === "owned-954" || s === "orch" || s === "gotchi") return "Gotchi";
+  if (s === orchId || isOrchestratorId(s)) return ORCH_DEFAULT_NAME;
   if (s.startsWith("starter-")) {
     const m = s.match(/starter-([a-z0-9]+)-/i);
     if (m) return m[1].toUpperCase();
@@ -144,7 +144,7 @@ function displayName(id) {
 
 function nameColor(id) {
   if (id === "userdefault") return C.user;
-  if (id === orchestratorHeroId() || id === "owned-954" || id === "orch") return C.chair;
+  if (isOrchestratorId(id)) return C.chair;
   return C.agent;
 }
 

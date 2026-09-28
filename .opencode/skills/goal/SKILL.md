@@ -13,7 +13,7 @@ metadata:
 
 # goal (GotchiBot)
 
-Cursor-native durable objective for **owned-954 / gotchi** in Cursor. Goal
+Cursor-native durable objective for **orchestrator / gotchi** in Cursor. Goal
 state lives in conversation tooling (`CreateGoal` / `UpdateGoal`), not in
 `sessions/`. This does **not** replace `delegate-first`.
 

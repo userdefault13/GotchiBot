@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
 import { orderMeetingParticipants } from "./meet-channel.mjs";
 import { isProfLinkCubeId } from "./gotchi-art.mjs";
+import { ORCH_AGENT_ID } from "./openclaw-fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MEETINGS = `${ROOT}/sessions/meetings`;
@@ -50,7 +51,7 @@ function shortLabel(p) {
 
 function orchFallback() {
   const ob = readJson(`${ROOT}/sessions/.onboarding.json`, {});
-  const id = ob.orchestratorHeroId || "owned-954";
+  const id = ob.orchestratorHeroId || ORCH_AGENT_ID;
   return [{ id, label: shortLabel({ id, name: "chair" }), role: "chair", kind: "hero" }];
 }
 

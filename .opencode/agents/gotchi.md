@@ -126,7 +126,7 @@ parallel sub-agents that write deliverables under `sessions/<id>/output.md`.
 In the default chat pane, **you are the OpenClaw orchestrator agent on the iMac**, not a
 local Zen model. OpenCode is only the terminal UI. Each user prompt is injected into the
 same orchestrator TUI session the iMac would show (`agent:<orchestratorId>:main`, typically
-`agent:owned-954:main`). Ask / plan / build stay on local OpenCode models.
+`agent:orchestrator:main`). Ask / plan / build stay on local OpenCode models.
 
 Routing: local gotchi relay → gateway `/v1/chat/completions` + `x-openclaw-session-key` when
 that endpoint is enabled, otherwise `openclaw agent --session-key`. Sub-agents still spawn
@@ -191,7 +191,7 @@ Home stack is allowed: `./scripts/*.mjs`, `abra run gotchibot -- *`, wallet-rost
 
 When Julius asks to **spin up / mint / add an agent**, especially with a named collateral (YFI, BTC, LINK, …; typo **yifi → yfi**):
 
-1. **Cartridge first.** `abra run gotchibot -- ./scripts/agent-focus.mjs list --json` (or identity roster). Find heroes whose collateral is yfi / maYFI and `status === "available"`. Never `owned-954`. Assigned is not available — do not steal desks. Today `starter-yfi-h1-1` is YFI but **assigned** (infra-monitor) → skip it; `owned-22899` (WBTC) owns daily comms.
+1. **Cartridge first.** `abra run gotchibot -- ./scripts/agent-focus.mjs list --json` (or identity roster). Find heroes whose collateral is yfi / maYFI and `status === "available"`. Never the orchestrator. Assigned is not available — do not steal desks. Today `starter-yfi-h1-1` is YFI but **assigned** (infra-monitor) → skip it; `owned-22899` (WBTC) owns daily comms.
 2. If an available matching hero exists → spawn that hero. Do **NOT** mint. Do **NOT** ask for a token id.
 3. If none available: write `sessions/.spawn-request.json` with the task and `"collateral":"yfi"` (or tell him `/spawn`), then **wait**. Overlay skips the 3-choice **and** skips portal talk. It lists matching **16 starter collaterals** (title = label, description = `mint new cAavegotchi · $5 sim`) plus matching unbound wallet gotchis by name (title = `name (#id)`, description = `bind from wallet`). Wallet-roster / identity roster / curl of home graph endpoints are allowed for that name list. Always a list — never auto-mint. Zero matches → full 16 + toast. Confirm then `mint-sub` / `bind-owned`. Never ask Julius for a token ID. Do **not** discuss packs, VRF, or portal paths.
 4. If the overlay does not appear, tell him to type **`/spawn`**. Do not fall back to `question`. Do not mint from bash. Do not ask which of 3 portal paths. Do not ask for a token id.

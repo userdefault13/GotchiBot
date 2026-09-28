@@ -40,13 +40,13 @@ open → claimed → submitted → accepted | rework → closed
 ## CLI
 
 ```bash
-./scripts/gotchibot project-tickets request --from owned-954 --to starter-link-h1-1 "Fix the login flow" \
+./scripts/gotchibot project-tickets request --from orchestrator --to starter-link-h1-1 "Fix the login flow" \
     --acceptance "login works in sim" --body "see passoff p…" --card
 ./scripts/gotchibot project-tickets claim t… --by starter-link-h1-1
 ./scripts/gotchibot project-tickets submit t… --by starter-link-h1-1 --note "done" --passoff p…
-./scripts/gotchibot project-tickets accept t… --by owned-954 --note "verified"
-./scripts/gotchibot project-tickets rework t… --by owned-954 --note "edge case missing"
-./scripts/gotchibot project-tickets close t… --by owned-954 --note "cancel"
+./scripts/gotchibot project-tickets accept t… --by orchestrator --note "verified"
+./scripts/gotchibot project-tickets rework t… --by orchestrator --note "edge case missing"
+./scripts/gotchibot project-tickets close t… --by orchestrator --note "cancel"
 ./scripts/gotchibot project-tickets show t… [--json]
 ./scripts/gotchibot project-tickets list [--to <hero>] [--from <hero>] [--status <s>] [--json]
 ./scripts/gotchibot project-tickets inbox <hero> [--json]

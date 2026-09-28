@@ -15,6 +15,7 @@ import {
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { orchestratorId } from "./openclaw-fleet.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TPL = join(ROOT, "config/claude-pane-proxy");
@@ -38,7 +39,7 @@ export function resolveReportsTo(explicit = "") {
     process.env.GOTCHIBOT_HERO_ID?.trim() ||
     process.env.GOTCHIBOT_ORCH_ID?.trim() ||
     process.env.GOTCHIBOT_OPENCLAW_ORCH_ID?.trim() ||
-    "owned-954"
+    orchestratorId()
   );
 }
 

@@ -13,7 +13,7 @@
     "src/composables/useParcelRealmDetail.ts",
     "src/helpers/installationThumbs.ts"
   ],
-  "authorHero": "owned-954",
+  "authorHero": "orchestrator",
   "consumerHero": "owned-22899",
   "createdAt": "2026-08-30T08:18:00.000Z",
   "updatedAt": "2026-08-30T08:18:00.000Z",
@@ -31,7 +31,7 @@
   "areas": ["left-column"],
   "summary": "Prev/next parcel cycle buttons wrap gallery order; disabled when only one parcel.",
   "files": ["src/views/MyLand.vue"],
-  "authorHero": "owned-954",
+  "authorHero": "orchestrator",
   "consumerHero": "owned-22899",
   "createdAt": "2026-08-30T09:00:00.000Z",
   "updatedAt": "2026-08-30T09:00:00.000Z"

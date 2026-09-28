@@ -13,7 +13,7 @@
  *   sessions/pstack/<slug>/inbox/archive.json
  * Desk-wide fallback: sessions/inbox/
  *
- *   node scripts/bot-inbox.mjs send --to userdefault --from owned-954 \
+ *   node scripts/bot-inbox.mjs send --to userdefault --from orchestrator \
  *        --subject "…" --body "…" [--kind fyi|report|ask|alert]
  *   node scripts/bot-inbox.mjs list [--to userdefault] [--unread] [--kind alert] [--json]
  *   node scripts/bot-inbox.mjs read <id>
@@ -36,7 +36,7 @@ import {
   resolveInboxRoot,
   requireProjectSlug,
 } from "./project-context.mjs";
-import { orchestratorHeroId } from "./openclaw-fleet.mjs";
+import { orchestratorId } from "./openclaw-fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -120,7 +120,7 @@ export function normalizeAddress(raw) {
   const low = s.toLowerCase();
   if (USER_ALIASES.has(low) || low === "userdefault") return "userdefault";
   if (low === "orch" || low === "gotchi" || low === "chair" || low === "orchestrator") {
-    return orchestratorHeroId() || "owned-954";
+    return orchestratorId();
   }
   // Role aliases → first seated hero with that playbook role (else leave as-is for hero ids).
   const roleAliases = {
@@ -135,7 +135,7 @@ export function normalizeAddress(raw) {
     const hero = heroIdForRole(roleAliases[low]);
     if (hero) return hero;
     // Fall back to orch so the record is never dropped when PKM is unseated.
-    return orchestratorHeroId() || "owned-954";
+    return orchestratorId();
   }
   return s;
 }

@@ -4,7 +4,7 @@ agent: gotchi
 ---
 
 Load skill **pstack** (`.opencode/skills/pstack/SKILL.md`) and stay sticky until
-Julius says `new task` or exits pstack. You are the **chief** (owned-954): frames,
+Julius says `new task` or exits pstack. You are the **chief** (orchestrator): frames,
 briefs, drain, judgment — **no product-code edits**. Heroes run role-tagged briefs.
 
 `$ARGUMENTS` is the goal / subcommand.

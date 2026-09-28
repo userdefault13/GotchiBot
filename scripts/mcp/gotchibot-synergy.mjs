@@ -72,7 +72,7 @@ const TOOLS = [
   },
   {
     name: "roster_orch",
-    description: "Return focus to the orchestrator (owned-954 / gotchi).",
+    description: "Return focus to the orchestrator.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {

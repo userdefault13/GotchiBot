@@ -309,13 +309,13 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
     GW="${GOTCHIBOT_OPENCLAW_URL:-${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:18789}}"
     WS="${GOTCHIBOT_OPENCLAW_WS:-${GW/http:/ws:}}"
     if curl -sf --max-time 3 "${GW%/}/healthz" >/dev/null 2>&1; then
-      AGENT_ID="$(node "$ROOT/scripts/openclaw-fleet.mjs" tui-agent 2>/dev/null || echo owned-954)"
+      AGENT_ID="$(node "$ROOT/scripts/openclaw-fleet.mjs" tui-agent 2>/dev/null || echo orchestrator)"
       ORCH_ID="$(node -e "
         try {
           const m=require('$ROOT/sessions/.openclaw-agent-map.json');
-          process.stdout.write(String(m.orchestratorAgentId||'owned-954'));
-        } catch { process.stdout.write('owned-954'); }
-      " 2>/dev/null || echo owned-954)"
+          process.stdout.write(String(m.orchestratorAgentId||'orchestrator'));
+        } catch { process.stdout.write('orchestrator'); }
+      " 2>/dev/null || echo orchestrator)"
       SESSION="agent:${AGENT_ID}:main"
       # Gotchi chrome for patched OpenClaw TUI (Aavegotchi purple/pink, compact header/footer)
       export OPENCLAW_THEME="${GOTCHIBOT_OPENCLAW_THEME:-opencode}"

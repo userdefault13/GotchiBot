@@ -2,9 +2,9 @@
   "version": 1,
   "description": "pstack role → GotchiBot hero assignment. Coordinator never codes; workers are available spares. Standing desks are protected.",
   "coordinator": {
-    "heroId": "owned-954",
+    "heroId": "orchestrator",
     "modelHint": "orch-chat",
-    "notes": "Always owned-954. Frames, briefs, drain, judgment only."
+    "notes": "Always the orchestrator (bound avatar or the stable `orchestrator` id). Frames, briefs, drain, judgment only."
   },
   "roles": {
     "worker": {

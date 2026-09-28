@@ -4,7 +4,7 @@ description: >-
   GotchiBot-adapted ralph-loop (Ralph Wiggum technique) for the orchestrator.
   Use for /ralph, iterative self-referential loops, "keep going until done",
   or repeated autonomous iteration on one prompt with a completion promise.
-  Chief (owned-954) frames; worker hero iterates; never LINK/YFI/WBTC as
+  Chief (orchestrator) frames; worker hero iterates; never LINK/YFI/WBTC as
   workers; VERIFY the real artifact; remap stop/followup to gotchibot ralph;
   store sessions/ralph. When-to-use vs /loop vs /pstack below.
 license: MIT
@@ -60,7 +60,7 @@ Julius says `new task` / `exit ralph` / `cancel`.
 
 ## Chief non-negotiable
 
-While ralph is active, **owned-954 does not author or edit product code**.
+While ralph is active, **orchestrator does not author or edit product code**.
 Allowed chief writes only:
 
 - `sessions/ralph/<slug>/` via `./scripts/ralph-orch.mjs`

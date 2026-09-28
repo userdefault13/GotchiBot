@@ -12,6 +12,7 @@ import { isMainModule } from "./is-main.mjs";
 import { readGotchiBotCartridgeSepolia, readSepoliaHeroes } from "./cartridge-sepolia.mjs";
 import { getCachedHeroStatus } from "./hero-agent-state.mjs";
 import { loadOnboarding } from "./onboarding-lib.mjs";
+import { isOrchestratorId } from "./openclaw-fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WALLET = `${ROOT}/sessions/.wallet.json`;
@@ -103,7 +104,7 @@ function assertAvailableSubHero(heroes) {
     };
   }
 
-  const workers = ids.filter((id) => id !== orch && id !== "owned-954" && id !== "gotchi");
+  const workers = ids.filter((id) => id !== orch && !isOrchestratorId(id));
   if (!workers.length) {
     return {
       ok: false,

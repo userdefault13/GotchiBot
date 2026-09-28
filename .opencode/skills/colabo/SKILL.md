@@ -31,7 +31,7 @@ Meet room: `/colabo --ring design …` when supported; else CLI above.
 |---|---|---|
 | `design` | `architect` (required), `infra-monitor` (optional) | topology, options matrix, structure |
 
-CoS (`owned-954`) chairs the meet and does **not** reply as an agent in the round.
+CoS (`orchestrator`) chairs the meet and does **not** reply as an agent in the round.
 Default path for CoS remains **delegate-first / inbox / graph** — Colabo only for real opinion rounds.
 
 Requires an **open meeting**. Replies: `[colabo · <hero>]`. Model policy scope: `colabo`.

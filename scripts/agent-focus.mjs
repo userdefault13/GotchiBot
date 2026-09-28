@@ -33,7 +33,7 @@ import {
 } from "./onboarding-lib.mjs";
 import { resolveThumbCollateral } from "./collateral-resolve.mjs";
 import { classifyFocusRoute } from "./focus-classify.mjs";
-import { loadAgentMap, gatewayUrl, loadOpenClawFocus } from "./openclaw-fleet.mjs";
+import { loadAgentMap, gatewayUrl, loadOpenClawFocus, isOrchestratorId } from "./openclaw-fleet.mjs";
 import { runLayout } from "./tmux-layout.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -614,7 +614,7 @@ function resolveEntry(arg, hostFilter, { subDesk = false } = {}) {
   if (hit) return hit;
   // Allow selecting a hero id even without fresh list
   if (arg.startsWith("starter-") || arg.startsWith("owned-") || arg.startsWith("s20")) {
-    if (subDesk && (arg === orchestratorHeroId() || arg === "owned-954")) {
+    if (subDesk && isOrchestratorId(arg)) {
       throw new Error("orch excluded in Sub mode — Tab to gotchi or /orch");
     }
     return {
@@ -633,7 +633,7 @@ function orchestratorHeroId() {
   const meta = loadMeta();
   if (ob.orchestratorHeroId) return ob.orchestratorHeroId;
   if (meta?.activeHeroId) return meta.activeHeroId;
-  // Sepolia nest desks start with no orch — never invent owned-954.
+  // Sepolia nest desks start with no orch — never invent an orch hero.
   if (meta?.cartridgeSource === "sepolia") return null;
   try {
     const cache = JSON.parse(readFileSync(LIST_CACHE, "utf8"));
@@ -642,7 +642,7 @@ function orchestratorHeroId() {
     );
     if (owned) return owned.id;
   } catch {}
-  return "owned-954";
+  return null;
 }
 
 async function cmdSelect(arg, { host, via = "select", respawn = false } = {}) {

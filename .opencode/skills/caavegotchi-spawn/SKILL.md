@@ -6,7 +6,7 @@ description: >-
   or when delegate-pick is blocked. Follow skill cartridge-mint for how minting
   works (sim :8791, not lore :3010). Spawn UI is still /spawn or
   sessions/.spawn-request.json. Named collateral: cartridge first for an
-  available matching cAavegotchi (never owned-954, never steal assigned desks).
+  available matching cAavegotchi (never the orchestrator, never steal assigned desks).
   If none, write spawn-request so the TUI overlay can unassign, mint-sub from
   the 16 starters, or bind-owned from wallet by name. If he names a collateral
   (YFI, BTC, LINK, …; typo yifi → yfi), include "collateral":"yfi" and wait —
@@ -48,7 +48,7 @@ If he names a collateral (YFI, BTC, LINK, DAI, … — typo **yifi → yfi**):
 
 1. **Cartridge first.** `abra run gotchibot -- ./scripts/agent-focus.mjs list --json`
    (or identity roster). Match collateral yfi / maYFI with `status === "available"`.
-   Never `owned-954`. Today `starter-yfi-h1-1` is YFI but **assigned** (infra-monitor); `owned-22899` (WBTC) owns daily comms
+   Never the orchestrator. Today `starter-yfi-h1-1` is YFI but **assigned** (infra-monitor); `owned-22899` (WBTC) owns daily comms
    — not available; do not steal it. If a match exists → spawn that hero. Do not
    mint. Do not ask for a token id.
 2. If none available, write spawn-request with that spirit and **wait for the overlay**.
@@ -69,7 +69,7 @@ Do **not** trust `delegate-pick` for availability — it treats idle as free and
 will steal assigned desks.
 
 Always prefix API / secret scripts with `abra run gotchibot --`. Never print
-tokens. Never treat assigned+idle as available. `owned-954` is the
+tokens. Never treat assigned+idle as available. `orchestrator` is the
 orchestrator — never pick it as the new worker.
 
 ## 1. Query status yourself
@@ -86,7 +86,7 @@ abra run gotchibot -- node scripts/hero-agent-state.mjs get
 
 Parse heroes. A candidate is free iff `status` / `agentStatus` is exactly
 `"available"`. Example: `starter-link-h1-1` (LINK) owns the trader desk →
-**assigned** even when idle. `owned-954` → orchestrator, never a worker.
+**assigned** even when idle. The orchestrator is never a worker.
 
 Optional (orchestrator may query so the overlay is ready; still do not dump
 ids at Julius or ask him to look them up):
@@ -198,7 +198,7 @@ link, usdt, usdc, tusd, uni, yfi, wbtc, matic.
 - Never print tokens or session passwords.
 - Never treat assigned + idle as available.
 - Never mint yourself. Never call `question`. If Julius dismisses the overlay, stop.
-- Never pick `owned-954` as the new worker.
+- Never pick the orchestrator as the new worker.
 - Do not use cockpit readline for these choices.
 - Do not trust `delegate-pick` for availability.
 - To open the UI: `/spawn`, palette "Spawn agent", or write `sessions/.spawn-request.json`.

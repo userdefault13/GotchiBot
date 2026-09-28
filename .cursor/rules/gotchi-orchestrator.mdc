@@ -74,7 +74,7 @@ When the user gives you a task, follow this loop:
 # pstack (chief + hero workers)
 
 When Julius says `/pstack`, `/poteto-mode`, "go deep", or contested design:
-load `.opencode/skills/pstack/SKILL.md`. You are the **chief** (owned-954):
+load `.opencode/skills/pstack/SKILL.md`. You are the **chief** (orchestrator):
 match a playbook, author briefs via `./scripts/gotchibot pstack brief …`,
 spawn role-tagged heroes (never LINK/YFI/WBTC as generic workers), drain and
 merge. No product-code edits while pstack is sticky. Roles:
@@ -84,7 +84,7 @@ delegate-first.
 # ralph (iterative loop)
 
 When Julius says `/ralph` or wants the same prompt iterated until a completion
-promise: load `.opencode/skills/ralph/SKILL.md`. Chief (owned-954) frames the
+promise: load `.opencode/skills/ralph/SKILL.md`. Chief (orchestrator) frames the
 prompt + `<promise>` text + max-iterations (default 20, never unlimited);
 `./scripts/gotchibot ralph start …` writes `sessions/ralph/<slug>/` and the
 `ACTIVE` pointer. Hooks (`.cursor/hooks/ralph-capture.mjs` + `ralph-stop.mjs`,

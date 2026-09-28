@@ -86,7 +86,7 @@ restart reports "still down after restart"), escalate:
   - last error: <message>
   - action: notify orchestrator
   ```
-- Notify the orchestrator (`owned-954`) so a human/agent can inspect iMac logs
+- Notify the orchestrator so a human/agent can inspect iMac logs
   (`/Library/Logs/com.cloudflare.cloudflared.err.log`) or home-network QUIC
   blocking (a common cause of tunnel loss).
 

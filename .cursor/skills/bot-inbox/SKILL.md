@@ -15,7 +15,7 @@ Internal async mail. **Not** AgentMail. **Not** passoff. **Not** meet.
 ./scripts/gotchibot inbox tui            # cockpit / tty list+body
 # or: cockpit → Bot inbox
 
-./scripts/gotchibot inbox send --to userdefault --from owned-954 \
+./scripts/gotchibot inbox send --to userdefault --from orchestrator \
   --kind fyi --subject "…" --body "…"
 ./scripts/gotchibot inbox list --to userdefault --unread
 ./scripts/gotchibot inbox read <id>

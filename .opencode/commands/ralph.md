@@ -5,7 +5,7 @@ agent: gotchi
 
 Load skill **ralph** (`.opencode/skills/ralph/SKILL.md`) and stay sticky until
 the done flag, max iterations, or Julius says `new task` / `exit ralph` /
-`cancel`. You are the **chief** (owned-954): frames the prompt + completion
+`cancel`. You are the **chief** (orchestrator): frames the prompt + completion
 promise, delegates iterations, verifies — **no product-code edits**. Worker
 heroes do the iterating.
 

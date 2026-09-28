@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getJob, markReady } from "./claude-jobs.mjs";
 import { injectOpenCodeChat } from "./opencode-chat-inject.mjs";
+import { orchestratorId } from "./openclaw-fleet.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FLEET = join(ROOT, "scripts/openclaw-fleet.mjs");
@@ -110,7 +111,7 @@ async function main() {
     const orch =
       process.env.GOTCHIBOT_ORCH_ID ||
       process.env.GOTCHIBOT_OPENCLAW_ORCH_ID ||
-      "owned-954";
+      orchestratorId();
     const r = spawnSync(
       process.execPath,
       [FLEET, "chat", "--agent", orch, text],

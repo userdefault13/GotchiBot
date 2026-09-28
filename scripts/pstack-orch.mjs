@@ -368,7 +368,7 @@ function cmdUnitAdd(slug, flags) {
     die(`--role required (${[...VALID_ROLES].join("|")})`);
   }
   if (role === "coordinator") {
-    die("coordinator is owned-954 — do not add coordinator units");
+    die("coordinator is the orchestrator — do not add coordinator units");
   }
   const roles = loadRoles();
   const protectedIds = new Set(roles.protectedHeroIds || []);

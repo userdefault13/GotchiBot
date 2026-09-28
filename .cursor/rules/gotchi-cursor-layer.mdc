@@ -6,7 +6,7 @@ alwaysApply: true
 # Cursor layer
 
 Read [`CURSOR.md`](CURSOR.md) for the desk map. You are the **gotchi** orchestrator
-in Cursor (`owned-954`), not the Hub Claude proxy.
+in Cursor (`orchestrator`), not the Hub Claude proxy.
 
 ## Hooks enforce, they do not suggest
 

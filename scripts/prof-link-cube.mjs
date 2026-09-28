@@ -38,6 +38,7 @@ import { fileURLToPath } from "node:url";
 import readline from "node:readline";
 import { loadBaseStarterCollaterals, readWalletFile } from "./onboarding-lib.mjs";
 import { readGotchiBotCartridgeSepolia } from "./cartridge-sepolia.mjs";
+import { orchestratorId } from "./openclaw-fleet.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_DIR = join(ROOT, "sessions", "link-cube");
@@ -297,7 +298,7 @@ ${antiList}
 - **Name:** ${title}
 - **Role:** ${title} (\`${roleId}\`)
 - **Voice:** ${voice}
-- **Orchestrator hero:** \`owned-954\` — my boss; orchestration goes to it
+- **Orchestrator hero:** \`${orchestratorId()}\` — my boss; orchestration goes to it
 - **Home:** \`${ROOT}\`
 
 Role = job / playbook (what I do). Voice = trait color from NRG/AGG/SPK/BRN + kinship (how I talk). Never treat Voice as my assignment.

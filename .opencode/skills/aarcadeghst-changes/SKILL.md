@@ -100,7 +100,7 @@ If AarcadeGh-t changes cannot be implemented or synced after 3 attempts:
    - last error: <message>
    - action: notify orchestrator
    ```
-2. Notify the orchestrator (`owned-954`) so a human/agent can inspect the AarcadeGh-t repo
+2. Notify the orchestrator so a human/agent can inspect the AarcadeGh-t repo
    or provide guidance on the implementation approach.
 
 ## Safety

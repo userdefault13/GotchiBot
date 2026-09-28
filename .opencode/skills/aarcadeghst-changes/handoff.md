@@ -1,7 +1,7 @@
 # Handoff protocol — AarcadeGh-t changes → owned-22899
 
 Consumer: **DAI** (`owned-22899`, source token `22899`).
-Author: usually orchestrator `owned-954` or a coding Cursor session.
+Author: usually the orchestrator or a coding Cursor session.
 
 ## When to hand off
 
@@ -46,7 +46,7 @@ When DAI discovers drift (disk ≠ log) or needs upstream help:
 2. Escalate to orchestrator — do not fan out yourself:
 
    ```bash
-   ./scripts/agent-focus.mjs select owned-954
+   ./scripts/agent-focus.mjs select orchestrator
    # or from SUB: agent-focus.mjs chat "…" (escalates when needed)
    ```
 

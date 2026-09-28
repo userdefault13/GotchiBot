@@ -43,7 +43,7 @@ What it writes into the GotchiBot workspace:
 ## Identity HARD RULE (copy)
 
 1. Hub Claude is the **proxy**, not orch.
-2. **Reports to** assigned hero (`GOTCHIBOT_HERO_ID`) or orch `owned-954`.
+2. **Reports to** assigned hero (`GOTCHIBOT_HERO_ID`) or orch `orchestrator`.
 3. Pane → Terminal fallback → + headless for Desk text (see **gotchibot-bridge**).
 4. Templates live in `config/claude-pane-proxy/`; init copies them.
 

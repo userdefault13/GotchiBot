@@ -104,6 +104,13 @@ export function heroToAgentId(heroId) {
     .replace(/[^a-zA-Z0-9_-]/g, "-");
 }
 
+/** Stable orchestrator id: exists whether or not a gotchi avatar is bound. */
+export const ORCH_AGENT_ID = "orchestrator";
+/** Orchestrator display name until a gotchi avatar is bound. */
+export const ORCH_DEFAULT_NAME = "Orchestrator";
+const ORCH_ALIASES = new Set([ORCH_AGENT_ID, "gotchi", "orch"]);
+
+/** Hero bound as the orchestrator's avatar; null until one is chosen. */
 export function orchestratorHeroId() {
   const ob = loadOnboarding();
   const meta = loadMeta();
@@ -113,8 +120,25 @@ export function orchestratorHeroId() {
   if (meta?.activeHeroId && String(meta.activeHeroId).startsWith("owned-")) {
     return meta.activeHeroId;
   }
-  if (ob.orchestratorHeroId) return ob.orchestratorHeroId;
-  return meta?.activeHeroId || "owned-954";
+  return ob.orchestratorHeroId || meta?.activeHeroId || null;
+}
+
+/** Bound avatar hero id, else the stable `orchestrator` id. Never empty. */
+export function orchestratorId() {
+  return orchestratorHeroId() || ORCH_AGENT_ID;
+}
+
+export function isOrchestratorId(id) {
+  const s = String(id || "").trim();
+  if (!s) return false;
+  return ORCH_ALIASES.has(s) || s === orchestratorHeroId();
+}
+
+/** Bound gotchi's name, else "Orchestrator". */
+export function orchestratorDisplayName() {
+  const hero = orchestratorHeroId();
+  const name = hero ? heroDisplayName(hero) : null;
+  return name && name !== "Gotchi" ? name : ORCH_DEFAULT_NAME;
 }
 
 /**
@@ -309,7 +333,7 @@ export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orch
   // the role: extra skills + a rendered AGENTS.md section. Lets a hero keep an
   // old desk (e.g. trader monitor) after a rehatch to a new role.
   const standing = loadStandingDuties()[id] || null;
-  // Role-bound orchestrators (e.g. owned-954 while nest pin is elsewhere) still
+  // Role-bound orchestrators (config/agent-roles.json) still
   // need the full orch skill pack — desk pin alone must not strip them.
   const orchSkills = isOrchestrator || role === "orchestrator";
   const skills = heroSkillNames({ playbook, isOrchestrator: orchSkills, standing });
@@ -385,7 +409,7 @@ function buildEntry(hero, { isOrchestrator, orchId }) {
   const id = heroToAgentId(hero.id);
   const name =
     hero.name ||
-    (isOrchestrator ? "Gotchi" : String(hero.collateral || id).toUpperCase());
+    (isOrchestrator ? ORCH_DEFAULT_NAME : String(hero.collateral || id).toUpperCase());
   const emoji = isOrchestrator ? "👻" : hero.emoji || collateralEmoji(hero.collateral);
   const rendered = writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orchId });
   const agentDir = writeAgentStateDir(id, rendered.ws);
@@ -463,11 +487,11 @@ async function loadHeroes() {
   if (Array.isArray(last) && last.length) {
     console.error(`openclaw-fleet: cartridge heroes unavailable — reusing ${last.length} ids from ${FLEET_LIST}`);
     return last
-      .filter((e) => e?.id && !e.aliasOf && e.id !== "gotchi")
+      .filter((e) => e?.id && !e.aliasOf && !ORCH_ALIASES.has(e.id))
       .map((e) => ({ id: e.id, name: e.identity?.name || null, bindType: null }));
   }
   const orch = orchestratorHeroId();
-  return orch ? [{ id: orch, name: "Gotchi", bindType: "owned" }] : [];
+  return orch ? [{ id: orch, name: null, bindType: "owned" }] : [];
 }
 
 function entriesToList(entries) {
@@ -535,7 +559,7 @@ function writeFleetArtifacts({ entries, map, orchId }) {
     AGENT_MAP,
     `${JSON.stringify(
       {
-        orchestratorHeroId: orchId,
+        orchestratorHeroId: orchestratorHeroId(),
         orchestratorAgentId: heroToAgentId(orchId),
         agents: map,
         syncedAt: new Date().toISOString(),
@@ -583,27 +607,28 @@ export async function syncFleet({ quiet = false } = {}) {
     };
   }
 
-  if (!Object.keys(entries).length && orchId) {
+  const orchAgentId = heroToAgentId(orchestratorId());
+  if (!entries[orchAgentId]) {
     const { id, entry, rendered: r } = buildEntry(
-      { id: orchId, name: "Gotchi", bindType: "owned" },
-      { isOrchestrator: true, orchId },
+      { id: orchAgentId, name: orchId ? null : ORCH_DEFAULT_NAME, bindType: orchId ? "owned" : null },
+      { isOrchestrator: true, orchId: orchAgentId },
     );
     entries[id] = entry;
     rendered[id] = r;
     map[id] = { heroId: orchId, isOrchestrator: true, status: "available" };
   }
 
-  // Backward-compat alias: openclaw agent --agent gotchi → orchestrator hero.
-  const orchAgentId = heroToAgentId(orchId);
-  if (entries[orchAgentId] && orchAgentId !== "gotchi") {
+  // `orchestrator` (stable) and `gotchi` (legacy) both reach the orchestrator.
+  for (const alias of [ORCH_AGENT_ID, "gotchi"]) {
+    if (alias === orchAgentId) continue;
     const { default: _orchDefault, ...orchRest } = entries[orchAgentId];
     // Same workspace (same persona), its own agentDir (OpenClaw forbids sharing state dirs).
-    const aliasDir = writeAgentStateDir("gotchi", orchRest.workspace);
-    entries.gotchi = { ...orchRest, agentDir: aliasDir };
-    map.gotchi = { ...map[orchAgentId], aliasOf: orchAgentId, isOrchestrator: true };
+    const aliasDir = writeAgentStateDir(alias, orchRest.workspace);
+    entries[alias] = { ...orchRest, agentDir: aliasDir };
+    map[alias] = { ...map[orchAgentId], aliasOf: orchAgentId, isOrchestrator: true };
   }
 
-  writeFleetArtifacts({ entries, map, orchId });
+  writeFleetArtifacts({ entries, map, orchId: orchAgentId });
 
   const doctor = doctorFleet({ entries });
   const payload = {
@@ -644,12 +669,12 @@ export async function syncFleet({ quiet = false } = {}) {
  */
 export async function refreshAllWorkspaces({ quiet = false } = {}) {
   const root = heroWorkspaceRoot();
-  const orchId = orchestratorHeroId();
+  const orchId = orchestratorId();
   const last = readGeneratedJson(FLEET_LIST, []);
   const byId = new Map();
   if (Array.isArray(last)) {
     for (const e of last) {
-      if (!e?.id || e.aliasOf || e.id === "gotchi") continue;
+      if (!e?.id || e.aliasOf || (ORCH_ALIASES.has(e.id) && e.id !== orchestratorId())) continue;
       byId.set(e.id, {
         id: e.id,
         name: e.identity?.name || null,
@@ -683,7 +708,7 @@ export async function refreshAllWorkspaces({ quiet = false } = {}) {
       gotchiNames.get(heroTokenId({ id })) ||
       onDisk.name ||
       listName ||
-      (isOrchestrator ? "Gotchi" : String(hero.collateral || id).toUpperCase());
+      (isOrchestrator ? ORCH_DEFAULT_NAME : String(hero.collateral || id).toUpperCase());
     const emoji = isOrchestrator ? "👻" : hero.emoji || onDisk.emoji || collateralEmoji(hero.collateral);
     const r = writeHeroWorkspace(
       { ...hero, id },
@@ -815,7 +840,7 @@ export function doctorFleet({ entries } = {}) {
  */
 export async function doctorLive() {
   const map = loadAgentMap();
-  const orchId = map?.orchestratorAgentId || heroToAgentId(orchestratorHeroId());
+  const orchId = map?.orchestratorAgentId || heroToAgentId(orchestratorId());
   const focused = (() => {
     try {
       return resolveOpenClawTuiAgentId();
@@ -880,7 +905,7 @@ export function resolveOpenClawTuiAgentId() {
 
   const map = loadAgentMap();
   const orchId =
-    map?.orchestratorAgentId || heroToAgentId(orchestratorHeroId());
+    map?.orchestratorAgentId || heroToAgentId(orchestratorId());
 
   let focus = loadOpenClawFocus();
   if (!focus) {
@@ -900,8 +925,7 @@ export function resolveOpenClawTuiAgentId() {
 export async function switchOpenClawAgent(heroId) {
   await syncFleet({ quiet: true });
   const agentId = heroToAgentId(heroId);
-  const orchId = orchestratorHeroId();
-  const mode = heroId === orchId ? "orch" : "sub";
+  const mode = isOrchestratorId(heroId) ? "orch" : "sub";
   saveOpenClawFocus({ agentId, heroId, mode });
   return { agentId, heroId, mode };
 }
@@ -1301,7 +1325,7 @@ async function main() {
     const agentId = resolveOpenClawTuiAgentId();
     const map = loadAgentMap();
     const mode =
-      agentId === (map?.orchestratorAgentId || heroToAgentId(orchestratorHeroId()))
+      agentId === (map?.orchestratorAgentId || heroToAgentId(orchestratorId()))
         ? "orch"
         : "sub";
     if (json) {
@@ -1312,8 +1336,7 @@ async function main() {
     return;
   }
   if (cmd === "orch") {
-    const heroId = orchestratorHeroId();
-    const r = await switchOpenClawAgent(heroId);
+    const r = await switchOpenClawAgent(orchestratorId());
     if (json) console.log(JSON.stringify(r, null, 2));
     else console.log(r.agentId);
     return;
@@ -1333,7 +1356,7 @@ async function main() {
     return;
   }
   if (cmd === "chat") {
-    let agentId = loadOpenClawFocus()?.agentId || heroToAgentId(orchestratorHeroId());
+    let agentId = loadOpenClawFocus()?.agentId || heroToAgentId(orchestratorId());
     const msgParts = [];
     for (let i = 0; i < args.length; i++) {
       if (args[i] === "--agent" && args[i + 1]) {

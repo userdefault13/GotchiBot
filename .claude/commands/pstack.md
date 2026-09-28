@@ -1,5 +1,5 @@
 ---
-description: Load GotchiBot pstack — chief (owned-954) frames; heroes execute role-tagged briefs
+description: Load GotchiBot pstack — chief (orchestrator) frames; heroes execute role-tagged briefs
 argument-hint: [new task | <goal>]
 allowed-tools: Bash(./scripts/gotchibot pstack:*), Bash(node scripts/pstack-orch.mjs:*), Bash(./scripts/delegate-pick.mjs:*), Read, Grep
 ---

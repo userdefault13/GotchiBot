@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "pstack-program-dossier",
-  "description": "Chief (owned-954) SoT for an active pstack program. Mirrors the Orchestrate brief template. Not sandbox /project intake.",
+  "description": "Chief (orchestrator) SoT for an active pstack program. Mirrors the Orchestrate brief template. Not sandbox /project intake.",
   "rules": {
     "chiefSoT": true,
     "neverAutoSpawn": true,

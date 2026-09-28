@@ -5,7 +5,7 @@ description: >-
   /poteto-mode, nontrivial design, contested approaches, "are we sure?", or when
   Julius wants deeper parallel exploration before shipping. Remaps Cursor Task
   primitives to delegate-pick / gotchi-orchestrate / passoff / cursor-cli.
-  Chief (owned-954) frames and judges; heroes execute role-tagged briefs.
+  Chief (orchestrator) frames and judges; heroes execute role-tagged briefs.
 license: MIT
 compatibility: opencode
 metadata:
@@ -16,7 +16,7 @@ metadata:
 
 # pstack (GotchiBot)
 
-pstack's rigor for **owned-954 / gotchi**. You are the **chief** (Orchestrate
+pstack's rigor for **orchestrator / gotchi**. You are the **chief** (Orchestrate
 coordinator): frame, match a playbook, author briefs, drain, judge. Heroes do
 the deep work. This skill does **not** replace `delegate-first`.
 
@@ -44,7 +44,7 @@ program is multi-unit).
 
 ## Chief non-negotiable
 
-While pstack is active, **owned-954 does not author or edit product code**.
+While pstack is active, **orchestrator does not author or edit product code**.
 
 Allowed chief writes only:
 
@@ -60,7 +60,7 @@ runs `./scripts/cursor-cli.mjs run "…"` (do not DIY on Hy3).
 | pstack / Cursor idea | GotchiBot action |
 |---|---|
 | `Task` / `poteto-agent` | `./scripts/delegate-pick.mjs --json "…"` then `chat` / `spawn` / `blocked` |
-| Coordinator | always `owned-954` — briefs, drain, merge, human report |
+| Coordinator | always `orchestrator` — briefs, drain, merge, human report |
 | Worker / verifier / explorer | available hero per `config/pstack-roles.json` (prefer spare DAI) |
 | Parallel fan-out / swarm / arena | multiple `gotchi-orchestrate.mjs spawn` (one unit or approach per hero) |
 | Hard coding / all work | worker runs `cursor-cli` (mandatory) |
@@ -153,7 +153,7 @@ See [`config/pstack-roles.json`](../../../config/pstack-roles.json).
 
 | Role | Who | Model hint |
 |---|---|---|
-| coordinator | always `owned-954` | orch chat (big-pickle) |
+| coordinator | always `orchestrator` | orch chat (big-pickle) |
 | worker | next available spare (prefer idle DAI) | `sub` / nim |
 | verifier | different available hero than worker | stronger / `cursor-cli` when judgment-heavy |
 | how-explorer / why-investigator | available spare, **read-only** brief | `sub` |

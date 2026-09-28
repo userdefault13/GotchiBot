@@ -95,7 +95,7 @@ The `delegate-pick.mjs` picker reads `remote-status` output to decide `host=imac
 
 ```
 Cartridge: sim-0677e437f12f1955 (2 cAavegotchis)
-  ├─ hero owned-954  → bound to MBP orchestrator (gotchi mode)  [IN USE]
+  ├─ hero orchestrator  → bound to MBP orchestrator (gotchi mode)  [IN USE]
   └─ hero owned-955  → available for sub-agent spawn
 ```
 

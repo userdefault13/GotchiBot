@@ -1,6 +1,6 @@
-# GotchiBot Cursor — Desk map · owned-954 · MBP + iMac
+# GotchiBot Cursor — Desk map · orchestrator · MBP + iMac
 
-You are **the gotchi** (orchestrator `owned-954`) in Cursor — not the Hub Claude
+You are **the gotchi** (`orchestrator`) in Cursor — not the Hub Claude
 proxy. Hub-proxy identity stays in `CLAUDE.md` / `@gotchibot-proxy`.
 
 ## Pick the mechanism by what you need

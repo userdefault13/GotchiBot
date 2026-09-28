@@ -31,7 +31,7 @@ who is busy, who is focused, who Julius is talking to.
 | Hero status | sim + `sessions/.hero-agent-state.json` | `hero-agent-state.mjs` |
 | Avatar pane | `sessions/.avatar-roster.json` | `avatar-roster.mjs` |
 
-Orchestrator hero is typically **`owned-954`** (alias `gotchi`). Sub heroes are
+The orchestrator is **`orchestrator`** (alias `gotchi`; avatar = the bound gotchi). Sub heroes are
 other `owned-*` / `starter-*-h*` ids (e.g. LINK `starter-link-h1-1`, DAI `owned-22899`).
 
 ## Hero status vocabulary

@@ -28,7 +28,7 @@ MCP `aarcade-cartridge-schema` is schema-only. Writes still go to sim `:8791`. S
 
 ## cAavegotchi mint paths (ONLY these)
 
-1. **Available hero** — `status === "available"` only. Spawn. Do not mint. Never `owned-954`. Never steal assigned desks (`starter-yfi-h1-1` infra-monitor; `owned-22899` WBTC daily comms).
+1. **Available hero** — `status === "available"` only. Spawn. Do not mint. Never the orchestrator. Never steal assigned desks (`starter-yfi-h1-1` infra-monitor; `owned-22899` WBTC daily comms).
 2. **Named collateral first** (`yifi`→`yfi`, `btc`→`wbtc`, maYFI→yfi): query the **cartridge** (`abra run gotchibot -- ./scripts/agent-focus.mjs list --json` or identity roster). If a matching hero is `available` → spawn that hero. Do **not** mint. Do **not** ask for a token id.
 3. **Mint new collateral** — only after cartridge miss. List the **16 starter collaterals** (DialogSelect / `/spawn`). Julius confirms. Then `onboarding-api.mjs mint-sub <spiritId>` with simPay.
    - **Fees:** GotchiBot **contract/admin owner** wallet → always free. Else **1:1** — each L1 Aavegotchi on the cartridge owner wallet grants one free mint; beyond that → `$5` first unpaid / `$3` further. No wallet gotchis → `$5` then `$3`.
@@ -37,7 +37,7 @@ MCP `aarcade-cartridge-schema` is schema-only. Writes still go to sim `:8791`. S
    - Haunt 3 brand names are **not** in the 16.
 4. **Mint from wallet** — after cartridge miss. List unbound wallet gotchis by **NAME** via `wallet-roster.mjs` / identity roster / home subgraph (`subgraph.aarcadeghst.com`). Never Blockscout. Never ask Julius for a token id. Then `bind-owned <tokenId>` (free). Persist collateral on the hero (`bind-owned` used to drop it → wrong avatar color).
 5. **Named collateral overlay** (no available cartridge match): `/spawn` with `{collateral:"yfi"}` — filter 16-list + wallet matches, **ALWAYS show the list**, confirm, then mint-sub or bind-owned.
-6. **Unassign** — list assigned agents, set available, spawn. Never unassign `owned-954` (orch).
+6. **Unassign** — list assigned agents, set available, spawn. Never unassign the orchestrator.
 
 ## Forbidden
 

@@ -107,7 +107,7 @@ function atTag(entry: RosterEntry): string {
     return `@${coll}`
   }
   const id = String(entry.id || entry.hero || "")
-  if (id === "owned-954") return "@GOTCHI"
+  if (id === "orchestrator" || id === "gotchi") return "@GOTCHI"
   const m = id.match(/starter-([a-z0-9]+)-/i)
   if (m) return `@${m[1].toUpperCase()}`
   return `@${id.slice(0, 12) || "HERO"}`

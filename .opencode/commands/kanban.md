@@ -26,4 +26,4 @@ abra run gotchibot -- ./scripts/gotchi-kanban.mjs $ARGUMENTS
 
 **Cockpit:** `/cockpit` → **Kanban (agents · tasks · seats)**.
 
-Seat cap = cartridge mint count. Chief = `owned-954`. Charter: `CHARTER.md`.
+Seat cap = cartridge mint count. Chief = `orchestrator`. Charter: `CHARTER.md`.

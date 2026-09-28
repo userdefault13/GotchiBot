@@ -55,7 +55,7 @@ steal LINK/YFI/WBTC standing desks.
 
 | | |
 |---|---|
-| **Chief** | the gotchi / orch (`owned-954`) — see `ORCHESTRATOR.md`, `AGENTS.md`, pack `orchestrator` |
+| **Chief** | the gotchi / orch (`orchestrator`) — see `ORCHESTRATOR.md`, `AGENTS.md`, pack `orchestrator` |
 | **Workers** | Specialist heroes and Grok coding bots (dossier-*, prof-modal, gotchi-omarchy, standing desks LINK/YFI/WBTC, …) |
 | **Work tools** | Cursor (cursor-cli) → Claude → Codex — see `ORCHESTRATOR.md` |
 

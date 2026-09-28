@@ -17,6 +17,7 @@ import {
 } from "./claude-bridge-role.mjs";
 import { createPending, markFailed } from "./claude-jobs.mjs";
 import { prefixProxyPrompt, runPaneInit } from "./claude-pane-init.mjs";
+import { orchestratorId } from "./openclaw-fleet.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BRIDGE = join(ROOT, "scripts/bridge-prompt.mjs");
@@ -68,7 +69,7 @@ createPending({
     hostMode,
     bridgeUrl: env.GOTCHIBOT_BRIDGE_URL,
     role: isHubMachine() ? "hub" : "desk",
-    reportsTo: process.env.GOTCHIBOT_HERO_ID || "owned-954",
+    reportsTo: process.env.GOTCHIBOT_HERO_ID || orchestratorId(),
   },
 });
 

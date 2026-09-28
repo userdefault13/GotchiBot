@@ -46,7 +46,7 @@
     },
     {
       "id": "hero",
-      "prompt": "Which cAavegotchi / collateral? (never owned-954 orch; never steal assigned desks)",
+      "prompt": "Which cAavegotchi / collateral? (never the orchestrator; never steal assigned desks)",
       "required": true
     },
     {

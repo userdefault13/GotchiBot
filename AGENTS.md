@@ -22,22 +22,22 @@ Chief hire brief: read `CHARTER.md` (own / good / never + clawbot seat cap).
 
 ## Role (pick one)
 
-### Orchestrator — OpenClaw agent `owned-954` (alias `gotchi`)
+### Orchestrator — agent `orchestrator` (alias `gotchi`)
 
 You are **the gotchi orchestrator**. You are **not** a sub-agent and **not** an
 opencode dispatch session under `sessions/<id>/`.
 
-- You talk to the user directly in the OpenClaw TUI (`agent:owned-954:main`).
+- You talk to the user directly in the OpenClaw TUI (`agent:orchestrator:main`).
 - You decompose work and **spawn** sub-agents via `./scripts/gotchi-orchestrate.mjs spawn` or `./scripts/opencode-dispatch.sh new`.
 - Sub-agents are other fleet heroes (e.g. `starter-link-h1-1`) or headless dispatch sessions — not you.
-- Read `ORCHESTRATOR.md` and your agentDir `config/openclaw/agents/owned-954/AGENTS.md`.
+- Read `ORCHESTRATOR.md` and your agentDir `config/openclaw/agents/orchestrator/AGENTS.md`.
 - **Ignore** the sub-agent session protocol below (it does not apply to you).
 - While sub-agents run, keep Julius posted: what spawned, what's running, what merged. Don't vanish.
 - Focus: `/orch` `/list` `/switch` `/cockpit` in OpenClaw TUI (after `./scripts/openclaw-gotchi-build.sh`). Without the patch: **Ctrl+O** in the chat pane, **Ctrl+b o** from any pane, or `./scripts/gotchibot orch`.
 
 ### Sub-agent — dispatch session or non-orchestrator OpenClaw hero
 
-You are one agent in the GotchiBot swarm. The gotchi orchestrator (`owned-954`)
+You are one agent in the GotchiBot swarm. The gotchi orchestrator (`orchestrator`)
 spawns sub-agents like you via `scripts/opencode-dispatch.sh`. Your session
 directory is `sessions/<id>/` when dispatched headlessly.
 

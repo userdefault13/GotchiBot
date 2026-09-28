@@ -13,7 +13,7 @@
  *   node scripts/gotchi-kanban.mjs --watch         # plain refresh loop
  *   node scripts/gotchi-kanban.mjs --interactive   # force TUI
  *
- * Seat cap = cartridge mint count. Chief = owned-954.
+ * Seat cap = cartridge mint count. Chief = the orchestrator.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve, join } from "node:path";
@@ -27,10 +27,10 @@ import {
 import readline from "node:readline";
 import { resolveHeroColors } from "./collateral-resolve.mjs";
 import { renderKanbanAscii } from "./gotchi-art.mjs";
+import { orchestratorId } from "./openclaw-fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = join(ROOT, "sessions");
-const ORCH_ID = "owned-954";
 const WATCH_MS = Number(process.env.GOTCHIBOT_KANBAN_WATCH_MS || 5000);
 const REFRESH_S = Math.max(0.5, WATCH_MS / 1000);
 const KANBAN_ART_W = 12; // gotchi-thumb.ascii width (large tombstone, not the 5-line mini)
@@ -64,17 +64,6 @@ const CATEGORIES = [
   { key: "idle", title: "IDLE", match: (x) => x.column === "idle" },
   { key: "rework", title: "NEED REWORK", match: (x) => x.column === "rework" },
 ];
-
-function loadOrchId() {
-  try {
-    const p = join(ROOT, "sessions", ".onboarding.json");
-    if (!existsSync(p)) return ORCH_ID;
-    const j = JSON.parse(readFileSync(p, "utf8"));
-    return j.orchestratorHeroId || ORCH_ID;
-  } catch {
-    return ORCH_ID;
-  }
-}
 
 function fetchRoster() {
   const r = spawnSync(process.execPath, [join(ROOT, "scripts/agent-focus.mjs"), "list", "--json"], {
@@ -1009,7 +998,7 @@ function enterCardAction(card, { setStatus, onFocusDone } = {}) {
 }
 
 async function runTui() {
-  const orchId = loadOrchId();
+  const orchId = orchestratorId();
   let collapsed = {};
   let sel = 1;
   let focusPane = "list"; // list | details | logs
@@ -1216,7 +1205,7 @@ async function runTui() {
 }
 
 async function main() {
-  const orchId = loadOrchId();
+  const orchId = orchestratorId();
   const load = () => buildBoard(fetchRoster(), orchId);
 
   if (wantJson && !wantWatch) {

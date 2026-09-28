@@ -19,7 +19,7 @@ cat sessions/meetings/<id>/transcript.jsonl         # one JSON turn per line
 
 Each transcript line has `speaker` (a hero id), `role` (`user` / `chair` / agent),
 `text`, and `ts`. Map speaker ids to names with `participants` in `meeting.json` —
-`owned-954` is the orchestrator ("Gotchi"), the rest are cAavegotchi heroes
+`orchestrator` (or the gotchi bound as its avatar) is the orchestrator ("Orchestrator" until an avatar is set), the rest are cAavegotchi heroes
 (LINK, YFI, WBTC, DAI…). `userdefault` is Julius.
 
 If no meeting id is given, use `.current`; if there is no open meeting, use the
@@ -48,7 +48,7 @@ Rules:
 - **Quote-faithful.** Every line must trace to a turn. If nothing was decided,
   write "Nothing decided" — do not manufacture decisions to fill the section.
 - Attribute by display name, not hero id, except where the id is the clearer
-  handle (`owned-954` when acting as orchestrator).
+  handle (`orchestrator` when acting as orchestrator).
 - An action item needs an owner. If the transcript never assigns one, list it
   under Open questions as unassigned instead of guessing.
 - Skip the pleasantries, roll-call noise, and `[opencode-mobile]` plugin banner

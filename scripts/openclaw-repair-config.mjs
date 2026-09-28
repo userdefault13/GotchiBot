@@ -80,7 +80,7 @@ cfg.gateway.http.endpoints = cfg.gateway.http.endpoints || {};
 cfg.gateway.http.endpoints.chatCompletions = { enabled: true };
 cfg.gateway.http.endpoints.responses = { enabled: true };
 
-// Hub Claude Code as a named MCP tool (claude_ask) for Desk Gotchi / owned-954.
+// Hub Claude Code as a named MCP tool (claude_ask) for the Desk orchestrator.
 const gotchiRoot =
   process.env.GOTCHIBOT_OPENCLAW_WORKSPACE?.trim() ||
   join(homedir(), "Dev/GotchiBot");

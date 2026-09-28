@@ -60,7 +60,7 @@ Optional: skills (registry names), secrets (abra names only).
 ## Gates (Sandbox `/project` only)
 
 Wallet + cartridge + ≥1 cAavegotchi. Paper-only default. Never steal orch
-`owned-954` / assigned desks.
+`orchestrator` / assigned desks.
 
 ## Do not
 

@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { isMainModule } from "./is-main.mjs";
 import { install, uninstall, loaded, kickstart, plistPath } from "./lib/launchd-job.mjs";
+import { orchestratorId } from "./openclaw-fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOG_DIR = join(ROOT, "sessions", "desk-wake-logs");
@@ -60,11 +61,7 @@ function loadPlaybooks() {
 }
 
 function orchHeroId() {
-  const roles = loadRoles();
-  for (const [hero, role] of Object.entries(roles)) {
-    if (role === "orchestrator") return hero;
-  }
-  return "owned-954";
+  return orchestratorId();
 }
 
 function labelFor(heroId) {

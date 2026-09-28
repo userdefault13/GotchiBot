@@ -12,7 +12,8 @@ import { join } from "node:path"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 
 const ID = "gotchi.spawn"
-const ORCH_ID = "owned-954"
+const ORCH_ALIASES = new Set(["orchestrator", "gotchi", "orch"])
+let boundOrchId = ""
 const REQUEST_NAME = ".spawn-request.json"
 const LOG_NAME = ".spawn-ui.log"
 const LOADED_NAME = ".spawn-ui-loaded.json"
@@ -210,8 +211,18 @@ function lastLineId(stdout: string): string {
   return ""
 }
 
+function loadBoundOrch(rootDir: string) {
+  try {
+    const map = JSON.parse(readFileSync(join(sessionsDir(rootDir), ".openclaw-agent-map.json"), "utf8"))
+    boundOrchId = String(map?.orchestratorHeroId || "")
+  } catch {
+    boundOrchId = ""
+  }
+}
+
 function isOrch(id: string) {
-  return String(id || "") === ORCH_ID
+  const s = String(id || "")
+  return ORCH_ALIASES.has(s) || (!!boundOrchId && s === boundOrchId)
 }
 
 function heroStatus(row: any): string {
@@ -438,6 +449,7 @@ function heroTitle(h: Hero) {
 
 const tui: TuiPlugin = async (api) => {
   const rootDir = api.state?.path?.directory || api.state?.path?.worktree || process.cwd()
+  loadBoundOrch(rootDir)
   markLoaded(rootDir)
   log(rootDir, "plugin-init", { version: (api as any).app?.version, cwd: rootDir })
 
@@ -588,7 +600,7 @@ const tui: TuiPlugin = async (api) => {
 
   const spawnHero = async (heroId: string, task: string) => {
     if (isOrch(heroId)) {
-      toast(api, "owned-954 is the orchestrator — pick another gotchi", "error")
+      toast(api, "That gotchi is the orchestrator — pick another", "error")
       flowBusy = false
       return
     }
@@ -930,7 +942,7 @@ const tui: TuiPlugin = async (api) => {
 
     const rows = heroes.filter((h) => !isOrch(h.id))
     if (!rows.length) {
-      toast(api, "No agents to unassign (owned-954 is the orchestrator)", "warning")
+      toast(api, "No agents to unassign (only the orchestrator is seated)", "warning")
       flowBusy = false
       return
     }
@@ -1020,7 +1032,7 @@ const tui: TuiPlugin = async (api) => {
       return
     }
     // Named collateral (YFI / BTC / LINK / …): cartridge FIRST.
-    // Available matching cAavegotchi (never owned-954, never assigned) → spawn.
+    // Available matching cAavegotchi (never the orchestrator, never assigned) → spawn.
     // No match → skip 3-choice AND skip portal / VRF; mint/bind overlay.
     if (req.collateral) {
       const matchingAvailable = heroes.filter(

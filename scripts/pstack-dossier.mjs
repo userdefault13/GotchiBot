@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * pstack-dossier — chief (owned-954) SoT per program slug.
+ * pstack-dossier — chief (orchestrator) SoT per program slug.
  *
  * The dossier.json at sessions/pstack/<slug>/dossier.json is the single source
  * of truth for a pstack program's template fields. The dossier window

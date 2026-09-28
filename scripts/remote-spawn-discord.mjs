@@ -31,7 +31,7 @@ GOAL: Make GotchiBot reachable from iPhone via Discord. User DMs or @mentions a 
 CONTEXT (already true on this machine):
 - Host: iMac hub (REMOTE_HOST), Tailscale 100.68.95.90
 - Repo: ${cfg.dir}
-- Wallet logged in; Base Sepolia GotchiBot cartridge; heroes owned-954 + starter-link-h1-1
+- Wallet logged in; Base Sepolia GotchiBot cartridge; orchestrator + starter-link-h1-1
 - opencode serve is running Tailscale-only on http://100.68.95.90:4096 (health OK)
 - OpenClaw Discord is the preferred path (config/openclaw.gotchi.json5 already defines gotchi agent + gotchi-orchestrate.mjs spawn)
 - doza62 OpenCode Mobile iOS app is buggy — do NOT rely on it

@@ -1,7 +1,7 @@
 # GotchiBot Orchestrator
 
 The GotchiBot orchestrator is a Cursor / Claude desk agent wearing an Aavegotchi
-identity ("the gotchi", hero `owned-954`). It routes work to parallel workers,
+identity ("the gotchi", id `orchestrator`, avatar = the bound gotchi). It routes work to parallel workers,
 monitors them, manages the skill registry, and handles context handoffs between
 sessions.
 
