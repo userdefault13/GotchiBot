@@ -22,7 +22,13 @@ import {
   snapshotPathOk,
   validateProjectSnapshot,
 } from "../services/gotchibot-api/projects.mjs";
-import { snapshotHash } from "../scripts/hub-projects-push.mjs";
+import {
+  renderLaunchAgent,
+  renderSystemdUnit,
+  snapshotHash,
+  watchProjects,
+  watchRelevant,
+} from "../scripts/hub-projects-push.mjs";
 import {
   createCastVerifier,
   isAddress,
@@ -277,6 +283,58 @@ describe("project snapshot push", () => {
     } finally {
       rmSync(desk, { recursive: true, force: true });
       rmSync(hub, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("project push watcher", () => {
+  it("only pushed files count as changes", () => {
+    assert.equal(watchRelevant("pstack", "alpha/kanban.json"), true);
+    assert.equal(watchRelevant("pstack", "alpha"), true, "room created or removed");
+    assert.equal(watchRelevant("pstack", "alpha/ledger.tsv"), false);
+    assert.equal(watchRelevant("pstack", "alpha/inbox/msg.json"), false);
+    assert.equal(watchRelevant("pstack", "alpha/kanban.json.tmp-123"), false);
+    assert.equal(watchRelevant("avatars", "owned-1.svg"), true);
+    assert.equal(watchRelevant("sessions", ".hero-agent-state.json"), true);
+    assert.equal(watchRelevant("sessions", ".chat-sync-cursor.json"), false);
+    assert.equal(watchRelevant("config", "agent-roles.json"), true);
+    assert.equal(watchRelevant("config", "model-policy.json"), false);
+    assert.equal(watchRelevant("pstack", null), true, "unknown filename → push, hash dedupes");
+  });
+
+  it("service files run `watch` and restart on exit", () => {
+    const opts = { nodePath: "/n/node", scriptPath: "/r/scripts/hub-projects-push.mjs", root: "/r", home: "/h", logDir: "/r/logs" };
+    const plist = renderLaunchAgent(opts);
+    assert.match(plist, /<string>watch<\/string>/);
+    assert.match(plist, /<key>KeepAlive<\/key><true\/>/);
+    const unit = renderSystemdUnit(opts);
+    assert.match(unit, /^ExecStart="\/n\/node" "\/r\/scripts\/hub-projects-push.mjs" watch$/m);
+    assert.match(unit, /^Restart=always$/m);
+    assert.match(unit, /^WantedBy=default.target$/m);
+  });
+
+  it("pushes once after a burst of relevant edits, ignores the rest", async () => {
+    const root = makeRoot();
+    let pushes = 0;
+    const w = watchProjects({ root, debounceMs: 150, pushFn: async () => ({ projects: 2, files: 1, pushed: ++pushes }), log: () => {} });
+    const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+    try {
+      assert.deepEqual(w.watching().sort(), ["avatars", "config", "pstack", "sessions"]);
+      // FSEvents replays the fixture's own writes from just before the watch.
+      await settle(500);
+      pushes = 0;
+      writeFileSync(join(root, "sessions/pstack/alpha/ledger.tsv"), "noise\n");
+      writeFileSync(join(root, "sessions/.chat-sync-cursor.json"), "{}");
+      await settle(600);
+      assert.equal(pushes, 0, "unrelated files do not push");
+      for (let i = 0; i < 3; i += 1) {
+        writeFileSync(join(root, "sessions/pstack/alpha/kanban.json"), JSON.stringify({ cards: [], i }));
+      }
+      await settle(700);
+      assert.equal(pushes, 1, "burst debounced into one push");
+    } finally {
+      w.close();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
