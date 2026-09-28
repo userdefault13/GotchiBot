@@ -3,6 +3,10 @@
  * OpenClaw fleet — one OpenClaw agent per cartridge cAavegotchi.
  *
  *   node scripts/openclaw-fleet.mjs sync [--json]
+ *   node scripts/openclaw-fleet.mjs refresh-workspaces [--json]
+ *     Re-render every on-disk hero workspace (COMMON_SKILLS etc.) without
+ *     rewriting the OpenClaw fleet list — use when Sepolia nest is small but
+ *     stale workspaces still need common-skill promotion.
  *   node scripts/openclaw-fleet.mjs list [--json]
  *   node scripts/openclaw-fleet.mjs status [--json]
  *   node scripts/openclaw-fleet.mjs switch <heroId>
@@ -30,6 +34,7 @@ import {
   writeFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   realpathSync,
   cpSync,
   rmSync,
@@ -81,7 +86,7 @@ const ORCH_SKILLS = [
   "ralph",
 ];
 /** Skills every hero gets, orchestrator or not. */
-const COMMON_SKILLS = ["passoff", "desk-wake", "cursor-cli", "codex-cli", "gotchibot-bridge"];
+const COMMON_SKILLS = ["passoff", "desk-wake", "cursor-cli", "codex-cli", "gotchibot-bridge", "jev"];
 /** OpenClaw truncates a bootstrap file past this many chars (its default). */
 const BOOTSTRAP_MAX_CHARS = 20_000;
 const BOOTSTRAP_TOTAL_MAX_CHARS = 60_000;
@@ -117,6 +122,18 @@ function collateralEmoji(collateral) {
   if (c.includes("aave")) return "👻";
   if (c.includes("eth")) return "💎";
   return "🤖";
+}
+
+/** Name/emoji a hero workspace was last rendered with; ignores the uppercased-id fallback. */
+function readWorkspaceIdentity(dir, id) {
+  try {
+    const text = readFileSync(`${dir}/IDENTITY.md`, "utf8");
+    const name = text.match(/^- \*\*Name:\*\* (.+)$/m)?.[1]?.trim() || null;
+    const emoji = text.match(/^- \*\*Emoji:\*\* (.+)$/m)?.[1]?.trim() || null;
+    return { name: name && name !== String(id).toUpperCase() ? name : null, emoji };
+  } catch {
+    return { name: null, emoji: null };
+  }
 }
 
 function readJsonFile(path, fallback = null) {
@@ -261,7 +278,10 @@ export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orch
   // the role: extra skills + a rendered AGENTS.md section. Lets a hero keep an
   // old desk (e.g. trader monitor) after a rehatch to a new role.
   const standing = loadStandingDuties()[id] || null;
-  const skills = heroSkillNames({ playbook, isOrchestrator, standing });
+  // Role-bound orchestrators (e.g. owned-954 while nest pin is elsewhere) still
+  // need the full orch skill pack — desk pin alone must not strip them.
+  const orchSkills = isOrchestrator || role === "orchestrator";
+  const skills = heroSkillNames({ playbook, isOrchestrator: orchSkills, standing });
   const agentsTemplate = existsSync(`${TEMPLATE_DIR}/AGENTS.${role}.md`)
     ? `AGENTS.${role}.md`
     : "AGENTS.worker.md";
@@ -353,6 +373,29 @@ function buildEntry(hero, { isOrchestrator, orchId }) {
 async function loadHeroes() {
   const meta = loadMeta();
   let heroes = [];
+
+  // Base Sepolia nest: prefer on-chain nest heroes; don't hit SIM cartridge API.
+  const sepolia =
+    meta?.cartridgeSource === "sepolia" ||
+    process.env.GOTCHIBOT_PREFER_SEPOLIA_NEST === "1" ||
+    (meta?.cartridgeId && !String(meta.cartridgeId).startsWith("sim-"));
+  if (sepolia && meta?.owner && meta?.cartridgeId && !String(meta.cartridgeId).startsWith("sim-")) {
+    try {
+      const { readGotchiBotCartridgeSepolia } = await import("./cartridge-sepolia.mjs");
+      const sep = await readGotchiBotCartridgeSepolia(String(meta.owner).toLowerCase());
+      if (sep.cartridgeId && String(sep.cartridgeId) === String(meta.cartridgeId)) {
+        heroes = (sep.heroes || []).map((id) => ({ id: String(id), name: null, bindType: null }));
+      }
+    } catch {
+      heroes = [];
+    }
+    if (heroes.length) return heroes;
+    // Empty on-chain roster is normal for desk-pin orch — don't reuse stale 29-id fleet.
+    const orch = orchestratorHeroId() || meta.activeHeroId || null;
+    if (orch) return [{ id: String(orch), name: null, bindType: "desk" }];
+    return [];
+  }
+
   if (meta?.cartridgeId) {
     try {
       heroes = await fetchCartridgeHeroes(meta.cartridgeId);
@@ -531,6 +574,85 @@ export async function syncFleet({ quiet = false } = {}) {
   if (doctor.problems.length) {
     console.error(`openclaw-fleet doctor: ${doctor.problems.length} problem(s) — run ./scripts/openclaw-fleet.mjs doctor`);
     for (const p of doctor.problems) console.error(`  ✗ ${p}`);
+  }
+  return payload;
+}
+
+/**
+ * Re-render every hero workspace that already exists on disk.
+ * Does NOT rewrite fleet.list / fleet.generated — Sepolia nest stays nest-sized.
+ * Use after COMMON_SKILLS (or templates) change so every gotchi gets the update.
+ */
+export async function refreshAllWorkspaces({ quiet = false } = {}) {
+  const root = heroWorkspaceRoot();
+  const orchId = orchestratorHeroId();
+  const last = readGeneratedJson(FLEET_LIST, []);
+  const byId = new Map();
+  if (Array.isArray(last)) {
+    for (const e of last) {
+      if (!e?.id || e.aliasOf || e.id === "gotchi") continue;
+      byId.set(e.id, {
+        id: e.id,
+        name: e.identity?.name || null,
+        collateral: null,
+        bindType: null,
+      });
+    }
+  }
+
+  let ids = [];
+  try {
+    ids = readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .filter((id) => existsSync(`${root}/${id}/AGENTS.md`))
+      .sort();
+  } catch {
+    ids = [];
+  }
+
+  const rendered = {};
+  for (const id of ids) {
+    const hero = byId.get(id) || { id, name: null, bindType: null };
+    const isOrchestrator = id === orchId;
+    // The fleet list is nest-sized on Sepolia, so most heroes are missing from
+    // it; the name already rendered on disk is the one to keep.
+    const onDisk = readWorkspaceIdentity(`${root}/${id}`, id);
+    const listName = hero.name && hero.name !== id.toUpperCase() ? hero.name : null;
+    const name =
+      onDisk.name ||
+      listName ||
+      (isOrchestrator ? "Gotchi" : String(hero.collateral || id).toUpperCase());
+    const emoji = isOrchestrator ? "👻" : onDisk.emoji || collateralEmoji(hero.collateral);
+    const r = writeHeroWorkspace(
+      { ...hero, id },
+      { id, name, emoji, isOrchestrator, orchId },
+    );
+    writeAgentStateDir(id, r.ws);
+    rendered[id] = r;
+  }
+
+  const withJev = Object.entries(rendered).filter(([, r]) =>
+    (r.skills || []).includes("jev"),
+  ).length;
+  const payload = {
+    ok: true,
+    count: ids.length,
+    withJev,
+    commonSkills: COMMON_SKILLS,
+    agents: ids,
+    workspaces: root,
+    fleetListUntouched: true,
+  };
+  if (!quiet) {
+    console.log(
+      `openclaw workspaces refreshed → ${payload.count} dirs (jev on ${withJev}; fleet list untouched)`,
+    );
+    for (const id of ids) {
+      const r = rendered[id];
+      const tag = id === orchId ? "orch" : "sub";
+      console.log(`  · ${id} [${tag}] role=${r.role} skills=${r.copiedSkills.length}`);
+    }
   }
   return payload;
 }
@@ -1060,6 +1182,12 @@ async function main() {
     if (json) console.log(JSON.stringify(r, null, 2));
     return;
   }
+  if (cmd === "refresh-workspaces") {
+    const quietFlag = rest.includes("--quiet");
+    const r = await refreshAllWorkspaces({ quiet: quietFlag || json });
+    if (json) console.log(JSON.stringify(r, null, 2));
+    return;
+  }
   if (cmd === "list") {
     cmdList(json);
     return;
@@ -1169,6 +1297,7 @@ async function main() {
 
   console.error(`usage:
   openclaw-fleet.mjs sync [--json] [--quiet]
+  openclaw-fleet.mjs refresh-workspaces [--json] [--quiet]
   openclaw-fleet.mjs list [--json]
   openclaw-fleet.mjs status [--json]
   openclaw-fleet.mjs switch <heroId>

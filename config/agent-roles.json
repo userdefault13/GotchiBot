@@ -19,5 +19,7 @@
   "owned-12302": "market-news",
   "owned-14314": "market-research",
   "owned-14338": "kanban-manager",
-  "owned-15486": "architect"
+  "owned-15486": "architect",
+  "0x0fa2b0c00c9cf1ec0d321430fa05758c1dc7326d16ec5fece429d8c245dc9836": "worker",
+  "0x5157c15aab5e75e901f7af48186b7eeda571d52e2ac71339e0a254f1cdea2595": "worker"
 }
