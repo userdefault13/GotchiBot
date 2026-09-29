@@ -1056,14 +1056,16 @@ install_agent_keys() {
   tmux bind-key -T gotchi-chat F3 run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T prefix o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
   tmux bind-key -T root M-o run-shell "cd \"$ROOT\" && ./scripts/gotchibot orch" 2>/dev/null || true
-  # One Ctrl+C → quit whole desk (back to terminal). Session-scoped so other tmux
-  # sessions still get a normal interrupt. Intercepts before OpenCode sees C-c.
+  # Ctrl+C → confirm, then quit whole desk (back to terminal). Session-scoped so
+  # other tmux sessions still get a normal interrupt. Intercepts before OpenCode
+  # sees C-c; a reflex Ctrl+C on a slow agent turn must not kill the desk.
   local quit_sh="$ROOT/scripts/desk-quit.sh"
   chmod +x "$quit_sh" 2>/dev/null || true
   local quit_run="GOTCHIBOT_TMUX_SESSION='$sess_name' '$quit_sh'"
-  tmux bind-key -n C-c if-shell -F "#{==:#{session_name},$sess_name}" "run-shell \"$quit_run\"" "send-keys C-c" 2>/dev/null || true
+  local quit_confirm="confirm-before -p 'Quit GotchiBot desk? (y/n)' \"run-shell \\\"$quit_run\\\"\""
+  tmux bind-key -n C-c if-shell -F "#{==:#{session_name},$sess_name}" "$quit_confirm" "send-keys C-c" 2>/dev/null || true
   for _qt in root gotchi-chat gotchi-files gotchi-avatar; do
-    tmux bind-key -T "$_qt" C-c if-shell -F "#{==:#{session_name},$sess_name}" "run-shell \"$quit_run\"" "send-keys C-c" 2>/dev/null || true
+    tmux bind-key -T "$_qt" C-c if-shell -F "#{==:#{session_name},$sess_name}" "$quit_confirm" "send-keys C-c" 2>/dev/null || true
   done
   # Meet gallery (existing meeting only) — F8 / prefix m / Option+M / Option+U
   # Do NOT bind -n C-m: terminals send C-m for Enter.
