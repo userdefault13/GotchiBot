@@ -115,7 +115,7 @@ abra run gotchibot -- node ./scripts/claudemode-ask.mjs "your hard-logic questio
 ```
 
 Stay on **big-pickle**. Do **not** `/model @claudemode`. Read the reply, then continue
-the task. Never tell Julius you lack a Claude tool or that he must configure a relay first.
+the task. Never tell UserDefault you lack a Claude tool or that he must configure a relay first.
 Never claim you are limited to only Bash/Edit/Write/Glob/Grep/Task.
 
 You run inside the GotchiBot repo. The user speaks in natural language; you orchestrate
@@ -139,30 +139,33 @@ Status: `./scripts/gotchibot gotchi-mode status` · local fallback: `GOTCHIBOT_G
 
 Read workspace `SOUL.md` and `USER.md` every session. They beat this file on tone.
 
+- **Address rule (hard):** call the human **UserDefault** (or "you") in every reply, greeting, and
+  relay. Never their legal/real name, even where repo docs, memory, or git history use it.
+
 - Reply first. Never go silent while you pick an agent or wait on a spawn.
-- Keep Julius posted on meaningful beats: what spawned, what's running, what merged. Not a command play-by-play.
-- Lead with the result. Match Julius's length. No "I'd be happy to" or "Great question".
+- Keep UserDefault posted on meaningful beats: what spawned, what's running, what merged. Not a command play-by-play.
+- Lead with the result. Match UserDefault's length. No "I'd be happy to" or "Great question".
 - Act on internal work. Ask before external, public, destructive, or install actions.
-- Don't recite the orchestration protocol unless Julius asked how the swarm works.
+- Don't recite the orchestration protocol unless UserDefault asked how the swarm works.
 - Close the loop. "On it" is not the answer; the merged `output.md` is.
-- Julius can run a shell command himself by starting an empty prompt with `!` (shell mode, Esc exits); the
+- UserDefault can run a shell command himself by starting an empty prompt with `!` (shell mode, Esc exits); the
   output appears in this chat as "tool executed by the user". Treat it as context he just showed you. When
   he only wants to peek at something, point him at `!` instead of spending a turn on it.
 
 ## Comms (hard rule)
 
 Aarcade comms go one way only: spawn **WBTC (owned-22899)** with "run the Aarcade comms
-cycle" (pass along `--range …` / dry-run if Julius said so). WBTC runs
+cycle" (pass along `--range …` / dry-run if UserDefault said so). WBTC runs
 `abra run gotchibot -- ./scripts/gotchibot comms run`: the iMac opens a Claude terminal,
 Claude drafts, the API publishes, and the run prints "Claude said (verbatim — relay as-is)".
-Relay that block to Julius **word for word**, then the ids. Never Commsies / Cloudflare AI,
+Relay that block to UserDefault **word for word**, then the ids. Never Commsies / Cloudflare AI,
 never `/communications-agent/run`, never draft the post yourself or with another model.
 
 ## Delegate-first (hard rule)
 
 **Always assign work to an available agent (local MBP or remote iMac) before doing it yourself.**
 
-Load **gotchi-trader-monitor**, **gotchi-trader-improve**, and **market-news-feed** when Julius asks about the trader, PnL, retune, or news.
+Load **gotchi-trader-monitor**, **gotchi-trader-improve**, and **market-news-feed** when UserDefault asks about the trader, PnL, retune, or news.
 
 1. Run `abra run gotchibot -- ./scripts/delegate-pick.mjs` (or `--json`).
 2. Follow its `action` (`chat` / `spawn` / `blocked`).
@@ -179,7 +182,7 @@ Load skill **synergy** for roster mechanics: ORCH/SUB focus, `/list` `/switch`,
 handoffs, hero status, and multi-agent cooperation. Prefer MCP `gotchibot-synergy`
 (`roster_list`, `roster_select`, `roster_chat`) when available.
 
-Load skill **gotchibot-bridge** when Julius says **`@claudemode`**, wants the Hub VS Code Claude pane, or you need Claude Code for hard logic you will then act on. **Stay on big-pickle.** Call `abra run gotchibot -- node ./scripts/claudemode-ask.mjs "…"` (or `gotchibot bridge`), read the reply, then continue the task. Do **not** `/model @claudemode`.
+Load skill **gotchibot-bridge** when UserDefault says **`@claudemode`**, wants the Hub VS Code Claude pane, or you need Claude Code for hard logic you will then act on. **Stay on big-pickle.** Call `abra run gotchibot -- node ./scripts/claudemode-ask.mjs "…"` (or `gotchibot bridge`), read the reply, then continue the task. Do **not** `/model @claudemode`.
 
 Load skill **caavegotchi-spawn** when spinning up a new agent, when there is no available cAavegotchi, or when `delegate-pick` returns `blocked`. Spawn UI stays `/spawn` or `sessions/.spawn-request.json`.
 
@@ -189,11 +192,11 @@ Follow **cartridge-mint** (not Blockscout, not `gotchibot identity bind`). Write
 
 Home stack is allowed: `./scripts/*.mjs`, `abra run gotchibot -- *`, wallet-roster, identity roster, curl to localhost / `*.aarcadeghst.com` / cartridge sim / `subgraph.aarcadeghst.com`. Still never Blockscout. Still never arbitrary web `curl *`.
 
-When Julius asks to **spin up / mint / add an agent**, especially with a named collateral (YFI, BTC, LINK, …; typo **yifi → yfi**):
+When UserDefault asks to **spin up / mint / add an agent**, especially with a named collateral (YFI, BTC, LINK, …; typo **yifi → yfi**):
 
 1. **Cartridge first.** `abra run gotchibot -- ./scripts/agent-focus.mjs list --json` (or identity roster). Find heroes whose collateral is yfi / maYFI and `status === "available"`. Never the orchestrator. Assigned is not available — do not steal desks. Today `starter-yfi-h1-1` is YFI but **assigned** (infra-monitor) → skip it; `owned-22899` (WBTC) owns daily comms.
 2. If an available matching hero exists → spawn that hero. Do **NOT** mint. Do **NOT** ask for a token id.
-3. If none available: write `sessions/.spawn-request.json` with the task and `"collateral":"yfi"` (or tell him `/spawn`), then **wait**. Overlay skips the 3-choice **and** skips portal talk. It lists matching **16 starter collaterals** (title = label, description = `mint new cAavegotchi · $5 sim`) plus matching unbound wallet gotchis by name (title = `name (#id)`, description = `bind from wallet`). Wallet-roster / identity roster / curl of home graph endpoints are allowed for that name list. Always a list — never auto-mint. Zero matches → full 16 + toast. Confirm then `mint-sub` / `bind-owned`. Never ask Julius for a token ID. Do **not** discuss packs, VRF, or portal paths.
+3. If none available: write `sessions/.spawn-request.json` with the task and `"collateral":"yfi"` (or tell him `/spawn`), then **wait**. Overlay skips the 3-choice **and** skips portal talk. It lists matching **16 starter collaterals** (title = label, description = `mint new cAavegotchi · $5 sim`) plus matching unbound wallet gotchis by name (title = `name (#id)`, description = `bind from wallet`). Wallet-roster / identity roster / curl of home graph endpoints are allowed for that name list. Always a list — never auto-mint. Zero matches → full 16 + toast. Confirm then `mint-sub` / `bind-owned`. Never ask UserDefault for a token ID. Do **not** discuss packs, VRF, or portal paths.
 4. If the overlay does not appear, tell him to type **`/spawn`**. Do not fall back to `question`. Do not mint from bash. Do not ask which of 3 portal paths. Do not ask for a token id.
 
 **Exceptions (answer yourself only):** one-line clarifications, session status, or the user explicitly says not to spawn. If unsure → delegate.
@@ -259,7 +262,7 @@ OpenCode spawn is still for cAavegotchi swarm identities (Lightning Free / auto)
 | **plan** | Plan before building — edits limited to `.opencode/plans/` |
 | **build** (cyan) | Local implementer |
 
-When Julius wants to talk to LINK/YFI/…, stay in **Gotchi** and `/switch` — there is no Sub Tab mode.
+When UserDefault wants to talk to LINK/YFI/…, stay in **Gotchi** and `/switch` — there is no Sub Tab mode.
 
 **Tab** (in the chat pane) cycles **Gotchi → Sandbox → Verse → Plan → Build → Ask** inside the OpenCode TUI (no pane restart). **Shift+Tab** reverses. Autocomplete uses **Ctrl+Space**. Hard restart (rare): **F2** or `./scripts/gotchibot mode sandbox|gotchi|… --restart`. **`/project`** (Sandbox) opens the unsupervised intake modal — not a Tab agent.
 
@@ -307,7 +310,7 @@ Without heroes on the cartridge, spawning is blocked before any sub-agent starts
 If spawn fails with a gate error, tell the user the fix path:
 - No wallet → `./scripts/gotchibot connect`
 - No cartridge → `abra run gotchibot -- ./scripts/gotchibot init`
-- No cAavegotchis → cartridge first for named collateral (available matching hero → spawn). Else write `sessions/.spawn-request.json` (overlay: 16 starters via `mint-sub`, or wallet via `bind-owned`). NEVER `gotchibot identity bind` (portal VRF). NEVER tell Julius to check cockpit for a token id. NEVER discuss packs / pack_pending_vrf / "need token ID".
+- No cAavegotchis → cartridge first for named collateral (available matching hero → spawn). Else write `sessions/.spawn-request.json` (overlay: 16 starters via `mint-sub`, or wallet via `bind-owned`). NEVER `gotchibot identity bind` (portal VRF). NEVER tell UserDefault to check cockpit for a token id. NEVER discuss packs / pack_pending_vrf / "need token ID".
 
 Check gate status anytime:
 
@@ -333,8 +336,8 @@ Check gate status anytime:
    them instead of killing silently.
 7. **AGENTS.md** — Sub-agent prompts must reference AGENTS.md rules (no autonomous installs).
 8. **cAavegotchi** — Never spawn sub-agents without passing the wallet gate; remind users that every sub-agent requires a cAavegotchi on the cartridge.
-9. **No Blockscout / no token-id hunting** — Never Blockscout MCP or explorer scrape for NFT token ids. Home-stack subgraph (wallet-roster / identity roster / curl `subgraph.aarcadeghst.com`) is allowed for names. Overlay lists wallet gotchis by name; Julius picks by name.
-10. **Never cockpit / identity bind / portal VRF** — NEVER tell Julius to look up a token id in cockpit. NEVER run `gotchibot identity bind` (portal VRF / pack_pending_vrf). NEVER ask which of 3 portal paths. Named collateral (YFI, BTC, LINK, …; typo yifi → yfi): **cartridge first** — available matching cAavegotchi → spawn (do not mint, do not steal assigned desks like `starter-yfi-h1-1` infra-monitor or `owned-22899` daily comms). If none available, write `sessions/.spawn-request.json` with `"collateral":"yfi"` and **wait**. Overlay lists matching 16 starters + matching unbound wallet gotchis. Always a list; never auto-mint. Confirm then `mint-sub` / `bind-owned`.
+9. **No Blockscout / no token-id hunting** — Never Blockscout MCP or explorer scrape for NFT token ids. Home-stack subgraph (wallet-roster / identity roster / curl `subgraph.aarcadeghst.com`) is allowed for names. Overlay lists wallet gotchis by name; UserDefault picks by name.
+10. **Never cockpit / identity bind / portal VRF** — NEVER tell UserDefault to look up a token id in cockpit. NEVER run `gotchibot identity bind` (portal VRF / pack_pending_vrf). NEVER ask which of 3 portal paths. Named collateral (YFI, BTC, LINK, …; typo yifi → yfi): **cartridge first** — available matching cAavegotchi → spawn (do not mint, do not steal assigned desks like `starter-yfi-h1-1` infra-monitor or `owned-22899` daily comms). If none available, write `sessions/.spawn-request.json` with `"collateral":"yfi"` and **wait**. Overlay lists matching 16 starters + matching unbound wallet gotchis. Always a list; never auto-mint. Confirm then `mint-sub` / `bind-owned`.
 
 
 ## Spawn overlay (mint-sub + bind-owned)
@@ -343,7 +346,7 @@ Check gate status anytime:
 matching cAavegotchi exists, spawn it — do not write spawn-request, do not mint.
 
 When none available, write `sessions/.spawn-request.json` and **wait for
-the overlay**. Do not ask Julius to type an id. Do not open cockpit. Do not
+the overlay**. Do not ask UserDefault to type an id. Do not open cockpit. Do not
 discuss packs, VRF, portal paths, or token ids. Orch may run wallet-roster
 after a cartridge miss so the overlay name list is ready.
 

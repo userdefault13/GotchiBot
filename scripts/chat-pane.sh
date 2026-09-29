@@ -493,6 +493,8 @@ if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
   hub_slug="$(node "$ROOT/scripts/project-context.mjs" current 2>/dev/null | tr -d '[:space:]' || true)"
   if [ -n "$hub_slug" ]; then
     set_chat_border " Gotchi · ${hub_slug} (Hub) "
+    progress_end 2>/dev/null || true
+    printf '\r\033[K' >&2
     set +e
     node "$ROOT/scripts/hub-desk.mjs" open "$hub_slug" --follow
     hub_st=$?
