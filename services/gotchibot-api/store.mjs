@@ -1232,6 +1232,41 @@ export async function connectStore({ mongoUri, dbName }) {
     return { sessionId, startedAt: now.toISOString() };
   }
 
+  /** Project whose chat already lists this OpenCode session (null if none). */
+  async function deskSessionOwner(sessionId) {
+    const doc = await deskSessions.findOne(
+      { $or: [{ sessionId }, { "sessions.sessionId": sessionId }] },
+      { projection: { _id: 1 } },
+    );
+    return doc?._id ?? null;
+  }
+
+  /**
+   * Make an OpenCode session a terminal opened (or switched back to) the current
+   * one: a known session keeps its mirror cursor, an unknown one is added fresh.
+   */
+  async function adoptDeskSession(slug, sessionId, startedBy = null) {
+    const id = String(slug);
+    await migrateDeskSessions(id);
+    const doc = await deskSessions.findOne({ _id: id });
+    const known = deskSessionList(doc || {}).find((s) => s.sessionId === sessionId);
+    if (!known) return { ...(await startDeskSession(id, sessionId, startedBy)), resumed: false };
+    const now = new Date();
+    await deskSessions.updateOne(
+      { _id: id, "sessions.sessionId": sessionId },
+      {
+        $set: {
+          sessionId,
+          lastMirroredId: known.lastMirroredId,
+          sessionStartedAt: known.startedAt ? new Date(known.startedAt) : now,
+          updatedAt: now,
+          "sessions.$.lastActiveAt": now,
+        },
+      },
+    );
+    return { sessionId, startedAt: known.startedAt || now.toISOString(), resumed: true };
+  }
+
   async function linkDeskThread(slug, threadId) {
     await deskSessions.updateOne(
       { _id: String(slug) },
@@ -1658,6 +1693,8 @@ export async function connectStore({ mongoUri, dbName }) {
     linkDeskThread,
     claimDeskSession,
     startDeskSession,
+    adoptDeskSession,
+    deskSessionOwner,
     resetDeskSession,
     setDeskMirrored,
     createSnapshot,

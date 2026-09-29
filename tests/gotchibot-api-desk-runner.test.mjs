@@ -10,17 +10,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MongoClient } from "mongodb";
 import {
+  adoptDeskSessionFromTerminal,
   createDeskRunner,
   ensureDeskSession,
   messageText,
   mirrorDeskSession,
   sessionDividerText,
+  sessionSwitchText,
   startNewDeskSession,
 } from "../services/gotchibot-api/desk-runner.mjs";
 import { connectStore, deskThreadId } from "../services/gotchibot-api/store.mjs";
 import { createApiServer } from "../services/gotchibot-api/server.mjs";
 import { createProjectSource } from "../services/gotchibot-api/projects.mjs";
-import { followDecision, remoteAttachCommand, renderDeskUnit } from "../scripts/hub-desk.mjs";
+import { deskDeviceLabel, deskSyncEnv, remoteAttachCommand, renderDeskUnit } from "../scripts/hub-desk.mjs";
 import { deskThreadId as appDeskThreadId } from "../services/gotchibot-api/app/js/desk-model.js";
 
 let clock = 1_790_000_000_000;
@@ -61,9 +63,11 @@ function fakeOpencode({ reply = (text) => `re: ${text}`, hang = false } = {}) {
       this.created.push(id);
       return id;
     },
+    parents: new Map(),
     async getSession(id) {
       if (!sessions.has(id)) throw notFound();
-      return { id };
+      const parentID = this.parents.get(id);
+      return parentID ? { id, parentID } : { id };
     },
     async deleteSession(id) {
       sessions.delete(id);
@@ -128,6 +132,19 @@ function memoryStore() {
       const entry = { sessionId, startedAt, startedBy, lastMirroredId: null, lastActiveAt: startedAt };
       desk.set(slug, { ...d, sessionId, lastMirroredId: null, sessions: [...(d.sessions || []), entry] });
       return { sessionId, startedAt };
+    },
+    async deskSessionOwner(sessionId) {
+      for (const [slug, d] of desk) {
+        if (d.sessionId === sessionId || (d.sessions || []).some((s) => s.sessionId === sessionId)) return slug;
+      }
+      return null;
+    },
+    async adoptDeskSession(slug, sessionId, startedBy = null) {
+      const d = desk.get(slug);
+      const known = (d?.sessions || []).find((s) => s.sessionId === sessionId);
+      if (!known) return { ...(await this.startDeskSession(slug, sessionId, startedBy)), resumed: false };
+      desk.set(slug, { ...d, sessionId, lastMirroredId: known.lastMirroredId });
+      return { sessionId, startedAt: known.startedAt, resumed: true };
     },
     async resetDeskSession(slug, sessionId) {
       const d = desk.get(slug);
@@ -274,17 +291,49 @@ describe("desk runner (unit)", () => {
     assert.equal(logs.filter((l) => l.includes("mirror-error")).length, 0, "a deleted old session is skipped quietly");
   });
 
-  it("follow reattaches only when the Hub moved to another session", () => {
-    assert.equal(followDecision("ses_1", { sessionId: "ses_1" }), "stay");
-    assert.equal(followDecision("ses_1", { sessionId: "ses_2" }), "reattach");
-    assert.equal(followDecision("ses_1", { sessionId: null }), "stay");
-    assert.equal(followDecision("ses_1", null), "stay");
+  it("terminal /new is adopted: divider once, switching back says Switched, children and other projects refused", async () => {
+    const store = memoryStore();
+    const client = fakeOpencode();
+    const threadId = deskThreadId("alpha");
+    const first = await ensureDeskSession({ store, client, slug: "alpha" });
+    const typed = await client.createSession();
+
+    const a = await adoptDeskSessionFromTerminal({ store, client, slug: "alpha", title: "Alpha desk", sessionId: typed, startedBy: "Mac desk" });
+    assert.equal(a.resumed, false);
+    assert.equal((await store.getDeskSession("alpha")).sessionId, typed);
+    assert.equal(store.messages.find((m) => m.messageId === `session-${typed}`).text, sessionDividerText("Mac desk"));
+
+    const again = await adoptDeskSessionFromTerminal({ store, client, slug: "alpha", sessionId: typed });
+    assert.equal(again.resumed, true);
+    assert.equal(store.messages.filter((m) => m.threadId === threadId).length, 1, "re-adopting the current session is a no-op");
+
+    const back = await adoptDeskSessionFromTerminal({ store, client, slug: "alpha", sessionId: first, startedBy: "Mac desk" });
+    assert.equal(back.resumed, true);
+    assert.equal((await store.getDeskSession("alpha")).sessionId, first);
+    assert.equal(store.messages.at(-1).text, sessionSwitchText("Mac desk"));
+
+    const child = await client.createSession();
+    client.parents.set(child, typed);
+    await assert.rejects(adoptDeskSessionFromTerminal({ store, client, slug: "alpha", sessionId: child }), (e) => e.status === 400);
+    const other = await ensureDeskSession({ store, client, slug: "beta" });
+    await assert.rejects(adoptDeskSessionFromTerminal({ store, client, slug: "alpha", sessionId: other }), (e) => e.status === 409);
+    await assert.rejects(adoptDeskSessionFromTerminal({ store, client, slug: "alpha", sessionId: "ses_gone" }), (e) => e.status === 404);
     assert.equal(appDeskThreadId("alpha"), deskThreadId("alpha"));
   });
 
-  it("terminal attach command and unit rendering", () => {
+  it("terminal attach command carries the sync env; the device label never leaks the hostname", () => {
     const cmd = remoteAttachCommand({ repoDir: "/home/u/dev/GotchiBot", opencodeUrl: "http://127.0.0.1:4096", sessionId: "ses_1" });
     assert.match(cmd, /^cd '\/home\/u\/dev\/GotchiBot' && exec .* attach 'http:\/\/127\.0\.0\.1:4096' --session 'ses_1' --dir '\/home\/u\/dev\/GotchiBot'$/);
+    const synced = remoteAttachCommand(
+      { repoDir: "/r", opencodeUrl: "http://h", sessionId: "ses_1" },
+      { GOTCHIBOT_DESK_SLUG: "alpha", GOTCHIBOT_DESK_DEVICE: "it's mine", "bad name": "x", EMPTY: "" },
+    );
+    assert.match(synced, /&& GOTCHIBOT_DESK_SLUG='alpha' GOTCHIBOT_DESK_DEVICE='it'\\''s mine' exec /);
+    assert.doesNotMatch(synced, /bad name|EMPTY/);
+    assert.equal(deskDeviceLabel({}, "darwin"), "Mac desk");
+    assert.equal(deskDeviceLabel({}, "linux"), "Linux desk");
+    assert.equal(deskDeviceLabel({ GOTCHIBOT_DESK_LABEL: "Studio" }, "darwin"), "Studio");
+    assert.deepEqual(deskSyncEnv("alpha", {}), { GOTCHIBOT_DESK_SLUG: "alpha", GOTCHIBOT_DESK_DEVICE: deskDeviceLabel({}) });
     assert.equal(renderDeskUnit("x=@REPO@ y=@MISSING@", { REPO: "/r" }), "x=/r y=@MISSING@");
   });
 });
@@ -470,5 +519,44 @@ describe("desk threads on the Hub (Mongo)", async () => {
     const whoami = await get("/api/gotchibot/hub/whoami", phone);
     await store.revokeDesk(whoami.data.deskId);
     assert.equal((await post("/api/gotchibot/projects/alpha/desk/session", phone)).status, 401);
+  });
+
+  it("POST /desk/session { sessionId }: a terminal's own session becomes current for every device", async () => {
+    const desk = await token("desk");
+    const phone = await token("phone");
+    const post = async (body, tok = desk) => {
+      const res = await fetch(`http://127.0.0.1:${port}/api/gotchibot/projects/alpha/desk/session`, {
+        method: "POST",
+        headers: { "X-GotchiBot-Desk-Token": tok, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return { status: res.status, data: await res.json() };
+    };
+    const earlier = (await get("/api/gotchibot/projects/alpha/desk?session=1", desk)).data.sessionId;
+    await store.setDeskMirrored("alpha", earlier, "msg_keep");
+    const typed = await opencode.createSession();
+
+    const r = await post({ sessionId: typed, device: "Mac desk<script>" });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.sessionId, typed);
+    assert.equal(r.data.resumed, false);
+    assert.equal((await get("/api/gotchibot/projects/alpha/desk", phone)).data.sessionStartedAt, r.data.startedAt);
+    const pulled = await get("/api/gotchibot/chats/pull?threadId=desk-alpha&after=0", phone);
+    assert.equal(pulled.data.messages.find((m) => m.messageId === `session-${typed}`).text, sessionDividerText("Mac deskscript"));
+
+    const back = await post({ sessionId: earlier });
+    assert.equal(back.data.resumed, true);
+    const state = await store.getDeskSession("alpha");
+    assert.equal(state.sessionId, earlier);
+    assert.equal(state.lastMirroredId, "msg_keep", "switching back keeps that session's mirror cursor");
+
+    assert.equal((await post({ sessionId: "not-a-session" })).status, 400);
+    assert.equal((await post({ sessionId: "ses_missing" })).status, 404);
+    const child = await opencode.createSession();
+    opencode.parents.set(child, typed);
+    assert.equal((await post({ sessionId: child })).status, 400);
+    const foreign = await opencode.createSession();
+    await store.startDeskSession("elsewhere", foreign);
+    assert.equal((await post({ sessionId: foreign })).status, 409);
   });
 });

@@ -221,6 +221,56 @@ export async function startNewDeskSession({ store, client, slug, title, startedB
   return { threadId, sessionId, startedAt };
 }
 
+export function sessionSwitchText(startedBy) {
+  return `Switched session · on ${startedBy || "a device"}`;
+}
+
+/**
+ * A terminal opened a session itself (OpenCode `/new`, or picked one from its
+ * session list): make it the chat's current session so every device follows.
+ * Sub-agent child sessions and other projects' sessions are refused.
+ * @returns {Promise<{ threadId: string, sessionId: string, startedAt: string, resumed: boolean }>}
+ */
+export async function adoptDeskSessionFromTerminal({ store, client, slug, title, sessionId, startedBy = null }) {
+  const info = await client.getSession(sessionId);
+  if (info?.parentID) {
+    throw Object.assign(new Error("that is a sub-agent session; only top-level sessions sync"), { status: 400 });
+  }
+  const owner = await store.deskSessionOwner(sessionId);
+  if (owner && owner !== slug) {
+    throw Object.assign(new Error(`that session belongs to the ${owner} chat`), { status: 409 });
+  }
+  const { threadId } = await store.ensureDeskThread({ slug, title });
+  const current = await store.getDeskSession(slug);
+  if (current?.sessionId === sessionId) {
+    return { threadId, sessionId, startedAt: current.sessionStartedAt, resumed: true };
+  }
+  const { startedAt, resumed } = await store.adoptDeskSession(slug, sessionId, startedBy);
+  const ts = new Date().toISOString();
+  await store.pushMessages({
+    threadId,
+    deskId: HUB_DESK_RUNNER_ID,
+    messages: [
+      resumed
+        ? {
+            messageId: `switch-${sessionId}-${Date.now()}`,
+            role: "system",
+            text: sessionSwitchText(startedBy),
+            op: "message",
+            ts,
+          }
+        : {
+            messageId: `session-${sessionId}`,
+            role: "system",
+            text: sessionDividerText(startedBy),
+            op: "message",
+            ts: startedAt,
+          },
+    ],
+  });
+  return { threadId, sessionId, startedAt, resumed };
+}
+
 /**
  * @param {{
  *   store: object,

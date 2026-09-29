@@ -14,7 +14,13 @@ import { checkOrigin } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
 import { createProjectSource, validateProjectSnapshot } from "./projects.mjs";
 import { validateCockpitSnapshot } from "./cockpit.mjs";
-import { createOpencodeClient, deskThreadTitle, ensureDeskSession, startNewDeskSession } from "./desk-runner.mjs";
+import {
+  adoptDeskSessionFromTerminal,
+  createOpencodeClient,
+  deskThreadTitle,
+  ensureDeskSession,
+  startNewDeskSession,
+} from "./desk-runner.mjs";
 import {
   createCastVerifier,
   isAddress,
@@ -671,16 +677,34 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
           if (!project) {
             return json(res, 404, { ok: false, error: "project not found" });
           }
+          const body = (await readBody(req)) || {};
+          const adoptId = body.sessionId != null ? String(body.sessionId) : null;
+          if (adoptId != null && !/^ses_[A-Za-z0-9]{1,120}$/.test(adoptId)) {
+            return json(res, 400, { ok: false, error: "sessionId must be an OpenCode session id (ses_…)" });
+          }
+          // A desk attached over SSH authenticates as the Hub; it names the real device.
+          const device =
+            deskKind === "desk" && typeof body.device === "string"
+              ? body.device.replace(/[^\w .@-]/g, "").trim().slice(0, 40)
+              : "";
+          const startedBy = device || desk.name || (deskKind === "phone" ? "phone" : "desk");
+          const title = deskThreadTitle(project, slug);
           let started;
           try {
-            started = await startNewDeskSession({
-              store,
-              client: opencodeClient,
-              slug,
-              title: deskThreadTitle(project, slug),
-              startedBy: desk.name || (deskKind === "phone" ? "phone" : "desk"),
-            });
+            started = adoptId
+              ? await adoptDeskSessionFromTerminal({
+                  store,
+                  client: opencodeClient,
+                  slug,
+                  title,
+                  sessionId: adoptId,
+                  startedBy,
+                })
+              : await startNewDeskSession({ store, client: opencodeClient, slug, title, startedBy });
           } catch (err) {
+            if (adoptId && err?.status === 404) {
+              return json(res, 404, { ok: false, error: "no such session on the Hub's OpenCode server" });
+            }
             if (err?.status && err.status < 500 && err.status !== 404) throw err;
             return json(res, 503, {
               ok: false,

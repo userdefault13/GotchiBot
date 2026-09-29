@@ -66,7 +66,8 @@ chrome are adapted from [Mobilecode-open](https://github.com/elkir0/Mobilecode-o
 - The history sheet and "New chat" are gone from project chats (General keeps
   them). The header's **New session** (+) asks first, then
   `POST /projects/<slug>/desk/session`: fresh agent context, same chat, and
-  every device (terminals via `hub desk open --follow`) switches with it.
+  every device (terminals via `hub desk open --follow`) switches with it. A
+  terminal's own `/new` shows up here too, with the same divider.
 - `role: "system"` messages render as a centered divider (`.chat-divider`),
   e.g. "New session · started on iPhone".
 

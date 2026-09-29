@@ -50,22 +50,36 @@ function shellQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
-/** Remote shell line that attaches to the desk session on the Hub. */
-export function remoteAttachCommand({ repoDir, opencodeUrl, sessionId }) {
+const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
+
+/** Remote shell line that attaches to the desk session on the Hub (`env` reaches the TUI plugins). */
+export function remoteAttachCommand({ repoDir, opencodeUrl, sessionId }, env = {}) {
   const bin = `"$(command -v opencode || echo "$HOME/.local/bin/opencode")"`;
-  return `cd ${shellQuote(repoDir)} && exec ${bin} attach ${shellQuote(opencodeUrl)} --session ${shellQuote(sessionId)} --dir ${shellQuote(repoDir)}`;
+  const vars = Object.entries(env)
+    .filter(([k, v]) => ENV_NAME_RE.test(k) && v != null && v !== "")
+    .map(([k, v]) => `${k}=${shellQuote(v)} `)
+    .join("");
+  return `cd ${shellQuote(repoDir)} && ${vars}exec ${bin} attach ${shellQuote(opencodeUrl)} --session ${shellQuote(sessionId)} --dir ${shellQuote(repoDir)}`;
+}
+
+/** What the phone's divider says ("New session · started on …"); never the hostname. */
+export function deskDeviceLabel(env = process.env, os = platform()) {
+  const custom = String(env.GOTCHIBOT_DESK_LABEL || "").trim();
+  if (custom) return custom.slice(0, 40);
+  return os === "darwin" ? "Mac desk" : os === "win32" ? "Windows desk" : "Linux desk";
+}
+
+/**
+ * Env for the attached TUI's `gotchi-desk-sync` plugin: it keeps the terminal and
+ * the Hub on the same session both ways (terminal `/new` → Hub; phone New session → terminal).
+ */
+export function deskSyncEnv(slug, env = process.env) {
+  return { GOTCHIBOT_DESK_SLUG: slug, GOTCHIBOT_DESK_DEVICE: deskDeviceLabel(env) };
 }
 
 /** `open` exit codes the desk chat pane uses to pick its local fallback. */
 export const OPEN_EXIT = { ok: 0, error: 1, hubDown: 3, noSsh: 4 };
-const FOLLOW_POLL_MS = 5_000;
 const SSH_TARGET_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/;
-
-/** A follower reattaches only when the Hub moved `current` to another session. */
-export function followDecision(attachedSessionId, desk) {
-  if (!desk?.sessionId || desk.sessionId === attachedSessionId) return "stay";
-  return "reattach";
-}
 
 function sshTarget(argv) {
   return flagValue(argv, "--ssh") || process.env.GOTCHIBOT_HUB_SSH || readPrefs().ssh || null;
@@ -78,13 +92,6 @@ function slugArg(argv) {
 
 function deskPath(slug) {
   return `/api/gotchibot/projects/${encodeURIComponent(slug)}/desk`;
-}
-
-/** Undo whatever a killed TUI left behind (alternate screen, hidden cursor, raw tty). */
-function resetTerminal() {
-  if (!process.stdout.isTTY) return;
-  process.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m\n");
-  spawnSync("stty", ["sane"], { stdio: "inherit" });
 }
 
 async function openDesk(argv) {
@@ -117,41 +124,20 @@ async function openDesk(argv) {
   }
   if (flagValue(argv, "--ssh")) writePrefs({ ssh: target });
 
-  const attach = () =>
-    local
-      ? spawn("opencode", ["attach", desk.opencodeUrl, "--session", desk.sessionId, "--dir", desk.repoDir], {
-          stdio: "inherit",
-        })
-      : spawn("ssh", ["-t", target, remoteAttachCommand(desk)], { stdio: "inherit" });
+  const syncEnv = follow ? deskSyncEnv(slug) : {};
+  console.log(`${desk.title} · session ${desk.sessionId}${follow ? " · sessions sync with every device" : ""}`);
+  const child = local
+    ? spawn("opencode", ["attach", desk.opencodeUrl, "--session", desk.sessionId, "--dir", desk.repoDir], {
+        stdio: "inherit",
+        env: { ...process.env, ...syncEnv },
+      })
+    : spawn("ssh", ["-t", target, remoteAttachCommand(desk, syncEnv)], { stdio: "inherit" });
 
-  // Keystrokes belong to the TUI; a stray SIGINT must not kill the follower.
+  // Keystrokes belong to the TUI; a stray SIGINT must not kill this wrapper.
   const ignore = () => {};
   process.on("SIGINT", ignore);
   try {
-    for (;;) {
-      console.log(`${desk.title} · session ${desk.sessionId}${follow ? " · New session: gotchibot hub desk new" : ""}`);
-      const child = attach();
-      let switched = false;
-      const poll = follow
-        ? setInterval(async () => {
-            try {
-              const now = await hubRequest("GET", deskPath(slug));
-              if (followDecision(desk.sessionId, now) === "reattach") {
-                switched = true;
-                desk = { ...desk, sessionId: now.sessionId, sessionStartedAt: now.sessionStartedAt };
-                child.kill("SIGTERM");
-              }
-            } catch {
-              /* Hub blip: keep the current attach */
-            }
-          }, FOLLOW_POLL_MS)
-        : null;
-      const code = await new Promise((done) => child.on("exit", (c) => done(c ?? 1)));
-      if (poll) clearInterval(poll);
-      if (!switched) return code;
-      resetTerminal();
-      console.log("New session started on another device — switching…");
-    }
+    return await new Promise((done) => child.on("exit", (c) => done(c ?? 1)));
   } finally {
     process.off("SIGINT", ignore);
   }
@@ -326,7 +312,7 @@ function serviceCommand(action) {
 function usage() {
   console.error(`usage:
   gotchibot hub desk open [slug] [--ssh user@host] [--follow]  attach this terminal to the project's chat
-                                                        (--follow: move along when a New session starts)
+                                                        (--follow: sessions sync both ways — /new here shows on the phone, New session there switches here)
   gotchibot hub desk new [slug]                         New session in the project's chat (fresh context)
   gotchibot hub desk ssh [user@host]                    show / save the Hub SSH target for this machine
   gotchibot hub desk run [--once]                       desk runner (Hub)
