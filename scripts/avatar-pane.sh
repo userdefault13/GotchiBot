@@ -648,7 +648,7 @@ refresh_roster_async() {
   ) &
 }
 
-# Roster JSON -> "id␟status␟svg␟collateral␟haunt␟name" rows (US-separated:
+# Roster JSON -> "id␟status␟svg␟collateral␟haunt␟name␟role" rows (US-separated:
 # `read` collapses runs of tab, so an empty tab field shifts every later one).
 roster_ids() {
   printf '%s' "${1:-}" | node -e '
@@ -656,7 +656,7 @@ roster_ids() {
       try {
         const j=JSON.parse(d);
         for (const o of (j.others||[])) {
-          console.log([o.id, o.status, o.svg||"", o.collateral||"", o.hauntId||"", o.name||""].join("\x1f"));
+          console.log([o.id, o.status, o.svg||"", o.collateral||"", o.hauntId||"", o.name||"", o.role||""].join("\x1f"));
         }
       } catch {}
     });
@@ -846,7 +846,7 @@ blank_block() {
 }
 
 cell_block() {
-  local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}"
+  local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}" role="${9:-}"
   local art label status_color
   case "$status" in
     working)
@@ -897,6 +897,10 @@ cell_block() {
   id_show="${name:-$id}"
   id_show="${id_show:0:$cell_w}"
   printf '%b%s%b\n' "$AV_ROSTER" "$(center_pad "$id_show" "$cell_w")" "$AV_RST"
+  local role_show="${role//-/ }" role_color="$AV_ROLE_GAL"
+  [ -z "$role" ] && role_show="no role" && role_color="$AV_MUTED"
+  role_show="${role_show:0:$cell_w}"
+  printf '%b%s%b\n' "$role_color" "$(center_pad "$role_show" "$cell_w")" "$AV_RST"
 }
 
 render_main_art() {
@@ -1046,8 +1050,8 @@ warm_other_cells() {
   local i v
   dbg "warm: $WARM_N tiles @ ${WARM_W}x${WARM_H}"
   for ((i = 0; i < WARM_N; i++)); do
-    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|${W_NAME[i]}|$WARM_W|$WARM_H" \
-      cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}" "${W_NAME[i]}"
+    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|${W_NAME[i]}|${W_ROLE[i]}|$WARM_W|$WARM_H" \
+      cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}" "${W_NAME[i]}" "${W_ROLE[i]}"
   done
   WARM_DONE=1
   dbg "warm: done"
@@ -1084,9 +1088,9 @@ render_body() {
   local gallery=0
   [ -n "$(gallery_hero)" ] && gallery=1
 
-  local grid_budget=14
-  [ "$pane_h" -lt 28 ] && grid_budget=10
-  [ "$pane_h" -gt 40 ] && grid_budget=18
+  local grid_budget=15
+  [ "$pane_h" -lt 28 ] && grid_budget=11
+  [ "$pane_h" -gt 40 ] && grid_budget=19
   local main_budget=$((pane_h - grid_budget - 3))
   [ "$main_budget" -lt 10 ] && main_budget=10
   # Meet-gallery tiles: face + caption only (no roster strip).
@@ -1167,8 +1171,8 @@ render_body() {
   local cell_h=10
   [ "$cols" -ge 90 ] && cell_h=12
 
-  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR
-  while IFS=$'\x1f' read -r iid ist isvg icol ihaunt iname; do
+  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR ROLE_ARR
+  while IFS=$'\x1f' read -r iid ist isvg icol ihaunt iname irole; do
     [ -z "$iid" ] && continue
     ID_ARR+=("$iid")
     ST_ARR+=("$ist")
@@ -1176,6 +1180,7 @@ render_body() {
     COL_ARR+=("$icol")
     HAUNT_ARR+=("$ihaunt")
     NAME_ARR+=("$iname")
+    ROLE_ARR+=("$irole")
   done < <(printf '%s\n' "$ids")
 
   load_page
@@ -1196,6 +1201,7 @@ render_body() {
   W_COL=("${COL_ARR[@]}")
   W_HAUNT=("${HAUNT_ARR[@]}")
   W_NAME=("${NAME_ARR[@]}")
+  W_ROLE=("${ROLE_ARR[@]}")
 
   local i left mid right pair k1="" k2="" k3=""
   i=$((PAGE * page_size))
@@ -1204,19 +1210,19 @@ render_body() {
   right=""
   if [ "$i" -lt "$n_ids" ]; then
     # r| = roster traits on large thumb; bump if roster tile art format changes
-    k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|$cell_w|$cell_h"
+    k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|$cell_w|$cell_h"
     memo_call left "$k1" \
-      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}"
+      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}"
   fi
   if [ $((i + 1)) -lt "$n_ids" ]; then
-    k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|$cell_w|$cell_h"
+    k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|${ROLE_ARR[i+1]}|$cell_w|$cell_h"
     memo_call mid "$k2" \
-      cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}"
+      cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}" "${ROLE_ARR[i+1]}"
   fi
   if [ $((i + 2)) -lt "$n_ids" ]; then
-    k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|$cell_w|$cell_h"
+    k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|${ROLE_ARR[i+2]}|$cell_w|$cell_h"
     memo_call right "$k3" \
-      cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}"
+      cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}" "${ROLE_ARR[i+2]}"
   fi
   memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
   while IFS= read -r line || [ -n "$line" ]; do

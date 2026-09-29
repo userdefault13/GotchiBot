@@ -176,6 +176,7 @@ async function build() {
     list.push({ id: b.id, name: b.name, collateral: null, hauntId: null, bindType: b.bindType, agentStatus: "available" });
   }
   const busy = busyHeroIds();
+  const roles = readJson(`${ROOT}/config/agent-roles.json`, {}) || {};
 
   const others = list
     .filter((h) => h.id && h.id !== pinned)
@@ -197,6 +198,7 @@ async function build() {
         collateral: thumb.collateral || h.collateral || null,
         hauntId: thumb.hauntId || h.hauntId || null,
         bindType: h.bindType || null,
+        role: roles[h.id] || null,
         status,
         svg: existsSync(`${AVATARS}/${h.id}.svg`) ? `${AVATARS}/${h.id}.svg` : null,
       };
