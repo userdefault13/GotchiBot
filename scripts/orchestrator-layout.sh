@@ -1101,6 +1101,11 @@ install_ui_theme() {
   # Let OSC 52 from OpenClaw TUI (/copy) reach Terminal/iTerm pasteboard.
   tmux set-option -g allow-passthrough on 2>/dev/null || true
   tmux set-option -t "$sess" allow-passthrough on 2>/dev/null || true
+  # Apple Terminal drops OSC 52: route tmux copies through pbcopy on a local Mac.
+  if [ "$(uname -s)" = "Darwin" ] && [ -z "${SSH_CONNECTION:-}" ] && [ -x /usr/bin/pbcopy ]; then
+    tmux set-option -s copy-command /usr/bin/pbcopy 2>/dev/null || true
+    nohup "$ROOT/scripts/tmux-clipboard-bridge.sh" "$sess" >/dev/null 2>&1 &
+  fi
   install_avatar_mouse
   # Truecolor for Gotchi message backgrounds (chalk bgHex needs Tc/RGB in tmux).
   # Append idempotently — bare set-option -g terminal-overrides replaces the whole list.
