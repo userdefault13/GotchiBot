@@ -6,6 +6,7 @@ import readline from "node:readline/promises";
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
+import { stripVTControlCharacters } from "node:util";
 import {
   ROOT,
   loadBaseStarterCollaterals,
@@ -215,6 +216,35 @@ async function selectProjectMenu({ freshInstall = false } = {}) {
 }
 
 const rl = readline.createInterface({ input, output });
+
+// Keep one blank row under every prompt so it never sits flush on the tmux status bar.
+const rawQuestion = rl.question.bind(rl);
+rl.question = (query, ...rest) => {
+  const answer = rawQuestion(query, ...rest);
+  if (output.isTTY) {
+    const last = stripVTControlCharacters(String(query)).split("\n").pop();
+    output.write(`\n\x1b[1A\x1b[${[...last].length + 1}G`);
+  }
+  return answer;
+};
+
+/** A tmux scrollbar on the cockpit pane while the cockpit runs (tmux >= 3.6). */
+function cockpitScrollbar(on) {
+  const pane = process.env.TMUX_PANE;
+  if (!process.env.TMUX || !pane) return;
+  const sets = on
+    ? [
+        ["pane-scrollbars", "on"],
+        ["pane-scrollbars-style", "fg=colour39,bg=colour236,width=1,pad=1"],
+      ]
+    : [["pane-scrollbars"], ["pane-scrollbars-style"]];
+  for (const [name, value] of sets) {
+    const args = value ? ["set-option", "-p", "-t", pane, name, value] : ["set-option", "-p", "-u", "-t", pane, name];
+    spawnSync("tmux", args, { stdio: "ignore" });
+  }
+}
+cockpitScrollbar(true);
+process.on("exit", () => cockpitScrollbar(false));
 
 function clear() {
   output.write("\x1b[2J\x1b[H\x1b[3J");

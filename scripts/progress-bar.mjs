@@ -23,8 +23,9 @@ const HEAD = ["▒", "▓", "█", "▓", "▒"];
 const TRACK = "░";
 const INTERVAL_MS = Number(process.env.GOTCHIBOT_PROGRESS_INTERVAL_MS || 50) || 50;
 
+/** Bars start at column 0: keep one blank row under the bar, like the cockpit prompts. */
 function hideCursor() {
-  if (process.stderr.isTTY) process.stderr.write("\x1b[?25l");
+  if (process.stderr.isTTY) process.stderr.write("\n\x1b[1A\x1b[?25l");
 }
 
 function showCursor() {

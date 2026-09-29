@@ -162,6 +162,8 @@ run_onboarding_gate() {
   set +e
   GOTCHIBOT_IN_CHAT_PANE=1 node "$ROOT/scripts/onboarding-gate.mjs" "$@"
   local st=$?
+  # The cockpit turns on a tmux scrollbar for this pane; OpenCode scrolls itself.
+  [ -n "${TMUX_PANE:-}" ] && tmux set-option -p -u -t "$TMUX_PANE" pane-scrollbars 2>/dev/null
   set -e
   if [ "$st" -eq 2 ]; then
     quit_to_terminal
