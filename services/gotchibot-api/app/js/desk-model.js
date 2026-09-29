@@ -217,6 +217,35 @@ export function suggestionPrompts(project) {
   ];
 }
 
+/** Slash commands the phone runs itself; every other `/name` goes to the Hub desk. */
+export const PHONE_SLASH_COMMANDS = [
+  { name: "new", description: "Start a new session (fresh agent context)", source: "phone" },
+  { name: "sessions", description: "Switch to another session of this chat", source: "phone" },
+];
+
+/** The `/partial` being typed (no space yet), or null when the menu should hide. */
+export function slashQuery(text) {
+  const m = String(text || "").match(/^\/(\S*)$/);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** Phone commands first, then Hub commands; name-prefix matches before substring matches. */
+export function filterSlashCommands(query, hubCommands = [], limit = 40) {
+  const q = String(query || "").toLowerCase();
+  const all = [...PHONE_SLASH_COMMANDS, ...hubCommands.filter((c) => !PHONE_SLASH_COMMANDS.some((p) => p.name === c.name))];
+  if (!q) return all.slice(0, limit);
+  const prefix = all.filter((c) => c.name.toLowerCase().startsWith(q));
+  const inner = all.filter((c) => !c.name.toLowerCase().startsWith(q) && c.name.toLowerCase().includes(q));
+  return [...prefix, ...inner].slice(0, limit);
+}
+
+/** A whole message that is one of the phone's own commands → its name, else null. */
+export function phoneSlashCommand(text) {
+  const m = String(text || "").trim().match(/^\/(\S+)$/);
+  const name = m?.[1].toLowerCase();
+  return PHONE_SLASH_COMMANDS.some((c) => c.name === name) ? name : null;
+}
+
 /** Universal link that opens `pageUrl` (hash included) in MetaMask's in-app browser. */
 export function metamaskDappLink(pageUrl) {
   return `https://metamask.app.link/dapp/${String(pageUrl || "").replace(/^https?:\/\//, "")}`;

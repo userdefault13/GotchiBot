@@ -19,6 +19,8 @@ import {
   createOpencodeClient,
   deskThreadTitle,
   ensureDeskSession,
+  listProjectSessions,
+  phoneCommands,
   startNewDeskSession,
 } from "./desk-runner.mjs";
 import {
@@ -733,6 +735,35 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
             if (set && !set.size) deskWatchers.delete(slug);
           });
           return;
+        }
+
+        // GET /api/gotchibot/projects/:slug/desk/sessions — the chat's sessions to switch between.
+        // GET /api/gotchibot/projects/:slug/desk/commands — OpenCode `/` commands the phone may run.
+        const deskListMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)\/desk\/(sessions|commands)$/);
+        if (req.method === "GET" && deskListMatch) {
+          await loadProjectSnapshot();
+          let slug;
+          try {
+            slug = decodeURIComponent(deskListMatch[1]);
+          } catch {
+            slug = "";
+          }
+          if (!projectSource.getProject(slug)) {
+            return json(res, 404, { ok: false, error: "project not found" });
+          }
+          try {
+            if (deskListMatch[2] === "commands") {
+              const commands = phoneCommands(await opencodeClient.listCommands());
+              return json(res, 200, { ok: true, project: slug, commands });
+            }
+            const listed = await listProjectSessions({ store, client: opencodeClient, slug });
+            return json(res, 200, { ok: true, project: slug, ...listed });
+          } catch {
+            return json(res, 503, {
+              ok: false,
+              error: "the Hub's OpenCode server is not reachable — gotchibot hub desk service status",
+            });
+          }
         }
 
         // POST /api/gotchibot/projects/:slug/desk/session — New session in the

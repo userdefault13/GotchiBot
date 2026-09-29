@@ -232,6 +232,25 @@ export function newProjectSession(token, slug) {
   });
 }
 
+/** Make an earlier session of the project's chat current again (every device follows). */
+export function switchProjectSession(token, slug, sessionId) {
+  return apiFetch(`/api/gotchibot/projects/${encodeURIComponent(slug)}/desk/session`, {
+    method: "POST",
+    token,
+    body: { sessionId },
+  });
+}
+
+/** The project chat's sessions, most recently active first. */
+export function listProjectSessions(token, slug) {
+  return apiFetch(`/api/gotchibot/projects/${encodeURIComponent(slug)}/desk/sessions`, { token });
+}
+
+/** OpenCode `/` commands the Hub desk can run for this project. */
+export function listProjectCommands(token, slug) {
+  return apiFetch(`/api/gotchibot/projects/${encodeURIComponent(slug)}/desk/commands`, { token });
+}
+
 /**
  * Hero avatar SVG as a blob: URL (img tags can't send the desk token header).
  * @returns {Promise<string|null>}

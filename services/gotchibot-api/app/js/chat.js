@@ -1,7 +1,7 @@
 /**
  * Project chat — one chat per project (the Hub desk thread), many sessions inside it.
- * Header: back · project title · New session · crew (avatar pane). General keeps its history sheet.
- * Send / poll / retry behavior is the S2 composer, unchanged.
+ * Header: back · project title · Sessions · New session · crew (avatar pane). General keeps its history sheet.
+ * Project composers get a `/` menu: /new and /sessions run here, other commands run on the Hub desk.
  */
 import { iconArrowUp, iconChevronLeft, iconCrew, iconHistory, iconPlus } from "./icons.js";
 import { renderMarkdown } from "./markdown.js";
@@ -18,12 +18,15 @@ import {
   ApiError,
   getProject,
   getProjectDesk,
+  listProjectCommands,
+  listProjectSessions,
   listThreads,
   newProjectSession,
   pullMessages,
   retryReply,
   runnerStatus,
   sendMessage,
+  switchProjectSession,
 } from "./api.js";
 import {
   app,
@@ -36,7 +39,16 @@ import {
 } from "./state.js";
 import { el, heroAvatar, iconButton, openSheet, setNavTitle, topNav } from "./ui.js";
 import { openAvatarPane } from "./avatar-pane.js";
-import { GENERAL, NEW_THREAD_ID, chatHash, deskThreadId, suggestionPrompts } from "./desk-model.js";
+import {
+  GENERAL,
+  NEW_THREAD_ID,
+  chatHash,
+  deskThreadId,
+  filterSlashCommands,
+  phoneSlashCommand,
+  slashQuery,
+  suggestionPrompts,
+} from "./desk-model.js";
 
 /** Server filter for this chat's project. */
 function threadFilter(project) {
@@ -147,6 +159,7 @@ export async function renderChatView(root, route) {
   if (project === GENERAL) {
     actions.appendChild(iconButton(iconHistory(20), "Chat history", () => void openHistory()));
   } else {
+    actions.appendChild(iconButton(iconHistory(20), "Sessions", () => void openSessions()));
     actions.appendChild(iconButton(iconPlus(20), "New session", () => openNewSession()));
   }
   /** @type {HTMLButtonElement|null} */
@@ -183,7 +196,10 @@ export async function renderChatView(root, route) {
   sendBtn.innerHTML = iconArrowUp(18);
   sendBtn.disabled = true;
   field.append(textarea, sendBtn);
-  composer.appendChild(field);
+  const slashMenu = el("ul", "slash-menu");
+  slashMenu.setAttribute("role", "listbox");
+  slashMenu.hidden = true;
+  composer.append(slashMenu, field);
   root.appendChild(composer);
 
   const unbindViewport = bindComposerViewport(composer);
@@ -231,30 +247,192 @@ export async function renderChatView(root, route) {
     yes.type = "button";
     body.append(yes, status);
     const sheet = openSheet({ title: "New session?", body });
-    yes.addEventListener("click", async () => {
+    yes.addEventListener("click", () => {
       yes.disabled = true;
-      try {
-        await newProjectSession(app.desk.deskToken, project);
-        sheet.close();
-        const data = await pullMessages(app.desk.deskToken, {
-          threadId: currentThreadId,
-          after: model.lastSeq,
-          limit: 500,
-        }).catch(() => null);
-        model.applyMessages(data?.messages || []);
-        forceScrollBottom = true;
-        renderMessages();
-      } catch (err) {
-        if (err instanceof ApiError && err.kind === "unpaired") {
-          sheet.close();
-          await handleUnpaired("This phone was signed out on the Hub");
-          return;
-        }
-        status.textContent = err?.message || "Couldn't start a new session";
-        status.hidden = false;
+      void changeSession(() => newProjectSession(app.desk.deskToken, project), sheet, status, () => {
         yes.disabled = false;
-      }
+      });
     });
+  }
+
+  /** Pull the divider the Hub posts when the session moves. */
+  async function pullAfterSessionChange() {
+    const data = await pullMessages(app.desk.deskToken, {
+      threadId: currentThreadId,
+      after: model.lastSeq,
+      limit: 500,
+    }).catch(() => null);
+    model.applyMessages(data?.messages || []);
+    forceScrollBottom = true;
+    renderMessages();
+  }
+
+  /**
+   * Run a session move (new / switch); errors land in `status` (or a sheet when there is none).
+   * @returns {Promise<boolean>}
+   */
+  async function changeSession(run, sheet = null, status = null, onFail = null) {
+    try {
+      await run();
+      sheet?.close();
+      await pullAfterSessionChange();
+      return true;
+    } catch (err) {
+      if (err instanceof ApiError && err.kind === "unpaired") {
+        sheet?.close();
+        await handleUnpaired("This phone was signed out on the Hub");
+        return false;
+      }
+      const msg = err?.message || "Couldn't change the session";
+      if (status) {
+        status.textContent = msg;
+        status.hidden = false;
+      } else {
+        openSheet({ title: "Session", body: el("p", "msg-error", msg) });
+      }
+      onFail?.();
+      return false;
+    }
+  }
+
+  async function openSessions() {
+    const body = el("div", "history");
+    const newBtn = el("button", "btn-primary btn-block");
+    newBtn.type = "button";
+    newBtn.innerHTML = `${iconPlus(18)}<span>New session</span>`;
+    const status = el("p", "msg-error");
+    status.hidden = true;
+    const listEl = el("ul", "history-list");
+    listEl.appendChild(el("li", "subtle", "Loading…"));
+    body.append(newBtn, status, listEl);
+    const sheet = openSheet({ title: "Sessions", body });
+    newBtn.addEventListener("click", () => {
+      newBtn.disabled = true;
+      void changeSession(() => newProjectSession(app.desk.deskToken, project), sheet, status, () => {
+        newBtn.disabled = false;
+      });
+    });
+    try {
+      const data = await listProjectSessions(app.desk.deskToken, project);
+      const sessions = data?.sessions || [];
+      listEl.replaceChildren();
+      if (!sessions.length) listEl.appendChild(el("li", "subtle", "No sessions yet — send a message to start one."));
+      const now = Date.now();
+      for (const s of sessions) {
+        const li = el("li", `history-item${s.current ? " active" : ""}`);
+        const btn = el("button", "history-btn session-btn");
+        btn.type = "button";
+        const text = el("span", "session-text");
+        text.appendChild(el("span", "history-title", s.title || s.sessionId));
+        const started = s.startedBy ? `started on ${s.startedBy}` : "";
+        const when = s.lastActiveAt ? relativeTime(s.lastActiveAt, now) : "";
+        text.appendChild(el("span", "session-sub", [started, when].filter(Boolean).join(" · ")));
+        btn.appendChild(text);
+        if (s.current) btn.appendChild(el("span", "badge shared", "current"));
+        btn.addEventListener("click", () => {
+          if (s.current) return sheet.close();
+          btn.disabled = true;
+          void changeSession(
+            () => switchProjectSession(app.desk.deskToken, project, s.sessionId),
+            sheet,
+            status,
+            () => {
+              btn.disabled = false;
+            },
+          );
+        });
+        li.appendChild(btn);
+        listEl.appendChild(li);
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.kind === "unpaired") {
+        sheet.close();
+        await handleUnpaired("This phone was signed out on the Hub");
+        return;
+      }
+      listEl.replaceChildren(el("li", "msg-error", err?.message || "Couldn't load sessions"));
+    }
+  }
+
+  /** @type {Array<{ name: string, description: string, source: string }>|null} */
+  let hubCommands = null;
+  let hubCommandsLoading = false;
+  let hubCommandsFailed = false;
+
+  function loadHubCommands() {
+    if (hubCommands || hubCommandsLoading || project === GENERAL) return;
+    hubCommandsLoading = true;
+    listProjectCommands(app.desk.deskToken, project)
+      .then((data) => {
+        hubCommands = data?.commands || [];
+      })
+      .catch(() => {
+        hubCommands = [];
+        hubCommandsFailed = true;
+      })
+      .finally(() => {
+        hubCommandsLoading = false;
+        renderSlashMenu();
+      });
+  }
+
+  function hideSlashMenu() {
+    slashMenu.hidden = true;
+    slashMenu.replaceChildren();
+  }
+
+  function renderSlashMenu() {
+    const q = project === GENERAL ? null : slashQuery(textarea.value);
+    if (q == null) return hideSlashMenu();
+    loadHubCommands();
+    const items = filterSlashCommands(q, hubCommands || []);
+    slashMenu.replaceChildren();
+    for (const c of items) {
+      const li = el("li", "slash-item");
+      const btn = el("button", "slash-btn");
+      btn.type = "button";
+      btn.setAttribute("role", "option");
+      btn.appendChild(el("span", "slash-name", `/${c.name}`));
+      if (c.source === "skill") btn.appendChild(el("span", "slash-tag", "skill"));
+      btn.appendChild(el("span", "slash-desc", c.description || ""));
+      // pointerdown keeps the textarea focused (and the iOS keyboard up).
+      btn.addEventListener("pointerdown", (e) => e.preventDefault());
+      btn.addEventListener("click", () => pickSlashCommand(c));
+      li.appendChild(btn);
+      slashMenu.appendChild(li);
+    }
+    if (!hubCommands || hubCommandsFailed) {
+      slashMenu.appendChild(
+        el("li", "slash-note subtle", hubCommandsFailed ? "Hub commands unavailable" : "Loading Hub commands…"),
+      );
+    } else if (!items.length) {
+      slashMenu.appendChild(el("li", "slash-note subtle", "No matching command — send it as a message"));
+    }
+    slashMenu.hidden = false;
+  }
+
+  function pickSlashCommand(c) {
+    hideSlashMenu();
+    if (c.source === "phone") {
+      textarea.value = "";
+      syncSendEnabled();
+      autosize();
+      runPhoneCommand(c.name);
+      return;
+    }
+    textarea.value = `/${c.name} `;
+    syncSendEnabled();
+    autosize();
+    textarea.focus();
+  }
+
+  function runPhoneCommand(name) {
+    textarea.blur();
+    if (name === "new") {
+      void changeSession(() => newProjectSession(app.desk.deskToken, project));
+    } else if (name === "sessions") {
+      void openSessions();
+    }
   }
 
   async function openHistory() {
@@ -553,6 +731,16 @@ export async function renderChatView(root, route) {
   async function doSend({ text, clientMessageId, isRetry = false }) {
     const trimmed = String(text || "").trim();
     if (!trimmed) return;
+    const local = project !== GENERAL && !isRetry ? phoneSlashCommand(trimmed) : null;
+    if (local) {
+      textarea.value = "";
+      syncSendEnabled();
+      autosize();
+      hideSlashMenu();
+      runPhoneCommand(local);
+      return;
+    }
+    hideSlashMenu();
     const id = clientMessageId || newClientMessageId();
     if (!isRetry) {
       pendingSends = [
@@ -660,6 +848,13 @@ export async function renderChatView(root, route) {
   textarea.addEventListener("input", () => {
     syncSendEnabled();
     autosize();
+    renderSlashMenu();
+  });
+  textarea.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !slashMenu.hidden) {
+      e.preventDefault();
+      hideSlashMenu();
+    }
   });
   textarea.addEventListener("keydown", (e) => {
     // Plain Enter = newline on mobile; Cmd/Ctrl+Enter sends

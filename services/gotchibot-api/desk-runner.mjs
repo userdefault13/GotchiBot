@@ -81,6 +81,18 @@ export function createOpencodeClient({
         timeoutMs,
       });
     },
+    /** Custom commands and skills OpenCode can run by name (`/name args`). */
+    async listCommands() {
+      const rows = await call("GET", "/command");
+      return Array.isArray(rows) ? rows : [];
+    },
+    /** Blocks until the command's assistant turn finishes. */
+    async runCommand(sessionId, { command, args = "", agent }, { timeoutMs = 10 * 60_000 } = {}) {
+      return call("POST", `/session/${encodeURIComponent(sessionId)}/command`, {
+        body: { command, arguments: args, ...(agent ? { agent } : {}) },
+        timeoutMs,
+      });
+    },
     async listMessages(sessionId, { limit = 100 } = {}) {
       const rows = await call("GET", `/session/${encodeURIComponent(sessionId)}/message`, {
         query: { limit },
@@ -107,6 +119,39 @@ function isFinished(msg) {
   const info = msg?.info || {};
   if (info.role !== "assistant") return true;
   return Boolean(info.time?.completed || info.error);
+}
+
+/** Terminal-only commands (they drive tmux panes); the phone does new/switch itself. */
+const PHONE_HIDDEN_COMMANDS = new Set(["new", "resume"]);
+const COMMAND_NAME = /^[A-Za-z0-9][\w:./-]{0,63}$/;
+
+/**
+ * OpenCode commands a phone may run, trimmed for the wire (no templates).
+ * @returns {Array<{ name: string, description: string, source: string, hints: string[] }>}
+ */
+export function phoneCommands(rows) {
+  const seen = new Set();
+  const out = [];
+  for (const c of Array.isArray(rows) ? rows : []) {
+    const name = String(c?.name || "");
+    if (!COMMAND_NAME.test(name) || name.startsWith("_") || name.includes("/_")) continue;
+    if (PHONE_HIDDEN_COMMANDS.has(name) || seen.has(name)) continue;
+    seen.add(name);
+    out.push({
+      name,
+      description: String(c?.description || "").slice(0, 200),
+      source: c?.source === "skill" ? "skill" : "command",
+      hints: Array.isArray(c?.hints) ? c.hints.map(String).slice(0, 8) : [],
+    });
+  }
+  return out.sort((a, b) => (a.source === b.source ? a.name.localeCompare(b.name) : a.source === "command" ? -1 : 1));
+}
+
+/** `/name rest…` → { command, args }, or null for plain text. */
+export function parseSlashCommand(text) {
+  const m = String(text || "").trim().match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
+  if (!m || !COMMAND_NAME.test(m[1])) return null;
+  return { command: m[1], args: (m[2] || "").trim() };
 }
 
 export function deskThreadTitle(project, slug) {
@@ -140,10 +185,11 @@ export async function ensureDeskSession({ store, client, slug, title, agent = DE
  * Copy finished session turns the thread doesn't have yet. User turns the phone
  * already wrote (same text) are skipped; everything else — desk-typed prompts
  * and every assistant reply — lands in the thread under its OpenCode message id,
- * so re-mirroring is idempotent.
+ * so re-mirroring is idempotent. `skipUserTurns` drops every user turn in this
+ * pass (a phone slash command's expanded template).
  * @returns {Promise<Array<{ messageId: string, role: string, model: string|null }>>}
  */
-export async function mirrorDeskSession({ store, client, slug, threadId, sessionId, heroId = null }) {
+export async function mirrorDeskSession({ store, client, slug, threadId, sessionId, heroId = null, skipUserTurns = false }) {
   const state = await store.getDeskSession(slug);
   const entry = (state?.sessions || []).find((s) => s.sessionId === sessionId);
   const after = entry
@@ -169,7 +215,7 @@ export async function mirrorDeskSession({ store, client, slug, threadId, session
     const role = msg.info.role === "assistant" ? "assistant" : "user";
     const text = messageText(msg);
     if (!text) continue;
-    if (role === "user" && phoneTexts.has(text.trim())) continue;
+    if (role === "user" && (skipUserTurns || phoneTexts.has(text.trim()))) continue;
     await store.pushMessages({
       threadId,
       deskId: HUB_DESK_RUNNER_ID,
@@ -219,6 +265,38 @@ export async function startNewDeskSession({ store, client, slug, title, startedB
     ],
   });
   return { threadId, sessionId, startedAt };
+}
+
+/**
+ * The project chat's sessions, most recently active first, with OpenCode titles.
+ * Sessions OpenCode no longer has are left out (their turns stay in the thread).
+ */
+export async function listProjectSessions({ store, client, slug, limit = 30 }) {
+  const state = await store.getDeskSession(slug);
+  const list = (state?.sessions || []).slice();
+  if (state?.sessionId && !list.some((s) => s.sessionId === state.sessionId)) {
+    list.push({ sessionId: state.sessionId, startedAt: state.sessionStartedAt || null });
+  }
+  const at = (s) => String(s.lastActiveAt || s.startedAt || "");
+  list.sort((a, b) => at(b).localeCompare(at(a)));
+  const infos = await Promise.allSettled(list.slice(0, limit).map((s) => client.getSession(s.sessionId)));
+  const out = [];
+  infos.forEach((r, i) => {
+    const s = list[i];
+    if (r.status === "rejected" && r.reason?.status === 404) return;
+    const info = r.status === "fulfilled" ? r.value : null;
+    const updated = Number(info?.time?.updated) || 0;
+    out.push({
+      sessionId: s.sessionId,
+      title: String(info?.title || "").slice(0, 120) || null,
+      startedAt: s.startedAt || null,
+      startedBy: s.startedBy || null,
+      lastActiveAt: updated ? new Date(updated).toISOString() : s.lastActiveAt || s.startedAt || null,
+      current: s.sessionId === state?.sessionId,
+    });
+  });
+  out.sort((a, b) => String(b.lastActiveAt || "").localeCompare(String(a.lastActiveAt || "")));
+  return { current: state?.sessionId || null, sessions: out };
 }
 
 export function sessionSwitchText(startedBy) {
@@ -335,6 +413,14 @@ export function createDeskRunner({
     }
   }
 
+  /** A phone `/name args` naming a runnable OpenCode command; anything else is a prompt. */
+  async function resolveSlashCommand(text) {
+    const parsed = parseSlashCommand(text);
+    if (!parsed) return null;
+    const known = phoneCommands(await client.listCommands().catch(() => []));
+    return known.some((c) => c.name === parsed.command) ? parsed : null;
+  }
+
   async function answer(claimed) {
     const threadId = claimed.threadId;
     const messageId = claimed.messageId;
@@ -350,12 +436,17 @@ export function createDeskRunner({
       const sessionId = await ensureDeskSession({ store, client, slug, title, agent });
       await store.linkDeskThread(slug, threadId);
       await mirrorDeskSession({ store, client, slug, threadId, sessionId, heroId });
+      const slash = await resolveSlashCommand(claimed.text);
       try {
-        await client.sendMessage(
-          sessionId,
-          { text: claimed.text, agent, system: PHONE_TURN_SYSTEM },
-          { timeoutMs: turnTimeoutMs },
-        );
+        if (slash) {
+          await client.runCommand(sessionId, { ...slash, agent }, { timeoutMs: turnTimeoutMs });
+        } else {
+          await client.sendMessage(
+            sessionId,
+            { text: claimed.text, agent, system: PHONE_TURN_SYSTEM },
+            { timeoutMs: turnTimeoutMs },
+          );
+        }
       } catch (err) {
         if (err?.name === "TimeoutError" || err?.name === "AbortError") {
           await client.abort(sessionId).catch(() => {});
@@ -363,11 +454,35 @@ export function createDeskRunner({
         }
         throw err;
       }
-      const pushed = await mirrorDeskSession({ store, client, slug, threadId, sessionId, heroId });
-      const reply = pushed.filter((p) => p.role === "assistant").at(-1);
+      const pushed = await mirrorDeskSession({
+        store,
+        client,
+        slug,
+        threadId,
+        sessionId,
+        heroId,
+        skipUserTurns: Boolean(slash),
+      });
+      let reply = pushed.filter((p) => p.role === "assistant").at(-1);
+      if (!reply && slash) {
+        reply = { messageId: `cmd-${messageId}`, model: null };
+        await store.pushMessages({
+          threadId,
+          deskId: HUB_DESK_RUNNER_ID,
+          messages: [
+            {
+              messageId: reply.messageId,
+              role: "system",
+              text: `/${slash.command} finished with no text reply · open the desk on a terminal for its output`,
+              op: "message",
+              ts: new Date().toISOString(),
+            },
+          ],
+        });
+      }
       if (!reply) throw new Error("the orchestrator finished without a text reply");
       await store.completeReply({ threadId, messageId, replyMessageId: reply.messageId, model: reply.model });
-      log("replied", { project: slug, messageId });
+      log("replied", { project: slug, messageId, ...(slash ? { command: slash.command } : {}) });
     } catch (err) {
       const error = sanitizeRunnerError(err?.message || err);
       await store.failReply({ threadId, messageId, error });

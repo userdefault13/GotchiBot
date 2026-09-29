@@ -13,8 +13,11 @@ import {
   adoptDeskSessionFromTerminal,
   createDeskRunner,
   ensureDeskSession,
+  listProjectSessions,
   messageText,
   mirrorDeskSession,
+  parseSlashCommand,
+  phoneCommands,
   sessionDividerText,
   sessionSwitchText,
   startNewDeskSession,
@@ -23,7 +26,12 @@ import { connectStore, deskThreadId } from "../services/gotchibot-api/store.mjs"
 import { createApiServer } from "../services/gotchibot-api/server.mjs";
 import { createProjectSource } from "../services/gotchibot-api/projects.mjs";
 import { deskDeviceLabel, deskSyncEnv, remoteAttachCommand, renderDeskUnit } from "../scripts/hub-desk.mjs";
-import { deskThreadId as appDeskThreadId } from "../services/gotchibot-api/app/js/desk-model.js";
+import {
+  deskThreadId as appDeskThreadId,
+  filterSlashCommands,
+  phoneSlashCommand,
+  slashQuery,
+} from "../services/gotchibot-api/app/js/desk-model.js";
 
 let clock = 1_790_000_000_000;
 const nextId = () => `msg_${(clock++).toString(16)}`;
@@ -64,10 +72,34 @@ function fakeOpencode({ reply = (text) => `re: ${text}`, hang = false } = {}) {
       return id;
     },
     parents: new Map(),
+    titles: new Map(),
     async getSession(id) {
       if (!sessions.has(id)) throw notFound();
       const parentID = this.parents.get(id);
-      return parentID ? { id, parentID } : { id };
+      const title = this.titles.get(id);
+      return { id, ...(parentID ? { parentID } : {}), ...(title ? { title } : {}) };
+    },
+    commands: [
+      { name: "review", description: "Review the diff", source: "command", template: "Review $ARGUMENTS", hints: ["$ARGUMENTS"] },
+      { name: "quiet", description: "No text", source: "command", template: "q" },
+      { name: "new", description: "TUI new", source: "command", template: "x" },
+      { name: "_disabled/prof", description: "", source: "command", template: "x" },
+      { name: "Gotchiverse map", description: "spaced", source: "skill", template: "x" },
+      { name: "jev", description: "Jev skill", source: "skill", template: "x" },
+    ],
+    ran: [],
+    async listCommands() {
+      return this.commands;
+    },
+    async runCommand(id, { command, args, agent }) {
+      const rows = sessions.get(id);
+      if (!rows) throw notFound();
+      this.ran.push({ id, command, args, agent });
+      const tpl = this.commands.find((c) => c.name === command)?.template || "";
+      rows.push(userMsg(tpl.replace("$ARGUMENTS", args)));
+      const out = command === "quiet" ? { info: { id: nextId(), role: "assistant", time: { created: clock, completed: clock } }, parts: [{ type: "tool" }] } : assistantMsg(`ran ${command}: ${args}`);
+      rows.push(out);
+      return out;
     },
     async deleteSession(id) {
       sessions.delete(id);
@@ -319,6 +351,83 @@ describe("desk runner (unit)", () => {
     await assert.rejects(adoptDeskSessionFromTerminal({ store, client, slug: "alpha", sessionId: other }), (e) => e.status === 409);
     await assert.rejects(adoptDeskSessionFromTerminal({ store, client, slug: "alpha", sessionId: "ses_gone" }), (e) => e.status === 404);
     assert.equal(appDeskThreadId("alpha"), deskThreadId("alpha"));
+  });
+
+  it("phoneCommands hides terminal-only and unusable names; parseSlashCommand splits name and args", () => {
+    const names = phoneCommands(fakeOpencode().commands).map((c) => c.name);
+    assert.deepEqual(names, ["quiet", "review", "jev"], "commands before skills; new/_disabled/spaced dropped");
+    assert.equal(phoneCommands(fakeOpencode().commands)[0].template, undefined, "templates never go to the phone");
+    assert.deepEqual(parseSlashCommand("/review  the auth diff\nplease"), { command: "review", args: "the auth diff\nplease" });
+    assert.deepEqual(parseSlashCommand(" /jev "), { command: "jev", args: "" });
+    assert.equal(parseSlashCommand("not / a command"), null);
+    assert.equal(parseSlashCommand("/"), null);
+    assert.equal(parseSlashCommand("/<b>"), null);
+  });
+
+  it("a phone slash command runs through OpenCode's command API; unknown ones stay prompts", async () => {
+    const store = memoryStore();
+    const client = fakeOpencode();
+    const threadId = deskThreadId("alpha");
+    store.threads.set(threadId, { threadId, project: "alpha", kind: "desk", title: "Alpha desk" });
+    const runner = createDeskRunner({ store, client, logger: { info() {} } });
+
+    store.messages.push({ threadId, messageId: "c1", role: "user", text: "/review auth", originKind: "phone" });
+    store.queue.push({ threadId, messageId: "c1", text: "/review auth" });
+    await runner.tick();
+    assert.deepEqual(client.ran.map((r) => [r.command, r.args, r.agent]), [["review", "auth", "gotchi"]]);
+    const done = store.replies.at(-1);
+    assert.equal(done.ok, true);
+    assert.equal(store.messages.find((m) => m.messageId === done.replyMessageId).text, "ran review: auth");
+    assert.equal(store.messages.some((m) => m.text === "Review auth"), false, "the expanded template is not mirrored");
+
+    store.messages.push({ threadId, messageId: "c2", role: "user", text: "/quiet", originKind: "phone" });
+    store.queue.push({ threadId, messageId: "c2", text: "/quiet" });
+    await runner.tick();
+    const quiet = store.replies.at(-1);
+    assert.equal(quiet.ok, true);
+    const note = store.messages.find((m) => m.messageId === quiet.replyMessageId);
+    assert.equal(note.role, "system");
+    assert.match(note.text, /^\/quiet finished with no text reply/);
+
+    store.messages.push({ threadId, messageId: "c3", role: "user", text: "/new", originKind: "phone" });
+    store.queue.push({ threadId, messageId: "c3", text: "/new" });
+    await runner.tick();
+    assert.equal(client.ran.length, 2, "hidden commands are not run");
+    assert.equal(store.messages.find((m) => m.messageId === store.replies.at(-1).replyMessageId).text, "re: /new");
+  });
+
+  it("listProjectSessions: newest activity first, titles from OpenCode, deleted sessions dropped", async () => {
+    const store = memoryStore();
+    const client = fakeOpencode();
+    const first = await ensureDeskSession({ store, client, slug: "alpha" });
+    const second = (await startNewDeskSession({ store, client, slug: "alpha", title: "Alpha desk", startedBy: "iPhone" })).sessionId;
+    const third = (await startNewDeskSession({ store, client, slug: "alpha", title: "Alpha desk", startedBy: "Mac desk" })).sessionId;
+    client.titles.set(second, "Fix the cheeks");
+    client.sessions.delete(third);
+    await adoptDeskSessionFromTerminal({ store, client, slug: "alpha", sessionId: second });
+
+    const listed = await listProjectSessions({ store, client, slug: "alpha" });
+    assert.equal(listed.current, second);
+    assert.deepEqual(listed.sessions.map((s) => s.sessionId), [second, first]);
+    assert.deepEqual(listed.sessions.map((s) => [s.title, s.startedBy, s.current]), [
+      ["Fix the cheeks", "iPhone", true],
+      [null, null, false],
+    ]);
+    assert.deepEqual(await listProjectSessions({ store, client, slug: "nobody" }), { current: null, sessions: [] });
+  });
+
+  it("phone slash menu: /partial query, phone commands first, prefix before substring", () => {
+    assert.equal(slashQuery("/"), "");
+    assert.equal(slashQuery("/Rev"), "rev");
+    assert.equal(slashQuery("/review x"), null);
+    assert.equal(slashQuery("hi /x"), null);
+    const hub = [{ name: "review", source: "command" }, { name: "preview", source: "skill" }, { name: "new", source: "command" }];
+    assert.deepEqual(filterSlashCommands("", hub).map((c) => c.name), ["new", "sessions", "review", "preview"]);
+    assert.deepEqual(filterSlashCommands("rev", hub).map((c) => c.name), ["review", "preview"]);
+    assert.equal(filterSlashCommands("s", hub)[0].source, "phone");
+    assert.equal(phoneSlashCommand(" /New "), "new");
+    assert.equal(phoneSlashCommand("/sessions now"), null);
+    assert.equal(phoneSlashCommand("/review"), null);
   });
 
   it("terminal attach command carries the sync env; the device label never leaks the hostname", () => {
@@ -607,5 +716,32 @@ describe("desk threads on the Hub (Mongo)", async () => {
     const foreign = await opencode.createSession();
     await store.startDeskSession("elsewhere", foreign);
     assert.equal((await post({ sessionId: foreign })).status, 409);
+  });
+
+  it("phones list sessions and commands, and switch sessions with a Switched divider", async () => {
+    const phone = await token("phone");
+    const listed = await get("/api/gotchibot/projects/alpha/desk/sessions", phone);
+    assert.equal(listed.status, 200);
+    assert.ok(listed.data.sessions.length >= 2);
+    assert.equal(listed.data.sessions.filter((s) => s.current).length, 1);
+    const target = listed.data.sessions.find((s) => !s.current);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/gotchibot/projects/alpha/desk/session`, {
+      method: "POST",
+      headers: { "X-GotchiBot-Desk-Token": phone, "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: target.sessionId }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).resumed, true);
+    const after = await get("/api/gotchibot/projects/alpha/desk/sessions", phone);
+    assert.equal(after.data.current, target.sessionId);
+    const pulled = await get("/api/gotchibot/chats/pull?threadId=desk-alpha&after=0", phone);
+    assert.equal(pulled.data.messages.at(-1).text, sessionSwitchText("phone"));
+
+    const cmds = await get("/api/gotchibot/projects/alpha/desk/commands", phone);
+    assert.equal(cmds.status, 200);
+    assert.deepEqual(cmds.data.commands.map((c) => c.name), ["quiet", "review", "jev"]);
+    assert.equal((await get("/api/gotchibot/projects/nope/desk/sessions", phone)).status, 404);
+    assert.equal((await get("/api/gotchibot/projects/nope/desk/commands", phone)).status, 404);
   });
 });

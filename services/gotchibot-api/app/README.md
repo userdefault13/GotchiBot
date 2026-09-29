@@ -56,8 +56,20 @@ chrome are adapted from [Mobilecode-open](https://github.com/elkir0/Mobilecode-o
 - **Runner** — while waiting, `GET /hub/runner` at most every ~10s; settings
   shows status · model. Non-blocking notice when offline/error.
 - **Version** — bump `APP_VERSION` in **both** `sw.js` and `js/version.js`
-  together (currently `0.4.1`). New JS modules must be listed in the SW
+  together (currently `0.4.2`). New JS modules must be listed in the SW
   `SHELL` precache.
+
+## 0.4.2: slash commands and session switching
+
+- **Sessions** (history icon) in a project chat lists the chat's sessions
+  (`GET /projects/<slug>/desk/sessions`): title, the device that started it,
+  last activity, and a "current" badge. Tap one to switch back
+  (`POST …/desk/session {sessionId}`); every device follows and the thread gets
+  a "Switched session" divider. The sheet also starts a new session.
+- Typing `/` in a project composer opens a command menu. `/new` and `/sessions`
+  run on the phone; the Hub's OpenCode commands and skills
+  (`GET …/desk/commands`, loaded on first `/`) fill in `/name ` and run on the
+  desk when sent. General chats have no menu.
 
 ## 0.4.1: one chat per project, many sessions
 
