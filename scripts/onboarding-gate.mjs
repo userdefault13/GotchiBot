@@ -561,7 +561,9 @@ async function filterSepoliaMockOwnedGotchis(wallet, gotchis) {
 async function runWalletGotchiMint(wallet, cartridgeId) {
   let onChain = [];
   try {
-    onChain = await withStatusBar("Loading gotchis from subgraph…", () => fetchWalletGotchis(wallet));
+    onChain = await withStatusBar("Loading gotchis from subgraph…", (onStatus) =>
+      fetchWalletGotchis(wallet, { onStatus }),
+    );
   } catch (e) {
     console.log(`  Subgraph: ${e.message || e}`);
   }
@@ -1332,7 +1334,9 @@ async function resolveHeroes(wallet, cartridgeId) {
   console.log("\n  No cAavegotchis on cartridge yet.");
   let onChain = [];
   try {
-    onChain = await withStatusBar("Loading gotchis from subgraph…", () => fetchWalletGotchis(wallet));
+    onChain = await withStatusBar("Loading gotchis from subgraph…", (onStatus) =>
+      fetchWalletGotchis(wallet, { onStatus }),
+    );
   } catch (e) {
     console.log(`  Subgraph: ${e.message || e}`);
   }
@@ -1847,7 +1851,7 @@ async function exportAgentRosterCsv() {
 async function importOrChooseGotchi(wallet, cartridgeId) {
   let onChain = [];
   try {
-    onChain = await withStatusBar("Loading on-chain gotchis…", () => fetchWalletGotchis(wallet));
+    onChain = await withStatusBar("Loading on-chain gotchis…", (onStatus) => fetchWalletGotchis(wallet, { onStatus }));
   } catch (e) {
     console.log(`  ${e.message || e}`);
   }

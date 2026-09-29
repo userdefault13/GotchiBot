@@ -36,6 +36,13 @@ function clearLine() {
   process.stderr.write("\r\x1b[K");
 }
 
+/** Clip to the terminal width: a wrapped bar line breaks the `\r` redraw. */
+function fitLabel(label, reserved) {
+  const room = (process.stderr.columns || 200) - WIDTH - reserved;
+  const chars = [...String(label)];
+  return chars.length > room ? `${chars.slice(0, Math.max(0, room - 1)).join("")}…` : String(label);
+}
+
 function pulseFrame(label, frame, elapsedSec) {
   const hl = HEAD.length;
   const period = Math.max(1, (WIDTH - hl) * 2);
@@ -50,7 +57,8 @@ function pulseFrame(label, frame, elapsedSec) {
     }
   }
   const elapsed = elapsedSec != null ? `${MUTED} ${elapsedSec}s` : "";
-  process.stderr.write(`\r${bar}${RESET} ${label}${elapsed}${RESET}\x1b[K`);
+  const text = fitLabel(label, 2 + (elapsedSec != null ? String(elapsedSec).length + 2 : 0));
+  process.stderr.write(`\r${bar}${RESET} ${text}${elapsed}${RESET}\x1b[K`);
 }
 
 function solidBarLine(pct, label, color = FG, newline = true) {
@@ -58,7 +66,7 @@ function solidBarLine(pct, label, color = FG, newline = true) {
   const bar = "█".repeat(filled) + TRACK.repeat(WIDTH - filled);
   const end = newline ? "\n" : "";
   process.stderr.write(
-    `\r${color}${bar}${RESET} ${String(pct).padStart(3)}% ${label}${RESET}\x1b[K${end}`,
+    `\r${color}${bar}${RESET} ${String(pct).padStart(3)}% ${fitLabel(label, 7)}${RESET}\x1b[K${end}`,
   );
 }
 
@@ -176,19 +184,23 @@ export class Progress {
  * @param {() => Promise<T>} fn
  * @returns {Promise<T>}
  */
+/** `fn(setLabel)` may call `setLabel(text)` to show the current stage while it runs. */
 export async function withStatusBar(label, fn) {
   let frame = 0;
+  let current = label;
   const started = Date.now();
   hideCursor();
-  pulseFrame(label, 0, 0);
+  pulseFrame(current, 0, 0);
   const timer = setInterval(() => {
     frame += 1;
     const secs = Math.floor((Date.now() - started) / 1000);
-    pulseFrame(label, frame, secs);
+    pulseFrame(current, frame, secs);
   }, INTERVAL_MS);
 
   try {
-    const result = await fn();
+    const result = await fn((text) => {
+      current = String(text || label);
+    });
     clearInterval(timer);
     clearLine();
     progressDone(label);

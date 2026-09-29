@@ -221,14 +221,39 @@ function parseGetAavegotchiCastJson(stdout) {
   }
 }
 
-function fetchAavegotchiInfoCast(tokenId) {
+/** Async `cast` so status bars keep animating and batched lookups run in parallel. */
+function runCast(args, timeoutMs) {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let child;
+    try {
+      child = spawn(CAST_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
+    } catch (e) {
+      resolve({ status: 1, stdout, stderr: String(e?.message || e) });
+      return;
+    }
+    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+    child.stdout.setEncoding("utf8").on("data", (d) => (stdout += d));
+    child.stderr.setEncoding("utf8").on("data", (d) => (stderr += d));
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      resolve({ status: 1, stdout, stderr: String(e?.message || e) });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ status: code ?? 1, stdout, stderr });
+    });
+  });
+}
+
+async function fetchAavegotchiInfoCast(tokenId) {
   let lastErr;
   for (const rpc of baseRpcUrls()) {
     try {
-      const r = spawnSync(
-        CAST_BIN,
+      const r = await runCast(
         ["call", AAVEGOTCHI_DIAMOND, GET_AAVEGOTCHI_CAST_SIG, String(tokenId), "--rpc-url", rpc, "--json"],
-        { encoding: "utf8", timeout: 20_000 },
+        20_000,
       );
       if (r.status !== 0) throw new Error((r.stderr || r.stdout || "cast call failed").trim());
       const info = parseGetAavegotchiCastJson(r.stdout);
@@ -257,11 +282,7 @@ async function fetchAavegotchiInfoFetch(tokenId) {
   if (!hex) throw lastErr || new Error("getAavegotchi eth_call failed");
   if (!castAvailable()) return null;
 
-  const r = spawnSync(
-    CAST_BIN,
-    ["abi-decode", GET_AAVEGOTCHI_CAST_SIG, String(hex)],
-    { encoding: "utf8", timeout: 10_000 },
-  );
+  const r = await runCast(["abi-decode", GET_AAVEGOTCHI_CAST_SIG, String(hex)], 10_000);
   if (r.status !== 0) return null;
   const line = String(r.stdout || "").trim();
   const nameMatch = line.match(/,\s*"((?:\\.|[^"\\])*)"\s*,/);
@@ -273,18 +294,19 @@ async function fetchAavegotchiInfoFetch(tokenId) {
 async function fetchAavegotchiInfo(tokenId) {
   if (castAvailable()) {
     try {
-      return fetchAavegotchiInfoCast(tokenId);
+      return await fetchAavegotchiInfoCast(tokenId);
     } catch {}
   }
   return fetchAavegotchiInfoFetch(tokenId);
 }
 
-async function enrichGotchisFromRpc(gotchis) {
+async function enrichGotchisFromRpc(gotchis, onStatus = () => {}) {
   const list = Array.isArray(gotchis) ? gotchis : [];
   const pending = list.filter((g) => !g.name || !traitsFromGotchiFields(g));
   if (!pending.length) return list;
 
   for (let i = 0; i < pending.length; i += RPC_NAME_BATCH) {
+    onStatus(`Base RPC names ${i}/${pending.length}…`);
     const chunk = pending.slice(i, i + RPC_NAME_BATCH);
     const infos = await Promise.all(
       chunk.map(async (g) => {
@@ -312,20 +334,24 @@ async function enrichGotchisFromRpc(gotchis) {
 }
 
 /** @deprecated name kept for callers — now also fills eye traits from Base RPC when missing. */
-async function enrichGotchiNamesFromRpc(gotchis) {
-  return enrichGotchisFromRpc(gotchis);
+async function enrichGotchiNamesFromRpc(gotchis, onStatus) {
+  return enrichGotchisFromRpc(gotchis, onStatus);
 }
 
 function baseRpcUrls() {
   return [...new Set(BASE_RPC_URLS.map((u) => String(u || "").trim()).filter(Boolean))];
 }
 
+let castOk;
 function castAvailable() {
-  try {
-    return spawnSync(CAST_BIN, ["--version"], { stdio: "ignore" }).status === 0;
-  } catch {
-    return false;
+  if (castOk === undefined) {
+    try {
+      castOk = spawnSync(CAST_BIN, ["--version"], { stdio: "ignore" }).status === 0;
+    } catch {
+      castOk = false;
+    }
   }
+  return castOk;
 }
 
 async function postJsonRpc(rpcUrl, method, params, timeoutMs = 15_000) {
@@ -380,22 +406,13 @@ async function fetchTokenIdsFromRpcFetch(owner) {
   throw lastErr || new Error("tokenIdsOfOwner failed on all RPC endpoints");
 }
 
-function fetchTokenIdsFromRpcCast(owner) {
+async function fetchTokenIdsFromRpcCast(owner) {
   let lastErr;
   for (const rpc of baseRpcUrls()) {
     try {
-      const r = spawnSync(
-        CAST_BIN,
-        [
-          "call",
-          AAVEGOTCHI_DIAMOND,
-          "tokenIdsOfOwner(address)(uint256[])",
-          owner,
-          "--rpc-url",
-          rpc,
-          "--json",
-        ],
-        { encoding: "utf8", timeout: 20_000 },
+      const r = await runCast(
+        ["call", AAVEGOTCHI_DIAMOND, "tokenIdsOfOwner(address)(uint256[])", owner, "--rpc-url", rpc, "--json"],
+        20_000,
       );
       if (r.status !== 0) throw new Error((r.stderr || r.stdout || "cast call failed").trim());
       const parsed = JSON.parse(String(r.stdout || "").trim());
@@ -408,9 +425,9 @@ function fetchTokenIdsFromRpcCast(owner) {
   throw lastErr || new Error("tokenIdsOfOwner failed via cast");
 }
 
-async function fetchWalletGotchisFromRpc(owner) {
+async function fetchWalletGotchisFromRpc(owner, onStatus) {
   const tokenIds = castAvailable()
-    ? fetchTokenIdsFromRpcCast(owner)
+    ? await fetchTokenIdsFromRpcCast(owner)
     : await fetchTokenIdsFromRpcFetch(owner);
   const list = tokenIds.map((gotchiId) => ({
     gotchiId,
@@ -418,7 +435,7 @@ async function fetchWalletGotchisFromRpc(owner) {
     collateral: null,
     hauntId: null,
   }));
-  await enrichGotchiNamesFromRpc(list);
+  await enrichGotchiNamesFromRpc(list, onStatus);
   return list;
 }
 
@@ -490,7 +507,7 @@ async function fetchGotchiPage(query, variables) {
 }
 
 /** Wallet gotchis — Envio subgraph first, Base RPC tokenIdsOfOwner when tunnel is down. */
-export async function fetchWalletGotchis(address, { pageSize = 1000, max = 10_000 } = {}) {
+export async function fetchWalletGotchis(address, { pageSize = 1000, max = 10_000, onStatus = () => {} } = {}) {
   const owner = address.toLowerCase();
   const merged = [];
   let subgraphError = null;
@@ -516,8 +533,9 @@ export async function fetchWalletGotchis(address, { pageSize = 1000, max = 10_00
     primary = [];
   }
   merged.push(...primary);
+  const unauthorized = /\b40[13]\b/.test(String(subgraphError?.message || ""));
 
-  if (merged.length === 0) {
+  if (merged.length === 0 && !unauthorized) {
     for (const query of [GOTCHIS_BY_OWNER_QUERY, GOTCHIS_BY_OWNER_NESTED_QUERY]) {
       try {
         const fallback = await loadAll(query);
@@ -533,7 +551,8 @@ export async function fetchWalletGotchis(address, { pageSize = 1000, max = 10_00
 
   if (merged.length === 0) {
     try {
-      const rpc = await fetchWalletGotchisFromRpc(owner);
+      onStatus(unauthorized ? "Subgraph 401 (no infra token) · Base RPC…" : "Subgraph down · Base RPC…");
+      const rpc = await fetchWalletGotchisFromRpc(owner, onStatus);
       if (rpc.length) {
         const out = dedupeGotchis(rpc);
         out.source = "base-rpc";
@@ -551,7 +570,7 @@ export async function fetchWalletGotchis(address, { pageSize = 1000, max = 10_00
 
   const out = dedupeGotchis(merged);
   if (out.some((g) => !g.name)) {
-    await enrichGotchiNamesFromRpc(out);
+    await enrichGotchiNamesFromRpc(out, onStatus);
   }
   out.source = "subgraph";
   return out;
