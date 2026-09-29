@@ -56,41 +56,133 @@ export function remoteAttachCommand({ repoDir, opencodeUrl, sessionId }) {
   return `cd ${shellQuote(repoDir)} && exec ${bin} attach ${shellQuote(opencodeUrl)} --session ${shellQuote(sessionId)} --dir ${shellQuote(repoDir)}`;
 }
 
+/** `open` exit codes the desk chat pane uses to pick its local fallback. */
+export const OPEN_EXIT = { ok: 0, error: 1, hubDown: 3, noSsh: 4 };
+const FOLLOW_POLL_MS = 5_000;
+const SSH_TARGET_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/;
+
+/** A follower reattaches only when the Hub moved `current` to another session. */
+export function followDecision(attachedSessionId, desk) {
+  if (!desk?.sessionId || desk.sessionId === attachedSessionId) return "stay";
+  return "reattach";
+}
+
+function sshTarget(argv) {
+  return flagValue(argv, "--ssh") || process.env.GOTCHIBOT_HUB_SSH || readPrefs().ssh || null;
+}
+
+function slugArg(argv) {
+  const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--ssh");
+  return positional[0] || null;
+}
+
+function deskPath(slug) {
+  return `/api/gotchibot/projects/${encodeURIComponent(slug)}/desk`;
+}
+
+/** Undo whatever a killed TUI left behind (alternate screen, hidden cursor, raw tty). */
+function resetTerminal() {
+  if (!process.stdout.isTTY) return;
+  process.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m\n");
+  spawnSync("stty", ["sane"], { stdio: "inherit" });
+}
+
 async function openDesk(argv) {
   const { hubRequest } = await import("./chat-hub-client.mjs");
   const { currentProjectSlug } = await import("./project-context.mjs");
-  const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--ssh");
-  const slug = positional[0] || currentProjectSlug();
+  const slug = slugArg(argv) || currentProjectSlug();
   if (!slug) {
     console.error("which project? gotchibot hub desk open <slug>   (or pick one: gotchibot project use <slug>)");
-    return 1;
+    return OPEN_EXIT.error;
   }
-  const desk = await hubRequest("GET", `/api/gotchibot/projects/${encodeURIComponent(slug)}/desk`, {
-    query: { session: 1 },
-  });
+  const follow = argv.includes("--follow");
+
+  let desk;
+  try {
+    desk = await hubRequest("GET", deskPath(slug), { query: { session: 1 } });
+  } catch (err) {
+    console.error(`Hub not reachable: ${String(err?.message || err).split("\n")[0]}`);
+    return err?.status && err.status < 500 ? OPEN_EXIT.error : OPEN_EXIT.hubDown;
+  }
   if (!desk.sessionId) {
     console.error(desk.sessionError || "the Hub has no desk session for this project yet");
-    return 1;
-  }
-  console.log(`${desk.title} · thread ${desk.threadId} · session ${desk.sessionId}`);
-
-  if (sameDir(desk.repoDir, ROOT)) {
-    const r = spawnSync(
-      "opencode",
-      ["attach", desk.opencodeUrl, "--session", desk.sessionId, "--dir", desk.repoDir],
-      { stdio: "inherit" },
-    );
-    return r.status ?? 1;
+    return OPEN_EXIT.hubDown;
   }
 
-  const target = flagValue(argv, "--ssh") || process.env.GOTCHIBOT_HUB_SSH || readPrefs().ssh;
-  if (!target) {
-    console.error("first time on this machine: gotchibot hub desk open --ssh <user>@<hub-host>  (remembered after that)");
-    return 1;
+  const local = sameDir(desk.repoDir, ROOT);
+  const target = local ? null : sshTarget(argv);
+  if (!local && !target) {
+    console.error("first time on this machine: gotchibot hub desk ssh <user>@<hub-host>  (remembered after that)");
+    return OPEN_EXIT.noSsh;
   }
   if (flagValue(argv, "--ssh")) writePrefs({ ssh: target });
-  const child = spawn("ssh", ["-t", target, remoteAttachCommand(desk)], { stdio: "inherit" });
-  return new Promise((done) => child.on("exit", (code) => done(code ?? 1)));
+
+  const attach = () =>
+    local
+      ? spawn("opencode", ["attach", desk.opencodeUrl, "--session", desk.sessionId, "--dir", desk.repoDir], {
+          stdio: "inherit",
+        })
+      : spawn("ssh", ["-t", target, remoteAttachCommand(desk)], { stdio: "inherit" });
+
+  // Keystrokes belong to the TUI; a stray SIGINT must not kill the follower.
+  const ignore = () => {};
+  process.on("SIGINT", ignore);
+  try {
+    for (;;) {
+      console.log(`${desk.title} · session ${desk.sessionId}${follow ? " · New session: gotchibot hub desk new" : ""}`);
+      const child = attach();
+      let switched = false;
+      const poll = follow
+        ? setInterval(async () => {
+            try {
+              const now = await hubRequest("GET", deskPath(slug));
+              if (followDecision(desk.sessionId, now) === "reattach") {
+                switched = true;
+                desk = { ...desk, sessionId: now.sessionId, sessionStartedAt: now.sessionStartedAt };
+                child.kill("SIGTERM");
+              }
+            } catch {
+              /* Hub blip: keep the current attach */
+            }
+          }, FOLLOW_POLL_MS)
+        : null;
+      const code = await new Promise((done) => child.on("exit", (c) => done(c ?? 1)));
+      if (poll) clearInterval(poll);
+      if (!switched) return code;
+      resetTerminal();
+      console.log("New session started on another device — switching…");
+    }
+  } finally {
+    process.off("SIGINT", ignore);
+  }
+}
+
+async function newSession(argv) {
+  const { hubRequest } = await import("./chat-hub-client.mjs");
+  const { currentProjectSlug } = await import("./project-context.mjs");
+  const slug = slugArg(argv) || currentProjectSlug();
+  if (!slug) {
+    console.error("which project? gotchibot hub desk new <slug>");
+    return 1;
+  }
+  const r = await hubRequest("POST", `${deskPath(slug)}/session`, { body: {} });
+  console.log(`new session ${r.sessionId} in ${r.threadId} — attached desks switch within a few seconds`);
+  return 0;
+}
+
+function sshCommand(argv) {
+  const value = argv[0];
+  if (!value) {
+    console.log(readPrefs().ssh || "(not set) — gotchibot hub desk ssh <user>@<hub-host>");
+    return 0;
+  }
+  if (!SSH_TARGET_RE.test(value)) {
+    console.error("expected <user>@<hub-host>, e.g. user_default@imacomarchy");
+    return 1;
+  }
+  writePrefs({ ssh: value });
+  console.log(`hub desk ssh target: ${value}`);
+  return 0;
 }
 
 async function runDesk(argv) {
@@ -233,7 +325,10 @@ function serviceCommand(action) {
 
 function usage() {
   console.error(`usage:
-  gotchibot hub desk open [slug] [--ssh user@host]      attach this terminal to the project's desk
+  gotchibot hub desk open [slug] [--ssh user@host] [--follow]  attach this terminal to the project's chat
+                                                        (--follow: move along when a New session starts)
+  gotchibot hub desk new [slug]                         New session in the project's chat (fresh context)
+  gotchibot hub desk ssh [user@host]                    show / save the Hub SSH target for this machine
   gotchibot hub desk run [--once]                       desk runner (Hub)
   gotchibot hub desk service install|uninstall|status   Hub services (Linux)`);
 }
@@ -241,6 +336,8 @@ function usage() {
 async function main(argv = process.argv.slice(2)) {
   const [cmd, ...rest] = argv;
   if (cmd === "open") return openDesk(rest);
+  if (cmd === "new") return newSession(rest);
+  if (cmd === "ssh") return sshCommand(rest);
   if (cmd === "run") return runDesk(rest);
   if (cmd === "service") return serviceCommand(rest[0]);
   usage();

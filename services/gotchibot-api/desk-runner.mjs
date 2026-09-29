@@ -145,7 +145,12 @@ export async function ensureDeskSession({ store, client, slug, title, agent = DE
  */
 export async function mirrorDeskSession({ store, client, slug, threadId, sessionId, heroId = null }) {
   const state = await store.getDeskSession(slug);
-  const after = state?.sessionId === sessionId ? state.lastMirroredId || "" : "";
+  const entry = (state?.sessions || []).find((s) => s.sessionId === sessionId);
+  const after = entry
+    ? entry.lastMirroredId || ""
+    : state?.sessionId === sessionId
+      ? state.lastMirroredId || ""
+      : "";
   const rows = await client.listMessages(sessionId, { limit: 200 });
   rows.sort((a, b) => String(a?.info?.id).localeCompare(String(b?.info?.id)));
 
@@ -183,6 +188,37 @@ export async function mirrorDeskSession({ store, client, slug, threadId, session
   }
   if (last && last !== after) await store.setDeskMirrored(slug, sessionId, last);
   return pushed;
+}
+
+export function sessionDividerText(startedBy) {
+  return `New session · started on ${startedBy || "a device"}`;
+}
+
+/**
+ * Start a fresh agent context in the project's one chat: a new OpenCode session
+ * becomes current and a divider lands in the thread so every device sees where
+ * the new context begins. The old session keeps mirroring (listDeskSessions).
+ * @returns {Promise<{ threadId: string, sessionId: string, startedAt: string }>}
+ */
+export async function startNewDeskSession({ store, client, slug, title, startedBy = null, agent = DEFAULT_DESK_AGENT }) {
+  const { threadId } = await store.ensureDeskThread({ slug, title });
+  const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const sessionId = await client.createSession({ title: `${title || `${slug} desk`} · ${stamp}`, agent });
+  const { startedAt } = await store.startDeskSession(slug, sessionId, startedBy);
+  await store.pushMessages({
+    threadId,
+    deskId: HUB_DESK_RUNNER_ID,
+    messages: [
+      {
+        messageId: `session-${sessionId}`,
+        role: "system",
+        text: sessionDividerText(startedBy),
+        op: "message",
+        ts: startedAt,
+      },
+    ],
+  });
+  return { threadId, sessionId, startedAt };
 }
 
 /**
@@ -224,18 +260,27 @@ export function createDeskRunner({
   async function mirrorAll() {
     for (const s of await store.listDeskSessions()) {
       if (!s.sessionId) continue;
-      try {
-        const pushed = await mirrorDeskSession({
-          store,
-          client,
-          slug: s.slug,
-          threadId: s.threadId,
-          sessionId: s.sessionId,
-          heroId: orchestratorHeroId(),
-        });
-        if (pushed.length) log("mirrored", { project: s.slug, messages: pushed.length });
-      } catch (err) {
-        log("mirror-error", { project: s.slug, error: sanitizeRunnerError(err?.message || err) });
+      const ids = (s.sessions?.length ? s.sessions : [{ sessionId: s.sessionId }])
+        .slice()
+        .sort((a, b) => String(a.startedAt || "").localeCompare(String(b.startedAt || "")))
+        .map((x) => x.sessionId);
+      if (!ids.includes(s.sessionId)) ids.push(s.sessionId);
+      for (const sessionId of ids) {
+        try {
+          const pushed = await mirrorDeskSession({
+            store,
+            client,
+            slug: s.slug,
+            threadId: s.threadId,
+            sessionId,
+            heroId: orchestratorHeroId(),
+          });
+          if (pushed.length) log("mirrored", { project: s.slug, session: sessionId, messages: pushed.length });
+        } catch (err) {
+          // An older session deleted in OpenCode just stops syncing; its turns stay in the thread.
+          if (err?.status === 404 && sessionId !== s.sessionId) continue;
+          log("mirror-error", { project: s.slug, session: sessionId, error: sanitizeRunnerError(err?.message || err) });
+        }
       }
     }
   }

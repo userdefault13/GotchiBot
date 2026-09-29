@@ -1129,13 +1129,48 @@ export async function connectStore({ mongoUri, dbName }) {
     return { threadId: t.threadId, title: t.title, project: t.project || null, kind: t.kind || null };
   }
 
+  function isoOrNull(v) {
+    if (!v) return null;
+    const d = v instanceof Date ? v : new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+
+  /** Sessions of a desk doc; docs from before multi-session wrap their one sessionId. */
+  function deskSessionList(doc) {
+    if (Array.isArray(doc.sessions)) {
+      return doc.sessions
+        .filter((s) => s?.sessionId)
+        .map((s) => ({
+          sessionId: s.sessionId,
+          startedAt: isoOrNull(s.startedAt),
+          startedBy: s.startedBy || null,
+          lastMirroredId: s.lastMirroredId || null,
+          lastActiveAt: isoOrNull(s.lastActiveAt || s.startedAt),
+        }));
+    }
+    if (!doc.sessionId) return [];
+    return [
+      {
+        sessionId: doc.sessionId,
+        startedAt: isoOrNull(doc.sessionStartedAt || doc.updatedAt),
+        startedBy: null,
+        lastMirroredId: doc.lastMirroredId || null,
+        lastActiveAt: isoOrNull(doc.updatedAt),
+      },
+    ];
+  }
+
   function deskSessionView(doc) {
     if (!doc) return null;
+    const sessions = deskSessionList(doc);
+    const current = sessions.find((s) => s.sessionId === doc.sessionId) || null;
     return {
       slug: doc._id,
       sessionId: doc.sessionId || null,
       threadId: doc.threadId || deskThreadId(doc._id),
-      lastMirroredId: doc.lastMirroredId || null,
+      lastMirroredId: current?.lastMirroredId ?? doc.lastMirroredId ?? null,
+      sessionStartedAt: current?.startedAt || isoOrNull(doc.sessionStartedAt),
+      sessions,
     };
   }
 
@@ -1143,9 +1178,58 @@ export async function connectStore({ mongoUri, dbName }) {
     return deskSessionView(await deskSessions.findOne({ _id: String(slug) }));
   }
 
-  async function listDeskSessions() {
+  /**
+   * Projects with a session, each with the sessions the mirror should poll: the
+   * current one plus any active in the last `recentMs` (a terminal may still sit
+   * on the previous one until it reattaches).
+   */
+  async function listDeskSessions({ recentMs = 24 * 60 * 60_000 } = {}) {
+    const since = Date.now() - recentMs;
     const rows = await deskSessions.find({ sessionId: { $nin: [null, ""] } }).toArray();
-    return rows.map(deskSessionView);
+    return rows.map((doc) => {
+      const view = deskSessionView(doc);
+      view.sessions = view.sessions.filter(
+        (s) => s.sessionId === view.sessionId || (s.lastActiveAt && Date.parse(s.lastActiveAt) >= since),
+      );
+      return view;
+    });
+  }
+
+  /** Wrap a pre-multi-session doc's sessionId into sessions[] (no-op once migrated). */
+  async function migrateDeskSessions(slug) {
+    const doc = await deskSessions.findOne({ _id: String(slug) });
+    if (!doc || Array.isArray(doc.sessions)) return;
+    const sessions = deskSessionList(doc).map((s) => ({
+      ...s,
+      startedAt: s.startedAt ? new Date(s.startedAt) : new Date(),
+      lastActiveAt: s.lastActiveAt ? new Date(s.lastActiveAt) : new Date(),
+    }));
+    await deskSessions.updateOne({ _id: String(slug), sessions: { $exists: false } }, { $set: { sessions } });
+  }
+
+  /** New session for the project's chat; it becomes current, older ones stay listed. */
+  async function startDeskSession(slug, sessionId, startedBy = null) {
+    const id = String(slug);
+    await migrateDeskSessions(id);
+    const now = new Date();
+    await deskSessions.updateOne(
+      { _id: id },
+      {
+        $set: { sessionId, lastMirroredId: null, sessionStartedAt: now, updatedAt: now },
+        $push: {
+          sessions: {
+            sessionId,
+            startedAt: now,
+            startedBy: startedBy ? String(startedBy).slice(0, 80) : null,
+            lastMirroredId: null,
+            lastActiveAt: now,
+          },
+        },
+        $setOnInsert: { threadId: deskThreadId(id) },
+      },
+      { upsert: true },
+    );
+    return { sessionId, startedAt: now.toISOString() };
   }
 
   async function linkDeskThread(slug, threadId) {
@@ -1158,12 +1242,14 @@ export async function connectStore({ mongoUri, dbName }) {
 
   /** Record sessionId unless another caller got there first; returns the winner. */
   async function claimDeskSession(slug, sessionId) {
+    await migrateDeskSessions(slug);
     const now = new Date();
     try {
       const doc = await deskSessions.findOneAndUpdate(
         { _id: String(slug), sessionId: { $in: [null, ""] } },
         {
-          $set: { sessionId, lastMirroredId: null, updatedAt: now },
+          $set: { sessionId, lastMirroredId: null, sessionStartedAt: now, updatedAt: now },
+          $push: { sessions: { sessionId, startedAt: now, startedBy: null, lastMirroredId: null, lastActiveAt: now } },
           $setOnInsert: { threadId: deskThreadId(slug) },
         },
         { upsert: true, returnDocument: "after" },
@@ -1180,14 +1266,20 @@ export async function connectStore({ mongoUri, dbName }) {
   async function resetDeskSession(slug, sessionId) {
     await deskSessions.updateOne(
       { _id: String(slug), sessionId },
-      { $set: { sessionId: null, lastMirroredId: null } },
+      { $set: { sessionId: null, lastMirroredId: null }, $pull: { sessions: { sessionId } } },
     );
   }
 
+  /** Advance one session's mirror cursor (current or an older session of the chat). */
   async function setDeskMirrored(slug, sessionId, lastMirroredId) {
+    const now = new Date();
+    await deskSessions.updateOne(
+      { _id: String(slug), "sessions.sessionId": sessionId },
+      { $set: { "sessions.$.lastMirroredId": lastMirroredId, "sessions.$.lastActiveAt": now, updatedAt: now } },
+    );
     await deskSessions.updateOne(
       { _id: String(slug), sessionId },
-      { $set: { lastMirroredId, updatedAt: new Date() } },
+      { $set: { lastMirroredId, updatedAt: now } },
     );
   }
 
@@ -1565,6 +1657,7 @@ export async function connectStore({ mongoUri, dbName }) {
     listDeskSessions,
     linkDeskThread,
     claimDeskSession,
+    startDeskSession,
     resetDeskSession,
     setDeskMirrored,
     createSnapshot,

@@ -481,6 +481,35 @@ if [ -n "${TMUX:-}" ]; then
   "$ROOT/scripts/tmux-chat-focus-hook.sh" 2>/dev/null || true
 fi
 
+# Paired to a Hub + inside a project: the Gotchi chat IS the Hub's project chat, the same
+# one the phone and every other desk see. Offline/unpaired falls through to local OpenCode.
+set_chat_border() {
+  [ -n "${TMUX:-}" ] || return 0
+  tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format "$1" 2>/dev/null || true
+}
+if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
+  && [ "${GOTCHIBOT_HUB_DESK:-1}" != "0" ] && [ -f "$ROOT/sessions/.hub.json" ] \
+  && [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" != "openclaw-gateway" ]; then
+  hub_slug="$(node "$ROOT/scripts/project-context.mjs" current 2>/dev/null | tr -d '[:space:]' || true)"
+  if [ -n "$hub_slug" ]; then
+    set_chat_border " Gotchi · ${hub_slug} (Hub) "
+    set +e
+    node "$ROOT/scripts/hub-desk.mjs" open "$hub_slug" --follow
+    hub_st=$?
+    set -e
+    [ "$hub_st" -eq 0 ] && quit_to_terminal
+    stty sane 2>/dev/null || true
+    printf '\033[?1049l\033[?25h\033[0m' 2>/dev/null || true
+    case "$hub_st" in
+      3) hub_reason="Hub not reachable" ;;
+      4) hub_reason="no Hub SSH target — gotchibot hub desk ssh <user>@<hub-host>" ;;
+      *) hub_reason="Hub chat exited ($hub_st)" ;;
+    esac
+    printf '  %s — local chat, not synced\n' "$hub_reason" >&2
+    set_chat_border " Gotchi (offline · local, not synced) "
+  fi
+fi
+
 # Inject NVIDIA/OpenRouter/etc via abracadabra when keys aren't already in env.
 # Without this, NIM models fail with "Missing Authentication header".
 # If abra fails (keychain / no GUI), fall through to bare opencode — never

@@ -1,6 +1,6 @@
-/* GotchiBot phone app — app-shell service worker (v0.4.0).
+/* GotchiBot phone app — app-shell service worker (v0.4.1).
    Precaches shell assets only. Never intercepts /api/ or other origins. */
-const APP_VERSION = "0.4.0";
+const APP_VERSION = "0.4.1";
 const CACHE_NAME = `gotchibot-shell-v${APP_VERSION}`;
 
 /** Relative shell paths (resolved against the SW scope /app/). */

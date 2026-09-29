@@ -56,8 +56,19 @@ chrome are adapted from [Mobilecode-open](https://github.com/elkir0/Mobilecode-o
 - **Runner** — while waiting, `GET /hub/runner` at most every ~10s; settings
   shows status · model. Non-blocking notice when offline/error.
 - **Version** — bump `APP_VERSION` in **both** `sw.js` and `js/version.js`
-  together (currently `0.4.0`). New JS modules must be listed in the SW
+  together (currently `0.4.1`). New JS modules must be listed in the SW
   `SHELL` precache.
+
+## 0.4.1: one chat per project, many sessions
+
+- A project has exactly one chat: its `desk-<slug>` thread. Any `#/p/<slug>/…`
+  link resolves there; old per-thread links still open when the Hub has no desk.
+- The history sheet and "New chat" are gone from project chats (General keeps
+  them). The header's **New session** (+) asks first, then
+  `POST /projects/<slug>/desk/session`: fresh agent context, same chat, and
+  every device (terminals via `hub desk open --follow`) switches with it.
+- `role: "system"` messages render as a centered divider (`.chat-divider`),
+  e.g. "New session · started on iPhone".
 
 ## 0.4.0: phone desk (verify → cockpit → project → chat)
 

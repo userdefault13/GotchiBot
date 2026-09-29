@@ -14,7 +14,7 @@ import { checkOrigin } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
 import { createProjectSource, validateProjectSnapshot } from "./projects.mjs";
 import { validateCockpitSnapshot } from "./cockpit.mjs";
-import { createOpencodeClient, deskThreadTitle, ensureDeskSession } from "./desk-runner.mjs";
+import { createOpencodeClient, deskThreadTitle, ensureDeskSession, startNewDeskSession } from "./desk-runner.mjs";
 import {
   createCastVerifier,
   isAddress,
@@ -636,9 +636,10 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
           }
           const title = deskThreadTitle(project, slug);
           const { threadId } = await store.ensureDeskThread({ slug, title });
-          const out = { ok: true, project: slug, threadId, title };
+          const state = await store.getDeskSession(slug);
+          const out = { ok: true, project: slug, threadId, title, sessionStartedAt: state?.sessionStartedAt || null };
           if (deskKind === "desk") {
-            let sessionId = (await store.getDeskSession(slug))?.sessionId || null;
+            let sessionId = state?.sessionId || null;
             if (url.searchParams.get("session") === "1") {
               try {
                 sessionId = await ensureDeskSession({ store, client: opencodeClient, slug, title });
@@ -646,9 +647,47 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
                 out.sessionError = "the Hub's OpenCode server is not reachable — gotchibot hub desk service status";
               }
             }
+            if (sessionId !== state?.sessionId) {
+              out.sessionStartedAt = (await store.getDeskSession(slug))?.sessionStartedAt || null;
+            }
             Object.assign(out, { sessionId, repoDir, opencodeUrl: opencodeClient.baseUrl });
           }
           return json(res, 200, out);
+        }
+
+        // POST /api/gotchibot/projects/:slug/desk/session — New session in the
+        // project's one chat (fresh agent context), from any device.
+        const newSessionMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)\/desk\/session$/);
+        if (req.method === "POST" && newSessionMatch) {
+          await loadProjectSnapshot();
+          await loadHeroName();
+          let slug;
+          try {
+            slug = decodeURIComponent(newSessionMatch[1]);
+          } catch {
+            slug = "";
+          }
+          const project = projectSource.getProject(slug);
+          if (!project) {
+            return json(res, 404, { ok: false, error: "project not found" });
+          }
+          let started;
+          try {
+            started = await startNewDeskSession({
+              store,
+              client: opencodeClient,
+              slug,
+              title: deskThreadTitle(project, slug),
+              startedBy: desk.name || (deskKind === "phone" ? "phone" : "desk"),
+            });
+          } catch (err) {
+            if (err?.status && err.status < 500 && err.status !== 404) throw err;
+            return json(res, 503, {
+              ok: false,
+              error: "the Hub's OpenCode server is not reachable — gotchibot hub desk service status",
+            });
+          }
+          return json(res, 200, { ok: true, project: slug, ...started });
         }
 
         const projectMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)$/);

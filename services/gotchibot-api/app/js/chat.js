@@ -1,6 +1,6 @@
 /**
- * Project chat — one thread at a time inside a project (or General).
- * Header: back · project/thread title · history sheet · crew (avatar pane).
+ * Project chat — one chat per project (the Hub desk thread), many sessions inside it.
+ * Header: back · project title · New session · crew (avatar pane). General keeps its history sheet.
  * Send / poll / retry behavior is the S2 composer, unchanged.
  */
 import { iconArrowUp, iconChevronLeft, iconCrew, iconHistory, iconPlus } from "./icons.js";
@@ -19,6 +19,7 @@ import {
   getProject,
   getProjectDesk,
   listThreads,
+  newProjectSession,
   pullMessages,
   retryReply,
   runnerStatus,
@@ -35,7 +36,7 @@ import {
 } from "./state.js";
 import { el, heroAvatar, iconButton, openSheet, setNavTitle, topNav } from "./ui.js";
 import { openAvatarPane } from "./avatar-pane.js";
-import { GENERAL, NEW_THREAD_ID, chatHash, suggestionPrompts } from "./desk-model.js";
+import { GENERAL, NEW_THREAD_ID, chatHash, deskThreadId, suggestionPrompts } from "./desk-model.js";
 
 /** Server filter for this chat's project. */
 function threadFilter(project) {
@@ -87,8 +88,9 @@ export async function renderChatView(root, route) {
   clearPoller();
   const project = route.project || GENERAL;
 
-  // No thread in the URL → a project opens its desk; General opens its latest chat, else a draft.
-  if (!route.threadId) {
+  // A project has exactly one chat (its desk thread); General opens its latest chat, else a draft.
+  const onDesk = project !== GENERAL && route.threadId === deskThreadId(project);
+  if (!route.threadId || (project !== GENERAL && !onDesk)) {
     let latest = null;
     try {
       if (project !== GENERAL) {
@@ -101,7 +103,10 @@ export async function renderChatView(root, route) {
           latest = desk.threadId;
         }
       }
-      if (!latest) {
+      if (!latest && route.threadId && route.threadId !== NEW_THREAD_ID) {
+        // Hub without desk support: keep the old per-thread link working.
+        latest = route.threadId;
+      } else if (!latest) {
         const data = await listThreads(app.desk.deskToken, 1, threadFilter(project));
         rememberThreadTitles(data?.threads);
         latest = data?.threads?.[0]?.threadId || null;
@@ -112,8 +117,11 @@ export async function renderChatView(root, route) {
         return;
       }
     }
-    navigate(chatHash(project, latest || NEW_THREAD_ID), { replace: true });
-    return;
+    const target = latest || NEW_THREAD_ID;
+    if (String(target) !== String(route.threadId)) {
+      navigate(chatHash(project, target), { replace: true });
+      return;
+    }
   }
 
   root.replaceChildren();
@@ -136,7 +144,11 @@ export async function renderChatView(root, route) {
 
   const back = iconButton(iconChevronLeft(22), "Cockpit", () => navigate("#/cockpit"));
   const actions = el("div", "nav-actions");
-  actions.appendChild(iconButton(iconHistory(20), "Chat history", () => void openHistory()));
+  if (project === GENERAL) {
+    actions.appendChild(iconButton(iconHistory(20), "Chat history", () => void openHistory()));
+  } else {
+    actions.appendChild(iconButton(iconPlus(20), "New session", () => openNewSession()));
+  }
   /** @type {HTMLButtonElement|null} */
   let crewBtn = null;
   if (project !== GENERAL) {
@@ -203,6 +215,47 @@ export async function renderChatView(root, route) {
         await handleUnpaired("This phone was signed out on the Hub");
       }
     });
+
+  function openNewSession() {
+    const body = el("div", "confirm");
+    body.appendChild(
+      el(
+        "p",
+        "subtle",
+        "The chat stays; the agent starts over with a fresh context. Every device on this project switches with it.",
+      ),
+    );
+    const status = el("p", "msg-error");
+    status.hidden = true;
+    const yes = el("button", "btn-primary btn-block", "Start new session");
+    yes.type = "button";
+    body.append(yes, status);
+    const sheet = openSheet({ title: "New session?", body });
+    yes.addEventListener("click", async () => {
+      yes.disabled = true;
+      try {
+        await newProjectSession(app.desk.deskToken, project);
+        sheet.close();
+        const data = await pullMessages(app.desk.deskToken, {
+          threadId: currentThreadId,
+          after: model.lastSeq,
+          limit: 500,
+        }).catch(() => null);
+        model.applyMessages(data?.messages || []);
+        forceScrollBottom = true;
+        renderMessages();
+      } catch (err) {
+        if (err instanceof ApiError && err.kind === "unpaired") {
+          sheet.close();
+          await handleUnpaired("This phone was signed out on the Hub");
+          return;
+        }
+        status.textContent = err?.message || "Couldn't start a new session";
+        status.hidden = false;
+        yes.disabled = false;
+      }
+    });
+  }
 
   async function openHistory() {
     const body = el("div", "history");
@@ -324,6 +377,14 @@ export async function renderChatView(root, route) {
 
     for (const m of model.list()) {
       const cls = roleClass(m.role);
+      if (cls === "system") {
+        const divider = el("div", "chat-divider");
+        divider.setAttribute("role", "separator");
+        divider.appendChild(el("span", null, m.text || ""));
+        if (m.ts) divider.appendChild(el("small", null, relativeTime(m.ts)));
+        messagesEl.appendChild(divider);
+        continue;
+      }
       const article = el("article", `message ${cls}`);
       if (cls !== "user") {
         const header = el("header");

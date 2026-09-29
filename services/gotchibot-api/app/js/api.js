@@ -223,6 +223,15 @@ export function getProjectDesk(token, slug) {
   return apiFetch(`/api/gotchibot/projects/${encodeURIComponent(slug)}/desk`, { token });
 }
 
+/** New session in the project's chat: fresh agent context, same thread, every device follows. */
+export function newProjectSession(token, slug) {
+  return apiFetch(`/api/gotchibot/projects/${encodeURIComponent(slug)}/desk/session`, {
+    method: "POST",
+    token,
+    body: {},
+  });
+}
+
 /**
  * Hero avatar SVG as a blob: URL (img tags can't send the desk token header).
  * @returns {Promise<string|null>}

@@ -14,11 +14,14 @@ import {
   ensureDeskSession,
   messageText,
   mirrorDeskSession,
+  sessionDividerText,
+  startNewDeskSession,
 } from "../services/gotchibot-api/desk-runner.mjs";
 import { connectStore, deskThreadId } from "../services/gotchibot-api/store.mjs";
 import { createApiServer } from "../services/gotchibot-api/server.mjs";
 import { createProjectSource } from "../services/gotchibot-api/projects.mjs";
-import { remoteAttachCommand, renderDeskUnit } from "../scripts/hub-desk.mjs";
+import { followDecision, remoteAttachCommand, renderDeskUnit } from "../scripts/hub-desk.mjs";
+import { deskThreadId as appDeskThreadId } from "../services/gotchibot-api/app/js/desk-model.js";
 
 let clock = 1_790_000_000_000;
 const nextId = () => `msg_${(clock++).toString(16)}`;
@@ -97,27 +100,46 @@ function memoryStore() {
     replies,
     async getDeskSession(slug) {
       const d = desk.get(slug);
-      return d ? { slug, ...d } : null;
+      return d ? structuredClone({ slug, ...d }) : null;
     },
     async listDeskSessions() {
-      return [...desk.entries()].filter(([, d]) => d.sessionId).map(([slug, d]) => ({ slug, ...d }));
+      return [...desk.entries()].filter(([, d]) => d.sessionId).map(([slug, d]) => structuredClone({ slug, ...d }));
     },
     async linkDeskThread(slug, threadId) {
-      desk.set(slug, { sessionId: null, lastMirroredId: null, ...desk.get(slug), threadId });
+      desk.set(slug, { sessionId: null, lastMirroredId: null, sessions: [], ...desk.get(slug), threadId });
+    },
+    async ensureDeskThread({ slug, title }) {
+      const threadId = deskThreadId(slug);
+      if (!threads.has(threadId)) threads.set(threadId, { threadId, project: slug, kind: "desk", title });
+      if (!desk.has(slug)) await this.linkDeskThread(slug, threadId);
+      return { threadId };
     },
     async claimDeskSession(slug, sessionId) {
-      const d = desk.get(slug) || { threadId: deskThreadId(slug) };
+      const d = desk.get(slug) || { threadId: deskThreadId(slug), sessions: [] };
       if (d.sessionId) return d.sessionId;
-      desk.set(slug, { ...d, sessionId, lastMirroredId: null });
+      const startedAt = new Date(clock++).toISOString();
+      const entry = { sessionId, startedAt, startedBy: null, lastMirroredId: null, lastActiveAt: startedAt };
+      desk.set(slug, { ...d, sessionId, lastMirroredId: null, sessions: [...(d.sessions || []), entry] });
       return sessionId;
+    },
+    async startDeskSession(slug, sessionId, startedBy = null) {
+      const d = desk.get(slug) || { threadId: deskThreadId(slug), sessions: [] };
+      const startedAt = new Date(clock++).toISOString();
+      const entry = { sessionId, startedAt, startedBy, lastMirroredId: null, lastActiveAt: startedAt };
+      desk.set(slug, { ...d, sessionId, lastMirroredId: null, sessions: [...(d.sessions || []), entry] });
+      return { sessionId, startedAt };
     },
     async resetDeskSession(slug, sessionId) {
       const d = desk.get(slug);
-      if (d?.sessionId === sessionId) desk.set(slug, { ...d, sessionId: null, lastMirroredId: null });
+      if (d?.sessionId !== sessionId) return;
+      const sessions = (d.sessions || []).filter((s) => s.sessionId !== sessionId);
+      desk.set(slug, { ...d, sessionId: null, lastMirroredId: null, sessions });
     },
     async setDeskMirrored(slug, sessionId, lastMirroredId) {
       const d = desk.get(slug);
-      if (d?.sessionId === sessionId) desk.set(slug, { ...d, lastMirroredId });
+      if (!d) return;
+      const sessions = (d.sessions || []).map((s) => (s.sessionId === sessionId ? { ...s, lastMirroredId } : s));
+      desk.set(slug, { ...d, sessions, ...(d.sessionId === sessionId ? { lastMirroredId } : {}) });
     },
     async getThread(threadId) {
       return threads.get(threadId) || null;
@@ -220,6 +242,44 @@ describe("desk runner (unit)", () => {
     assert.equal(hung.replies.at(-1).ok, false);
     assert.match(hung.replies.at(-1).error, /timed out/);
     assert.equal(hangClient.aborted.length, 1);
+  });
+
+  it("New session: divider in the one chat, old + new sessions both keep mirroring in order", async () => {
+    const store = memoryStore();
+    const client = fakeOpencode();
+    const logs = [];
+    const runner = createDeskRunner({ store, client, mirrorMs: 0, logger: { info: (l) => logs.push(l) } });
+    const threadId = deskThreadId("alpha");
+    const first = await ensureDeskSession({ store, client, slug: "alpha" });
+    client.sessions.get(first).push(userMsg("old q"), assistantMsg("old a"));
+    await runner.tick();
+
+    const started = await startNewDeskSession({ store, client, slug: "alpha", title: "Alpha desk", startedBy: "iPhone" });
+    assert.equal(started.threadId, threadId);
+    assert.notEqual(started.sessionId, first);
+    const state = await store.getDeskSession("alpha");
+    assert.equal(state.sessionId, started.sessionId);
+    assert.deepEqual(state.sessions.map((s) => s.sessionId), [first, started.sessionId]);
+
+    client.sessions.get(first).push(userMsg("late q"), assistantMsg("late a"));
+    client.sessions.get(started.sessionId).push(userMsg("new q"), assistantMsg("new a"));
+    await runner.tick();
+    const texts = store.messages.filter((m) => m.threadId === threadId).map((m) => m.text);
+    assert.deepEqual(texts, ["old q", "old a", sessionDividerText("iPhone"), "late q", "late a", "new q", "new a"]);
+    const divider = store.messages.find((m) => m.messageId === `session-${started.sessionId}`);
+    assert.equal(divider.role, "system");
+
+    client.sessions.delete(first);
+    await runner.tick();
+    assert.equal(logs.filter((l) => l.includes("mirror-error")).length, 0, "a deleted old session is skipped quietly");
+  });
+
+  it("follow reattaches only when the Hub moved to another session", () => {
+    assert.equal(followDecision("ses_1", { sessionId: "ses_1" }), "stay");
+    assert.equal(followDecision("ses_1", { sessionId: "ses_2" }), "reattach");
+    assert.equal(followDecision("ses_1", { sessionId: null }), "stay");
+    assert.equal(followDecision("ses_1", null), "stay");
+    assert.equal(appDeskThreadId("alpha"), deskThreadId("alpha"));
   });
 
   it("terminal attach command and unit rendering", () => {
@@ -343,5 +403,72 @@ describe("desk threads on the Hub (Mongo)", async () => {
     assert.equal((await store.getDeskSession("gamma")).sessionId, a);
     await store.resetDeskSession("gamma", a);
     assert.equal((await store.getDeskSession("gamma")).sessionId, null);
+  });
+
+  it("a pre-sessions doc migrates lazily; New session keeps the old one and its cursor", async () => {
+    const past = new Date(Date.now() - 60_000);
+    await store.db.collection("desk_sessions").insertOne({
+      _id: "legacy",
+      threadId: "desk-legacy",
+      sessionId: "ses_old",
+      lastMirroredId: "msg_9",
+      updatedAt: past,
+    });
+    const before = await store.getDeskSession("legacy");
+    assert.deepEqual(before.sessions.map((s) => [s.sessionId, s.lastMirroredId]), [["ses_old", "msg_9"]]);
+
+    const { startedAt } = await store.startDeskSession("legacy", "ses_new", "iPhone");
+    assert.ok(Date.parse(startedAt));
+    const after = await store.getDeskSession("legacy");
+    assert.equal(after.sessionId, "ses_new");
+    assert.equal(after.lastMirroredId, null);
+    assert.equal(after.sessionStartedAt, startedAt);
+    assert.deepEqual(after.sessions.map((s) => [s.sessionId, s.lastMirroredId, s.startedBy]), [
+      ["ses_old", "msg_9", null],
+      ["ses_new", null, "iPhone"],
+    ]);
+
+    await store.setDeskMirrored("legacy", "ses_old", "msg_10");
+    const moved = await store.getDeskSession("legacy");
+    assert.equal(moved.sessions[0].lastMirroredId, "msg_10");
+    assert.equal(moved.lastMirroredId, null, "the current cursor is untouched");
+
+    const listed = (await store.listDeskSessions()).find((s) => s.slug === "legacy");
+    assert.deepEqual(listed.sessions.map((s) => s.sessionId), ["ses_old", "ses_new"]);
+    const narrow = (await store.listDeskSessions({ recentMs: 0 })).find((s) => s.slug === "legacy");
+    assert.deepEqual(narrow.sessions.map((s) => s.sessionId), ["ses_new"], "idle old sessions drop off");
+  });
+
+  it("POST /projects/:slug/desk/session: any device starts a New session, all see the divider", async () => {
+    const phone = await token("phone");
+    const desk = await token("desk");
+    const beforeId = (await get("/api/gotchibot/projects/alpha/desk?session=1", desk)).data.sessionId;
+
+    const post = async (path, tok) => {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method: "POST",
+        headers: { "X-GotchiBot-Desk-Token": tok, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      return { status: res.status, data: await res.json() };
+    };
+    const r = await post("/api/gotchibot/projects/alpha/desk/session", phone);
+    assert.equal(r.status, 200);
+    assert.equal(r.data.threadId, "desk-alpha");
+    assert.match(r.data.sessionId, /^ses_/);
+    assert.notEqual(r.data.sessionId, beforeId);
+
+    const now = await get("/api/gotchibot/projects/alpha/desk?session=1", desk);
+    assert.equal(now.data.sessionId, r.data.sessionId);
+    assert.equal(now.data.sessionStartedAt, r.data.startedAt);
+    const pulled = await get("/api/gotchibot/chats/pull?threadId=desk-alpha&after=0", phone);
+    const divider = pulled.data.messages.find((m) => m.messageId === `session-${r.data.sessionId}`);
+    assert.equal(divider.role, "system");
+    assert.equal(divider.text, sessionDividerText("phone"));
+
+    assert.equal((await post("/api/gotchibot/projects/nope/desk/session", phone)).status, 404);
+    const whoami = await get("/api/gotchibot/hub/whoami", phone);
+    await store.revokeDesk(whoami.data.deskId);
+    assert.equal((await post("/api/gotchibot/projects/alpha/desk/session", phone)).status, 401);
   });
 });

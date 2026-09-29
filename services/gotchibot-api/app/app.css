@@ -377,6 +377,14 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   background: var(--surface); border: 1px solid var(--border);
   color: var(--text-soft); font-size: 14px;
 }
+.chat-divider {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--muted); font-size: 12px; text-align: center;
+}
+.chat-divider::before, .chat-divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--border);
+}
+.chat-divider small { font-size: 11px; opacity: 0.8; }
 .message-content p { margin: 0 0 10px; }
 .message-content p:last-child { margin-bottom: 0; }
 .message-content pre {

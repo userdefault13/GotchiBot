@@ -8,6 +8,11 @@ export const GENERAL = "_general";
 /** Hash sentinel for a draft (unsaved) thread — first send omits threadId. */
 export const NEW_THREAD_ID = "new";
 
+/** The one chat a project has on the Hub (mirrors store.mjs deskThreadId). */
+export function deskThreadId(slug) {
+  return `desk-${slug}`;
+}
+
 /** Same letters as the kanban ASCII thumbs (assets/gotchi-kanban.ascii). */
 const SPIRIT_CHARS = {
   dai: "D",
