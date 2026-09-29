@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 
@@ -113,6 +113,43 @@ function loadToc(rootDir: string): TocEntry[] {
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
 
+type TocOption = { title: string; value: string; description: string }
+type TocCache = { key: string; packs: TocEntry[]; options: TocOption[] }
+let tocCache: TocCache | null = null
+
+function mtimeKey(path: string): string {
+  try {
+    return String(statSync(path).mtimeMs)
+  } catch {
+    return "-"
+  }
+}
+
+/** Sources' mtimes: a changed catalog/playbooks file or an added/removed pack reloads the TOC. */
+function tocKey(rootDir: string): string {
+  const market = join(rootDir, "templates", "marketplace")
+  return [
+    join(market, "catalog.json"),
+    join(market, "packs"),
+    join(rootDir, "config", "agent-role-playbooks.json"),
+  ]
+    .map(mtimeKey)
+    .join("|")
+}
+
+function cachedToc(rootDir: string): TocCache {
+  const key = tocKey(rootDir)
+  if (tocCache?.key === key) return tocCache
+  const packs = loadToc(rootDir)
+  const options = packs.map((p) => ({
+    title: p.title || p.id,
+    value: p.id,
+    description: [p.summary, p.source ? `(${p.source})` : ""].filter(Boolean).join(" ").slice(0, 160),
+  }))
+  tocCache = { key, packs, options }
+  return tocCache
+}
+
 function isScrollMouse(evt: any): boolean {
   const btn = evt?.button ?? evt?.mouseButton ?? evt?.event?.button
   const type = String(evt?.type || evt?.kind || "").toLowerCase()
@@ -135,9 +172,13 @@ function scrollDir(evt: any): -1 | 1 {
  * /prof modal — keep focus in DialogSelect.
  * Bug: mouse-wheel (and some page-scroll keybinds) leaked into chat history.
  * Fix: push mode, xlarge dialog, consume wheel + page-scroll keys; map wheel to list move.
+ * Each move re-renders the whole dialog (streamed over SSH when Hub-attached), so a
+ * wheel burst is coalesced into one re-render per WHEEL_FLUSH_MS.
  */
+const WHEEL_FLUSH_MS = 40
+
 function openProfModal(api: TuiPluginApi, rootDir: string) {
-  const packs = loadToc(rootDir)
+  const { packs, options } = cachedToc(rootDir)
   if (!packs.length) {
     toast(api, `No marketplace packs under ${rootDir}`, "warning")
     return
@@ -202,14 +243,7 @@ function openProfModal(api: TuiPluginApi, rootDir: string) {
           title: `Prof. Link-Cube · ${packs.length} template(s)`,
           placeholder: "Filter packs… (wheel stays in list)",
           current,
-          options: packs.map((p) => ({
-            title: p.title || p.id,
-            value: p.id,
-            description: [p.summary, p.source ? `(${p.source})` : ""]
-              .filter(Boolean)
-              .join(" ")
-              .slice(0, 160),
-          })),
+          options,
           onMove: (option: { value?: string }) => {
             const id = String(option?.value ?? "")
             const i = packs.findIndex((p) => p.id === id)
@@ -225,10 +259,26 @@ function openProfModal(api: TuiPluginApi, rootDir: string) {
     )
   }
 
+  let pendingDelta = 0
+  let flushTimer: ReturnType<typeof setTimeout> | null = null
+  cleanups.push(() => {
+    if (flushTimer) clearTimeout(flushTimer)
+    flushTimer = null
+  })
   const move = (delta: number) => {
     if (proceeded || !packs.length) return
-    selectedIdx = Math.max(0, Math.min(packs.length - 1, selectedIdx + delta))
-    show()
+    pendingDelta += delta
+    if (flushTimer) return
+    flushTimer = setTimeout(() => {
+      flushTimer = null
+      const d = pendingDelta
+      pendingDelta = 0
+      if (proceeded || !d) return
+      const next = Math.max(0, Math.min(packs.length - 1, selectedIdx + d))
+      if (next === selectedIdx) return
+      selectedIdx = next
+      show()
+    }, WHEEL_FLUSH_MS)
   }
 
   // Page-scroll only (not ↑↓ — DialogSelect owns those).
@@ -265,17 +315,22 @@ function openProfModal(api: TuiPluginApi, rootDir: string) {
   }
 
   const r = api.renderer as any
+  // One wheel path: the raw input handler sees (and consumes) the escape sequence
+  // first; the node listeners are only for renderers without it.
+  let lastEvt: unknown = null
   const onMouse = (evt: any) => {
     if (proceeded) return
     if (!isScrollMouse(evt)) return
     evt?.preventDefault?.()
     evt?.stopPropagation?.()
     evt?.stopImmediatePropagation?.()
+    if (evt === lastEvt) return true
+    lastEvt = evt
     move(scrollDir(evt))
     return true
   }
   const rootNode = r?.root || r?.rootNode || r?.document
-  if (rootNode && typeof rootNode.on === "function") {
+  if (typeof r?.prependInputHandler !== "function" && rootNode && typeof rootNode.on === "function") {
     for (const ev of ["mouse", "mouse:down", "mousedown", "wheel", "scroll", "mouse:scroll", "mouse:wheel"]) {
       try {
         rootNode.on(ev, onMouse)
@@ -313,6 +368,13 @@ function openProfModal(api: TuiPluginApi, rootDir: string) {
 
 const tui: TuiPlugin = async (api) => {
   const rootDir = resolveRoot(api)
+  setTimeout(() => {
+    try {
+      cachedToc(rootDir)
+    } catch {
+      /* first /prof loads it */
+    }
+  }, 0)
   try {
     api.keymap.registerLayer({
       commands: [
