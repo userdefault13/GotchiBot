@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, appendFileSync, readFileSync, rmSync, chmodSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -92,6 +93,36 @@ describe("cursor-cli", () => {
     const r = await p;
     assert.deepEqual(r, { done: true, ok: true, output: "all done" });
     assert.equal(out.text, "· read a.mjs\n· writing the reply\n");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("the job runs cursor-agent to a result even when the binary lingers after it (Linux)", () => {
+    const dir = runDir();
+    const fake = join(dir, "fake-cursor-agent");
+    const events = [
+      { type: "system", subtype: "init" },
+      { type: "tool_call", subtype: "started", tool_call: { readToolCall: { args: { path: `${dir}/a.mjs` } } } },
+      { type: "assistant", timestamp_ms: 1, message: { content: [{ type: "text", text: "It is " }] } },
+      { type: "assistant", timestamp_ms: 2, message: { content: [{ type: "text", text: "fine." }] } },
+      { type: "result", is_error: false, result: "It is fine." },
+    ];
+    writeFileSync(
+      fake,
+      `#!${process.execPath}\n` +
+        `for (const e of ${JSON.stringify(events)}) console.log(JSON.stringify(e));\n` +
+        "setInterval(() => {}, 1000);\n",
+    );
+    chmodSync(fake, 0o755);
+    writeFileSync(join(dir, "job.json"), JSON.stringify({ bin: fake, args: [], cwd: dir, chatId: "chat-x", timeoutMs: 20_000 }));
+    writeFileSync(join(dir, "prompt.txt"), "PROMPT");
+    const r = spawnSync(process.execPath, [new URL("../scripts/cursor-cli.mjs", import.meta.url).pathname, "job", dir], {
+      encoding: "utf8",
+      timeout: 15_000,
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(readFileSync(join(dir, "state.env"), "utf8"), /^status=done$/m);
+    assert.equal(readFileSync(join(dir, "output.md"), "utf8"), "It is fine.");
+    assert.equal(readFileSync(join(dir, "progress.log"), "utf8"), "· read a.mjs\n· writing the reply\n");
     rmSync(dir, { recursive: true, force: true });
   });
 

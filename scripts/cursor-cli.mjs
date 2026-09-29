@@ -53,6 +53,7 @@ const JOB_TIMEOUT_MS = Number(process.env.GOTCHIBOT_CURSOR_TIMEOUT_MS ?? 1_800_0
 const JOB_START_MS = 15_000;
 const QUIET_BEAT_MS = 30_000;
 const LINGER_MS = 60_000;
+const RESULT_GRACE_MS = 3_000;
 const MAX_SESSION_CHATS = 50;
 
 function usage() {
