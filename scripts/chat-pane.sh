@@ -158,9 +158,26 @@ quit_to_terminal() {
   exit 0
 }
 
+# The cockpit reads wallet gotchis from the subgraph, which needs GOTCHIBOT_INFRA_TOKEN;
+# without it every load falls back to rate-limited Base RPC (~30-50s). Bounded probe so a
+# locked vault costs a few seconds, then plain node.
+cockpit_abra_ok() {
+  [ "${GOTCHIBOT_SKIP_ABRA:-}" = "1" ] && return 1
+  [ -n "${GOTCHIBOT_INFRA_TOKEN:-}" ] && return 1
+  command -v abra >/dev/null 2>&1 || return 1
+  command -v perl >/dev/null 2>&1 || return 1
+  printf '  Cockpit · unlocking subgraph key…\n' >&2
+  perl -e 'alarm shift; exec @ARGV' "${GOTCHIBOT_COCKPIT_ABRA_TIMEOUT:-10}" \
+    bash -c 'abra run gotchibot -- /usr/bin/printenv 2>/dev/null | grep -q "^GOTCHIBOT_INFRA_TOKEN=."'
+}
+
 run_onboarding_gate() {
   set +e
-  GOTCHIBOT_IN_CHAT_PANE=1 node "$ROOT/scripts/onboarding-gate.mjs" "$@"
+  if cockpit_abra_ok; then
+    abra run gotchibot -- env GOTCHIBOT_IN_CHAT_PANE=1 node "$ROOT/scripts/onboarding-gate.mjs" "$@"
+  else
+    GOTCHIBOT_IN_CHAT_PANE=1 node "$ROOT/scripts/onboarding-gate.mjs" "$@"
+  fi
   local st=$?
   # The cockpit turns on a tmux scrollbar for this pane; OpenCode scrolls itself.
   [ -n "${TMUX_PANE:-}" ] && tmux set-option -p -u -t "$TMUX_PANE" pane-scrollbars 2>/dev/null
