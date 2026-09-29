@@ -89,7 +89,12 @@ function toast(api: any, message: string, variant: "info" | "success" | "warning
 /** Abort the running turn and wait until the server reports the session idle. */
 async function interruptTurn(api: any, rootDir: string, sid: string): Promise<boolean> {
   try {
-    await api.client.session.abort({ path: { id: sid } })
+    // v2 SDK: flat params, and a failed request resolves with `error` instead of throwing.
+    const res = await api.client.session.abort({ sessionID: sid })
+    if (res?.error) {
+      log(rootDir, "abort-error", { sid, err: JSON.stringify(res.error).slice(0, 300) })
+      return false
+    }
   } catch (err) {
     log(rootDir, "abort-error", { sid, err: String(err) })
     return false
