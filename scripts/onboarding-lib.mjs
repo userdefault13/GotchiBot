@@ -731,7 +731,8 @@ export async function fetchCartridgeHeroes(cartridgeId) {
   return (await readSepoliaHeroes(cartridgeId)).heroes;
 }
 
-export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = null) {
+/** `alreadyBound`: a batch bind just landed it on-chain — record it locally, skip the cart read. */
+export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = null, { alreadyBound = false } = {}) {
   const tokenId = String(sourceTokenId);
   let walletGotchi = gotchiHint && (gotchiHint.collateral || gotchiHint.gotchiId)
     ? gotchiHint
@@ -750,8 +751,8 @@ export async function bindOwnedGotchi(cartridgeId, sourceTokenId, gotchiHint = n
   // Already bound on the owner's Base Sepolia cartridge → reuse it; otherwise
   // bind on-chain through the MetaMask bindOwned page.
   const bindOwner = readWalletFile();
-  let onChain = null;
-  if (bindOwner) {
+  let onChain = alreadyBound ? { id: `owned-${tokenId}`, sourceTokenId: tokenId } : null;
+  if (bindOwner && !onChain) {
     const sep = await readSepoliaHeroesForOwner(bindOwner);
     onChain = sep.heroes.find((h) => h.bindType === "owned" && h.sourceTokenId === tokenId) || null;
   }

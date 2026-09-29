@@ -1209,6 +1209,364 @@ document.getElementById('go').onclick = async () => {
 </script></body></html>`;
 }
 
+const BIND_ABI = [
+  "function bindOwned(uint256 cartridgeId, uint256 sourceTokenId)",
+  "function bindOwnedBatch(uint256 cartridgeId, uint256[] sourceTokenIds)",
+];
+
+function bindRevertReason(e) {
+  const msg = String(e?.shortMessage || e?.reason || e?.message || e || "");
+  if (/!owner/i.test(msg)) return "wallet does not own it on Mock L1";
+  if (/Cartridge: bound/i.test(msg)) return "already bound on this cart";
+  if (/!open|sealed/i.test(msg)) return "cart must be open before bind";
+  if (/LINE_A_UNPAID/i.test(msg)) return "cart Line A unpaid";
+  return msg.length > 120 ? `${msg.slice(0, 117)}…` : msg || "reverted";
+}
+
+/**
+ * Dry-run each bindOwned from the wallet so one bad id cannot sink an atomic batch.
+ * Also probes whether the diamond has bindOwnedBatch (one tx, no wallet batching needed).
+ */
+export async function preflightOwnedBinds({ wallet, cartridgeId, tokenIds, onProgress = () => {} }) {
+  const cfg = mintConfig();
+  const ethers = await getEthers();
+  const provider = new ethers.JsonRpcProvider(cfg.rpc);
+  const iface = new ethers.Interface(BIND_ABI);
+  const cart = BigInt(cartridgeId);
+  const call = async (data) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await provider.call({ from: wallet, to: cfg.cartridgeDiamond, data });
+      } catch (e) {
+        const reverted = e?.code === "CALL_EXCEPTION" || /revert/i.test(String(e?.message || ""));
+        if (reverted || attempt >= 3) throw Object.assign(e, { reverted });
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
+  };
+  const ok = [];
+  const rejected = [];
+  for (let i = 0; i < tokenIds.length; i++) {
+    const id = tokenIds[i];
+    onProgress(`Checking binds on Base Sepolia ${i + 1}/${tokenIds.length}…`);
+    try {
+      await call(iface.encodeFunctionData("bindOwned", [cart, BigInt(id)]));
+      ok.push(id);
+    } catch (e) {
+      if (e.reverted) rejected.push({ tokenId: id, error: bindRevertReason(e) });
+      else ok.push(id);
+    }
+  }
+  let contractBatch = false;
+  if (ok.length > 1) {
+    try {
+      await call(iface.encodeFunctionData("bindOwnedBatch", [cart, ok.map((id) => BigInt(id))]));
+      contractBatch = true;
+    } catch {
+      /* diamond without bindOwnedBatch */
+    }
+  }
+  return { ok, rejected, contractBatch };
+}
+
+/**
+ * One MetaMask page for many bindOwned: bindOwnedBatch tx when the diamond has it, else an
+ * EIP-5792 wallet_sendCalls batch (one confirm), else one tx per id without reopening pages.
+ */
+export async function runBindOwnedBatch({
+  expectWallet,
+  cartridgeId,
+  tokenIds,
+  contractBatch = false,
+  onProgress = () => {},
+  auto = true,
+} = {}) {
+  const cfg = mintConfig();
+  const diamond = cfg.cartridgeDiamond;
+  if (!diamond) throw new Error("cartridgeDiamond missing from chain config");
+  if (!cartridgeId) throw new Error("cartridgeId required to bind");
+  if (!tokenIds?.length) return { ok: true, mode: null, bound: [], failed: [], txHashes: [] };
+
+  freePort();
+  const plan = {
+    expectWallet: String(expectWallet || "").toLowerCase(),
+    cartridgeId: String(cartridgeId),
+    tokenIds: tokenIds.map(String),
+    diamond,
+    contractBatch: Boolean(contractBatch),
+  };
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (out) => {
+      if (settled) return;
+      settled = true;
+      try {
+        server.close();
+      } catch {
+        /* ignore */
+      }
+      resolve(out);
+    };
+    const readJson = (req, cb) => {
+      let body = "";
+      req.on("data", (c) => {
+        body += c;
+      });
+      req.on("end", () => {
+        try {
+          cb(JSON.parse(body || "{}"));
+        } catch {
+          cb(null);
+        }
+      });
+    };
+
+    const server = http.createServer((req, res) => {
+      const u = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+      if (tryServeAarcadeAsset(u.pathname, res)) return;
+      if (u.pathname === "/" || u.pathname === "/bind-batch") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderBindBatchPage(plan));
+        return;
+      }
+      if (u.pathname === "/progress" && req.method === "POST") {
+        readJson(req, (j) => {
+          if (j?.text) onProgress(String(j.text).slice(0, 120));
+          res.writeHead(204);
+          res.end();
+        });
+        return;
+      }
+      if (u.pathname === "/done" && req.method === "POST") {
+        readJson(req, (j) => {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+          if (!j) return finish({ ok: false, mode: null, bound: [], failed: [], txHashes: [], error: "bad json" });
+          finish({
+            ok: Boolean(j.ok),
+            mode: j.mode || null,
+            bound: Array.isArray(j.bound) ? j.bound.map(String) : [],
+            failed: Array.isArray(j.failed) ? j.failed : [],
+            txHashes: Array.isArray(j.txHashes) ? j.txHashes : [],
+            error: j.error || null,
+          });
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end("not found");
+    });
+
+    server.listen(PORT, "127.0.0.1", () => {
+      const url = `http://127.0.0.1:${PORT}/bind-batch`;
+      onProgress(`Confirm in the browser — ${url}`);
+      if (auto) openBrowser(url);
+    });
+
+    setTimeout(() => {
+      if (!settled) finish({ ok: false, mode: null, bound: [], failed: [], txHashes: [], error: "bind timed out" });
+    }, (10 + tokenIds.length) * 60 * 1000);
+  });
+}
+
+function renderBindBatchPage(plan) {
+  const planJson = JSON.stringify(plan);
+  const n = plan.tokenIds.length;
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Bind ${n} gotchis into cart</title>
+<style>${aarcadePageStyles()}</style></head>
+<body><div class="shell"><div class="card">
+  <p class="kicker">AarcadeGh-t · Base Sepolia</p>
+  <h2>Bind ${n} owned gotchis</h2>
+  <p class="hint">${
+    plan.contractBatch
+      ? `One transaction: <code>bindOwnedBatch(#${plan.cartridgeId}, [${n} ids])</code>.`
+      : `One MetaMask batch of ${n} <code>bindOwned</code> calls when your wallet supports it (MetaMask may offer a one-time smart account switch). Otherwise one confirm per gotchi, on this page.`
+  }</p>
+  <button type="button" id="go">Connect &amp; bind all</button>
+  <div class="status" id="status"></div>
+</div></div>
+<script type="module">
+const PLAN = ${planJson};
+const CHAIN_HEX = '${CHAIN_HEX}';
+
+function friendlyError(e) {
+  const msg = String(e?.shortMessage || e?.message || e || '');
+  if (/user rejected|rejected the request|4001/i.test(msg)) return 'Cancelled in wallet.';
+  if (/metamask extension not found/i.test(msg)) return 'Install MetaMask in Chrome/Brave, reload, retry.';
+  if (/!owner/i.test(msg)) return 'Wallet does not own that gotchi.';
+  if (/bound/i.test(msg)) return 'Already bound on this cart.';
+  if (/!open|sealed/i.test(msg)) return 'Cart must be open before bind.';
+  if (/LINE_A_UNPAID/i.test(msg)) return 'Cart Line A unpaid — finish mint first.';
+  return msg.length > 220 ? msg.slice(0, 200) + '…' : msg || 'Unknown error';
+}
+const rejected = (e) => e?.code === 4001 || e?.code === 'ACTION_REJECTED' || /user rejected|rejected the request/i.test(String(e?.message || ''));
+const unsupported = (e) => [4200, -32601, 5700, 5710, 5750].includes(e?.code) || /not supported|unsupported|does not exist/i.test(String(e?.message || ''));
+
+function pickWallet() {
+  if (window.ethereum) return window.ethereum;
+  throw new Error('MetaMask extension not found');
+}
+
+async function ensureChain(eth) {
+  try {
+    await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CHAIN_HEX }] });
+  } catch (e) {
+    if (e?.code !== 4902) throw e;
+    await eth.request({
+      method: 'wallet_addEthereumChain',
+      params: [{
+        chainId: CHAIN_HEX,
+        chainName: 'Base Sepolia',
+        nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+        rpcUrls: ['https://sepolia.base.org'],
+        blockExplorerUrls: ['https://sepolia.basescan.org'],
+      }],
+    });
+  }
+}
+
+const post = (path, payload) =>
+  fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
+const status = document.getElementById('status');
+const say = (text) => { status.textContent = text; post('/progress', { text }); };
+
+async function atomicSupported(eth, from) {
+  try {
+    const caps = await eth.request({ method: 'wallet_getCapabilities', params: [from, [CHAIN_HEX]] });
+    const c = caps?.[CHAIN_HEX] || caps?.[String(parseInt(CHAIN_HEX, 16))] || {};
+    return c.atomic?.status === 'supported' || c.atomic?.status === 'ready' || c.atomicBatch?.supported === true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForCalls(eth, id) {
+  for (let i = 0; i < 300; i++) {
+    const r = await eth.request({ method: 'wallet_getCallsStatus', params: [id] });
+    const s = r?.status;
+    if (s === 200 || s === 'CONFIRMED') {
+      const receipts = r.receipts || [];
+      if (receipts.some((x) => x.status === '0x0' || x.status === 0)) throw new Error('batch reverted on-chain');
+      return [...new Set(receipts.map((x) => x.transactionHash).filter(Boolean))];
+    }
+    if (typeof s === 'number' && s >= 400) throw new Error('batch failed (status ' + s + ')');
+    await new Promise((res) => setTimeout(res, 2000));
+  }
+  throw new Error('batch still pending after 10 min — check MetaMask activity');
+}
+
+document.getElementById('go').onclick = async () => {
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  status.className = 'status';
+  const ids = PLAN.tokenIds;
+  try {
+    say('Connecting…');
+    const eth = pickWallet();
+    await ensureChain(eth);
+    const accounts = await eth.request({ method: 'eth_requestAccounts' });
+    const from = String(accounts[0] || '').toLowerCase();
+    if (PLAN.expectWallet && from !== PLAN.expectWallet) {
+      throw new Error('Wrong wallet — desk expects ' + PLAN.expectWallet + ', MetaMask has ' + from);
+    }
+    const { BrowserProvider, Contract, Interface } = await import('https://cdn.jsdelivr.net/npm/ethers@6.13.4/+esm');
+    const iface = new Interface(${JSON.stringify(BIND_ABI)});
+    const signer = await new BrowserProvider(eth).getSigner();
+    const c = new Contract(PLAN.diamond, iface, signer);
+    const cart = BigInt(PLAN.cartridgeId);
+
+    if (PLAN.contractBatch) {
+      say('Confirm bindOwnedBatch (' + ids.length + ' gotchis) in MetaMask…');
+      const tx = await c.bindOwnedBatch(cart, ids.map((id) => BigInt(id)));
+      say('Waiting for confirmation…');
+      const receipt = await tx.wait();
+      status.className = 'status ok';
+      say('Bound ' + ids.length + ' · ' + (receipt?.hash || tx.hash));
+      return post('/done', { ok: true, mode: 'contract', bound: ids, failed: [], txHashes: [receipt?.hash || tx.hash] });
+    }
+
+    if (await atomicSupported(eth, from)) {
+      try {
+        say('Confirm the batch of ' + ids.length + ' binds in MetaMask…');
+        const res = await eth.request({
+          method: 'wallet_sendCalls',
+          params: [{
+            version: '2.0.0',
+            from,
+            chainId: CHAIN_HEX,
+            atomicRequired: true,
+            calls: ids.map((id) => ({ to: PLAN.diamond, data: iface.encodeFunctionData('bindOwned', [cart, BigInt(id)]), value: '0x0' })),
+          }],
+        });
+        say('Waiting for the batch to confirm…');
+        const hashes = await waitForCalls(eth, typeof res === 'string' ? res : res?.id);
+        status.className = 'status ok';
+        say('Bound ' + ids.length + ' in one batch');
+        return post('/done', { ok: true, mode: 'batch', bound: ids, failed: [], txHashes: hashes });
+      } catch (e) {
+        if (rejected(e) || !unsupported(e)) throw e;
+      }
+    }
+
+    const bound = [];
+    const failed = [];
+    const txHashes = [];
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      try {
+        say('Confirm ' + (i + 1) + '/' + ids.length + ': bindOwned #' + id + ' in MetaMask…');
+        const tx = await c.bindOwned(cart, BigInt(id));
+        const receipt = await tx.wait();
+        bound.push(id);
+        txHashes.push(receipt?.hash || tx.hash);
+      } catch (e) {
+        if (rejected(e)) {
+          ids.slice(i).forEach((rest) => failed.push({ tokenId: rest, error: 'cancelled in wallet' }));
+          break;
+        }
+        failed.push({ tokenId: id, error: friendlyError(e) });
+      }
+    }
+    status.className = failed.length ? 'status err' : 'status ok';
+    say('Bound ' + bound.length + '/' + ids.length + (failed.length ? ' · ' + failed.length + ' failed' : ''));
+    await post('/done', { ok: bound.length > 0, mode: 'sequential', bound, failed, txHashes });
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = friendlyError(e);
+    await post('/done', { ok: false, mode: null, bound: [], failed: [], txHashes: [], error: friendlyError(e) });
+    btn.disabled = false;
+  }
+};
+</script></body></html>`;
+}
+
+/**
+ * Bind many wallet-owned gotchis to the desk cart with as few MetaMask confirms as possible.
+ * @returns {{ mode, bound: string[], failed: {tokenId, error}[], txHashes: string[] }}
+ */
+export async function bindOwnedBatchToDesk(tokenIds, { onProgress = () => {} } = {}) {
+  const { wallet, cartridgeId } = deskTarget();
+  const ids = [...new Set((tokenIds || []).map(String))];
+  const pre = await preflightOwnedBinds({ wallet, cartridgeId, tokenIds: ids, onProgress });
+  let res = { mode: null, bound: [], failed: [], txHashes: [], error: null };
+  if (pre.ok.length) {
+    res = await runBindOwnedBatch({
+      expectWallet: wallet,
+      cartridgeId,
+      tokenIds: pre.ok,
+      contractBatch: pre.contractBatch,
+      onProgress,
+    });
+    if (!res.bound.length && !res.failed.length) {
+      res.failed = pre.ok.map((tokenId) => ({ tokenId, error: res.error || "not bound" }));
+    }
+  }
+  if (res.bound.length) await refreshDeskMeta(wallet).catch(() => {});
+  return { mode: res.mode, bound: res.bound, failed: [...pre.rejected, ...res.failed], txHashes: res.txHashes };
+}
+
 /**
  * MetaMask page: CAavegotchiFacet.bindStarter(cartridgeId, templateId, collateral) payable 5 ETH.
  */

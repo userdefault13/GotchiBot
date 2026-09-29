@@ -1007,7 +1007,7 @@ async function mintAllWalletGotchis(wallet, cartridgeId, allGotchis, cartridgeHe
   title("Mint all wallet gotchis");
   console.log(`  wallet gotchis   ${(allGotchis || []).length}`);
   console.log(`  already on cart  ${skipped}`);
-  console.log(`  to mint / bind   ${pending.length}  (free — one MetaMask bindOwned each)\n`);
+  console.log(`  to mint / bind   ${pending.length}  (free — one MetaMask page, batched when the wallet allows)\n`);
   if (!pending.length) {
     console.log("  Nothing left to mint — every wallet gotchi is already a cAavegotchi.");
     await pause();
@@ -1025,8 +1025,38 @@ async function mintAllWalletGotchis(wallet, cartridgeId, allGotchis, cartridgeHe
   const ok = [];
   const failed = [];
   console.log("");
-  const bar = new Progress();
   const total = pending.length;
+  const byId = new Map(pending.map((g) => [String(g.gotchiId ?? g.id), g]));
+  let batch = null;
+  try {
+    const { bindOwnedBatchToDesk } = await import("./cartridge-mint-sepolia.mjs");
+    batch = await withStatusBar(`Binding ${total} gotchis…`, (onProgress) =>
+      bindOwnedBatchToDesk([...byId.keys()], { onProgress }),
+    );
+  } catch (e) {
+    console.log(`  · batch bind unavailable (${String(e?.message || e).slice(0, 100)}) — one page per gotchi`);
+  }
+  if (batch) {
+    const via = { contract: "one bindOwnedBatch tx", batch: "one MetaMask batch", sequential: "one confirm each" };
+    if (batch.mode) console.log(`  · ${via[batch.mode] || batch.mode}${batch.txHashes.length ? ` · ${batch.txHashes.length} tx` : ""}`);
+    for (const tokenId of batch.bound) {
+      const g = byId.get(tokenId);
+      const heroId = await bindOwnedGotchi(null, tokenId, g, { alreadyBound: true }).catch(() => `owned-${tokenId}`);
+      console.log(`  ✓ #${tokenId}${g?.name ? ` "${g.name}"` : ""} → ${heroId}`);
+      ok.push({ tokenId, heroId });
+    }
+    for (const f of batch.failed) {
+      const g = byId.get(String(f.tokenId));
+      console.log(`  ✗ #${f.tokenId}${g?.name ? ` "${g.name}"` : ""} — ${f.error}`);
+      failed.push({ tokenId: String(f.tokenId), error: f.error });
+    }
+    console.log(`\n  bound ${ok.length}/${total} · skipped ${skipped} · failed ${failed.length}`);
+    await syncFleetQuiet();
+    await pause();
+    return { kind: "mint-all", bound: ok, skipped, failed };
+  }
+
+  const bar = new Progress();
   bar.set(0, `minting 0/${total}`);
   for (let i = 0; i < total; i++) {
     const g = pending[i];
