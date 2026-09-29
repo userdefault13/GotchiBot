@@ -29,6 +29,8 @@ export PATH="${HOME}/.openclaw/bin:${PATH}"
 [ -f "$ROOT/scripts/openclaw-gateway-env.sh" ] && source "$ROOT/scripts/openclaw-gateway-env.sh"
 # Subscription mode: this strips any API-key override for opencode-go (opt-in: GOTCHIBOT_OPENCODE_GO_APIKEY=1).
 node "$ROOT/scripts/sync-opencode-go-provider.mjs" >/dev/null 2>&1 || true
+# cursor-cli.mjs follows its job for up to 9 minutes; OpenCode's bash default is 2.
+export OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS="${OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS:-600000}"
 mkdir -p "$ROOT/sessions"
 # Model priority:
 #   1) sessions/.chat-model (live /model via gotchi-model-sync — survives pane respawn)

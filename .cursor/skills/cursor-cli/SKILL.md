@@ -47,10 +47,17 @@ Never call Grok `~/.grok/bin/agent`. Never `cursor agent` as the primary binary.
 ./scripts/cursor-cli.mjs run "…" --mode plan
 ./scripts/cursor-cli.mjs run "…" --mode ask
 ./scripts/cursor-cli.mjs resume "follow-up in the same Cursor chat"
+./scripts/cursor-cli.mjs wait c20260929071656-orjj   # after STILL RUNNING
+./scripts/cursor-cli.mjs watch [runId] [--hub]       # live terminal of a run
 ./scripts/cursor-cli.mjs status
 ```
 
-Headless `run` always execs `$HOME/.local/bin/cursor-agent --print --output-format text --workspace <cwd> --trust`. Default model is the subscription **Auto** — omit `--model` unless UserDefault named one.
+Headless `run` starts `cursor-agent --print --output-format stream-json` as a detached job in its own tmux window (session `gotchibot-cursor`) and follows it: progress lines (`· edit scripts/x.mjs`, `· shell npm test`) stream on stderr while it works, the final answer lands on stdout. Default model is the subscription **Auto** — omit `--model` unless UserDefault named one.
+
+- **Long runs:** the call follows for up to 9 minutes (OpenCode's bash tool is raised to 10 via `OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS`; pass `timeout: 600000` if you set one yourself). If it prints `STILL RUNNING … wait c…`, the job is still going — **do not run it again**; call `./scripts/cursor-cli.mjs wait <runId>`.
+- **Watch it live:** `./scripts/cursor-cli.mjs watch [runId]` attaches to the run's terminal; from the MBP, `./scripts/cursor-cli.mjs watch --hub` for runs on the Hub. `--show` also opens a Terminal.app window (macOS desktop only).
+- **Chats:** each OpenCode session (and each hero) keeps its own Cursor chat, so parallel gotchis never share one. `--new-chat` starts fresh.
+- `--no-watch` runs the job without a tmux window.
 
 `--force` is optional (unattended writes). Do not pass `--api-key`.
 
@@ -98,14 +105,8 @@ Summarize. Stay on big-pickle/Nemotron for the reply. Do not change OpenCode `/m
 
 ## Hub desk (workers)
 
-On the iMac, worker heroes do **not** keep a Terminal open. If UserDefault should watch the turn:
-
-```bash
-./scripts/gotchibot desk-terminals use <hero-id>
-./scripts/cursor-cli.mjs run "…"
-./scripts/gotchibot desk-terminals close <hero-id>
-```
-
-One-shot: `./scripts/gotchibot desk-terminals use <hero-id> -- node ./scripts/cursor-cli.mjs run "…"`.
-Headless `cursor-cli run` alone is fine when nobody needs a visible window.
-Never reuse LINK/YFI/WBTC verify windows.
+Every `cursor-cli run` already has its own live terminal (tmux window in
+`gotchibot-cursor`, closed 60s after the run). UserDefault watches with
+`./scripts/cursor-cli.mjs watch` on the Hub or `watch --hub` from the MBP — no
+`desk-terminals use` wrapper needed (it only showed an idle tool window, and is
+macOS-only). Never reuse LINK/YFI/WBTC verify windows.

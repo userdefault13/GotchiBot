@@ -24,6 +24,8 @@ Type=simple
 WorkingDirectory=@REPO@
 Environment=HOME=@HOME@
 Environment=PATH=@HOME@/.local/bin:@NODE_DIR@:/usr/local/bin:/usr/bin:/bin
+# Work runs through ./scripts/cursor-cli.mjs, which follows its job for up to 9 minutes.
+Environment=OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS=600000
 ExecStart=@ABRA@ run -p gotchibot -- @OPENCODE@ serve --hostname 127.0.0.1 --port @PORT@
 Restart=on-failure
 RestartSec=5
