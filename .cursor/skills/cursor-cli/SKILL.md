@@ -58,6 +58,23 @@ Interactive TTY: `./scripts/cursor-cli.mjs launch "…"`. Prefer `run` from Open
 
 Preview bundled handoff/pin/sub-agent context: `./scripts/cursor-cli.mjs context "…"`.
 
+## Never print keys or passwords (hard rule)
+
+No secret value ever reaches chat, a prompt, a log, `output.md`, a commit, or a
+tool result: API keys, tokens, passwords, passphrases, private keys, seed
+phrases, cookies, `Authorization` headers. That includes partial values.
+
+- Talk about secrets by **name** only (`OPENCLAW_GATEWAY_TOKEN is set`), never by value.
+- Commands that emit environment or config must filter to names first:
+  `printenv | cut -d= -f1`, `node x.mjs env | sed -E 's/=.*/=<redacted>/'`.
+  Redacting only `*KEY*` is not enough: `TOKEN`, `SECRET`, `PASSWORD`,
+  `PASS`, `AUTH`, `PRIVATE`, `MNEMONIC`, and `SEED` leak too.
+- Do not `cat`, `echo`, `grep`, or `head` `.env`, `openclaw.json`, keychain
+  exports, or `abra get` output into a tool result.
+- Every `cursor-cli.mjs run` prompt tells cursor-agent the same rule.
+- If a value slips out anyway, stop, tell UserDefault which secret **name**
+  leaked and where, and recommend rotating it. Do not repeat the value.
+
 ## Prompt shape
 
 Hand a **self-contained** prompt (goal, constraints, repo path, done criteria). Do not micromanage line edits. Then summarize the CLI output back to UserDefault in first person as the gotchi. Mention `sessions/c*/output.md` + chat id for resume. Do not paste the raw help text.
