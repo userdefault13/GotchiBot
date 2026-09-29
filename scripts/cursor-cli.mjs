@@ -217,18 +217,33 @@ Do not ask Julius for secrets or API keys. Use the logged-in Cursor account.`);
   return bundle;
 }
 
-function cursorCreateChat(bin, cwd) {
-  const r = spawnSync(bin, ["create-chat"], {
-    encoding: "utf8",
-    cwd,
-    env: childEnv(),
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/** On Linux `create-chat` prints the id and then never exits: take the id and stop it. */
+function cursorCreateChat(bin, cwd, timeoutMs = 30_000) {
+  return new Promise((resolveId, reject) => {
+    const child = spawn(bin, ["create-chat"], { cwd, env: childEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    let settled = false;
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill("SIGTERM");
+      fn(value);
+    };
+    const timer = setTimeout(() => settle(reject, new Error("cursor-agent create-chat timed out")), timeoutMs);
+    child.stdout.on("data", (d) => {
+      out += d;
+      const m = out.match(UUID_RE);
+      if (m) settle(resolveId, m[0]);
+    });
+    child.stderr.on("data", (d) => (err += d));
+    child.on("close", (code) =>
+      settle(reject, new Error((err || out).trim() || `cursor-agent create-chat exited ${code} without a chat id`)),
+    );
   });
-  if (r.status !== 0) {
-    throw new Error(r.stderr || r.stdout || "cursor-agent create-chat failed");
-  }
-  const id = (r.stdout || "").trim();
-  if (!id) throw new Error("empty chat id from cursor-agent create-chat");
-  return id;
 }
 
 export function rememberChat(state, id, label, key = null, { save = saveState } = {}) {
@@ -389,11 +404,11 @@ function cmdStatus() {
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-function cmdCreate(argv) {
+async function cmdCreate(argv) {
   const bin = requireBin();
   const labelIdx = argv.indexOf("--label");
   const label = labelIdx >= 0 ? argv[labelIdx + 1] : "gotchibot cursor chat";
-  const id = cursorCreateChat(bin, ROOT);
+  const id = await cursorCreateChat(bin, ROOT);
   const state = loadState();
   rememberChat(state, id, label);
   if (argv.includes("--json")) {
@@ -412,7 +427,7 @@ async function cmdRun(argv, { interactive = false } = {}) {
   const key = chatKey();
   let chatId = opts.resume || (opts.newChat ? null : chatFor(state, key));
   if (!opts.dryRun) {
-    if (opts.newChat || !chatId) chatId = cursorCreateChat(bin, opts.cwd);
+    if (opts.newChat || !chatId) chatId = await cursorCreateChat(bin, opts.cwd);
     rememberChat(state, chatId, prompt, key);
   }
 
@@ -596,6 +611,8 @@ async function cmdJob(runDir) {
       return;
     }
     const out = applyStreamEvent(run, ev, job.cwd);
+    // Like create-chat, cursor-agent may linger after its result on Linux.
+    if (ev?.type === "result") setTimeout(() => child.kill("SIGTERM"), RESULT_GRACE_MS).unref();
     if (out.progress) progress(out.progress);
     if (out.text) {
       process.stdout.write(out.text);
@@ -609,7 +626,7 @@ async function cmdJob(runDir) {
   clearInterval(beat);
   const text =
     (run.final ?? run.live).trim() || err.trim() || (timedOut ? `cursor-agent timed out after ${job.timeoutMs}ms` : "");
-  const ok = code === 0 && !run.isError && !timedOut;
+  const ok = !timedOut && (run.final != null ? !run.isError : code === 0);
   finishRunDir(runDir, ok, text);
   appendFileSync(join(runDir, "state.env"), `exit=${code}\n`);
   process.stdout.write(`\n\n${dim(`— ${ok ? "done" : "failed"} · ${runId}${process.env.TMUX ? ` · closes in ${LINGER_MS / 1000}s` : ""} —`)}\n`);
@@ -801,7 +818,7 @@ if (isMainModule(import.meta.url)) {
       break;
     }
     case "create":
-      cmdCreate(rest);
+      await cmdCreate(rest);
       break;
     case "context":
       cmdContext(rest);
