@@ -199,6 +199,29 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
       directory: repoDir,
       password: process.env.OPENCODE_SERVER_PASSWORD || null,
     });
+  /** Terminals following a project desk (`/desk/events`): slug → Set<{ res, last }>. */
+  const deskWatchers = new Map();
+  const deskEventsBeatMs = config.deskEventsHeartbeatMs || 25_000;
+  async function deskEvent(slug) {
+    const s = await store.getDeskSession(slug);
+    return { sessionId: s?.sessionId || null, sessionStartedAt: s?.sessionStartedAt || null };
+  }
+  function sendDeskEvent(watcher, ev) {
+    if (watcher.last === ev.sessionId) return;
+    watcher.last = ev.sessionId;
+    watcher.res.write(`event: desk\ndata: ${JSON.stringify(ev)}\n\n`);
+  }
+  async function notifyDesk(slug) {
+    const watchers = deskWatchers.get(slug);
+    if (!watchers?.size) return;
+    try {
+      const ev = await deskEvent(slug);
+      for (const w of watchers) sendDeskEvent(w, ev);
+    } catch {
+      /* the heartbeat re-sends */
+    }
+  }
+
   const verifySignature = verifyWallet || createCastVerifier();
   const resolveOwner = ownerWallet || (() => resolveOwnerWallet(config, config.projectsRoot || ROOT));
 
@@ -655,10 +678,61 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
             }
             if (sessionId !== state?.sessionId) {
               out.sessionStartedAt = (await store.getDeskSession(slug))?.sessionStartedAt || null;
+              await notifyDesk(slug);
             }
             Object.assign(out, { sessionId, repoDir, opencodeUrl: opencodeClient.baseUrl });
           }
           return json(res, 200, out);
+        }
+
+        // GET /api/gotchibot/projects/:slug/desk/events — SSE: `event: desk` with
+        // {sessionId, sessionStartedAt} on connect and whenever the current session moves.
+        const eventsMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)\/desk\/events$/);
+        if (req.method === "GET" && eventsMatch) {
+          if (deskKind === "phone") {
+            return json(res, 403, { ok: false, error: "not allowed for phone desks" });
+          }
+          await loadProjectSnapshot();
+          let slug;
+          try {
+            slug = decodeURIComponent(eventsMatch[1]);
+          } catch {
+            slug = "";
+          }
+          if (!projectSource.getProject(slug)) {
+            return json(res, 404, { ok: false, error: "project not found" });
+          }
+          const first = await deskEvent(slug);
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+            "X-Accel-Buffering": "no",
+          });
+          const watcher = { res, last: undefined };
+          if (!deskWatchers.has(slug)) deskWatchers.set(slug, new Set());
+          deskWatchers.get(slug).add(watcher);
+          sendDeskEvent(watcher, first);
+          // Heartbeat: keeps proxies open, drops revoked tokens, and catches
+          // session moves made by other processes (the desk runner).
+          const token = headerGet(req, DESK_TOKEN_HEADER);
+          const beat = setInterval(async () => {
+            try {
+              const d = await store.findDeskByToken(token);
+              if (!d || d.revoked || d.revokedAt) return res.end();
+              res.write(": ping\n\n");
+              sendDeskEvent(watcher, await deskEvent(slug));
+            } catch {
+              /* next beat */
+            }
+          }, deskEventsBeatMs);
+          res.on("close", () => {
+            clearInterval(beat);
+            const set = deskWatchers.get(slug);
+            set?.delete(watcher);
+            if (set && !set.size) deskWatchers.delete(slug);
+          });
+          return;
         }
 
         // POST /api/gotchibot/projects/:slug/desk/session — New session in the
@@ -711,6 +785,7 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
               error: "the Hub's OpenCode server is not reachable — gotchibot hub desk service status",
             });
           }
+          await notifyDesk(slug);
           return json(res, 200, { ok: true, project: slug, ...started });
         }
 

@@ -374,7 +374,7 @@ describe("desk threads on the Hub (Mongo)", async () => {
     await store.ensureIndexes();
     server = createApiServer({
       store,
-      config: { host: "127.0.0.1", port: 0, ownerLogin: "owner@example.com", projectsRoot: root },
+      config: { host: "127.0.0.1", port: 0, ownerLogin: "owner@example.com", projectsRoot: root, deskEventsHeartbeatMs: 100 },
       projects: createProjectSource({ root }),
       verifyWallet: async () => false,
       opencode,
@@ -519,6 +519,55 @@ describe("desk threads on the Hub (Mongo)", async () => {
     const whoami = await get("/api/gotchibot/hub/whoami", phone);
     await store.revokeDesk(whoami.data.deskId);
     assert.equal((await post("/api/gotchibot/projects/alpha/desk/session", phone)).status, 401);
+  });
+
+  it("GET /desk/events streams the current session and pushes moves; revoked tokens are dropped", async () => {
+    const desk = await token("desk");
+    const phone = await token("phone");
+    const url = `http://127.0.0.1:${port}/api/gotchibot/projects/alpha/desk/events`;
+    const current = (await get("/api/gotchibot/projects/alpha/desk?session=1", desk)).data.sessionId;
+
+    const ac = new AbortController();
+    const res = await fetch(url, { headers: { "X-GotchiBot-Desk-Token": desk }, signal: ac.signal });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type"), /text\/event-stream/);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    const nextEvent = async () => {
+      for (;;) {
+        const frames = buf.split("\n\n");
+        while (frames.length > 1) {
+          const frame = frames.shift();
+          buf = frames.join("\n\n");
+          if (frame.includes("event: desk")) return JSON.parse(frame.split("data: ")[1]);
+        }
+        const { value, done } = await reader.read();
+        if (done) return null;
+        buf += decoder.decode(value, { stream: true });
+      }
+    };
+    try {
+      assert.equal((await nextEvent()).sessionId, current);
+      const started = await fetch(`http://127.0.0.1:${port}/api/gotchibot/projects/alpha/desk/session`, {
+        method: "POST",
+        headers: { "X-GotchiBot-Desk-Token": phone, "Content-Type": "application/json" },
+        body: "{}",
+      }).then((r) => r.json());
+      const pushed = await nextEvent();
+      assert.equal(pushed.sessionId, started.sessionId);
+      assert.equal(pushed.sessionStartedAt, started.startedAt);
+
+      await store.revokeDesk((await get("/api/gotchibot/hub/whoami", desk)).data.deskId);
+      assert.equal(await nextEvent(), null, "the heartbeat ends a revoked desk's stream");
+    } finally {
+      ac.abort();
+    }
+
+    assert.equal((await fetch(url, { headers: { "X-GotchiBot-Desk-Token": phone } })).status, 403);
+    const other = await token("desk");
+    const missing = await fetch(url.replace("/alpha/", "/nope/"), { headers: { "X-GotchiBot-Desk-Token": other } });
+    assert.equal(missing.status, 404);
   });
 
   it("POST /desk/session { sessionId }: a terminal's own session becomes current for every device", async () => {
