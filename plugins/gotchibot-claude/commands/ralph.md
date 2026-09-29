@@ -20,7 +20,7 @@ Load and follow **ralph** now:
 
 Arguments (if any): `$ARGUMENTS`
 
-- Empty → ask Julius for the goal + completion promise (one short question), or continue the active loop if one is running.
+- Empty → ask UserDefault for the goal + completion promise (one short question), or continue the active loop if one is running.
 - `status` / `cancel` / `list` → `./scripts/gotchibot ralph $ARGUMENTS`.
 - Otherwise treat `$ARGUMENTS` as the goal and start with a safe max-iterations.
 

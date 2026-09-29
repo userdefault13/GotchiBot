@@ -185,7 +185,7 @@ Repo: ${ROOT}
 Time: ${new Date().toISOString()}
 Bot (OpenCode) stays on Hy3 Free / Nemotron 3 for talk and routing.
 You (cursor-agent) do the coding / debugging / investigation / patches.
-Do not ask Julius for secrets or API keys. Use the logged-in Cursor account.`);
+Do not ask UserDefault for secrets or API keys. Use the logged-in Cursor account.`);
 
   if (existsSync(PIN)) {
     const pin = readFileSync(PIN, "utf8").trim();

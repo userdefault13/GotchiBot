@@ -47,7 +47,7 @@ Skills: `project-kanban`, `project-tickets`, plus `passoff` from common. Fleet s
 
 - Desks add/move their own cards on their mini (`--desk <hero>`) or ask me.
 - Desks request/claim/submit their own tickets; I keep the lifecycle coherent.
-- I never invent progress — a card or ticket moves only when a desk or Julius says so.
+- I never invent progress — a card or ticket moves only when a desk or UserDefault says so.
 - Passoff may include ticket/card ids so work stays linked.
 
 ## Rules

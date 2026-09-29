@@ -2,7 +2,7 @@
 name: data-ai-cron-site
 description: >-
   Patch-dossier data layer for ai-cron-site / cron402: fetch schedules, success/fail
-  history, and result logs into pstack dossier (no second cron store). Load when Julius
+  history, and result logs into pstack dossier (no second cron store). Load when UserDefault
   asks for cron history, dossier cron data, or data-ai-cron-site work. Partner
   dossier-ai-cron-site owns the pane UI.
 license: MIT

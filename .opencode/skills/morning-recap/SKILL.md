@@ -61,7 +61,7 @@ needing answers) before/with this recap. Policy text only — no cron installer 
 
 1. Collect → each agent spawns, writes recap to `sessions/meetings/<id>/recaps/<hero>.md`
 2. Present → transcript posts one agent at a time
-3. Julius asks questions in room; `/recap-next` advances
+3. UserDefault asks questions in room; `/recap-next` advances
 4. Finish → "agents ready to take down today's goals"
 
 ## MCP

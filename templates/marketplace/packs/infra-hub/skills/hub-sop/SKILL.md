@@ -1,6 +1,6 @@
 ---
 name: hub-sop
-description: Hub (iMac) standard operating procedures — OpenClaw gateway down, restart remotely, VS Code/Claude bridge, tunnel, status. Load when OC✗, gateway-unreachable, or Julius asks to restart Hub/OpenClaw.
+description: Hub (iMac) standard operating procedures — OpenClaw gateway down, restart remotely, VS Code/Claude bridge, tunnel, status. Load when OC✗, gateway-unreachable, or UserDefault asks to restart Hub/OpenClaw.
 license: MIT
 compatibility: opencode
 metadata:
@@ -17,7 +17,7 @@ Always use `abra run gotchibot -- …` from Desk (MBP). Secrets stay in abracada
 
 | Role | Machine | Notes |
 | --- | --- | --- |
-| Desk | MBP | Julius chats here; OpenCode TUI |
+| Desk | MBP | UserDefault chats here; OpenCode TUI |
 | Hub | iMac (hostname in `config/hub-bridge.json`) | OpenClaw gateway `:18789`, Docker, VS Code Claude bridge `:45678` |
 | Tunnel | Cloudflare | `subgraph.aarcadeghst.com` |
 
@@ -30,7 +30,7 @@ Bar line: `OC✗` = OpenClaw gateway unreachable. `tun✓`/`tun✗` = subgraph t
 | `OC✗` / `gateway-unreachable` / gotchi fell back to local | `abra run gotchibot -- ./scripts/gotchibot hub restart-gateway` | `abra run gotchibot -- ./scripts/gotchibot hub status` |
 | Need Hub dashboard | `abra run gotchibot -- ./scripts/gotchibot hub` | — |
 | Claude bridge down / connection refused / pane missing | `abra run gotchibot -- ./scripts/gotchibot hub bridge-ensure` (or MCP `hub_bridge_ensure`) | Then retry `claude_submit` / `claude_ask` |
-| Julius says “no chat in VS Code” / headless-only confusion | Load **gotchibot-bridge** HARD RULE: pane → terminal → + headless for Desk. Never invent architecture | `GotchiBot Bridge: Show Log` if UI empty but Desk got reply |
+| UserDefault says “no chat in VS Code” / headless-only confusion | Load **gotchibot-bridge** HARD RULE: pane → terminal → + headless for Desk. Never invent architecture | `GotchiBot Bridge: Show Log` if UI empty but Desk got reply |
 | New Claude pane / create-agent / Claude has no GotchiBot role | `abra run gotchibot -- ./scripts/gotchibot claude-pane-init` (or MCP `hub_claude_pane_init`) | Load skill **claude-pane-proxy** |
 | Where is bridge config / globalStorage? | `abra run gotchibot -- ./scripts/gotchibot hub bridge-info` (or MCP `hub_bridge_info`) | There is NO `globalStorage/local.gotchibot-bridge/` folder — config is `settings.json` + `state.vscdb` |
 | Ask Hub Claude | MCP `claude_ask` or `abra run gotchibot -- ./scripts/gotchibot claude-ask "…"` | Stay on big-pickle |
@@ -39,7 +39,7 @@ Bar line: `OC✗` = OpenClaw gateway unreachable. `tun✓`/`tun✗` = subgraph t
 | Sync code to Hub | `abra run gotchibot -- ./scripts/gotchibot remote-push` | — |
 | Desk says agents running but Hub Claude pane idle | `./scripts/gotchibot hub dashboard` then `bridge-ensure` | Tiled board: `./scripts/gotchibot hub monitor --force` → `tmux attach -t gotchibot-hubmon` |
 | Full OpenClaw redeploy | `abra run gotchibot -- ./scripts/gotchibot remote-openclaw` | Heavy; prefer `restart-gateway` first |
-| Hub totally unreachable (SSH itself down, not just the gateway) | `abra run gotchibot -- ./scripts/gotchibot hub status --json` (look for `"ssh":{"ok":false}`) | Nothing else in this SOP can run without SSH — every command here goes over `abra run gotchibot -- …`. Tell Julius: check the iMac is powered on and Tailscale is connected. Do not attempt `restart-gateway` / `bridge-ensure` / `doctor` until SSH is back |
+| Hub totally unreachable (SSH itself down, not just the gateway) | `abra run gotchibot -- ./scripts/gotchibot hub status --json` (look for `"ssh":{"ok":false}`) | Nothing else in this SOP can run without SSH — every command here goes over `abra run gotchibot -- …`. Tell UserDefault: check the iMac is powered on and Tailscale is connected. Do not attempt `restart-gateway` / `bridge-ensure` / `doctor` until SSH is back |
 
 ## Who is where (roster)
 
@@ -84,7 +84,7 @@ Tiles always include **OPENCLAW GATEWAY** and **VS CODE BRIDGE** so Desk
 ## Agent truth board (tiled tmux — not chat layout)
 
 Desk OpenCode can show agents “running” while Hub Claude panes never receive
-prompts. When Julius reports empty Hub Claude UI:
+prompts. When UserDefault reports empty Hub Claude UI:
 
 ```bash
 ./scripts/gotchibot hub dashboard
@@ -132,7 +132,7 @@ What it does:
 4. If still down → SSH `restart-bridge` (code --command gotchibotBridge.restart + wait).
 5. Re-probes. Exit 0 if up; else prints next steps.
 
-If it still fails, tell Julius to check the **Hub** VS Code:
+If it still fails, tell UserDefault to check the **Hub** VS Code:
 - Reload Window (Command Palette → "Developer: Reload Window")
 - Enable the `gotchibot-bridge` extension (Extensions panel)
 - Sign into Claude (Claude pane visible)
@@ -279,8 +279,8 @@ Work top-down, exact commands, all from Desk via abra:
    won't find a container to inspect. On a fresh Hub, just run
    `restart-gateway` and let it handle everything.
 
-7. If it still crash-loops → `remote-openclaw` only if Julius approves a
-   heavier redeploy. Tell Julius: Hub SSH is up but the gateway process is
+7. If it still crash-loops → `remote-openclaw` only if UserDefault approves a
+   heavier redeploy. Tell UserDefault: Hub SSH is up but the gateway process is
    unhealthy — do **not** claim Tailscale is down if `hub status` shows SSH up.
 
 ## MCP tools (optional)

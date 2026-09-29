@@ -48,14 +48,14 @@ must use one of these three tools only:
 |---|---|---|
 | **1st — Cursor** | Cursor agent CLI | skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` |
 | **2nd — Claude** | Hub Claude Code / Claude CLI | skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`; local `claude` when on desk |
-| **3rd — Codex** | Codex CLI | skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when Julius says codex |
+| **3rd — Codex** | Codex CLI | skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when UserDefault says codex |
 
 If Cursor is unavailable, pick Claude then Codex by fit unless
-Julius resets preference. Do **not** DIY edits on chat/route models
+UserDefault resets preference. Do **not** DIY edits on chat/route models
 (big-pickle / Nemotron / etc.). Talk, route, and one-line answers stay on the
 chat model; the worker then runs a work tool for the actual work.
 
-Paid OpenCode Go paths (`flash` → `opencode-go/glm-5.3-flash`, `pro` → `opencode-go/kimi-k3`) are **override-only** (Julius must ask).
+Paid OpenCode Go paths (`flash` → `opencode-go/glm-5.3-flash`, `pro` → `opencode-go/kimi-k3`) are **override-only** (UserDefault must ask).
 Local Ollama/llama and Gemini are removed (2026-09-25) — hosted providers only.
 They are not the default volume or escalation path.
 
@@ -65,10 +65,10 @@ They are not the default volume or escalation path.
 |---|---|---|
 | **gotchi** | Cursor desk / Claude Code | Intake, routing, monitoring, skill vetting, handoffs |
 | **worker (Cursor)** | `./scripts/cursor-cli.mjs` / skill `cursor-cli` | Default coding |
-| **worker (Claude)** | Hub bridge / `claude` | Coding when Cursor unavailable or Julius picks Claude |
-| **worker (Codex)** | `codex-cli.mjs` → `codex exec` | Coding when Julius picks Codex |
+| **worker (Claude)** | Hub bridge / `claude` | Coding when Cursor unavailable or UserDefault picks Claude |
+| **worker (Codex)** | `codex-cli.mjs` → `codex exec` | Coding when UserDefault picks Codex |
 | **sub (chat/route)** | OpenCode `sub` / interactive | Spawn talk/route only; must call a work tool for edits |
-| *(any)* | interactive terminal | Julius prompts workers directly in tabs |
+| *(any)* | interactive terminal | UserDefault prompts workers directly in tabs |
 
 ## Responsibilities
 
@@ -95,7 +95,7 @@ They are not the default volume or escalation path.
   those subs must invoke a Cursor / Claude / Codex work tool for any code change.
 - The gotchi polls session state, aggregates results, reports progress, and
   merges outputs when a fan-out completes.
-- Julius can open interactive sessions anytime — shared `sessions/` dir.
+- UserDefault can open interactive sessions anytime — shared `sessions/` dir.
 
 ### 3. Skill registry (vetted additions only)
 - Registry lives at `skills/registry.json`. Seeded with:
@@ -162,7 +162,7 @@ GotchiBot/
 |---|---|---|
 | default talk/route | `opencode/big-pickle` (`--model nim`) | talk, route, spawn, summarize |
 | task talk | Nemotron Lightning / Ultra free | talk/route only |
-| paid OpenCode Go | `opencode-go/kimi-k3` (`pro`, override-only) | Julius must ask; still prefer a work tool for edits |
+| paid OpenCode Go | `opencode-go/kimi-k3` (`pro`, override-only) | UserDefault must ask; still prefer a work tool for edits |
 
 NVIDIA / DeepSeek keys, when used, flow through abracadabra — never written to disk.
 

@@ -4,14 +4,14 @@ agent: gotchi
 ---
 
 Load skill **ralph** (`.opencode/skills/ralph/SKILL.md`) and stay sticky until
-the done flag, max iterations, or Julius says `new task` / `exit ralph` /
+the done flag, max iterations, or UserDefault says `new task` / `exit ralph` /
 `cancel`. You are the **chief** (orchestrator): frames the prompt + completion
 promise, delegates iterations, verifies — **no product-code edits**. Worker
 heroes do the iterating.
 
 `$ARGUMENTS` is the goal / subcommand.
 
-| Julius types | What to do |
+| UserDefault types | What to do |
 | --- | --- |
 | `/ralph` | Ask one short question for the goal + completion promise; or continue the active loop |
 | `/ralph <goal>` | Start: `gotchibot ralph start --prompt "<goal>" --max-iterations 20 --completion-promise "DONE"` then delegate-pick a worker |

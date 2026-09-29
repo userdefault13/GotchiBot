@@ -23,7 +23,7 @@ access to a fork, etc.) is **not** covered by the noncommercial license.
 
 For commercial licensing contact the copyright holder:
 
-- **Julius Wong** / UserDefault
+- **UserDefault Wong** / UserDefault
 - Site: https://www.aarcadeghst.com
 
 The licensor retains all commercial rights and may offer separate agreements, NFT sales,

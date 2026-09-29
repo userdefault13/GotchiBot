@@ -375,7 +375,7 @@ export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orch
       : stamp(file) + renderTemplate(file, vars);
     writeFileSync(`${ws}/${file}`, body);
   }
-  // USER.md is Julius, the same for every hero: the repo root file is the source.
+  // USER.md is UserDefault, the same for every hero: the repo root file is the source.
   writeFileSync(`${ws}/USER.md`, readFileSync(`${ROOT}/USER.md`, "utf8"));
 
   // Relative links so the tree works on the MBP, the iMac and inside a bind mount.

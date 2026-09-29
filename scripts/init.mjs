@@ -73,7 +73,7 @@ async function main() {
     ok(`orchestrator hero: ${active}`);
   }
 
-  // Fresh Solo default only — never retro-write Julius/fleet installs that
+  // Fresh Solo default only — never retro-write UserDefault/fleet installs that
   // already have REMOTE_* (abra) or an existing topology file/env.
   try {
     const t = getTopology();

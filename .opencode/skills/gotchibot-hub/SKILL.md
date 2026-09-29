@@ -26,4 +26,4 @@ OpenCode: `/hub` or `/hub infra`. Cockpit: Hub status / Hub infra.
 
 - Invent container or gateway state — run the command.
 - Modify theme or color files.
-- Add this skill to `skills/registry.json` without Julius approval.
+- Add this skill to `skills/registry.json` without UserDefault approval.

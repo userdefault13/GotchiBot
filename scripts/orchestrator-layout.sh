@@ -557,7 +557,7 @@ leave_meet_gallery() {
 }
 
 # pstack dossier: sidebar | pstack-window (center, replaces chat) | avatar (right).
-# Julius's screenshot: CURRENT STATUS should occupy the center pane; avatar stays on the right.
+# UserDefault's screenshot: CURRENT STATUS should occupy the center pane; avatar stays on the right.
 build_pstack_dossier_tiles() {
   collapse_to_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true

@@ -19,7 +19,7 @@ state lives in conversation tooling (`CreateGoal` / `UpdateGoal`), not in
 
 ## When to load
 
-- Julius says `/goal` or asks for a durable objective until complete
+- UserDefault says `/goal` or asks for a durable objective until complete
 - Multi-turn work that must survive context turns without shrinking the ask
 
 Skip for one-line status, roster, hub recovery, or work that belongs on a
@@ -44,7 +44,7 @@ Accept `/goal <objective>`.
 3. If creation fails, report that no goal was armed.
 4. Do the first concrete unit of work immediately — do not stop after planning.
 
-On OpenCode / Hub without `CreateGoal`: tell Julius `/goal` is Cursor-desk
+On OpenCode / Hub without `CreateGoal`: tell UserDefault `/goal` is Cursor-desk
 only; continue the work with the same objective text and do not pretend a
 CreateGoal row exists.
 
@@ -67,7 +67,7 @@ Before `UpdateGoal` `complete`, treat completion as unproven:
 - Only then call `UpdateGoal` with status `complete`
 
 Do not mark complete merely because you are stopping. User pause/resume is
-controlled by Julius; you may set `active` only if he asks to resume.
+controlled by UserDefault; you may set `active` only if they ask to resume.
 
 ## Remap
 
@@ -79,5 +79,5 @@ controlled by Julius; you may set `active` only if he asks to resume.
 | Mid-work handoff | `passoff` |
 
 Still obey Charter: no autonomous installs, no secrets, no chain/post/delete
-without Julius saying yes. Never steal LINK / YFI / WBTC desks as generic
+without UserDefault saying yes. Never steal LINK / YFI / WBTC desks as generic
 workers.

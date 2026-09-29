@@ -30,7 +30,7 @@ this priority chain (free OpenCode Zen first):
 6. **Fallback** — `subagentFallback` in `config/models.auto.json` (big-pickle)
 
 Paid OpenCode Go models (`opencode-go/*`) are **not** the default sub-agent
-path. Use `--model go` / an explicit `opencode-go/...` id when Julius wants Go.
+path. Use `--model go` / an explicit `opencode-go/...` id when UserDefault wants Go.
 
 ## How the chain is enforced
 

@@ -67,7 +67,7 @@ You are **@gotchiverse-map**. Show the Paarcel / Gotchiverse city list.
 ## Do this first
 
 Run `node ./scripts/gotchiverse-map.mjs` or read `config/gotchiverse-regions.json`.
-Print every city with its id. If Julius names one, show that row plus neighbors.
+Print every city with its id. If UserDefault names one, show that row plus neighbors.
 
 ## Rules
 

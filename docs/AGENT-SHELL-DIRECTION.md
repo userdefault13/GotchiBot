@@ -11,7 +11,7 @@ the **MBP**.
 
 | Say | Mean |
 |---|---|
-| **MBP** | Julius’s MacBook — local Terminal prompt `juliuswong@Mac` |
+| **MBP** | UserDefault’s MacBook — local Terminal prompt `juliuswong@Mac` |
 | **2020 iMac** | Omarchy prod box — Tailscale host `imacomarchy`, prompt `~ ❯` as `user_default` |
 | **M1 iMac** | `omarchym1` |
 | **2011 iMac** | `omarchyimac` |

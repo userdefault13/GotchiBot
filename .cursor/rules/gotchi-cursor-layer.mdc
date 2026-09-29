@@ -18,7 +18,7 @@ A rule in markdown is a suggestion. The same rule in `.cursor/hooks/` is a wall:
 - passoff inbox + meeting + focus + capsule → `sessionStart` / `session-brief.mjs`
 - compaction safety net → `preCompact` / `contexter-precompact.mjs` + `stop` / `contexter-restore.mjs`
 
-A denial is policy, not a bug. Do not work around it; ask Julius.
+A denial is policy, not a bug. Do not work around it; ask UserDefault.
 
 ## Before planning fresh work
 

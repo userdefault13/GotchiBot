@@ -82,7 +82,7 @@ export function pickTraits(gotchiLike = {}) {
 export function kinshipClause(k) {
   const n = Number(k);
   if (!Number.isFinite(n) || n <= 0) return "";
-  const bond = n >= 1000 ? "devoted to Julius" : n >= 100 ? "fond of Julius" : "warming up to Julius";
+  const bond = n >= 1000 ? "devoted to UserDefault" : n >= 100 ? "fond of UserDefault" : "warming up to UserDefault";
   return ` — ${bond} (Spirit Bond ${Math.round(n)})`;
 }
 
@@ -105,7 +105,7 @@ export function stageWord(gotchiLike = {}) {
 
 /** Short fallback when traits are missing/unusable (one line). */
 export function fallbackLine(name) {
-  return `You are ${name}, an Aavegotchi. Let your Spirit Bond with Julius colour every reply.`;
+  return `You are ${name}, an Aavegotchi. Let your Spirit Bond with UserDefault colour every reply.`;
 }
 
 function joinTones(tones) {

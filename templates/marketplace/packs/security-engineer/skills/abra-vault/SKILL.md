@@ -23,7 +23,7 @@ low-level fetch or key issuance.
 
 - "store my API key", "what's in the vault", "get OPENAI_API_KEY"
 - "connect Cloudflare / Vercel", "new wallet", "SSH key for the iMac"
-- Any agent about to ask Julius to paste a secret into chat
+- Any agent about to ask UserDefault to paste a secret into chat
 
 ## MCP
 
@@ -33,14 +33,14 @@ Namespace `abracadabra` when enabled:
 2. `get_secrets` — Touch ID; load silently; confirm by key name only
 3. `request_connection` — provider setup without guessing
 4. `generate_wallet` / `generate_ssh_key` / `generate_cloudflare_token`
-5. Treasury / Safe tools only with Julius confirm on payments
+5. Treasury / Safe tools only with UserDefault confirm on payments
 
 ## GotchiBot Desk policy
 
 - Host OpenClaw Desk: **no** `abra run`, **no** host abra MCP for agents (see
   `config/mcp.abracadabra.json`). Sandbox jobs may use `ABRA_KEY` →
   `host.docker.internal:7331`.
-- If MCP is unavailable: tell Julius to use Cursor MCP, his terminal `abra`, or
+- If MCP is unavailable: tell UserDefault to use Cursor MCP, their terminal `abra`, or
   sandbox — do not bypass hooks.
 
 ## Issuing API keys (standard)

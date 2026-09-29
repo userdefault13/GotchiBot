@@ -67,6 +67,6 @@ export function checkWritePath(rawPath, fromFileDir) {
       `Blocked by GotchiBot policy: ${target} is outside the GotchiBot tree (${REPO}). ` +
       `AGENTS.md hard rule 4 — stay inside this working tree. ` +
       `Writes are also allowed under ~/.claude, ~/.cursor, tmp, and dirs from /add-dir. ` +
-      `If Julius wants another project opened: ./scripts/gotchibot add-dir <path>.`,
+      `If UserDefault wants another project opened: ./scripts/gotchibot add-dir <path>.`,
   };
 }

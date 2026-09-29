@@ -22,7 +22,7 @@ metadata:
 ## The flow (hard-coded — do not improvise)
 
 1. **Orch spawns WBTC** (`owned-22899`) with the task "run the Aarcade comms cycle"
-   (plus any `--range` / `--dry-run` Julius asked for).
+   (plus any `--range` / `--dry-run` UserDefault asked for).
 2. **WBTC runs exactly one command:**
 
    ```sh
@@ -42,9 +42,9 @@ metadata:
 4. **The script is the proxy**: it writes `latest-comms.json`, asks Claude to draft,
    Claude writes `latest-draft.json` and answers `VERDICT[id]: DRAFTED|SKIP`.
 5. **Publish**: `POST /communications-agent/publish` with Claude's draft. The
-   newsfeed auto-posts; the tweet is queued for Julius's approval.
+   newsfeed auto-posts; the tweet is queued for UserDefault's approval.
 6. **Relay verbatim**: the run prints a block titled `Claude said (verbatim — relay
-   as-is)`. WBTC pastes that block to the orchestrator / Julius word for word —
+   as-is)`. WBTC pastes that block to the orchestrator / UserDefault word for word —
    no paraphrase, no summary on top, no "Claude basically said". The rest of the
    run log (published ids, errors) goes underneath it.
 
@@ -56,7 +56,7 @@ the run says so and you report that — you do not fall back to another writer.
 ## Safety rules
 
 - **WBTC never holds X credentials and never posts to X.** X keys live server-side
-  on AarcadeGh-t. Julius approves the queued tweet in the admin UI
+  on AarcadeGh-t. UserDefault approves the queued tweet in the admin UI
   (`/communications-tweets`); the server posts it.
 - **Newsfeed is auto-posted** by the server on publish (intended). Only the tweet
   is gated.

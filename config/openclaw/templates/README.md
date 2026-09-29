@@ -28,7 +28,7 @@ left unresolved and on any `./scripts/<file>` that does not exist.
 
 Rules for writing these (they are read by small free models):
 
-1. A table row per situation: what Julius says → the exact command → what to reply.
+1. A table row per situation: what UserDefault says → the exact command → what to reply.
 2. One command per row. Absolute repo path via `cd {{REPO}} &&`.
 3. No prose about architecture. No "never say X" lists longer than five lines.
 4. Keep each rendered AGENTS.md under 12 000 characters (OpenClaw truncates at 20 000).

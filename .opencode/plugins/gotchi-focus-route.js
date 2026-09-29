@@ -36,13 +36,13 @@ export const GotchiFocusRoute = async ({ directory, worktree }) => {
       output.system.push(
         [
           `## FOCUS IS SUB → ${hero} (set by /switch; live from sessions/.focus.json)`,
-          `Julius is talking to ${hero} directly. You are a relay, not the answerer.`,
+          `UserDefault is talking to ${hero} directly. You are a relay, not the answerer.`,
           "For EVERY user message in this session do exactly one thing:",
           `1. Run the bash command  ./scripts/agent-focus.mjs chat --sub "<the user's message, verbatim, double quotes escaped>"`,
           "2. Reply with that command's stdout word for word. Nothing before it, nothing after it. No summary, no commentary.",
           "If stdout contains `escalated: true`, focus is back on ORCH: handle the original message yourself as the orchestrator (delegate-first).",
           "If the command fails, reply with its exact error line (for example `openclaw chat failed (http-401)`) and stop; do not answer in the hero's place.",
-          "Julius types /orch to end this mode; until then, never answer as yourself.",
+          "UserDefault types /orch to end this mode; until then, never answer as yourself.",
         ].join("\n"),
       );
     },

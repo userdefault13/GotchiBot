@@ -5,7 +5,7 @@
  *
  * Env (first match):
  *   TYPESAFE_API_KEY | JEV_API_KEY | JEV_DEV_API_KEY
- * Julius: abra project general holds JEV_DEV_API_KEY.
+ * UserDefault: abra project general holds JEV_DEV_API_KEY.
  * Prefer: abra run general -- ./scripts/gotchibot jev …
  * Or mirror into gotchibot as TYPESAFE_API_KEY (never print values).
  *
@@ -209,7 +209,7 @@ async function cmdSmoke(flags) {
         criteria: {
           graph: "Update graph-state / conditional edges",
           maker: "Hand to a maker desk (skill/tool/mcp)",
-          human: "Escalate to Julius",
+          human: "Escalate to UserDefault",
           skip: "No action needed",
         },
       },

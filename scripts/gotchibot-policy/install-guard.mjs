@@ -50,7 +50,7 @@ export function checkShellCommand(command) {
     if (pattern.test(scanned)) {
       return (
         `Blocked by GotchiBot policy: this is ${what}. AGENTS.md hard rule 1 — never install anything autonomously (no npm i -g, no new MCP servers, no skill installs). ` +
-        `If the tool is genuinely needed, append a request to the session's skill-requests.jsonl and continue without it, or ask Julius to install it. ` +
+        `If the tool is genuinely needed, append a request to the session's skill-requests.jsonl and continue without it, or ask UserDefault to install it. ` +
         `Restoring existing deps from the lockfile (bare "npm install", "npm ci") is allowed.`
       );
     }
@@ -60,7 +60,7 @@ export function checkShellCommand(command) {
     if (pattern.test(scanned)) {
       return (
         `Blocked by GotchiBot policy: this is ${what}. ` +
-        `Destructive git/fs operations need Julius to run them explicitly outside the agent loop.`
+        `Destructive git/fs operations need UserDefault to run them explicitly outside the agent loop.`
       );
     }
   }

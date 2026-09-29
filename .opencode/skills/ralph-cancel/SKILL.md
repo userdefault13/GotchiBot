@@ -1,6 +1,6 @@
 ---
 name: ralph-cancel
-description: Cancel an active GotchiBot ralph loop. Use when Julius wants to stop, cancel, or abort a running ralph loop.
+description: Cancel an active GotchiBot ralph loop. Use when UserDefault wants to stop, cancel, or abort a running ralph loop.
 license: MIT
 compatibility: opencode
 metadata:
@@ -17,7 +17,7 @@ GotchiBot store.
 ## Workflow
 
 1. Check `./scripts/gotchibot ralph status` (or `list`) for an active loop.
-2. **No active loop** → tell Julius "no active ralph loop".
+2. **No active loop** → tell UserDefault "no active ralph loop".
 3. **Active loop** → cancel it:
 
    ```bash

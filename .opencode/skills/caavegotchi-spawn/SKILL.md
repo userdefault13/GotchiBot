@@ -2,13 +2,13 @@
 name: caavegotchi-spawn
 description: >-
   Use when the orchestrator needs to spin up a new GotchiBot agent. Load when
-  Julius asks to spawn / mint / add an agent, when no cAavegotchi is available,
+  UserDefault asks to spawn / mint / add an agent, when no cAavegotchi is available,
   or when delegate-pick is blocked. Follow skill cartridge-mint for how minting
   works (sim :8791, not lore :3010). Spawn UI is still /spawn or
   sessions/.spawn-request.json. Named collateral: cartridge first for an
   available matching cAavegotchi (never the orchestrator, never steal assigned desks).
   If none, write spawn-request so the TUI overlay can unassign, mint-sub from
-  the 16 starters, or bind-owned from wallet by name. If he names a collateral
+  the 16 starters, or bind-owned from wallet by name. If UserDefault names a collateral
   (YFI, BTC, LINK, …; typo yifi → yfi), include "collateral":"yfi" and wait —
   never ask for a token id, never discuss packs/VRF/portal paths. Do not call
   the question tool.
@@ -32,19 +32,19 @@ The spawn **UI is a real TUI overlay** (`gotchi-spawn.ts`), same family as
 permission cards. A `question` tool call is **not** the UI. Do **not** call
 `question`. Do **not** mint from bash yourself.
 
-**Do NOT hunt Blockscout or ask Julius for a token id.** When Julius asks to
+**Do NOT hunt Blockscout or ask UserDefault for a token id.** When UserDefault asks to
 spin up / mint / add an agent, never the `blockscout` MCP, never explorer scrape,
 never `identity bind` portal VRF. Home-stack subgraph **is** allowed through
 `wallet-roster.mjs` / identity roster / curl of `subgraph.aarcadeghst.com` for
 **names** after a cartridge miss. Still never arbitrary web curl.
 
-**NEVER tell Julius to check cockpit for a token id.** He should not need one.
+**NEVER tell UserDefault to check cockpit for a token id.** He should not need one.
 **NEVER run `gotchibot identity bind`** — that is portal VRF, not mint.
 **NEVER discuss packs, pack_pending_vrf, portal paths, or "need token ID".**
 Mint is overlay DialogSelect → confirm → `onboarding-api.mjs mint-sub <spirit>`
 ($5/$3 simPay when no free seat — owner / promo whitelist / 1:1 wallet gotchi). Wallet match → confirm → `bind-owned`. Never auto-mint.
 
-If he names a collateral (YFI, BTC, LINK, DAI, … — typo **yifi → yfi**):
+If UserDefault names a collateral (YFI, BTC, LINK, DAI, … — typo **yifi → yfi**):
 
 1. **Cartridge first.** `abra run gotchibot -- ./scripts/agent-focus.mjs list --json`
    (or identity roster). Match collateral yfi / maYFI with `status === "available"`.
@@ -61,9 +61,9 @@ ALWAYS show this list even if 1 match. Zero matches → full 16 + toast
 `no YFI match — pick from the 16`. Confirm (free if owner/promo/wallet seat, else `$5`/`$3`) then mint.
 
 Default `/spawn` with no collateral: after no-available, **Mint new collateral**
-already lists the 16 — keep that. Julius wants that list automatic.
+already lists the 16 — keep that. UserDefault wants that list automatic.
 
-Write `sessions/.spawn-request.json` or tell him `/spawn`.
+Write `sessions/.spawn-request.json` or tell UserDefault `/spawn`.
 
 Do **not** trust `delegate-pick` for availability — it treats idle as free and
 will steal assigned desks.
@@ -89,7 +89,7 @@ Parse heroes. A candidate is free iff `status` / `agentStatus` is exactly
 **assigned** even when idle. The orchestrator is never a worker.
 
 Optional (orchestrator may query so the overlay is ready; still do not dump
-ids at Julius or ask him to look them up):
+ids at UserDefault or ask them to look them up):
 
 ```bash
 abra run gotchibot -- node scripts/wallet-roster.mjs --json
@@ -120,7 +120,7 @@ cat > sessions/.spawn-request.json << EOF
 EOF
 ```
 
-If Julius named a collateral (YFI, BTC, LINK, …; typo yifi → yfi) **and the
+If UserDefault named a collateral (YFI, BTC, LINK, …; typo yifi → yfi) **and the
 cartridge had no available match**, include it so the overlay **skips** the
 3-choice **and skips portal talk**. Combined DialogSelect: matching 16 starters
 + matching unbound wallet gotchis (wallet-roster is allowed). Always a list.
@@ -133,16 +133,16 @@ cat > sessions/.spawn-request.json << EOF
 EOF
 ```
 
-Optional: include `"heroId"` if Julius named a cartridge hero (not a token id).
+Optional: include `"heroId"` if UserDefault named a cartridge hero (not a token id).
 
 Then **wait**. The plugin polls ~1s, opens the overlay, and deletes/renames
 the file so it does not re-fire.
 
 If the overlay does not appear, respawn the chat pane with `--continue`
 (`chat-pane.sh` / `GOTCHIBOT_OPENCODE_CONTINUE=1`) so it reloads the plugin,
-or tell Julius to type **`/spawn`**. Do not fall back to `question`. Do not
+or tell UserDefault to type **`/spawn`**. Do not fall back to `question`. Do not
 mint from bash. Do not curl Blockscout / The Graph / any NFT API. Do not
-ask him to open cockpit.
+ask them to open cockpit.
 
 After the user picks, continue with the spawned hero. If they dismiss
 (Escape), **stop**. Do not mint.
@@ -171,7 +171,7 @@ Reference only (plugin commands):
 # unassign then spawn
 abra run gotchibot -- node scripts/hero-agent-state.mjs set <heroId> available
 
-# wallet list by name after cartridge miss. Do not ask Julius for an id.
+# wallet list by name after cartridge miss. Do not ask UserDefault for an id.
 abra run gotchibot -- node scripts/wallet-roster.mjs --json
 # bind owned (free) then fleet sync then spawn
 abra run gotchibot -- node scripts/onboarding-api.mjs bind-owned <tokenId>
@@ -197,14 +197,14 @@ link, usdt, usdc, tusd, uni, yfi, wbtc, matic.
 - Always `abra run gotchibot --` for API / secret scripts.
 - Never print tokens or session passwords.
 - Never treat assigned + idle as available.
-- Never mint yourself. Never call `question`. If Julius dismisses the overlay, stop.
+- Never mint yourself. Never call `question`. If UserDefault dismisses the overlay, stop.
 - Never pick the orchestrator as the new worker.
 - Do not use cockpit readline for these choices.
 - Do not trust `delegate-pick` for availability.
 - To open the UI: `/spawn`, palette "Spawn agent", or write `sessions/.spawn-request.json`.
-- **NEVER** tell Julius to check cockpit for a token id. **NEVER** run `gotchibot identity bind` for this flow.
+- **NEVER** tell UserDefault to check cockpit for a token id. **NEVER** run `gotchibot identity bind` for this flow.
 - Never Blockscout / explorer scrape / `identity bind` for NFT token ids. Home subgraph via wallet-roster / identity / curl `subgraph.aarcadeghst.com` is allowed for names.
-- If he names YFI / BTC / LINK / … (yifi → yfi): **cartridge first** (available match → spawn). If none, write `"collateral":"yfi"` and wait. Combined 16-starter + wallet match list. Never auto-mint. Never packs / VRF / token-id questions.
+- If UserDefault names YFI / BTC / LINK / … (yifi → yfi): **cartridge first** (available match → spawn). If none, write `"collateral":"yfi"` and wait. Combined 16-starter + wallet match list. Never auto-mint. Never packs / VRF / token-id questions.
 - **Docker `--sandbox` spawn:** only when status is exactly `available`. Never steal LINK/YFI/WBTC standing desks. Never auto-mint for sandbox.
 
 ## Reference

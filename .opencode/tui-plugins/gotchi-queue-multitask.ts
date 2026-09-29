@@ -7,7 +7,7 @@ const ID = "gotchi.queue-multitask"
 /**
  * Codex-style multitask while OpenCode shows QUEUED/busy:
  * `/new` creates a fresh session and navigates to it — current session keeps running.
- * On busy, toast once per busy stretch so Julius knows the escape hatch.
+ * On busy, toast once per busy stretch so UserDefault knows the escape hatch.
  */
 
 function rootDirOf(api: any): string {

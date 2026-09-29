@@ -22,7 +22,7 @@ node -e 'import("./scripts/openclaw-fleet.mjs").then(async m=>console.log(m.find
 Known failure shapes seen on this desk — name them rather than guessing:
 
 - `openclaw-agent-failed` with `config is invalid` → `~/.openclaw/openclaw.json`
-  has legacy keys; the fix is `openclaw doctor --fix` (Julius runs it — it is
+  has legacy keys; the fix is `openclaw doctor --fix` (UserDefault runs it — it is
   outside this tree).
 - `http-402` on the HTTP fallback → quota/payment, not a config problem. Cool
   down per the model policy; do not retry in a loop.

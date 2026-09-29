@@ -3,7 +3,7 @@ name: pstack
 description: >-
   GotchiBot-adapted pstack / poteto rigor for the orchestrator. Use for /pstack,
   /poteto-mode, nontrivial design, contested approaches, "are we sure?", or when
-  Julius wants deeper parallel exploration before shipping. Remaps Cursor Task
+  UserDefault wants deeper parallel exploration before shipping. Remaps Cursor Task
   primitives to delegate-pick / gotchi-orchestrate / passoff / cursor-cli.
   Chief (orchestrator) frames and judges; heroes execute role-tagged briefs.
 license: MIT
@@ -25,7 +25,7 @@ Program store: `./scripts/pstack-orch.mjs` → `sessions/pstack/<slug>/`.
 
 ## When to load
 
-- Julius says `/pstack`, `/poteto-mode`, "go deep", or "poteto this"
+- UserDefault says `/pstack`, `/poteto-mode`, "go deep", or "poteto this"
 - Nontrivial design, architecture fork, contested approach, or "are we sure?"
 - Multi-phase work that needs a named playbook before spawning
 - Parallel exploration (2+ competing approaches) before committing
@@ -38,7 +38,7 @@ ownership, or work already covered by a standing desk hero.
 Once loaded, stay in pstack for follow-ups (`continue`, `do it`, `keep going`)
 on the **same playbook** and program slug.
 
-Exit or rematch when Julius says `new task`, `exit pstack`, or clearly changes
+Exit or rematch when UserDefault says `new task`, `exit pstack`, or clearly changes
 subject. Then match a fresh playbook (and `pstack-orch init` a new slug if the
 program is multi-unit).
 
@@ -50,7 +50,7 @@ Allowed chief writes only:
 
 - `sessions/pstack/<slug>/` via `./scripts/pstack-orch.mjs`
 - passoff packets / focus / spawn prompts
-- skill or orch bookkeeping Julius asked for in this mode
+- skill or orch bookkeeping UserDefault asked for in this mode
 
 Everything else → role-tagged hero spawn. Hard patches inside a unit → worker
 runs `./scripts/cursor-cli.mjs run "…"` (do not DIY on Hy3).
@@ -67,10 +67,10 @@ runs `./scripts/cursor-cli.mjs run "…"` (do not DIY on Hy3).
 | Contested second opinion | second hero same brief, or MCP `claude_ask` |
 | Mid-work handoff | `gotchibot passoff send …` (hero↔hero); program state stays in pstack store |
 | Prove it works | real artifact + ledger row; "it compiles" is not done |
-| Standing desks | never LINK / YFI / WBTC as generic pstack workers unless Julius routes desk work |
+| Standing desks | never LINK / YFI / WBTC as generic pstack workers unless UserDefault routes desk work |
 
 Still obey the Charter: no autonomous installs, no secrets in chat, no chain /
-post / delete without Julius saying yes.
+post / delete without UserDefault saying yes.
 
 ## Principles (orchestrator checklist)
 
@@ -91,7 +91,7 @@ artifact (`prove-it-works`). Sequence into checkable units
 (`test-behavior-not-implementation`).
 
 **Delegation.** Bulk reads and fan-out go to workers (`guard-the-context-window`).
-Reversible work proceeds without blocking Julius (`never-block-on-the-human`).
+Reversible work proceeds without blocking UserDefault (`never-block-on-the-human`).
 You review diffs and summarize; do not pass worker prose through unchanged.
 Parallel writers get separate worktrees/branches
 (`separate-before-serializing-shared-state`).

@@ -12,7 +12,7 @@ Read `SOUL.md`. That is how you talk and how you decide. Short version:
 
 1. Reply immediately. Don't go silent while you work.
 2. Act on internal work (read, inspect, draft, memory). Ask before external or destructive work.
-3. Lead with the result. Match Julius's length. No help-desk filler.
+3. Lead with the result. Match UserDefault's length. No help-desk filler.
 4. Don't guess. Use tools. Don't fabricate.
 5. Write down anything that should survive this session (`memory/YYYY-MM-DD.md`, `MEMORY.md`, `TOOLS.md`).
 6. Call the human **UserDefault** (or "you") in every reply. The real name in these docs is internal history; never say it.
@@ -33,7 +33,7 @@ opencode dispatch session under `sessions/<id>/`.
 - Sub-agents are other fleet heroes (e.g. `starter-link-h1-1`) or headless dispatch sessions — not you.
 - Read `ORCHESTRATOR.md` and your agentDir `config/openclaw/agents/orchestrator/AGENTS.md`.
 - **Ignore** the sub-agent session protocol below (it does not apply to you).
-- While sub-agents run, keep Julius posted: what spawned, what's running, what merged. Don't vanish.
+- While sub-agents run, keep UserDefault posted: what spawned, what's running, what merged. Don't vanish.
 - Focus: `/orch` `/list` `/switch` `/cockpit` in OpenClaw TUI (after `./scripts/openclaw-gotchi-build.sh`). Without the patch: **Ctrl+O** in the chat pane, **Ctrl+b o** from any pane, or `./scripts/gotchibot orch`.
 
 ### Sub-agent — dispatch session or non-orchestrator OpenClaw hero
@@ -72,12 +72,12 @@ Your session dir contains:
    desk deliverable goes through a work tool only — **Claude**, **Cursor**, or
    **Codex**. Prefer **Cursor (cursor-cli) first**, then
    Cursor, then Codex. After that date, pick among the three by fit unless
-   Julius resets preference.
+   UserDefault resets preference.
    - Claude: skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"`
      or `./scripts/gotchibot claude-submit "…"` (hard logic / @claudemode); local
      `claude` on desk when available
    - Cursor: skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"`
-   - Codex: skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when Julius
+   - Codex: skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when UserDefault
      says codex
    Do **not** DIY on big-pickle / Nemotron / Hy3. Talk/route/status/one-line
    answers stay on the chat model. Do not `/model` to Cursor or Claude; do not
@@ -154,7 +154,7 @@ Route instead of DIY: laws/proofs → bend crew; skills/rules/policies/tools/MCP
 | default talk/route | `opencode/big-pickle` (`--model nim`; free Zen) | talk, route, spawn, summarize |
 | task talk | Nemotron Lightning / Ultra free (`opencode/nemotron-*`) | talk/route/task only; `/model heavy` = Ultra free |
 | **all work** (Cursor (cursor-cli) → Claude → Codex) | Hub Claude / `claude` · `./scripts/cursor-cli.mjs` → `cursor-agent` · `./scripts/codex-cli.mjs` → `codex exec` | edits, debug, patches, investigation, desk deliverables — mandatory; Cursor (cursor-cli) first |
-| escalation (`pro`) | `opencode-go/kimi-k3` (needs `OPENCODE_API_KEY`; else `opencode/nemotron-3-ultra-free`) | **override-only** (Julius must ask); still prefer a work tool for edits |
+| escalation (`pro`) | `opencode-go/kimi-k3` (needs `OPENCODE_API_KEY`; else `opencode/nemotron-3-ultra-free`) | **override-only** (UserDefault must ask); still prefer a work tool for edits |
 | sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | spawn chat/route model; the worker then runs a **work tool** (Cursor-first / cursor-cli applies) for the actual work |
 
 
@@ -173,11 +173,11 @@ the tunnel hostnames.
 
 # TOOLS.md - Local Notes
 
-Skills define how tools work. This file is the cheat sheet for Julius's actual setup.
+Skills define how tools work. This file is the cheat sheet for UserDefault's actual setup.
 
 ## Machines
 
-- **MBP** — Julius's MacBook. Client. Repo at `~/Dev/GotchiBot`.
+- **MBP** — UserDefault's MacBook. Client. Repo at `~/Dev/GotchiBot`.
 - **iMac** — home always-on host for GotchiBot + `opencode serve`. Prefer this when Tailscale SSH is up.
 - Remote attach: `abra run gotchibot -- ./scripts/gotchibot attach`
 - Remote status: `abra run gotchibot -- ./scripts/gotchibot remote-status`
@@ -186,13 +186,13 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 - **Agents:** abra MCP / `abra run` are **denied on host Desk**. Only Docker `--sandbox`
   jobs may fetch secrets (`ABRA_KEY` → `host.docker.internal:7331`).
-- Julius may still use `abra run gotchibot -- <cmd>` in his own terminal.
-- Never ask Julius to paste a key. Never write secrets to disk, session logs, or `output.md`.
+- UserDefault may still use `abra run gotchibot -- <cmd>` in their own terminal.
+- Never ask UserDefault to paste a key. Never write secrets to disk, session logs, or `output.md`.
 - **GitHub MCP:** `GOTCHIBOT_GITHUB_PAT` in abra project `gotchibot` → `./scripts/mcp/github.sh` (Docker `ghcr.io/github/github-mcp-server`).
 
 ## Orchestration commands
 
-- Pick an agent: `./scripts/delegate-pick.mjs` (Julius may wrap with abra; agents must not)
+- Pick an agent: `./scripts/delegate-pick.mjs` (UserDefault may wrap with abra; agents must not)
 - Spawn: `./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim "…"`
 - Sandbox (new project): `GOTCHIBOT_HERO_ID=<available> ./scripts/gotchi-orchestrate.mjs spawn --host auto --sandbox --model nim "…"`
   - Hero must be `available`. Never auto-mint. Never steal trader/comms/infra desks.
@@ -217,7 +217,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 ## Voice / TTS
 
-- Opt-in only (`config/tts.personas.json5`). Don't surprise Julius with speech.
+- Opt-in only (`config/tts.personas.json5`). Don't surprise UserDefault with speech.
 
 ## Models
 

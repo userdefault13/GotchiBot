@@ -29,7 +29,7 @@
     },
     {
       "id": "stop",
-      "prompt": "Stop / kill conditions (max runtime, error budget, Julius abort)?",
+      "prompt": "Stop / kill conditions (max runtime, error budget, UserDefault abort)?",
       "required": true
     },
     {

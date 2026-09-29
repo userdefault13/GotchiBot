@@ -4,7 +4,7 @@
  *
  * Reads sessions/moltbook-watch/queue.json (produced by moltbook-watch.mjs)
  * and turns each queued item into a short, human-toned reply draft for
- * Julius to review. DRAFT ONLY — this script never posts, comments, votes,
+ * UserDefault to review. DRAFT ONLY — this script never posts, comments, votes,
  * or follows. No network calls at all; drafting is pure local text work.
  *
  *   node scripts/moltbook-reply.mjs            dry-run: summarize the next

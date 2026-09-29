@@ -69,7 +69,7 @@ function writeList(list) {
   writeFileSync(STORE, `${JSON.stringify(list, null, 2)}\n`, "utf8");
 }
 
-/** Refuse overly broad trees Julius did not mean to open. */
+/** Refuse overly broad trees UserDefault did not mean to open. */
 function tooBroad(abs) {
   const banned = new Set([
     "/",
@@ -114,7 +114,7 @@ function cmdAdd(raw) {
   const abs = real(resolved);
   if (tooBroad(abs)) {
     die(
-      `refused: ${abs} is too broad for /add-dir. Pick a specific project under ~/Dev (or ask Julius).`,
+      `refused: ${abs} is too broad for /add-dir. Pick a specific project under ~/Dev (or ask UserDefault).`,
     );
   }
   const list = readList();

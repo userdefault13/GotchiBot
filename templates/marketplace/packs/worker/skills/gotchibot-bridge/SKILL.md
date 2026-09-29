@@ -14,7 +14,7 @@ metadata:
 change the OpenCode chat model. The orchestrator keeps executing the task; Claude
 Code on the Hub is a **side-channel** for hard logic.
 
-When Julius says **`@claudemode`**, "ask Claude Code", "use the Claude pane", or
+When UserDefault says **`@claudemode`**, "ask Claude Code", "use the Claude pane", or
 you need Hub Claude for reasoning you will then act on:
 
 ## HARD RULE — UI path (do not reason; copy this)
@@ -38,7 +38,7 @@ you need Hub Claude for reasoning you will then act on:
 - “The Anthropic extension conflicts with the bridge.”
 - “You won’t see anything in VS Code by design.”
 
-**If Julius says the pane looks empty but Desk got a reply:** say UI paste/submit may have failed while headless succeeded → `GotchiBot Bridge: Show Log` / MCP `hub_bridge_ensure`. Do not invent a new architecture.
+**If UserDefault says the pane looks empty but Desk got a reply:** say UI paste/submit may have failed while headless succeeded → `GotchiBot Bridge: Show Log` / MCP `hub_bridge_ensure`. Do not invent a new architecture.
 
 **New / cold Claude pane:** always run proxy init first (skill **claude-pane-proxy**):
 
@@ -112,7 +112,7 @@ On Hub: local `:45678`. On Desk: network Hub bridge (no Touch ID). Desk receiver
 ## Then react
 
 1. Prefer **submit** → keep working → **collect** on wake (do not invent the reply).
-2. Continue as gotchi on **big-pickle**: spawn, edit, summarize, ask Julius.
+2. Continue as gotchi on **big-pickle**: spawn, edit, summarize, ask UserDefault.
 3. Follow-ups can reuse the same Hub Claude session (`continueSession`).
 
 ## Prerequisites
@@ -132,7 +132,7 @@ abra run gotchibot -- ./scripts/gotchibot hub bridge-ensure
 # or MCP hub_bridge_ensure
 ```
 
-Then **retry** `claude-ask` / `bridge`. If it still fails, tell Julius to check
+Then **retry** `claude-ask` / `bridge`. If it still fails, tell UserDefault to check
 the **Hub** VS Code: Reload Window, enable `gotchibot-bridge`, sign into Claude.
 
 ### Desk receiver vs Hub bridge (memorize)
@@ -162,4 +162,4 @@ extension enabled once; after that `vscode-open` is enough.
 - Invent Claude replies
 - Paste secrets into bridge prompts
 - Modify theme files
-- Tell Julius only “open the folder manually” without trying `hub bridge-ensure` / `hub_bridge_ensure` first
+- Tell UserDefault only “open the folder manually” without trying `hub bridge-ensure` / `hub_bridge_ensure` first

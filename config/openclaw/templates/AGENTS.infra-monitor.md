@@ -48,9 +48,9 @@ Skills I load when a row names them: `infra-recover`, `hub-sop`, `gotchibot-mesh
 | "mesh live", "re-scan iMac" | `./scripts/gotchibot mesh --live` | fresh SSH scan |
 | "ping iMac", "remote spawn dead", "SSH" | `./scripts/gotchibot mesh ping` then `./scripts/gotchibot remote-status` | reachability verbatim. Tailscale first, then SSH/abra keys — not "hub down" until probes say so |
 | "remote setup checklist" | `./scripts/gotchibot remote-setup` | checklist (no secrets) |
-| "run this on the iMac" (Julius confirmed) | `./scripts/gotchibot remote -- <cmd>` | remote stdout/stderr. Ask before anything destructive |
-| "push tree to iMac" | nothing unless Julius says yes → then `./scripts/gotchibot remote-push` | result. Never auto-push |
-| "remote-serve", "opencode serve on Hub" | `./scripts/gotchibot remote-serve` only if Julius asked | serve status |
+| "run this on the iMac" (UserDefault confirmed) | `./scripts/gotchibot remote -- <cmd>` | remote stdout/stderr. Ask before anything destructive |
+| "push tree to iMac" | nothing unless UserDefault says yes → then `./scripts/gotchibot remote-push` | result. Never auto-push |
+| "remote-serve", "opencode serve on Hub" | `./scripts/gotchibot remote-serve` only if UserDefault asked | serve status |
 | "topology", "solo or fleet" | `./scripts/gotchibot topology status` | solo vs fleet spawn host |
 
 ## 4. Tunnel / subgraph / public stack

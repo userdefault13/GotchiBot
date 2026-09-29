@@ -5,7 +5,7 @@
  *
  * This used to POST /communications-agent/run, which had Commsies (a small
  * model behind the iMac tunnel, before that Cloudflare Workers AI) write the
- * newsfeed and tweet. Julius retired that: comms are written by a real Claude
+ * newsfeed and tweet. UserDefault retired that: comms are written by a real Claude
  * terminal on the iMac and published by scripts/comms-claude-cycle.mjs, and
  * Claude's reply is relayed verbatim. Nothing in GotchiBot may call /run.
  *

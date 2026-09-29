@@ -41,7 +41,7 @@ TUI keys: `j/k` select · `Enter` read · `a` archive · `u` unread-only · `t` 
 
 ## Never
 
-- There is **no personal email for UserDefault** — do not search `USER.md` or the vault for one, and do not open AgentMail to "email Julius".
+- There is **no personal email for UserDefault** — do not search `USER.md` or the vault for one, and do not open AgentMail to "email UserDefault".
 - Desk mailbox ≠ department email (desk files are local AgentMail mirrors).
 
 Prefer inbox for overnight FYIs; use meet only when UserDefault wants a live round; use passoff for work handoff.

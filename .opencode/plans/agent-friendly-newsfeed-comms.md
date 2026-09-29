@@ -1,10 +1,10 @@
 # Plan: Agent-friendly newsfeed comms pipeline (gotchibot-driven)
 
 ## Goal
-Make the `communications-auto` pipeline drivable by a **gotchibot agent on a schedule**: the agent polls tracked repos for new commits since the last-reported SHA, runs Commsies to generate a newsfeed post + tweet draft, **auto-posts the newsfeed**, and **queues the tweet for Julius's approval** (approve gate). Last-reported SHA is tracked per `owner/repo` (multi-repo).
+Make the `communications-auto` pipeline drivable by a **gotchibot agent on a schedule**: the agent polls tracked repos for new commits since the last-reported SHA, runs Commsies to generate a newsfeed post + tweet draft, **auto-posts the newsfeed**, and **queues the tweet for UserDefault's approval** (approve gate). Last-reported SHA is tracked per `owner/repo` (multi-repo).
 
-Decisions confirmed with Julius:
-- **Tweet autonomy:** Draft + approve gate (agent queues; Julius approves via existing tweet queue).
+Decisions confirmed with UserDefault:
+- **Tweet autonomy:** Draft + approve gate (agent queues; UserDefault approves via existing tweet queue).
 - **Trigger:** Scheduled cron (agent polls since last-reported).
 - **Scope:** All game repos, multi-repo state.
 
@@ -56,13 +56,13 @@ Decisions confirmed with Julius:
 - `GotchiBot/.opencode/skills/aarcade-comms/SKILL.md` documenting:
   - Endpoints (base from `AARCADE_API_BASE`, default `https://aarcadeghst.com`).
   - Auth: `COMM_AUTOMATION_SECRET` fetched via abracadabra only; never log it.
-  - Workflow: `GET /communications-agent/queue` → for each pending `POST /communications-agent/run` → report newsfeed + tweet-draft ids to Julius. Tweet stays in approve gate.
-  - Safety: agent **never** holds X keys; posting is server-side only after Julius approves. Agent must not call post-tweet unless an explicit auto-post policy is set (out of scope v1).
+  - Workflow: `GET /communications-agent/queue` → for each pending `POST /communications-agent/run` → report newsfeed + tweet-draft ids to UserDefault. Tweet stays in approve gate.
+  - Safety: agent **never** holds X keys; posting is server-side only after UserDefault approves. Agent must not call post-tweet unless an explicit auto-post policy is set (out of scope v1).
   - Shell input safety: validate `owner/repo` `^[\w.-]+/[\w.-]+$`, sha `^[0-9a-f]{7,40}$`.
 
 ### 7. Cron script `scripts/comms-agent-cron.mjs` (GotchiBot)
 - Reads `AARCADE_API_BASE` + secret via abra.
-- `GET /queue`, loops pending repos, `POST /run` each, writes a short markdown summary (newsfeed + tweet-draft ids) to stdout/log and surfaces it to Julius.
+- `GET /queue`, loops pending repos, `POST /run` each, writes a short markdown summary (newsfeed + tweet-draft ids) to stdout/log and surfaces it to UserDefault.
 - Invoked by the gotchibot scheduler (cron on iMac) as a cAavegotchi-bound session.
 
 ### 8. Scheduling
@@ -70,7 +70,7 @@ Decisions confirmed with Julius:
 
 ## Verification
 - `POST /communications-agent/track` test repo with `initialSha` = an old commit → `GET /queue` shows `pendingCommits > 0` → `POST /communications-agent/run` creates a newsfeed entry + tweet draft → `GET /communications-agent/state` shows `lastReportedSha` advanced to HEAD.
-- Tweet draft appears in admin tweet queue (`communications-tweets`); Julius approves → posts to @AarcadeGhst.
+- Tweet draft appears in admin tweet queue (`communications-tweets`); UserDefault approves → posts to @AarcadeGhst.
 - `api/communications-auto.js` (Vercel) loads without "Cannot find module" after require fix.
 - Run `scripts/comms-agent-cron.mjs` once manually for end-to-end validation.
 

@@ -4,7 +4,7 @@ Not a live MCP server. Do not add a Cursor provider to `opencode.json`. Do not p
 
 Verified 2026-08-30 on MacBook and iMac. Binary: `$HOME/.local/bin/cursor-agent` → `~/.local/share/cursor-agent/versions/…/cursor-agent`. Help banner: `Usage: agent [options] [command] [prompt...]`. **Do not** confuse with `~/.grok/bin/agent` (Grok TUI). `which agent` hits Grok first.
 
-Auth (no secrets): `cursor-agent status` / `whoami` → logged in as Julius's Cursor account, **Pro+**, model **Auto**, `CURSOR_API_KEY` unset. Uses the logged-in subscription — never `--api-key`, never `CURSOR_API_KEY`.
+Auth (no secrets): `cursor-agent status` / `whoami` → logged in as UserDefault's Cursor account, **Pro+**, model **Auto**, `CURSOR_API_KEY` unset. Uses the logged-in subscription — never `--api-key`, never `CURSOR_API_KEY`.
 
 **MBP and iMac** both run Cursor Agent CLI locally when logged in. Prefer `./scripts/cursor-cli.mjs` on the **current host**. If SSH PATH omits `~/.local/bin`, call the full path or set `CURSOR_AGENT_BIN` — do not treat iMac as Cursor-unavailable.
 

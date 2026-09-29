@@ -12,7 +12,7 @@
 
 ## Working fix
 
-On the **2020** (needs Julius sudo):
+On the **2020** (needs UserDefault sudo):
 
 ```bash
 sudo systemctl enable --now sshd
@@ -22,5 +22,5 @@ Then verify `systemctl is-active sshd` and a dry Tailscale `scp` without the rel
 
 ## Notes
 
-- Phase 3 (edge window / stop M1 Docker) still waits on Julius — do not start from this issue.
+- Phase 3 (edge window / stop M1 Docker) still waits on UserDefault — do not start from this issue.
 - If Taildrop 502 recurs, open a separate packet.

@@ -543,7 +543,7 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Hub iMac SOP — OpenClaw gateway down (OC✗), restart-gateway remotely, vscode-open, bridge-check, tunnel. Load when gateway-unreachable or Julius asks to restart Hub.",
+      "description": "Hub iMac SOP — OpenClaw gateway down (OC✗), restart-gateway remotely, vscode-open, bridge-check, tunnel. Load when gateway-unreachable or UserDefault asks to restart Hub.",
       "path": ".opencode/skills/hub-sop/SKILL.md",
       "script": "scripts/hub-ops.mjs",
       "addedAt": "2026-09-03"
@@ -728,7 +728,7 @@
       "status": "approved",
       "type": "skill",
       "source": "gotchibot",
-      "description": "Common desk-wake for every seated hero: launchd wakes (com.gotchibot.desk-wake.<hero>) run one bounded cycle of the role's autonomy, then report to orch via bot inbox. gotchibot wake list|status|run|install|uninstall. Defer desks (trader/infra/moltbook/comms) keep their dedicated schedule CLIs; no paid cron402 without Julius.",
+      "description": "Common desk-wake for every seated hero: launchd wakes (com.gotchibot.desk-wake.<hero>) run one bounded cycle of the role's autonomy, then report to orch via bot inbox. gotchibot wake list|status|run|install|uninstall. Defer desks (trader/infra/moltbook/comms) keep their dedicated schedule CLIs; no paid cron402 without UserDefault.",
       "path": ".opencode/skills/desk-wake/SKILL.md",
       "script": "scripts/desk-wake.mjs",
       "config": "config/desk-wakes.json",

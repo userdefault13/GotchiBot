@@ -31,7 +31,7 @@ two hooks. GotchiBot remaps those hooks to `.cursor/hooks/ralph-capture.mjs` +
 
 ## When to load
 
-- Julius says `/ralph`, "loop this", "keep going until done", or wants the same
+- UserDefault says `/ralph`, "loop this", "keep going until done", or wants the same
   prompt iterated until a completion promise fires
 - Well-defined tasks with clear, verifiable success criteria (tests passing,
   migration done, feature built from a spec)
@@ -56,7 +56,7 @@ approaches — that is pstack's job.
 
 Once loaded, stay in ralph for follow-ups (`continue`, `do it`, `keep going`)
 on the **same loop slug** until the done flag, the max-iterations cap, or
-Julius says `new task` / `exit ralph` / `cancel`.
+UserDefault says `new task` / `exit ralph` / `cancel`.
 
 ## Chief non-negotiable
 
@@ -64,14 +64,14 @@ While ralph is active, **orchestrator does not author or edit product code**.
 Allowed chief writes only:
 
 - `sessions/ralph/<slug>/` via `./scripts/ralph-orch.mjs`
-- spawn prompts / passoff packets / skill or orch bookkeeping Julius asked for
+- spawn prompts / passoff packets / skill or orch bookkeeping UserDefault asked for
 
 Everything else → worker hero spawn. Hard patches inside an iteration → worker
 runs `./scripts/cursor-cli.mjs run "…"` (do not DIY on big-pickle).
 
 ## Protocol
 
-1. **Frame** — chief turns Julius's goal into: the loop prompt (self-contained,
+1. **Frame** — chief turns UserDefault's goal into: the loop prompt (self-contained,
    with explicit done criteria), a completion promise text, and a max-iterations
    cap. **max-iterations is never unlimited on GotchiBot** (default 20; `0` is
    refused by the CLI).
@@ -99,7 +99,7 @@ runs `./scripts/cursor-cli.mjs run "…"` (do not DIY on big-pickle).
 4. **Promise** — the worker outputs `<promise>DONE</promise>` **only when
    genuinely true**. `ralph-capture.mjs` writes the done flag; `ralph-stop.mjs`
    clears the loop and the session ends.
-5. **VERIFY** — before telling Julius it is done, verify the **real artifact**
+5. **VERIFY** — before telling UserDefault it is done, verify the **real artifact**
    named in the prompt (run the tests / command / inspect the output). "The
    promise fired" is not done; the artifact must actually satisfy the goal. If
    it does not, restart with a fresh slug (or `--force`) and a tighter prompt.
@@ -118,10 +118,10 @@ runs `./scripts/cursor-cli.mjs run "…"` (do not DIY on big-pickle).
 | The agent doing the work | worker hero per iteration (prefer spare DAI; never LINK/YFI/WBTC) |
 | Hard coding inside an iteration | worker runs `cursor-cli` |
 | Prove it works | real artifact + `status.md`; "it compiles" is not done |
-| Stop early | `gotchibot ralph cancel` (or Julius says cancel) |
+| Stop early | `gotchibot ralph cancel` (or UserDefault says cancel) |
 
 Still obey the Charter: no autonomous installs, no secrets in chat, no chain /
-post / delete without Julius saying yes.
+post / delete without UserDefault saying yes.
 
 ## Program store
 

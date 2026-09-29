@@ -7,7 +7,7 @@ allowed-tools: Bash(./scripts/gotchibot pstack:*), Bash(node scripts/pstack-orch
 Load and follow **pstack** now:
 
 1. Read `.opencode/skills/pstack/SKILL.md` in full (Cursor pointer: `.cursor/skills/pstack`).
-2. You are the **chief** — no product-code edits while sticky. Sticky until Julius says `new task` or exits pstack.
+2. You are the **chief** — no product-code edits while sticky. Sticky until UserDefault says `new task` or exits pstack.
 3. Match one playbook label. For multi-unit work:
    ```bash
    ./scripts/gotchibot pstack init <slug> --goal "…"
@@ -21,7 +21,7 @@ Load and follow **pstack** now:
 
 Arguments (if any): `$ARGUMENTS`
 
-- Empty → ask Julius for the goal / done predicate (one short question), or continue the sticky playbook if already in mode.
+- Empty → ask UserDefault for the goal / done predicate (one short question), or continue the sticky playbook if already in mode.
 - `new task …` → rematch playbook; new slug if multi-unit.
 - Otherwise treat `$ARGUMENTS` as the goal and proceed (playbook match → brief → spawn).
 

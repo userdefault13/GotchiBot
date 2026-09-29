@@ -14,7 +14,7 @@ If that fails for env/secrets, retry:
 abra run gotchibot -- ./scripts/gotchi-kanban.mjs $ARGUMENTS
 ```
 
-| Julius types | Script |
+| UserDefault types | Script |
 | --- | --- |
 | `/kanban` | interactive 3-pane TUI (tty) |
 | `/kanban --once` | plain text dump |

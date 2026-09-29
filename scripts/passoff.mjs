@@ -2,7 +2,7 @@
 /**
  * Passoff — hand live work from one cAavegotchi to another.
  *
- * Julius starts a job with one gotchi, walks away, comes back and wants a
+ * UserDefault starts a job with one gotchi, walks away, comes back and wants a
  * different gotchi on it. The outgoing agent captures what it already knows
  * (branch, dirty tree, its session, thread anchor, open meeting) into a packet,
  * messages the incoming agent, and that agent picks up mid-stride instead of
@@ -281,7 +281,7 @@ export function buildPacket({ from, to, note = "", next = "", task = "" }) {
     firstLine(note) ||
     (anchor?.lastIntent ? String(anchor.lastIntent) : "") ||
     firstLine(warmSessionPrompt(session.newest)) ||
-    "(task not stated — ask Julius before assuming)";
+    "(task not stated — ask UserDefault before assuming)";
   return {
     id: `p${stamp(now)}-${Math.floor(Math.random() * 90000 + 10000)}`,
     at: now.toISOString(),

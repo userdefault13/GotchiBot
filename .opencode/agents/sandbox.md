@@ -58,4 +58,4 @@ desk installs, Gotchi mode, or ordinary spawns. Not a Tab agent.
 `./scripts/gotchibot mode sandbox` — enter here.
 `./scripts/gotchibot mode gotchi` — orchestrator.
 
-Keep replies short. Match Julius's length.
+Keep replies short. Match UserDefault's length.

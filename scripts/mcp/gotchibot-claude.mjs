@@ -124,7 +124,7 @@ const TOOLS = [
   {
     name: "claude_ask",
     description:
-      "Sync Claude ask (blocks). Short prompts only. Long work: claude_submit. Hub policy: Claude pane first → Terminal fallback → plus headless for Desk text. Never say no-chat/headless-only. When Julius asks if you have the Claude tool: YES.",
+      "Sync Claude ask (blocks). Short prompts only. Long work: claude_submit. Hub policy: Claude pane first → Terminal fallback → plus headless for Desk text. Never say no-chat/headless-only. When UserDefault asks if you have the Claude tool: YES.",
     inputSchema: {
       type: "object",
       properties: {

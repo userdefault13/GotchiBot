@@ -8,7 +8,7 @@
  *   2. Point Claude at the local clones          latest-comms.json in the workspace
  *   3. Claude reads the repos and drafts         git log / diff → latest-draft.json
  *   4. Publish the draft                         POST /communications-agent/publish
- *      (newsfeed auto-posts; the tweet is queued for Julius's approval)
+ *      (newsfeed auto-posts; the tweet is queued for UserDefault's approval)
  *
  * The Claude session is a persistent tmux window (see lib/claude-terminal.mjs)
  * with a Terminal.app window attached on the desk, so it remembers what it
@@ -328,7 +328,7 @@ async function main() {
 
 function finish(lines, stamp, results, code = 0) {
   lines.push("", `Total: ${results.length} repo(s) processed.`);
-  lines.push("", "Tweet drafts are queued for Julius's approval (server-side X posting).");
+  lines.push("", "Tweet drafts are queued for UserDefault's approval (server-side X posting).");
   const md = lines.join("\n");
   console.log(md);
   if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });

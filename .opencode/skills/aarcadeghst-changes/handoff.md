@@ -81,5 +81,5 @@ Constraints: no installs, no secrets, no registry edits, new skill files only if
 
 - Skip the JSON log and rely on chat memory alone
 - Post tweets or touch `aarcade-comms` endpoints for UI handoffs
-- Modify `skills/registry.json` without Julius approval
-- Kill stuck sessions older than 30m — flag Julius instead
+- Modify `skills/registry.json` without UserDefault approval
+- Kill stuck sessions older than 30m — flag UserDefault instead

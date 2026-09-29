@@ -1628,7 +1628,7 @@ describe("runOpencodeOnce model-limit heuristics", () => {
         part: {
           id: "prt_0d99402abc429",
           type: "text",
-          text: "Hi Julius!",
+          text: "Hi UserDefault!",
           time: { start: 1790429000402, end: 1790429000429 },
         },
       }),
@@ -1655,7 +1655,7 @@ describe("runOpencodeOnce model-limit heuristics", () => {
         spawn: fakeSpawn({ stdout: successStdoutWith402429Noise(), status: 0 }),
       });
       assert.equal(r.ok, true);
-      assert.equal(r.text, "Hi Julius!");
+      assert.equal(r.text, "Hi UserDefault!");
       assert.equal(r.reason, undefined);
     } finally {
       rmSync(workDir, { recursive: true, force: true });

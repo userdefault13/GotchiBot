@@ -2,7 +2,7 @@
 /**
  * moltbook-post.mjs — post APPROVED reply drafts to Moltbook as our agent.
  *
- * Julius-gated: only drafts with status "draft" in sessions/moltbook-replies/drafts.json
+ * UserDefault-gated: only drafts with status "draft" in sessions/moltbook-replies/drafts.json
  * are posted, and only when --run is passed. Default is a dry-run summary.
  *
  *   node scripts/moltbook-post.mjs --env-file ~/.config/moltbook/credentials.json          # dry-run
