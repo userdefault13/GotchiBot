@@ -57,6 +57,12 @@ export function parsePairHash(hash) {
   return formatCode(raw);
 }
 
+/** "#verify=gbv_…" (wallet-verify link opened inside MetaMask) → code, else null. */
+export function parseVerifyHash(hash) {
+  const m = String(hash ?? "").match(/#verify=(gbv_[A-Za-z0-9_-]{32})(?:$|[&#])/);
+  return m ? m[1] : null;
+}
+
 /**
  * Extract a pairing code from a scanned deep link
  * (https://host/app/#pair=CODE, any host) or a raw code. Null otherwise.

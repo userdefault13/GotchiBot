@@ -30,7 +30,7 @@ export async function renderSettingsView(root) {
   root.replaceChildren();
   root.className = "app-shell";
 
-  const back = iconButton(iconChevronLeft(22), "Back", () => navigate("#/projects"));
+  const back = iconButton(iconChevronLeft(22), "Back", () => navigate("#/cockpit"));
   root.appendChild(topNav({ title: "Settings", left: back, center: true }));
 
   const main = el("main", "settings");

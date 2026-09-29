@@ -13,6 +13,7 @@ import { resolveApiConfig } from "./config.mjs";
 import { checkOrigin } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
 import { createProjectSource, validateProjectSnapshot } from "./projects.mjs";
+import { validateCockpitSnapshot } from "./cockpit.mjs";
 import { createOpencodeClient, deskThreadTitle, ensureDeskSession } from "./desk-runner.mjs";
 import {
   createCastVerifier,
@@ -34,6 +35,15 @@ const APP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "app");
 const BODY_LIMIT = 2 * 1024 * 1024;
 const DESK_TOKEN_HEADER = "x-gotchibot-desk-token";
 const INSTALL_TOKEN_HEADER = "x-gotchibot-install-token";
+/** Routes an unverified phone may still call (to find out it must verify, and to start it). */
+const VERIFY_EXEMPT_PATHS = new Set([
+  "/api/gotchibot/hub/whoami",
+  "/api/gotchibot/hub/wallet/verify-request",
+]);
+
+function isPhoneDesk(desk) {
+  return desk?.kind != null && String(desk.kind).trim().toLowerCase() === "phone";
+}
 
 let pkgVersion = "0.0.0";
 try {
@@ -186,7 +196,12 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
   const verifySignature = verifyWallet || createCastVerifier();
   const resolveOwner = ownerWallet || (() => resolveOwnerWallet(config, config.projectsRoot || ROOT));
 
-  async function requireDesk(req, res) {
+  /** A phone with no verified owner wallet, on a Hub that has an owner to verify against. */
+  function phoneNeedsVerify(desk) {
+    return isPhoneDesk(desk) && !desk.walletAddress && Boolean(resolveOwner());
+  }
+
+  async function requireDesk(req, res, path) {
     const deskToken = headerGet(req, DESK_TOKEN_HEADER);
     const installToken = headerGet(req, INSTALL_TOKEN_HEADER);
     if (!deskToken && installToken) {
@@ -217,6 +232,14 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
       return null;
     }
     await store.touchLastSeen(desk.deskId);
+    if (!VERIFY_EXEMPT_PATHS.has(path) && phoneNeedsVerify(desk)) {
+      json(res, 403, {
+        ok: false,
+        kind: "verify",
+        error: "verify the Hub owner wallet on this phone first",
+      });
+      return null;
+    }
     return desk;
   }
 
@@ -383,6 +406,7 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
           const pair = await store.mintPairingCode({
             name: body.name || "iPhone",
             kind: "phone",
+            walletAddress: address,
           });
           return json(res, 200, {
             ok: true,
@@ -393,9 +417,54 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
         return json(res, 200, { ok: true, ...desk });
       }
 
+      // POST /api/gotchibot/hub/wallet/verify — from the wallet's in-app browser:
+      // owner signature + a verify-request code binds the wallet to that paired desk.
+      if (req.method === "POST" && path === "/api/gotchibot/hub/wallet/verify") {
+        if (claimRateLimited()) {
+          return json(res, 429, { ok: false, error: "too many failed sign-ins" });
+        }
+        const body = await readBody(req);
+        const address = String(body.address || "").trim();
+        const signature = String(body.signature || "").trim();
+        const code = String(body.code || "").trim();
+        if (!isAddress(address) || !isSignature(signature) || !code) {
+          return json(res, 400, { ok: false, error: "code, address and signature required" });
+        }
+        const owner = resolveOwner();
+        if (!owner) {
+          return json(res, 503, { ok: false, error: "wallet sign-in not set up on this Hub" });
+        }
+        const issued = await store.consumeWalletNonce(String(body.nonce || ""));
+        if (!issued) {
+          recordClaimFailure();
+          return json(res, 401, { ok: false, error: "sign-in expired — try again" });
+        }
+        if (address.toLowerCase() !== owner) {
+          recordClaimFailure();
+          return json(res, 403, { ok: false, error: "this wallet is not the Hub owner" });
+        }
+        const valid = await verifySignature({ address, message: issued.message, signature });
+        if (!valid) {
+          recordClaimFailure();
+          return json(res, 401, { ok: false, error: "signature did not verify" });
+        }
+        const link = await store.consumeVerifyCode(code);
+        if (!link) {
+          recordClaimFailure();
+          return json(res, 401, {
+            ok: false,
+            error: "verify link expired or already used — tap Verify on the phone again",
+          });
+        }
+        if (!(await store.setDeskWallet(link.deskId, address))) {
+          return json(res, 404, { ok: false, error: "that phone was signed out on the Hub" });
+        }
+        return json(res, 200, { ok: true, verified: true });
+      }
+
       // Desk-token routes
       if (path.startsWith("/api/gotchibot/")) {
-        const desk = await requireDesk(req, res);
+        const desk = await requireDesk(req, res, path);
         if (!desk) return;
         const deskKind =
           desk.kind != null && String(desk.kind).trim().toLowerCase() === "phone"
@@ -409,7 +478,24 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
             name: desk.name,
             kind: deskKind,
             walletAddress: desk.walletAddress || null,
+            verifyRequired: phoneNeedsVerify(desk),
           });
+        }
+
+        // POST /api/gotchibot/hub/wallet/verify-request — one-time link code the
+        // phone opens inside its wallet browser (see wallet/verify).
+        if (req.method === "POST" && path === "/api/gotchibot/hub/wallet/verify-request") {
+          if (!resolveOwner()) {
+            return json(res, 503, {
+              ok: false,
+              error: "wallet sign-in not set up on this Hub — run gotchibot wallet connect on the Hub (or set ownerWallet)",
+            });
+          }
+          if (desk.walletAddress) {
+            return json(res, 200, { ok: true, verified: true, walletAddress: desk.walletAddress });
+          }
+          const { code, expiresAt } = await store.mintVerifyCode(desk.deskId);
+          return json(res, 200, { ok: true, verified: false, code, expiresAt });
         }
 
         if (req.method === "GET" && path === "/api/gotchibot/hub/desks") {
@@ -504,6 +590,27 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
             pushedAt,
             files: snapshot.files.length,
             projects: projectSource.listSlugs().length,
+          });
+        }
+
+        if (req.method === "POST" && path === "/api/gotchibot/cockpit/push") {
+          if (deskKind === "phone") {
+            return json(res, 403, {
+              ok: false,
+              error: "not allowed for phone desks",
+            });
+          }
+          const cockpit = validateCockpitSnapshot(await readBody(req));
+          const { pushedAt } = await store.putCockpitSnapshot({ deskId: desk.deskId, cockpit });
+          return json(res, 200, { ok: true, pushedAt });
+        }
+
+        if (req.method === "GET" && path === "/api/gotchibot/cockpit") {
+          const snap = await store.getCockpitSnapshot();
+          return json(res, 200, {
+            ok: true,
+            pushedAt: snap?.pushedAt || null,
+            cockpit: snap?.cockpit || null,
           });
         }
 

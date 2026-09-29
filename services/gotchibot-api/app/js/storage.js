@@ -1,11 +1,13 @@
 /**
- * IndexedDB kv store for desk credentials only.
+ * IndexedDB kv store for desk credentials + this phone's current project slug.
  * NEVER store chat messages/bodies here (or in localStorage / Cache).
  */
 
 const DB_NAME = "gotchibot-app";
 const STORE = "kv";
 const DESK_KEY = "desk";
+const PROJECT_KEY = "currentProject";
+const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -72,7 +74,32 @@ export async function clearDesk() {
     const tx = db.transaction(STORE, "readwrite");
     const store = tx.objectStore(STORE);
     await idbReq(store.delete(DESK_KEY));
+    await idbReq(store.delete(PROJECT_KEY));
   } finally {
     db.close();
   }
+}
+
+/** This phone's current project (independent of the desk's). @returns {Promise<string|null>} */
+export async function getCurrentProject() {
+  const db = await openDb();
+  try {
+    const val = await idbReq(db.transaction(STORE, "readonly").objectStore(STORE).get(PROJECT_KEY));
+    return typeof val === "string" && SLUG_RE.test(val) ? val : null;
+  } finally {
+    db.close();
+  }
+}
+
+/** @param {string|null} slug */
+export async function setCurrentProject(slug) {
+  const db = await openDb();
+  try {
+    const store = db.transaction(STORE, "readwrite").objectStore(STORE);
+    if (slug && SLUG_RE.test(slug)) await idbReq(store.put(slug, PROJECT_KEY));
+    else await idbReq(store.delete(PROJECT_KEY));
+  } finally {
+    db.close();
+  }
+  return slug || null;
 }

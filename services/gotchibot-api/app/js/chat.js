@@ -134,7 +134,7 @@ export async function renderChatView(root, route) {
   const cachedProject = app.projects.get(project);
   const projectTitle = project === GENERAL ? "General" : cachedProject?.title || project;
 
-  const back = iconButton(iconChevronLeft(22), "Projects", () => navigate("#/projects"));
+  const back = iconButton(iconChevronLeft(22), "Cockpit", () => navigate("#/cockpit"));
   const actions = el("div", "nav-actions");
   actions.appendChild(iconButton(iconHistory(20), "Chat history", () => void openHistory()));
   /** @type {HTMLButtonElement|null} */

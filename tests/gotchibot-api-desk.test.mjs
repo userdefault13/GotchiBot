@@ -23,12 +23,15 @@ import {
   validateProjectSnapshot,
 } from "../services/gotchibot-api/projects.mjs";
 import {
+  cockpitHash,
   renderLaunchAgent,
   renderSystemdUnit,
   snapshotHash,
   watchProjects,
   watchRelevant,
 } from "../scripts/hub-projects-push.mjs";
+import { collectCockpitSnapshot, validateCockpitSnapshot } from "../services/gotchibot-api/cockpit.mjs";
+import { parseVerifyHash } from "../services/gotchibot-api/app/js/pair.js";
 import {
   createCastVerifier,
   isAddress,
@@ -39,6 +42,8 @@ import {
 import {
   GENERAL,
   chatHash,
+  cockpitHeaderRows,
+  cockpitMenu,
   filterProjects,
   groupThreadsByProject,
   kanbanSegments,
@@ -341,8 +346,18 @@ describe("project push watcher", () => {
 
 describe("app desk-model", () => {
   it("routes", () => {
-    assert.deepEqual(parseDeskRoute(""), { name: "projects" });
-    assert.deepEqual(parseDeskRoute("#/threads"), { name: "projects" });
+    assert.deepEqual(parseDeskRoute(""), { name: "cockpit" });
+    assert.deepEqual(parseDeskRoute("#/"), { name: "cockpit" });
+    assert.deepEqual(parseDeskRoute("#/cockpit"), { name: "cockpit" });
+    assert.deepEqual(parseDeskRoute("#/threads"), { name: "cockpit" });
+    assert.deepEqual(parseDeskRoute("#/nope"), { name: "cockpit" });
+    assert.deepEqual(parseDeskRoute("#/projects"), { name: "projects" });
+    assert.deepEqual(parseDeskRoute("#/verify"), { name: "verify" });
+    assert.deepEqual(parseDeskRoute("#/verified"), { name: "verified" });
+    assert.deepEqual(parseDeskRoute("#/settings"), { name: "settings" });
+    for (const v of ["roster", "kanban", "inbox", "hub"]) {
+      assert.deepEqual(parseDeskRoute(`#/${v}`), { name: "view", view: v });
+    }
     assert.deepEqual(parseDeskRoute("#/login"), { name: "login" });
     assert.deepEqual(parseDeskRoute("#/p/alpha"), { name: "chat", project: "alpha", threadId: null });
     assert.deepEqual(parseDeskRoute("#/p/alpha/t/new"), { name: "chat", project: "alpha", threadId: "new" });
@@ -378,6 +393,128 @@ describe("app desk-model", () => {
     const links = walletBrowserLinks("https://hub.ts.net/app/");
     assert.equal(links[0].href, "https://metamask.app.link/dapp/hub.ts.net/app/");
     assert.match(links[1].href, /cb_url=https%3A%2F%2Fhub\.ts\.net%2Fapp%2F$/);
+  });
+
+  it("verify deep link", () => {
+    const code = `gbv_${"A".repeat(32)}`;
+    assert.equal(parseVerifyHash(`#verify=${code}`), code);
+    assert.equal(parseVerifyHash(`#verify=${code}&x=1`), code);
+    assert.equal(parseVerifyHash("#verify=gbv_short"), null);
+    assert.equal(parseVerifyHash("#/verify"), null);
+    assert.equal(parseVerifyHash("#pair=ABCD-EFGH"), null);
+  });
+
+  it("cockpit menu mirrors the desk menu; desk-only rows have no link", () => {
+    const menu = cockpitMenu({ project: "alpha", cockpit: { hub: { deskPaired: true, hubHost: "hub.ts.net" }, inbox: { unread: 3 } } });
+    assert.deepEqual(menu.map((m) => m.key), [
+      "launch", "select-project", "checkpoint-project", "checkpoint-chat", "hub-network", "meet",
+      "roster", "kanban", "inbox", "pstack", "export-roster", "import", "mint", "mint-collateral",
+      "marketplace", "settings", "avatar",
+    ]);
+    const by = Object.fromEntries(menu.map((m) => [m.key, m]));
+    assert.equal(by.launch.href, "#/p/alpha");
+    assert.equal(by["select-project"].href, "#/projects");
+    assert.equal(by["hub-network"].label, "Hub network (paired · hub.ts.net)");
+    assert.equal(by.inbox.badge, 3);
+    for (const m of menu) assert.equal(m.deskOnly, m.href == null, m.key);
+    assert.deepEqual(
+      menu.filter((m) => !m.deskOnly).map((m) => m.href),
+      ["#/p/alpha", "#/projects", "#/hub", "#/roster", "#/kanban", "#/inbox", "#/settings"],
+    );
+    assert.equal(cockpitMenu({}).find((m) => m.key === "launch").href, "#/projects");
+    assert.equal(cockpitMenu({}).find((m) => m.key === "hub-network").label, "Hub network");
+  });
+
+  it("cockpit header rows", () => {
+    const rows = Object.fromEntries(
+      cockpitHeaderRows({
+        cockpit: { header: { wallet: OWNER, cartridgeId: "7", cartridgeChain: "Base Sepolia", rosterCount: 2, orchestrator: { id: "owned-1", name: "UNI" } } },
+        project: "alpha",
+        projectTitle: "Alpha room",
+      }),
+    );
+    assert.deepEqual(rows, {
+      wallet: "0x7099…79c8",
+      cartridge: "7 (Base Sepolia)",
+      roster: "2 cAavegotchis",
+      orchestrator: "UNI",
+      project: "Alpha room",
+    });
+    const bare = Object.fromEntries(cockpitHeaderRows({ desk: { walletAddress: OWNER } }));
+    assert.equal(bare.wallet, "0x7099…79c8");
+    assert.equal(bare.project, "none — pick one");
+  });
+});
+
+describe("cockpit snapshot", () => {
+  it("validation keeps only allow-listed fields and caps strings / lists", () => {
+    const out = validateCockpitSnapshot({
+      collectedAt: "2026-09-28T00:00:00Z",
+      secret: "nope",
+      header: { wallet: OWNER.toUpperCase().replace("0X", "0x"), project: "alpha", deskToken: "gbd_x", orchestrator: { id: "owned-1", name: "UNI", pk: "x" } },
+      roster: { heroes: 2, agents: [{ id: "owned-1", name: "UNI", task: "t".repeat(500), env: { K: "v" } }, { name: "no id" }] },
+      kanban: { columns: [{ key: "todo", title: "TODO", cards: [{ id: "owned-1", chief: "yes", extra: 1 }] }] },
+      inbox: { unread: 1, messages: [{ id: "m1", body: "b".repeat(900), readAt: "x" }] },
+      hub: { deskPaired: true, deskApiBase: "https://hub.ts.net:8443", hubHost: "hub.ts.net" },
+    });
+    assert.equal(out.secret, undefined);
+    assert.equal(out.header.deskToken, undefined);
+    assert.equal(out.header.wallet, OWNER);
+    assert.deepEqual(out.header.orchestrator, { id: "owned-1", name: "UNI", collateral: null });
+    assert.equal(out.roster.agents.length, 1);
+    assert.equal(out.roster.agents[0].env, undefined);
+    assert.equal(out.roster.agents[0].task.length, 200);
+    assert.equal(out.kanban.columns[0].cards[0].chief, false);
+    assert.equal(out.kanban.columns[0].cards[0].extra, undefined);
+    assert.equal(out.inbox.messages[0].body.length, 500);
+    assert.equal(out.inbox.messages[0].read, false);
+    assert.equal(out.hub.deskApiBase, undefined);
+    assert.equal(out.hub.hubHost, "hub.ts.net");
+    assert.throws(() => validateCockpitSnapshot(null), /cockpit object required/);
+    assert.throws(() => validateCockpitSnapshot([]), /cockpit object required/);
+  });
+
+  it("collects from desk sources; hash ignores collectedAt", async () => {
+    const root = makeRoot();
+    try {
+      const sources = {
+        roster: () => ({
+          heroes: 2,
+          local: 1,
+          remote: { ok: false, reason: "ssh down" },
+          numbered: [
+            { id: "owned-1", name: null, host: "cartridge", status: "available", collateral: "uni", agentTask: null },
+            { id: "starter-dai-1", name: "DAI", host: "mbp", status: "working", collateral: "dai", agentTask: { prompt: "ship it" } },
+          ],
+        }),
+        kanban: () => ({
+          orchId: "owned-1",
+          seatsTotal: 2,
+          seatsUsed: 1,
+          seatsFree: 1,
+          categories: [{ key: "progress", title: "IN PROGRESS", items: [{ id: "starter-dai-1", status: "working", task: "ship it", roleTitle: "Builder", ageLabel: "3m", isChief: false }] }],
+        }),
+        inbox: () => ({ digest: { project: "alpha" }, messages: [{ id: "m1", from: "owned-1", to: "userdefault", kind: "fyi", subject: "hi", body: "yo", ts: "2026-09-28T00:00:00Z", readAt: null }] }),
+        hub: () => ({ deskPaired: true, hubInstalled: false, deskApiBase: "https://hub.ts.net", deskName: "MBP" }),
+        onboarding: () => ({ cartridgeId: "7", orchestratorHeroId: "owned-1" }),
+        project: () => "alpha",
+        heroName: (id) => (id === "owned-1" ? "UNI" : null),
+      };
+      const a = await collectCockpitSnapshot({ root, sources });
+      assert.equal(a.header.orchestrator.name, "UNI");
+      assert.equal(a.header.cartridgeId, "7");
+      assert.equal(a.header.project, "alpha");
+      assert.equal(a.roster.remoteReason, "ssh down");
+      assert.deepEqual(a.roster.agents.map((x) => [x.name, x.task]), [["UNI", null], ["DAI", "ship it"]]);
+      assert.equal(a.kanban.columns[0].cards[0].role, "Builder");
+      assert.equal(a.inbox.unread, 1);
+      assert.equal(a.hub.hubHost, "hub.ts.net");
+      const b = { ...a, collectedAt: "2020-01-01T00:00:00.000Z" };
+      assert.equal(cockpitHash(a), cockpitHash(b));
+      assert.notEqual(cockpitHash(a), cockpitHash({ ...a, inbox: { ...a.inbox, unread: 0 } }));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -533,6 +670,127 @@ describe("phone desk API", async () => {
     });
     assert.equal(claim.status, 200);
     assert.equal(claim.data.kind, "phone");
+    // the code carries the signed wallet, so the Home Screen app skips the verify gate
+    const who = await call(port, "GET", "/api/gotchibot/hub/whoami", { token: claim.data.deskToken });
+    assert.equal(who.data.walletAddress, OWNER);
+    assert.equal(who.data.verifyRequired, false);
+    assert.equal((await call(port, "GET", "/api/gotchibot/projects", { token: claim.data.deskToken })).status, 200);
+  });
+
+  async function codePhone(name = "Code iPhone") {
+    const { code } = await store.mintPairingCode({ name, kind: "phone" });
+    const r = await call(port, "POST", "/api/gotchibot/hub/pair/claim", { body: { code, name } });
+    assert.equal(r.status, 200);
+    return r.data;
+  }
+
+  async function signedNonce(address = OWNER) {
+    const n = await nonce();
+    const sig = `0x${randomBytes(65).toString("hex")}`;
+    goodSigs.set(n.message, sig);
+    return { address, signature: sig, nonce: n.nonce };
+  }
+
+  it("code-paired phone is gated until the owner wallet verifies it", async () => {
+    const phone = await codePhone();
+    const t = phone.deskToken;
+    const who = await call(port, "GET", "/api/gotchibot/hub/whoami", { token: t });
+    assert.equal(who.status, 200);
+    assert.equal(who.data.walletAddress, null);
+    assert.equal(who.data.verifyRequired, true);
+    for (const path of ["/api/gotchibot/projects", "/api/gotchibot/chats/threads", "/api/gotchibot/cockpit"]) {
+      const r = await call(port, "GET", path, { token: t });
+      assert.equal(r.status, 403, path);
+      assert.equal(r.data.kind, "verify", path);
+    }
+
+    const req = await call(port, "POST", "/api/gotchibot/hub/wallet/verify-request", { token: t, body: {} });
+    assert.equal(req.status, 200);
+    assert.equal(req.data.verified, false);
+    assert.match(req.data.code, /^gbv_[A-Za-z0-9_-]{32}$/);
+    const code = req.data.code;
+
+    const stranger = await call(port, "POST", "/api/gotchibot/hub/wallet/verify", {
+      body: { code, ...(await signedNonce(STRANGER)) },
+    });
+    assert.equal(stranger.status, 403);
+    const n = await nonce();
+    const badSig = await call(port, "POST", "/api/gotchibot/hub/wallet/verify", {
+      body: { code, address: OWNER, signature: FAKE_SIG, nonce: n.nonce },
+    });
+    assert.equal(badSig.status, 401);
+    assert.equal((await call(port, "GET", "/api/gotchibot/hub/whoami", { token: t })).data.verifyRequired, true);
+
+    const ok = await call(port, "POST", "/api/gotchibot/hub/wallet/verify", { body: { code, ...(await signedNonce()) } });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.data.verified, true);
+    const reused = await call(port, "POST", "/api/gotchibot/hub/wallet/verify", { body: { code, ...(await signedNonce()) } });
+    assert.equal(reused.status, 401);
+    assert.match(reused.data.error, /verify link/);
+
+    const after = await call(port, "GET", "/api/gotchibot/hub/whoami", { token: t });
+    assert.equal(after.data.walletAddress, OWNER);
+    assert.equal(after.data.verifyRequired, false);
+    assert.equal((await call(port, "GET", "/api/gotchibot/projects", { token: t })).status, 200);
+    const again = await call(port, "POST", "/api/gotchibot/hub/wallet/verify-request", { token: t, body: {} });
+    assert.equal(again.data.verified, true);
+    assert.equal(again.data.walletAddress, OWNER);
+  });
+
+  it("expired verify code is refused; terminal desks are never gated", async () => {
+    const phone = await codePhone("Late iPhone");
+    const req = await call(port, "POST", "/api/gotchibot/hub/wallet/verify-request", { token: phone.deskToken, body: {} });
+    await store.db.collection("wallet_verify_codes").updateMany({}, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    const late = await call(port, "POST", "/api/gotchibot/hub/wallet/verify", {
+      body: { code: req.data.code, ...(await signedNonce()) },
+    });
+    assert.equal(late.status, 401);
+    assert.equal((await call(port, "GET", "/api/gotchibot/hub/whoami", { token: phone.deskToken })).data.verifyRequired, true);
+    assert.equal(
+      (await call(port, "POST", "/api/gotchibot/hub/wallet/verify", { body: { code: "gbv_nope", ...(await signedNonce()) } })).status,
+      401,
+    );
+
+    const { code } = await store.mintPairingCode({ name: "MBP", kind: "desk" });
+    const desk = await store.claimPairingCode({ code, name: "MBP" });
+    const who = await call(port, "GET", "/api/gotchibot/hub/whoami", { token: desk.deskToken });
+    assert.equal(who.data.verifyRequired, false);
+    assert.equal((await call(port, "GET", "/api/gotchibot/projects", { token: desk.deskToken })).status, 200);
+  });
+
+  it("cockpit: desk pushes (allow-listed), phones read, phones can't push", async () => {
+    const { code } = await store.mintPairingCode({ name: "MBP", kind: "desk" });
+    const desk = await store.claimPairingCode({ code, name: "MBP" });
+    const phone = await walletPhone();
+
+    const empty = await call(port, "GET", "/api/gotchibot/cockpit", { token: phone.deskToken });
+    assert.equal(empty.status, 200);
+    assert.equal(empty.data.cockpit, null);
+
+    const body = {
+      collectedAt: new Date().toISOString(),
+      header: { project: "alpha", rosterCount: 2, deskToken: "gbd_should_not_store" },
+      roster: { heroes: 2, agents: [{ id: "owned-1", name: "UNI", status: "available" }] },
+      kanban: { columns: [] },
+      inbox: { unread: 0, messages: [] },
+      hub: { deskPaired: true, hubHost: "hub.ts.net" },
+      extra: "dropped",
+    };
+    const denied = await call(port, "POST", "/api/gotchibot/cockpit/push", { token: phone.deskToken, body });
+    assert.equal(denied.status, 403);
+    const pushed = await call(port, "POST", "/api/gotchibot/cockpit/push", { token: desk.deskToken, body });
+    assert.equal(pushed.status, 200);
+    assert.ok(pushed.data.pushedAt);
+    const bad = await call(port, "POST", "/api/gotchibot/cockpit/push", { token: desk.deskToken, body: [] });
+    assert.equal(bad.status, 400);
+
+    const got = await call(port, "GET", "/api/gotchibot/cockpit", { token: phone.deskToken });
+    assert.equal(got.status, 200);
+    assert.equal(got.data.pushedAt, pushed.data.pushedAt);
+    assert.equal(got.data.cockpit.header.project, "alpha");
+    assert.equal(got.data.cockpit.header.deskToken, undefined);
+    assert.equal(got.data.cockpit.extra, undefined);
+    assert.equal(got.data.cockpit.roster.agents[0].name, "UNI");
   });
 
   it("projects list / detail / avatar need a desk token", async () => {

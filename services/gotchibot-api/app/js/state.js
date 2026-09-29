@@ -17,6 +17,10 @@ export const app = {
   avatarUrls: new Map(),
   /** One-shot message shown by the next login view. */
   flash: null,
+  /** Hub says this phone must verify the owner wallet (whoami.verifyRequired). */
+  verifyRequired: false,
+  /** Last GET /cockpit payload (in memory only). */
+  cockpit: null,
   /** Set by main.js: re-render the current hash. */
   route: async () => {},
 };
@@ -71,6 +75,12 @@ export function rememberThreadTitles(threads) {
 export function shortThreadId(threadId) {
   const id = String(threadId || "");
   return id.length > 24 ? `${id.slice(0, 20)}…` : id;
+}
+
+/** Hub says this phone has not verified the owner wallet yet. */
+export function handleVerifyRequired() {
+  app.verifyRequired = true;
+  if (!/^#\/(verify|settings)$/.test(location.hash)) navigate("#/verify", { replace: true });
 }
 
 /** Hub says this token is gone: drop local credentials, back to sign-in. */

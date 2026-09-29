@@ -58,20 +58,85 @@ export function roleLabel(role) {
   return words[0].toUpperCase() + words.slice(1);
 }
 
+/** Read-only cockpit sections (desk snapshot) → their routes. */
+export const COCKPIT_VIEWS = ["roster", "kanban", "inbox", "hub"];
+
+function hubHostLabel(hub) {
+  if (hub?.deskPaired) return `Hub network (paired${hub.hubHost ? ` · ${hub.hubHost}` : ""})`;
+  if (hub?.hubInstalled) return "Hub network (this computer is the Hub)";
+  if (hub) return "Set up Hub network (on desk)";
+  return "Hub network";
+}
+
+/**
+ * The terminal cockpit's "What next?" menu, same order (onboarding-gate.mjs
+ * mainMenu). Rows the phone can't run carry deskOnly and no href.
+ * @param {{ project?: string|null, cockpit?: object|null }} opts
+ * @returns {Array<{ key: string, label: string, href: string|null, deskOnly: boolean, badge?: number }>}
+ */
+export function cockpitMenu({ project = null, cockpit = null } = {}) {
+  const phone = (key, label, href, extra = {}) => ({ key, label, href, deskOnly: false, ...extra });
+  const desk = (key, label) => ({ key, label, href: null, deskOnly: true });
+  const unread = Number(cockpit?.inbox?.unread) || 0;
+  return [
+    phone("launch", "Open desk", project ? chatHash(project, null) : "#/projects"),
+    phone("select-project", "Switch to another project", "#/projects"),
+    desk("checkpoint-project", "Save project to Sepolia"),
+    desk("checkpoint-chat", "Checkpoint chat sync to Sepolia"),
+    phone("hub-network", hubHostLabel(cockpit?.hub), "#/hub"),
+    desk("meet", "Start meeting / morning recap"),
+    phone("roster", "View agent roster (MBP + iMac · status)", "#/roster"),
+    phone("kanban", "Kanban (agents · tasks · seats)", "#/kanban"),
+    phone("inbox", "Bot inbox", "#/inbox", unread ? { badge: unread } : {}),
+    desk("pstack", "Pstack (dossier pane · program store)"),
+    desk("export-roster", "Export agent roster to CSV"),
+    desk("import", "Browse cartridge cAavegotchis"),
+    desk("mint", "Mint another wallet gotchi"),
+    desk("mint-collateral", "Mint a base collateral cAavegotchi"),
+    desk("marketplace", "View Marketplace"),
+    phone("settings", "Settings", "#/settings"),
+    desk("avatar", "Change orchestrator avatar"),
+  ];
+}
+
+/**
+ * Cockpit header rows (label, value) like the terminal cockpit's top block.
+ * @param {{ cockpit?: object|null, desk?: object|null, project?: string|null, projectTitle?: string|null }} opts
+ */
+export function cockpitHeaderRows({ cockpit = null, desk = null, project = null, projectTitle = null } = {}) {
+  const h = cockpit?.header || {};
+  const wallet = h.wallet || desk?.walletAddress || null;
+  const orch = h.orchestrator;
+  const count = Number.isFinite(h.rosterCount) ? h.rosterCount : null;
+  return [
+    ["wallet", wallet ? shortAddress(wallet) : "—"],
+    ["cartridge", h.cartridgeId ? `${h.cartridgeId}${h.cartridgeChain ? ` (${h.cartridgeChain})` : ""}` : "—"],
+    ["roster", count == null ? "—" : `${count} cAavegotchi${count === 1 ? "" : "s"}`],
+    ["orchestrator", orch ? orch.name || orch.id : "—"],
+    ["project", project ? projectTitle || project : "none — pick one"],
+  ];
+}
+
 /**
  * Parse location.hash into a desk route.
- *   #/login · #/pair · #/projects · #/settings
- *   #/p/<slug>            → project chat (latest thread)
+ *   #/ · #/cockpit        → cockpit (root menu, like the terminal desk)
+ *   #/login · #/pair · #/verify · #/settings
+ *   #/projects            → project picker (Switch to another project)
+ *   #/roster · #/kanban · #/inbox · #/hub → read-only cockpit views
+ *   #/p/<slug>            → project desk chat
  *   #/p/<slug>/t/<id|new> → project chat on a thread
  *   #/thread/<id>         → legacy: general chat on that thread
  */
 export function parseDeskRoute(hash) {
   const h = String(hash || "").replace(/^#\/?/, "");
-  if (!h) return { name: "projects" };
+  if (!h || h === "cockpit" || h === "threads") return { name: "cockpit" };
   if (h === "login") return { name: "login" };
   if (h === "pair") return { name: "pair" };
-  if (h === "projects" || h === "threads") return { name: "projects" };
+  if (h === "verify") return { name: "verify" };
+  if (h === "verified") return { name: "verified" };
+  if (h === "projects") return { name: "projects" };
   if (h === "settings") return { name: "settings" };
+  if (COCKPIT_VIEWS.includes(h)) return { name: "view", view: h };
   const dec = (v) => {
     try {
       return decodeURIComponent(v);
@@ -85,7 +150,7 @@ export function parseDeskRoute(hash) {
   if (m) return { name: "chat", project: dec(m[1]), threadId: null };
   m = h.match(/^thread\/(.+)$/);
   if (m) return { name: "chat", project: GENERAL, threadId: dec(m[1]) || NEW_THREAD_ID };
-  return { name: "projects" };
+  return { name: "cockpit" };
 }
 
 export function chatHash(project, threadId) {
@@ -147,12 +212,16 @@ export function suggestionPrompts(project) {
   ];
 }
 
+/** Universal link that opens `pageUrl` (hash included) in MetaMask's in-app browser. */
+export function metamaskDappLink(pageUrl) {
+  return `https://metamask.app.link/dapp/${String(pageUrl || "").replace(/^https?:\/\//, "")}`;
+}
+
 /** URLs that reopen this page inside a wallet's in-app browser (iOS). */
 export function walletBrowserLinks(pageUrl) {
   const u = String(pageUrl || "");
-  const bare = u.replace(/^https?:\/\//, "");
   return [
-    { id: "metamask", label: "MetaMask", href: `https://metamask.app.link/dapp/${bare}` },
+    { id: "metamask", label: "MetaMask", href: metamaskDappLink(u) },
     {
       id: "coinbase",
       label: "Coinbase Wallet",

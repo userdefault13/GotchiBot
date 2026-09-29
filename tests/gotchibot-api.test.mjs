@@ -307,6 +307,7 @@ describe("gotchibot-api integration", async () => {
         dbName,
         ownerLogin,
       },
+      ownerWallet: () => null,
     });
     port = await listen(server);
   });
@@ -586,6 +587,7 @@ describe("desk kinds + phone scoping", async () => {
         dbName,
         ownerLogin,
       },
+      ownerWallet: () => null,
     });
     port = await listen(server);
   });
@@ -914,6 +916,7 @@ describe("S2 phone send + reply tracking", async () => {
         dbName,
         ownerLogin,
       },
+      ownerWallet: () => null,
     });
     port = await listen(server);
   });
@@ -2130,6 +2133,7 @@ describe("static /app/ route", async () => {
     server = createApiServer({
       store: stubStore,
       config: { host: "127.0.0.1", port: 0, ownerLogin },
+      ownerWallet: () => null,
     });
     port = await listen(server);
   });
@@ -2693,7 +2697,7 @@ describe("phone app modules", () => {
     const swMatch = sw.match(/const APP_VERSION = ["']([^"']+)["']/);
     assert.ok(swMatch, "sw.js APP_VERSION");
     assert.equal(swMatch[1], verMod.APP_VERSION);
-    assert.equal(verMod.APP_VERSION, "0.3.1");
+    assert.equal(verMod.APP_VERSION, "0.4.0");
   });
 
   it("sw.js SHELL lists every app/js/*.js and has no api/vendor entries", () => {

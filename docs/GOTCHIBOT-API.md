@@ -172,7 +172,11 @@ JSON in/out. Body limit 2 MB. Unknown route → `404` `{ok:false,error}`. Errors
 | `POST` | `/api/gotchibot/hub/pair/claim` | pairing code in body (`kind` optional) | `{ok, deskId, deskToken, name, kind}` |
 | `POST` | `/api/gotchibot/hub/wallet/nonce` | origin only | `{ok, nonce, message, expiresAt}` — one-time message for the owner wallet to `personal_sign` (5 min); no owner wallet → `503` |
 | `POST` | `/api/gotchibot/hub/wallet/login` | signed nonce in body | body `{address, signature, nonce, name?, handoff?}` → `{ok, deskId, deskToken, name, kind:"phone", walletAddress}`; with `handoff:true` → `{ok, handoff:{code, expiresAt}}` (phone pairing code instead of a token). Expired nonce `401`, wrong wallet `403`, bad signature `401` |
-| `GET` | `/api/gotchibot/hub/whoami` | desk token | `{ok, deskId, name, kind, walletAddress}` (`walletAddress` null unless wallet sign-in) |
+| `GET` | `/api/gotchibot/hub/whoami` | desk token | `{ok, deskId, name, kind, walletAddress, verifyRequired}` (`walletAddress` null until the phone signs in with or verifies the owner wallet; `verifyRequired` true for such a phone while the Hub has an owner wallet) |
+| `POST` | `/api/gotchibot/hub/wallet/verify-request` | desk token (unverified phones allowed) | `{ok, verified:false, code:"gbv_…", expiresAt}` — one-time verify link code (15 min, stored hashed); already verified → `{ok, verified:true, walletAddress}`; no owner wallet → `503` |
+| `POST` | `/api/gotchibot/hub/wallet/verify` | verify code + signed nonce in body | body `{code, address, signature, nonce}` → `{ok, verified:true}`; binds the owner wallet to the phone that minted `code`. Expired nonce / bad signature / used or expired code `401`, wrong wallet `403`, desk revoked `404`, no owner `503`; shares the `429` limit |
+| `POST` | `/api/gotchibot/cockpit/push` | desk token (desk kind only) | body = cockpit snapshot (see *Cockpit snapshot*) → `{ok, pushedAt}`; unknown fields dropped, > 256 KB → `400`; phone → `403` |
+| `GET` | `/api/gotchibot/cockpit` | desk token | `{ok, pushedAt, cockpit}` (`null`s before the first push) |
 | `GET` | `/api/gotchibot/hub/desks` | desk token (desk kind only) | `{ok, desks:[{deskId,name,kind,createdAt,lastSeen,revokedAt}]}` — never hashes; phone → `403` |
 | `GET` | `/api/gotchibot/hub/runner` | desk token | `{ok, runner:{status:"ok"\|"error"\|"offline", detail, model?, lastBeatAt}}` — offline if no beat or `lastBeatAt` older than ~90s; `detail` never holds secrets |
 | `POST` | `/api/gotchibot/chats/push` | desk token | `{ok, threadId, inserted, skipped, lastSeq, results:[…]}` — phone hardening above |
@@ -196,7 +200,9 @@ Install token alone on a chat/hub route → `401` *install token cannot unlock c
 
 **Pairing codes.** One-time, 8 Crockford base32 chars shown as `XXXX-XXXX`, 15 minutes. Stored as sha256 of normalized code (uppercase, no dash) in `pairing_codes` with optional `kind`. Claim is atomic (`usedAt` null + not expired); kind-mismatch checks run before consume. More than 20 failed claims in 10 minutes → `429`.
 
-**Wallet sign-in** (phone app). EIP-191 `personal_sign` over the message from `wallet/nonce` (`GotchiBot Hub sign-in` / `Host` / `Nonce` / `Issued`), verified with Foundry `cast wallet verify` — no npm crypto deps. Nonces live in `wallet_nonces` (TTL 5 min) and are consumed atomically, so each signature works once. Only the owner wallet may sign in: `ownerWallet` in config (or `GOTCHIBOT_HUB_OWNER_WALLET`), else the Hub's `sessions/.wallet.json`; neither → `503`. Success mints a `phone` desk with `walletAddress`, or a pairing code when `handoff:true` (sign in inside the wallet's browser, finish pairing in the home-screen app). Failed sign-ins share the pair/claim `429` limit.
+**Wallet sign-in** (phone app). EIP-191 `personal_sign` over the message from `wallet/nonce` (`GotchiBot Hub sign-in` / `Host` / `Nonce` / `Issued`), verified with Foundry `cast wallet verify` — no npm crypto deps. Nonces live in `wallet_nonces` (TTL 5 min) and are consumed atomically, so each signature works once. Only the owner wallet may sign in: `ownerWallet` in config (or `GOTCHIBOT_HUB_OWNER_WALLET`), else the Hub's `sessions/.wallet.json`; neither → `503`. Success mints a `phone` desk with `walletAddress`, or a pairing code when `handoff:true` (sign in inside the wallet's browser, finish pairing in the home-screen app); the handoff code carries the wallet to the desk it creates. Failed sign-ins share the pair/claim `429` limit.
+
+**Owner-wallet gate** (phones). While the Hub has an owner wallet, a `phone` desk without `walletAddress` (paired by code, or paired before the gate) gets `403 {ok:false, kind:"verify"}` on every desk route except `hub/whoami` and `hub/wallet/verify-request`. The app shows *Verify in MetaMask*: it mints a `gbv_` code, opens `https://metamask.app.link/dapp/<hub>/app/#verify=<code>`, the owner signs a fresh nonce inside MetaMask, and `hub/wallet/verify` binds the wallet to the phone that minted the code (`walletVerifiedAt`). Codes live hashed in `wallet_verify_codes` (TTL 15 min) and are consumed atomically. Terminal desks (`kind: "desk"`) are never gated.
 
 **Hub CLI** (talks to Mongo directly when there is no token yet): `hub pair [--kind] [--qr] [--app-url]`, `hub desks`, `hub revoke`, `hub share` / `unshare` / `shares`. Desk: `hub join <host> <code>`.
 
@@ -227,6 +233,14 @@ pstack rooms, hero caches and avatars live on the **desk**, so the phone portfol
 - **Keep it running:** `gotchibot hub projects service install | uninstall | status` — macOS LaunchAgent `com.gotchibot.hub-projects-watch` (`KeepAlive`, logs in `sessions/hub-projects-push-logs/`), or Linux systemd user unit `gotchibot-hub-projects-watch.service` (`Restart=always`, logs in `journalctl --user`).
 - **Whitelist:** `sessions/pstack/<slug>/{dossier.json,overview.md,status.md,roster.json,kanban.json}`, `sessions/.pstack-dossier-current`, `sessions/.project-current`, `sessions/.hero-agent-state.json`, `config/agent-roles.json`, `sessions/.avatars/<heroId>.svg` (roster heroes only). Anything else → `400`. Max 2000 files, 256 KB each, 2 MB body. `heroNames` (`{heroId: name}`) carries desk-side display names.
 - **Hub:** one Mongo doc (`project_snapshot`, `_id: "current"`), replaced per push, cached in memory. Reads prefer the snapshot, then the Hub's own disk, so Hub-local rooms still appear.
+
+## Cockpit snapshot
+
+The phone app's root menu mirrors the terminal cockpit, so the desk pushes what that menu shows (`services/gotchibot-api/cockpit.mjs`).
+
+- **Desk:** `gotchibot hub cockpit push [--force] [--dry-run] [--json]` collects from the desk's own sources (`agent-focus list --json`, `gotchi-kanban --json`, `bot-inbox`, `hub-network`, `sessions/.onboarding.json`, the current project); no abra. The `hub projects watch` service pushes it after every project push and every 60s, skipping when the content hash (minus `collectedAt`) matches `cockpitHash` in `sessions/.hub-projects-push.json`.
+- **Shape (allow-list):** `collectedAt`, `header {wallet, cartridgeId, cartridgeChain, orchestrator{id,name,collateral}, rosterCount, project, deskName}`, `roster {heroes, local, remoteOk, remoteReason, agents[≤200]{id,name,host,kind,status,collateral,task}}`, `kanban {seatsTotal, seatsUsed, seatsFree, columns[≤12]{key,title,cards[≤60]{id,name,status,collateral,host,role,task,age,chief,stale}}}`, `inbox {project, unread, messages[≤50]{id,from,to,kind,subject,body≤500,ts,read}}`, `hub {deskPaired, hubInstalled, hubHost, deskName}`. Strings are trimmed and length-capped; anything else is dropped.
+- **Hub:** one Mongo doc (`cockpit_snapshot`, `_id: "current"`), replaced per push.
 
 ## Project desks
 

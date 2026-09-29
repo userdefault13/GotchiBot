@@ -56,8 +56,39 @@ chrome are adapted from [Mobilecode-open](https://github.com/elkir0/Mobilecode-o
 - **Runner** — while waiting, `GET /hub/runner` at most every ~10s; settings
   shows status · model. Non-blocking notice when offline/error.
 - **Version** — bump `APP_VERSION` in **both** `sw.js` and `js/version.js`
-  together (currently `0.3.1`). New JS modules must be listed in the SW
+  together (currently `0.4.0`). New JS modules must be listed in the SW
   `SHELL` precache.
+
+## 0.4.0: phone desk (verify → cockpit → project → chat)
+
+The terminal desk is the model: sync, verify the owner wallet, land on the
+cockpit, pick a project, then enter its chat.
+
+- **Owner-wallet gate** — a phone desk with no verified wallet gets
+  `403 { kind: "verify" }` from every desk route except `hub/whoami` and
+  `hub/wallet/verify-request` (only while the Hub has an owner wallet). The app
+  routes to `#/verify`, which pre-mints a one-time `gbv_…` code
+  (`POST /hub/wallet/verify-request`, 15 min) and shows **Verify in MetaMask**
+  as a real link (iOS blocks async `window.open`) to
+  `metamask.app.link/dapp/<hub>/app/#verify=<code>`. Inside MetaMask the page
+  signs the owner nonce and posts `POST /hub/wallet/verify`; the phone polls
+  `whoami` (every 2s and on focus) and opens the cockpit when verified. Signing
+  in with the wallet directly, or the wallet-browser handoff code, carries the
+  wallet, so those phones skip the gate.
+- **Cockpit** (`#/` · `#/cockpit`) — root menu in the terminal cockpit's order.
+  Header: wallet · cartridge · roster · orchestrator · this phone's project.
+  Phone rows: Open desk (current project's chat, or the picker), Switch to
+  another project, Hub network, roster, kanban, inbox, Settings. The rest
+  (checkpoints, meet, pstack, mint, marketplace, avatar…) are greyed "on desk".
+- **Current project** is phone-local (IndexedDB `currentProject`); until you
+  pick one it follows the desk's current project.
+- **Project picker** (`#/projects`) — the portfolio cards; a tap sets the
+  current project and returns to the cockpit. No ask bar / General card.
+- **Read-only views** — `#/roster` · `#/kanban` · `#/inbox` · `#/hub` from the
+  desk's cockpit snapshot (`GET /api/gotchibot/cockpit`), pushed by
+  `gotchibot hub cockpit push` and by the `hub projects watch` service (with
+  every project push and every 60s when it changed).
+- Chat and Settings back buttons return to the cockpit.
 
 ## 0.3.1: shared project desk
 
@@ -68,7 +99,7 @@ chrome are adapted from [Mobilecode-open](https://github.com/elkir0/Mobilecode-o
 
 ## 0.3.0: project desk
 
-- **Routes** — `#/login` · `#/pair` (and `#pair=CODE`) · `#/projects` (home) ·
+- **Routes** — `#/login` · `#/pair` (and `#pair=CODE`) · `#/projects` (home until 0.4.0) ·
   `#/p/<slug>[/t/<threadId>]` · `#/settings`. Old `#/threads` and
   `#/thread/<id>` still resolve (General project).
 - **Sign-in** — owner wallet via the injected EIP-1193 provider

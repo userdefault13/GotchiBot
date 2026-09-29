@@ -23,6 +23,11 @@ export function newDeskToken() {
   return `gbd_${randomBytes(32).toString("base64url")}`;
 }
 
+/** "gbv_" + base64url(24 random bytes): one-time wallet-verify link code. */
+export function newVerifyCode() {
+  return `gbv_${randomBytes(24).toString("base64url")}`;
+}
+
 /** 8 Crockford chars → display as XXXX-XXXX */
 export function newPairingCode() {
   const bytes = randomBytes(5);

@@ -19,6 +19,12 @@ export class ApiError extends Error {
   }
 }
 
+/** Called before throwing ApiError("verify") so the app can route to #/verify. */
+let onVerifyRequired = null;
+export function setVerifyRequiredHandler(fn) {
+  onVerifyRequired = typeof fn === "function" ? fn : null;
+}
+
 /** Absolute URL under the Hub origin for a path starting with /. */
 export function hubUrl(path) {
   const p = path.startsWith("/") ? path : `/${path}`;
@@ -84,6 +90,10 @@ export async function apiFetch(path, opts = {}) {
     }
     if (res.status === 404) {
       throw new ApiError("not-found", 404, String(msg), data);
+    }
+    if (res.status === 403 && data && typeof data === "object" && data.kind === "verify") {
+      onVerifyRequired?.();
+      throw new ApiError("verify", 403, String(msg), data);
     }
     throw new ApiError("http", res.status, String(msg), data);
   }
@@ -180,6 +190,24 @@ export function walletNonce() {
  */
 export function walletLogin(body) {
   return apiFetch("/api/gotchibot/hub/wallet/login", { method: "POST", body });
+}
+
+/** Paired phone asks for a one-time link to open inside MetaMask. */
+export function walletVerifyRequest(token) {
+  return apiFetch("/api/gotchibot/hub/wallet/verify-request", { method: "POST", token, body: {} });
+}
+
+/**
+ * Inside the wallet browser: bind the owner wallet to the phone behind `code`.
+ * @param {{ code: string, address: string, signature: string, nonce: string }} body
+ */
+export function walletVerify(body) {
+  return apiFetch("/api/gotchibot/hub/wallet/verify", { method: "POST", body });
+}
+
+/** Desk cockpit snapshot (header, roster, kanban, inbox, hub network). */
+export function getCockpit(token) {
+  return apiFetch("/api/gotchibot/cockpit", { token });
 }
 
 export function listProjects(token) {

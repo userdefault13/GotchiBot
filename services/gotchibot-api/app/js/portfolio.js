@@ -1,23 +1,15 @@
 /**
- * Portfolio — home screen. Every pstack project on the Hub as a card, plus a
- * "General" card for chats with no project, and an ask bar that opens a new
- * general chat.
+ * Project picker ("Switch to another project" in the cockpit). Every pstack
+ * project on the Hub as a card; a tap makes it this phone's current project
+ * and returns to the cockpit, where "Open desk" enters its chat.
  */
-import { iconArrowUp, iconChat, iconSearch, iconSettings } from "./icons.js";
+import { iconChevronLeft, iconSearch } from "./icons.js";
 import { ApiError, listProjects, listThreads } from "./api.js";
+import { getCurrentProject, setCurrentProject } from "./storage.js";
 import { relativeTime } from "./thread-model.js";
 import { app, clearPoller, handleUnpaired, navigate, rememberThreadTitles } from "./state.js";
 import { el, heroAvatar, iconButton, topNav } from "./ui.js";
-import {
-  GENERAL,
-  NEW_THREAD_ID,
-  chatHash,
-  filterProjects,
-  greeting,
-  groupThreadsByProject,
-  kanbanSegments,
-  shortAddress,
-} from "./desk-model.js";
+import { filterProjects, greeting, groupThreadsByProject, kanbanSegments, shortAddress } from "./desk-model.js";
 
 function kanbanBar(kanban) {
   const segs = kanbanSegments(kanban);
@@ -35,7 +27,7 @@ function kanbanBar(kanban) {
   return bar;
 }
 
-function projectCard(p, threads, now) {
+function projectCard(p, threads, now, currentSlug) {
   const card = el("article", "project-card");
   card.tabIndex = 0;
   card.setAttribute("role", "button");
@@ -46,7 +38,8 @@ function projectCard(p, threads, now) {
   const h3 = el("h3", null, p.title);
   titleWrap.appendChild(h3);
   const tags = el("div", "project-tags");
-  if (p.current) tags.appendChild(el("span", "tag tag-accent", "current"));
+  if (p.slug === currentSlug) tags.appendChild(el("span", "tag tag-accent", "current"));
+  if (p.current && p.slug !== currentSlug) tags.appendChild(el("span", "tag", "on desk"));
   if (p.working) tags.appendChild(el("span", "tag tag-live", `${p.working} working`));
   else if (p.units?.running) tags.appendChild(el("span", "tag tag-live", `${p.units.running} running`));
   titleWrap.appendChild(tags);
@@ -77,40 +70,15 @@ function projectCard(p, threads, now) {
   foot.appendChild(el("span", null, `${chatBit}${when ? relativeTime(when, now) : ""}`));
   card.appendChild(foot);
 
-  const open = () => navigate(chatHash(p.slug, null));
-  card.addEventListener("click", open);
+  const pick = async () => {
+    await setCurrentProject(p.slug).catch(() => null);
+    navigate("#/cockpit");
+  };
+  card.addEventListener("click", () => void pick());
   card.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      open();
-    }
-  });
-  return card;
-}
-
-function generalCard(threads, now) {
-  const card = el("article", "project-card general-card");
-  card.tabIndex = 0;
-  card.setAttribute("role", "button");
-  const head = el("div", "project-head");
-  const icon = el("span", "general-icon");
-  icon.innerHTML = iconChat(20);
-  const titleWrap = el("div", "project-title-wrap");
-  titleWrap.appendChild(el("h3", null, "General"));
-  titleWrap.appendChild(el("p", "project-goal", "Chats that aren't tied to a project"));
-  head.append(icon, titleWrap);
-  card.appendChild(head);
-  const foot = el("div", "project-foot");
-  const last = threads?.[0];
-  foot.appendChild(el("span", null, threads?.length ? `${threads.length} chats` : "No chats yet"));
-  foot.appendChild(el("span", null, last ? relativeTime(last.lastMessageAt || last.updatedAt, now) : ""));
-  card.appendChild(foot);
-  const open = () => navigate(chatHash(GENERAL, null));
-  card.addEventListener("click", open);
-  card.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      open();
+      void pick();
     }
   });
   return card;
@@ -127,13 +95,9 @@ export async function renderPortfolioView(root) {
   root.replaceChildren();
   root.className = "app-shell";
 
-  const settingsBtn = iconButton(iconSettings(20), "Settings", () => navigate("#/settings"));
-  const brand = el("div", "brand-mark");
-  const logo = el("img", "brand-logo");
-  logo.src = "icons/icon-32.png";
-  logo.alt = "";
-  brand.appendChild(logo);
-  root.appendChild(topNav({ title: "GotchiBot", left: brand, right: settingsBtn }));
+  const back = iconButton(iconChevronLeft(22), "Cockpit", () => navigate("#/cockpit"));
+  root.appendChild(topNav({ title: "Switch project", left: back, center: true }));
+  const currentSlug = await getCurrentProject().catch(() => null);
 
   const main = el("main", "portfolio");
   const hello = el("section", "hello");
@@ -163,17 +127,6 @@ export async function renderPortfolioView(root) {
   main.appendChild(list);
   root.appendChild(main);
 
-  // Grok-style ask bar → new general chat
-  const ask = el("button", "ask-bar");
-  ask.type = "button";
-  ask.appendChild(el("span", "ask-placeholder", "Ask GotchiBot anything…"));
-  const askGo = el("span", "ask-go");
-  askGo.innerHTML = iconArrowUp(18);
-  ask.appendChild(askGo);
-  ask.addEventListener("click", () => navigate(chatHash(GENERAL, NEW_THREAD_ID)));
-  root.appendChild(ask);
-  root.classList.add("has-ask");
-
   let projects = [];
   let grouped = new Map();
 
@@ -182,8 +135,7 @@ export async function renderPortfolioView(root) {
     const shown = filterProjects(projects, search.value);
     list.replaceChildren();
     count.textContent = projects.length ? String(projects.length) : "";
-    for (const p of shown) list.appendChild(projectCard(p, grouped.get(p.slug), now));
-    if (!search.value.trim()) list.appendChild(generalCard(grouped.get(GENERAL), now));
+    for (const p of shown) list.appendChild(projectCard(p, grouped.get(p.slug), now, currentSlug));
     if (!shown.length && search.value.trim()) {
       list.appendChild(el("p", "empty-line", `No projects match “${search.value.trim()}”`));
     }

@@ -9,11 +9,15 @@
  *   gotchibot hub projects push [--force] [--dry-run] [--json]
  *   gotchibot hub projects watch                      # foreground, event-driven
  *   gotchibot hub projects service install | uninstall | status
+ *   gotchibot hub cockpit push [--force] [--dry-run] [--json]
  *
  * push skips when nothing changed since the last successful push (--force
  * sends anyway). watch uses recursive fs.watch (FSEvents on macOS, inotify on
  * Linux, Node >= 20) and pushes ~2s after a whitelisted file changes. service
  * keeps watch running: LaunchAgent on macOS, systemd user unit on Linux.
+ * watch also pushes the cockpit snapshot (services/gotchibot-api/cockpit.mjs)
+ * with each project push and every 60s, since roster/kanban/inbox change
+ * outside the watched files.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
@@ -24,6 +28,7 @@ import { isMainModule } from "./is-main.mjs";
 import { contentHashOf } from "./chat-canonical.mjs";
 import { hubRequest } from "./chat-hub-client.mjs";
 import { collectProjectSnapshot, snapshotPathOk } from "../services/gotchibot-api/projects.mjs";
+import { collectCockpitSnapshot } from "../services/gotchibot-api/cockpit.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_PATH = join(ROOT, "sessions/.hub-projects-push.json");
@@ -31,6 +36,7 @@ const LOG_DIR = join(ROOT, "sessions/hub-projects-push-logs");
 export const SERVICE_LABEL = "com.gotchibot.hub-projects-watch";
 export const SYSTEMD_UNIT = "gotchibot-hub-projects-watch.service";
 const DEBOUNCE_MS = 2000;
+const COCKPIT_INTERVAL_MS = 60_000;
 const RETRY_MS = 30_000;
 const RETRY_MAX_MS = 5 * 60_000;
 const TOP_SESSION_FILES = new Set([".hero-agent-state.json", ".project-current", ".pstack-dossier-current"]);
@@ -41,6 +47,11 @@ function readState() {
   } catch {
     return {};
   }
+}
+
+function writeState(patch) {
+  mkdirSync(dirname(STATE_PATH), { recursive: true });
+  writeFileSync(STATE_PATH, `${JSON.stringify({ ...readState(), ...patch }, null, 2)}\n`);
 }
 
 async function heroNameFn() {
@@ -77,9 +88,31 @@ export async function push({ force = false, dryRun = false, root = ROOT } = {}) 
   if (dryRun) return { ok: true, dryRun: true, ...summary };
   if (!force && readState().hash === hash) return { ok: true, skipped: "unchanged", ...summary };
   const res = await hubRequest("POST", "/api/gotchibot/projects/push", { body: snapshot });
-  mkdirSync(dirname(STATE_PATH), { recursive: true });
-  writeFileSync(STATE_PATH, `${JSON.stringify({ hash, pushedAt: res.pushedAt }, null, 2)}\n`);
+  writeState({ hash, pushedAt: res.pushedAt });
   return { ok: true, pushedAt: res.pushedAt, hubProjects: res.projects, ...summary };
+}
+
+/** Cockpit hash without collectedAt, so an idle desk doesn't push every minute. */
+export function cockpitHash(cockpit) {
+  const { collectedAt: _at, ...rest } = cockpit;
+  return contentHashOf(rest);
+}
+
+export async function pushCockpit({ force = false, dryRun = false, root = ROOT } = {}) {
+  const cockpit = await collectCockpitSnapshot({ root });
+  const hash = cockpitHash(cockpit);
+  const summary = {
+    agents: cockpit.roster.agents.length,
+    cards: cockpit.kanban.columns.reduce((n, c) => n + c.cards.length, 0),
+    messages: cockpit.inbox.messages.length,
+    bytes: Buffer.byteLength(JSON.stringify(cockpit), "utf8"),
+    hash,
+  };
+  if (dryRun) return { ok: true, dryRun: true, ...summary };
+  if (!force && readState().cockpitHash === hash) return { ok: true, skipped: "unchanged", ...summary };
+  const res = await hubRequest("POST", "/api/gotchibot/cockpit/push", { body: cockpit });
+  writeState({ cockpitHash: hash, cockpitPushedAt: res.pushedAt });
+  return { ok: true, pushedAt: res.pushedAt, ...summary };
 }
 
 /**
@@ -309,16 +342,38 @@ function service(action) {
 
 function startWatch() {
   let first = true;
+  let cockpitFirst = true;
+  let cockpitRunning = false;
+  const cockpit = async () => {
+    if (cockpitRunning) return;
+    cockpitRunning = true;
+    const force = cockpitFirst;
+    try {
+      const r = await pushCockpit({ force });
+      cockpitFirst = false;
+      if (!r.skipped) {
+        console.log(`${new Date().toISOString()} pushed cockpit (${r.agents} agents, ${r.cards} cards, ${r.messages} messages)`);
+      }
+    } catch (err) {
+      console.log(`${new Date().toISOString()} cockpit push failed: ${err.message || err}`);
+    } finally {
+      cockpitRunning = false;
+    }
+  };
   const w = watchProjects({
-    pushFn: () => {
+    pushFn: async () => {
       const force = first;
       first = false;
-      return push({ force });
+      const r = await push({ force });
+      void cockpit();
+      return r;
     },
   });
+  const tick = setInterval(() => void cockpit(), COCKPIT_INTERVAL_MS);
   console.log(`${new Date().toISOString()} watching ${w.watching().join(", ")} under ${ROOT}`);
   void w.flush();
   const stop = () => {
+    clearInterval(tick);
     w.close();
     process.exit(0);
   };
@@ -332,14 +387,24 @@ async function main(argv) {
   let result;
   if (cmd === "push") {
     result = await push({ force: rest.includes("--force"), dryRun: rest.includes("--dry-run") });
+  } else if (cmd === "cockpit") {
+    result = await pushCockpit({ force: rest.includes("--force"), dryRun: rest.includes("--dry-run") });
   } else if (cmd === "service") {
     result = service(rest[0] || "status");
   } else {
-    console.error("usage: hub projects push [--force] [--dry-run] [--json] | watch | service install|uninstall|status");
+    console.error(
+      "usage: hub projects push [--force] [--dry-run] [--json] | watch | service install|uninstall|status\n" +
+        "       hub cockpit push [--force] [--dry-run] [--json]",
+    );
     process.exit(2);
   }
   if (rest.includes("--json") || cmd === "service") {
     console.log(JSON.stringify(result, null, 2));
+  } else if (cmd === "cockpit") {
+    const what = `${result.agents} agents, ${result.cards} cards, ${result.messages} messages`;
+    if (result.skipped) console.log(`cockpit unchanged — ${what} (use --force to resend)`);
+    else if (result.dryRun) console.log(`would push cockpit: ${what}, ${result.bytes} bytes`);
+    else console.log(`pushed cockpit: ${what} at ${result.pushedAt}`);
   } else if (result.skipped) {
     console.log(`unchanged — ${result.projects} projects, ${result.files} files (use --force to resend)`);
   } else if (result.dryRun) {

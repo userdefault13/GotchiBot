@@ -31,10 +31,11 @@ function deviceName() {
   return /iPad/.test(navigator.userAgent) ? "iPad" : "iPhone";
 }
 
-function walletErrorText(err) {
+export function walletErrorText(err) {
   if (err?.code === 4001) return "Signature request was cancelled";
   if (err instanceof ApiError) {
     if (err.status === 503) return err.message;
+    if (err.status === 401 && /verify link/.test(err.message)) return err.message;
     if (err.status === 403 && /owner/.test(err.message)) {
       return "That wallet isn't the Hub owner — switch accounts and try again";
     }
@@ -149,7 +150,7 @@ export function renderLoginView(root) {
         kind: result.kind || "phone",
         walletAddress: result.walletAddress || address,
       });
-      navigate("#/projects", { replace: true });
+      navigate("#/cockpit", { replace: true });
     } catch (err) {
       showError(walletErrorText(err));
     } finally {
@@ -310,8 +311,8 @@ export function renderPairView(root, { prefills = null } = {}) {
       if (who?.walletAddress) {
         app.desk = await setDesk({ ...app.desk, walletAddress: who.walletAddress });
       }
-      // Drops #pair=CODE from the URL
-      navigate("#/projects", { replace: true });
+      // Drops #pair=CODE from the URL; main.js routes an unverified phone to #/verify.
+      navigate("#/cockpit", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 401 || err.kind === "unpaired") {

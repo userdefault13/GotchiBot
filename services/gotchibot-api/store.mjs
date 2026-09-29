@@ -8,10 +8,14 @@ import {
   hashToken,
   newDeskToken,
   newPairingCode,
+  newVerifyCode,
   normalizePairingCode,
 } from "./auth.mjs";
 
 const PAIRING_TTL_MS = 15 * 60 * 1000;
+const VERIFY_CODE_TTL_MS = 15 * 60 * 1000;
+const VERIFY_CODE_RE = /^gbv_[A-Za-z0-9_-]{32}$/;
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const WALLET_NONCE_TTL_MS = 5 * 60 * 1000;
 const PROJECT_SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 const SNAPSHOT_MAX_BYTES = 12 * 1024 * 1024;
@@ -124,7 +128,10 @@ export async function connectStore({ mongoUri, dbName }) {
   const pairingCodes = db.collection("pairing_codes");
   const hubRunner = db.collection("hub_runner");
   const walletNonces = db.collection("wallet_nonces");
+  /** One-time links that let a paired phone prove the owner wallet from a wallet browser. */
+  const walletVerifyCodes = db.collection("wallet_verify_codes");
   const projectSnapshot = db.collection("project_snapshot");
+  const cockpitSnapshot = db.collection("cockpit_snapshot");
   /** slug → { sessionId, threadId, lastMirroredId }: the project's OpenCode desk session. */
   const deskSessions = db.collection("desk_sessions");
 
@@ -150,6 +157,8 @@ export async function connectStore({ mongoUri, dbName }) {
     await chatThreads.createIndex({ project: 1, updatedAt: -1 });
     await walletNonces.createIndex({ nonce: 1 }, { unique: true });
     await walletNonces.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await walletVerifyCodes.createIndex({ codeHash: 1 }, { unique: true });
+    await walletVerifyCodes.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   }
 
   function threadAccessibleToPhone(thread, deskId) {
@@ -233,7 +242,11 @@ export async function connectStore({ mongoUri, dbName }) {
     await desks.updateOne({ deskId }, { $set: { lastSeen: now } });
   }
 
-  async function mintPairingCode({ name, kind } = {}) {
+  /**
+   * @param {{ name?: string, kind?: string, walletAddress?: string|null }} [opts]
+   *   walletAddress: set only by a verified owner-wallet handoff; the claimed desk inherits it.
+   */
+  async function mintPairingCode({ name, kind, walletAddress = null } = {}) {
     const deskKind = normalizeDeskKind(kind);
     const code = newPairingCode();
     const codeHash = hashToken(normalizePairingCode(code));
@@ -243,6 +256,10 @@ export async function connectStore({ mongoUri, dbName }) {
       codeHash,
       name: name != null ? String(name).slice(0, 128) : null,
       kind: deskKind,
+      walletAddress:
+        walletAddress && ADDRESS_RE.test(String(walletAddress))
+          ? String(walletAddress).toLowerCase()
+          : null,
       createdAt: now,
       expiresAt,
       usedAt: null,
@@ -306,7 +323,12 @@ export async function connectStore({ mongoUri, dbName }) {
       (name != null && String(name).trim()) ||
       (claimed.name && String(claimed.name)) ||
       "desk";
-    const issued = await insertDesk({ name: deskName, kind: finalKind, now });
+    const issued = await insertDesk({
+      name: deskName,
+      kind: finalKind,
+      walletAddress: claimed.walletAddress || null,
+      now,
+    });
     await pairingCodes.updateOne(
       { codeHash },
       { $set: { usedByDeskId: issued.deskId } },
@@ -367,6 +389,43 @@ export async function connectStore({ mongoUri, dbName }) {
       kind: "phone",
       walletAddress: String(address).toLowerCase(),
     });
+  }
+
+  /** One-time verify link for a paired desk (only the hash is stored). */
+  async function mintVerifyCode(deskId, { now = new Date() } = {}) {
+    const code = newVerifyCode();
+    const expiresAt = new Date(now.getTime() + VERIFY_CODE_TTL_MS);
+    await walletVerifyCodes.insertOne({
+      codeHash: hashToken(code),
+      deskId: String(deskId),
+      createdAt: now,
+      expiresAt,
+    });
+    return { code, expiresAt };
+  }
+
+  /** Atomically consume an unexpired verify code → its deskId, or null. */
+  async function consumeVerifyCode(code) {
+    if (!code || typeof code !== "string" || !VERIFY_CODE_RE.test(code)) return null;
+    const doc = await walletVerifyCodes.findOneAndDelete({
+      codeHash: hashToken(code),
+      expiresAt: { $gt: new Date() },
+    });
+    return doc ? { deskId: doc.deskId } : null;
+  }
+
+  /** Bind a verified owner wallet to an existing (non-revoked) desk. */
+  async function setDeskWallet(deskId, address) {
+    if (!ADDRESS_RE.test(String(address || ""))) {
+      const err = new Error("invalid wallet address");
+      err.status = 400;
+      throw err;
+    }
+    const r = await desks.updateOne(
+      { deskId: String(deskId), revokedAt: null },
+      { $set: { walletAddress: String(address).toLowerCase(), walletVerifiedAt: new Date() } },
+    );
+    return r.matchedCount > 0;
   }
 
   async function listDesks() {
@@ -1011,6 +1070,26 @@ export async function connectStore({ mongoUri, dbName }) {
     };
   }
 
+  /** Desk cockpit (header, roster, kanban, inbox, hub network) — one doc, replaced per push. */
+  async function putCockpitSnapshot({ deskId, cockpit }) {
+    const pushedAt = new Date();
+    await cockpitSnapshot.replaceOne(
+      { _id: "current" },
+      { _id: "current", deskId, pushedAt, cockpit },
+      { upsert: true },
+    );
+    return { pushedAt: pushedAt.toISOString() };
+  }
+
+  async function getCockpitSnapshot() {
+    const doc = await cockpitSnapshot.findOne({ _id: "current" });
+    if (!doc) return null;
+    return {
+      pushedAt: doc.pushedAt instanceof Date ? doc.pushedAt.toISOString() : doc.pushedAt,
+      cockpit: doc.cockpit || {},
+    };
+  }
+
   /** The project's shared desk thread; created on first open, never owned by a phone. */
   async function ensureDeskThread({ slug, title }) {
     const projectSlug = normalizeProjectSlug(slug);
@@ -1455,6 +1534,9 @@ export async function connectStore({ mongoUri, dbName }) {
     mintWalletNonce,
     consumeWalletNonce,
     createWalletDesk,
+    mintVerifyCode,
+    consumeVerifyCode,
+    setDeskWallet,
     listDesks,
     revokeDesk,
     pushMessages,
@@ -1475,6 +1557,8 @@ export async function connectStore({ mongoUri, dbName }) {
     getRunnerStatus,
     putProjectSnapshot,
     getProjectSnapshot,
+    putCockpitSnapshot,
+    getCockpitSnapshot,
     ensureDeskThread,
     getThread,
     getDeskSession,
