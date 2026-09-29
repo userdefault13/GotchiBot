@@ -35,6 +35,7 @@ import {
   hexNormalize,
   loadHeroState,
   persistHeroCollateral,
+  realTraits6,
   resolveHeroColors,
   starterSpiritFromHeroId,
   tokenIdFromHeroId,
@@ -437,23 +438,21 @@ async function heroIdentity() {
   }
 
   // Always enrich owned-* from Base wallet when traits missing (cheeks).
+  // Cart heroes carry Mock L1 placeholder traits (all 50) — realTraits6 skips those.
   const persisted = hero.id ? loadHeroState(hero.id) : null;
-  const hasTraits = Array.isArray(hero.modifiedTraits || hero.traits || hero.numericTraits)
-    && (hero.modifiedTraits || hero.traits || hero.numericTraits).length >= 6;
-  const hasPersistedTraits =
-    Array.isArray(persisted?.modifiedTraits) && persisted.modifiedTraits.length >= 6;
-  if (tokenIdFromHeroId(hero.id) && !hasTraits && !hasPersistedTraits) {
-    hero = await enrichFromWallet(hero);
+  const pickTraits = (h, p) =>
+    realTraits6(h.modifiedTraits) ||
+    realTraits6(h.traits) ||
+    realTraits6(h.numericTraits) ||
+    realTraits6(p?.modifiedTraits) ||
+    realTraits6(p?.numericTraits);
+  if (tokenIdFromHeroId(hero.id) && !pickTraits(hero, persisted)) {
+    const { modifiedTraits, traits: _t, numericTraits, ...rest } = hero;
+    hero = await enrichFromWallet(rest);
     colors = resolveHeroColors(hero, hero.id) || colors;
   }
 
-  const traits =
-    (Array.isArray(hero.modifiedTraits) && hero.modifiedTraits.length >= 6 && hero.modifiedTraits) ||
-    (Array.isArray(hero.traits) && hero.traits.length >= 6 && hero.traits) ||
-    (Array.isArray(hero.numericTraits) && hero.numericTraits.length >= 6 && hero.numericTraits) ||
-    (Array.isArray(persisted?.modifiedTraits) && persisted.modifiedTraits.length >= 6 && persisted.modifiedTraits) ||
-    (Array.isArray(persisted?.numericTraits) && persisted.numericTraits.length >= 6 && persisted.numericTraits) ||
-    [];
+  const traits = pickTraits(hero, persisted) || [];
 
   if ((colors?.primary || traits.length >= 6) && hero.id) {
     persistHeroCollateral(hero.id, {

@@ -243,6 +243,15 @@ function coerceTraits6Local(v) {
   return out;
 }
 
+/**
+ * Traits worth showing: Sepolia Mock L1 seeds every gotchi with [50,50,50,50,50,50], so an
+ * all-50 set is a placeholder, not the wallet gotchi's real eyeShape / eyeColor.
+ */
+export function realTraits6(v) {
+  const t = coerceTraits6Local(v);
+  return t && !t.every((n) => n === 50) ? t : null;
+}
+
 export function persistHeroCollateral(heroId, info = {}) {
   if (!heroId) return null;
   mkdirSync(SESSIONS, { recursive: true });
@@ -268,8 +277,9 @@ export function persistHeroCollateral(heroId, info = {}) {
     secondary: hexNormalize(info.secondary) || colors?.secondary || prev.secondary || null,
     sourceTokenId: info.sourceTokenId || prev.sourceTokenId || tokenIdFromHeroId(heroId) || null,
     // Eye cheeks: traits[4]=eyeShape, traits[5]=eyeColor (00–99).
-    modifiedTraits: coerceTraits6Local(info.modifiedTraits) || coerceTraits6Local(info.numericTraits) || prev.modifiedTraits || null,
-    numericTraits: coerceTraits6Local(info.numericTraits) || prev.numericTraits || null,
+    modifiedTraits:
+      realTraits6(info.modifiedTraits) || realTraits6(info.numericTraits) || realTraits6(prev.modifiedTraits) || null,
+    numericTraits: realTraits6(info.numericTraits) || realTraits6(prev.numericTraits) || null,
     at: new Date().toISOString(),
   };
   all[heroId] = next;
