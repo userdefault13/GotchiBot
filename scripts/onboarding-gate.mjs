@@ -285,15 +285,22 @@ function quitToTerminal() {
   process.exit(QUIT_CODE);
 }
 
+/** Options with `hotkey` are listed under the numbered ones and picked by that letter. */
 async function choose(prompt, options) {
   console.log("");
-  options.forEach((o, i) => console.log(`    ${i + 1}) ${o.label}`));
+  const numbered = options.filter((o) => !o.hotkey);
+  const hot = options.filter((o) => o.hotkey);
+  numbered.forEach((o, i) => console.log(`    ${i + 1}) ${o.label}`));
+  hot.forEach((o) => console.log(`    ${o.hotkey}) ${o.label}`));
   console.log(`    q) Quit`);
+  const range = [`1-${numbered.length}`, ...hot.map((o) => o.hotkey)].join("/");
   for (;;) {
-    const ans = (await rl.question(`\n  ${prompt} [1-${options.length}]: `)).trim().toLowerCase();
+    const ans = (await rl.question(`\n  ${prompt} [${range}]: `)).trim().toLowerCase();
     if (ans === "q" || ans === "quit") quitToTerminal();
+    const hit = hot.find((o) => o.hotkey === ans);
+    if (hit) return hit;
     const n = Number(ans);
-    if (n >= 1 && n <= options.length) return options[n - 1];
+    if (n >= 1 && n <= numbered.length) return numbered[n - 1];
     console.log("  invalid choice");
   }
 }
@@ -590,8 +597,25 @@ async function runWalletGotchiMint(wallet, cartridgeId) {
     label: formatGotchiLabel(g),
     gotchi: g,
   }));
+  const cartHeroes = cartridgeId
+    ? await withStatusBar("Loading cartridge cAavegotchis…", () => fetchDeskHeroes(wallet, cartridgeId))
+    : [];
+  const bound = alreadyBoundTokenIds(cartHeroes);
+  const pending = onChain.filter((g) => !bound.has(String(g.gotchiId ?? g.id))).length;
+  if (cartridgeId && pending > 0) {
+    const skipped = onChain.length - pending;
+    options.push({
+      key: "all",
+      hotkey: "a",
+      label: `Mint all ${pending} not on cart yet${skipped ? ` (${skipped} already on cart)` : ""} — one MetaMask confirm each`,
+    });
+  }
   const gPick = await choose("Which wallet gotchi?", options);
   if (!gPick) return null;
+  if (gPick.key === "all") {
+    const result = await mintAllWalletGotchis(wallet, cartridgeId, onChain, cartHeroes);
+    return result?.bound?.[0]?.heroId || null;
+  }
   const tokenId = String(gPick.key);
   const heroId = `owned-${tokenId}`;
 
