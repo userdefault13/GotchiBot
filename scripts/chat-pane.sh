@@ -88,6 +88,9 @@ fi
 cd "$ROOT"
 # shellcheck source=scripts/progress-bar.sh
 source "$ROOT/scripts/progress-bar.sh"
+# shellcheck source=scripts/boot-trace.sh
+source "$ROOT/scripts/boot-trace.sh"
+boot_mark "chat pane start"
 PROGRESS_FG=$'\033[38;5;213m'
 # Wisp (Gotchi Closet) — load key for remote MCP without printing it.
 if [ -z "${WISP_API_KEY:-}" ] && [ -f "$ROOT/sessions/.wisp.env" ]; then
@@ -158,13 +161,28 @@ quit_to_terminal() {
   exit 0
 }
 
+# One abra unlock per launch step: run the command under abra directly and only fall back
+# when abra itself failed before the command started (exit 125). A separate probe cost a
+# second Touch ID plus up to its timeout. Over SSH (no Touch ID) keep the bounded probe.
+abra_exec_once() {
+  local started="$ROOT/sessions/.abra-started.$$"
+  rm -f "$started"
+  abra run gotchibot -- /bin/sh -c ': > "$0"; exec "$@"' "$started" "$@"
+  local st=$?
+  if [ -e "$started" ]; then
+    rm -f "$started"
+    return "$st"
+  fi
+  return 125
+}
+
 # The cockpit reads wallet gotchis from the subgraph, which needs GOTCHIBOT_INFRA_TOKEN;
-# without it every load falls back to rate-limited Base RPC (~30-50s). Bounded probe so a
-# locked vault costs a few seconds, then plain node.
+# without it every load falls back to rate-limited Base RPC (~30-50s).
 cockpit_abra_ok() {
   [ "${GOTCHIBOT_SKIP_ABRA:-}" = "1" ] && return 1
   [ -n "${GOTCHIBOT_INFRA_TOKEN:-}" ] && return 1
   command -v abra >/dev/null 2>&1 || return 1
+  [ -z "${SSH_CONNECTION:-}" ] && return 0
   command -v perl >/dev/null 2>&1 || return 1
   printf '  Cockpit · unlocking subgraph key…\n' >&2
   perl -e 'alarm shift; exec @ARGV' "${GOTCHIBOT_COCKPIT_ABRA_TIMEOUT:-10}" \
@@ -173,14 +191,23 @@ cockpit_abra_ok() {
 
 run_onboarding_gate() {
   set +e
+  boot_mark "cockpit start"
+  local st=125
   if cockpit_abra_ok; then
-    abra run gotchibot -- env GOTCHIBOT_IN_CHAT_PANE=1 node "$ROOT/scripts/onboarding-gate.mjs" "$@"
-  else
-    GOTCHIBOT_IN_CHAT_PANE=1 node "$ROOT/scripts/onboarding-gate.mjs" "$@"
+    printf '  Cockpit · unlocking keys…\n' >&2
+    abra_exec_once env GOTCHIBOT_IN_CHAT_PANE=1 node "$ROOT/scripts/onboarding-gate.mjs" "$@"
+    st=$?
+    [ "$st" -eq 125 ] && printf '  Cockpit · abra unavailable — continuing without vault keys\n' >&2
   fi
-  local st=$?
-  # The cockpit turns on a tmux scrollbar for this pane; OpenCode scrolls itself.
-  [ -n "${TMUX_PANE:-}" ] && tmux set-option -p -u -t "$TMUX_PANE" pane-scrollbars 2>/dev/null
+  if [ "$st" -eq 125 ]; then
+    GOTCHIBOT_IN_CHAT_PANE=1 node "$ROOT/scripts/onboarding-gate.mjs" "$@"
+    st=$?
+  fi
+  boot_mark "cockpit closed"
+  # pane-scrollbars is window-scoped (tmux 3.7 ignores -p for it): left on, every
+  # desk pane — the 2-col Files strip included — loses a column to a scrollbar.
+  [ -n "${TMUX_PANE:-}" ] && tmux set-option -w -u -t "$TMUX_PANE" pane-scrollbars 2>/dev/null
+  [ -n "${TMUX_PANE:-}" ] && tmux set-option -p -u -t "$TMUX_PANE" pane-scrollbars-style 2>/dev/null
   set -e
   if [ "$st" -eq 2 ]; then
     quit_to_terminal
@@ -360,9 +387,9 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
       fi
       if [ -n "${TMUX:-}" ]; then
         if [ "$AGENT_ID" = "$ORCH_ID" ]; then
-          tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (orch) " 2>/dev/null || true
+          tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (orch) " 2>/dev/null || true
         else
-          tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " ${AGENT_ID} (sub) " 2>/dev/null || true
+          tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " ${AGENT_ID} (sub) " 2>/dev/null || true
         fi
       fi
       # GotchiBot slash commands: /orch /list /switch /cockpit (patched OpenClaw TUI via openclaw-gotchi.sh)
@@ -401,7 +428,7 @@ if [ "$AGENT" = "gotchi" ] && command -v node >/dev/null 2>&1; then
     openclaw/*) MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/big-pickle}" ;;
   esac
   if [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ] && [ -n "${TMUX:-}" ]; then
-    tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (OpenClaw) " 2>/dev/null || true
+    tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (OpenClaw) " 2>/dev/null || true
   fi
 else
   unset GOTCHIBOT_GOTCHI_BACKEND GOTCHIBOT_GOTCHI_MODEL GOTCHIBOT_GOTCHI_RELAY \
@@ -498,7 +525,7 @@ if [ -n "${TMUX:-}" ]; then
   if [ "$AGENT" = "gotchi" ] && [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ]; then
     border=" Gotchi (OpenClaw) "
   fi
-  tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format "$border" 2>/dev/null || true
+  tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format "$border" 2>/dev/null || true
   "$ROOT/scripts/tmux-chat-focus-hook.sh" 2>/dev/null || true
 fi
 
@@ -506,7 +533,7 @@ fi
 # one the phone and every other desk see. Offline/unpaired falls through to local OpenCode.
 set_chat_border() {
   [ -n "${TMUX:-}" ] || return 0
-  tmux set-option -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format "$1" 2>/dev/null || true
+  tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format "$1" 2>/dev/null || true
 }
 if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
   && [ "${GOTCHIBOT_HUB_DESK:-1}" != "0" ] && [ -f "$ROOT/sessions/.hub.json" ] \
@@ -554,26 +581,35 @@ if [ "$skip_abra" != "1" ] && command -v abra >/dev/null 2>&1; then
   # Unlock with a bounded probe ONLY — never put perl alarm around the live OpenCode TUI.
   # (alarm+exec on `abra … opencode` SIGALRM-killed the desk ~25s after boot / first reply.)
   mkdir -p "$ROOT/sessions"
-  abra_unlocked=0
-  # Probe must prove secrets inject — `abra … true` can succeed with an empty vault.
-  _abra_probe() {
-    abra run gotchibot -- /usr/bin/printenv 2>/dev/null | \
-      grep -E '^(NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=' | \
-      grep -q .
-  }
-  if command -v perl >/dev/null 2>&1; then
-    if perl -e 'alarm shift; exec @ARGV' "${GOTCHIBOT_ABRA_TIMEOUT:-25}" \
-      bash -c 'abra run gotchibot -- /usr/bin/printenv 2>/dev/null | grep -E "^(NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=" | grep -q .'; then
+  boot_mark "opencode launch (abra)"
+  if [ -z "${SSH_CONNECTION:-}" ]; then
+    set +e
+    abra_exec_once opencode "${args[@]}" "$ROOT"
+    oc_st=$?
+    set -e
+    [ "$oc_st" -eq 0 ] && quit_to_terminal
+  else
+    abra_unlocked=0
+    # Probe must prove secrets inject — `abra … true` can succeed with an empty vault.
+    _abra_probe() {
+      abra run gotchibot -- /usr/bin/printenv 2>/dev/null | \
+        grep -E '^(NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=' | \
+        grep -q .
+    }
+    if command -v perl >/dev/null 2>&1; then
+      if perl -e 'alarm shift; exec @ARGV' "${GOTCHIBOT_ABRA_TIMEOUT:-25}" \
+        bash -c 'abra run gotchibot -- /usr/bin/printenv 2>/dev/null | grep -E "^(NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=" | grep -q .'; then
+        abra_unlocked=1
+      fi
+    elif _abra_probe; then
       abra_unlocked=1
     fi
-  elif _abra_probe; then
-    abra_unlocked=1
-  fi
-  if [ "$abra_unlocked" = "1" ]; then
-    # No alarm: interactive TUI must own the process for the whole session.
-    # Keep stdout/stderr on the TTY — OpenCode Ink needs them.
-    if abra run gotchibot -- opencode "${args[@]}" "$ROOT"; then
-      quit_to_terminal
+    if [ "$abra_unlocked" = "1" ]; then
+      # No alarm: interactive TUI must own the process for the whole session.
+      # Keep stdout/stderr on the TTY — OpenCode Ink needs them.
+      if abra run gotchibot -- opencode "${args[@]}" "$ROOT"; then
+        quit_to_terminal
+      fi
     fi
   fi
   echo "gotchibot: abra inject failed or timed out — launching opencode without vault keys" >&2
@@ -589,5 +625,6 @@ printf '\r\033[K' >&2
 progress_pulse "GotchiCode · starting…" 12
 progress_end
 printf '\033[2J\033[H\033[3J' 2>/dev/null || true
+boot_mark "opencode launch (no vault keys)"
 opencode "${args[@]}" "$ROOT" || true
 quit_to_terminal

@@ -3,7 +3,7 @@
  * Interactive welcome / sign-in gate for GotchiBot tmux (center pane).
  */
 import readline from "node:readline/promises";
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync, statSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import { stripVTControlCharacters } from "node:util";
@@ -31,6 +31,7 @@ import {
 } from "./cartridge-sepolia.mjs";
 import { runLayout, tmuxSessionName as layoutSession } from "./tmux-layout.mjs";
 import { withStatusBar, Progress } from "./progress-bar.mjs";
+import { bootMark } from "./boot-trace.mjs";
 
 const CONCIERGE_MINT_URL = "https://www.aarcadeghst.com/concierge/terminal";
 const MARKETPLACE_URL = "https://aarcadeghst.com/gotchibot-templates";
@@ -151,12 +152,121 @@ function setCurrentProject(slug) {
   return true;
 }
 
+/** @returns {Promise<boolean>} true when the binding changed */
+async function connectRepoPrompt(slug, { optional = false } = {}) {
+  const { loadRepo, connectRepo, disconnectRepo, formatRepo } = await import("./project-context.mjs");
+  const cur = loadRepo(slug);
+  if (cur) console.log(`  repo     ${formatRepo(cur)}`);
+  console.log("  Repo: a folder (~/Dev/foo, or just foo), a git URL, or GitHub owner/repo.");
+  const hint = cur ? "Enter keeps it, - disconnects" : optional ? "Enter skips" : "Enter cancels";
+  const raw = (await rl.question(`  Repo (${hint}): `)).trim();
+  if (!raw) return false;
+  if (raw === "-") {
+    if (!cur) return false;
+    disconnectRepo(slug);
+    console.log(`  ✓ repo disconnected from ${slug}`);
+    return true;
+  }
+  try {
+    const r = connectRepo(raw, slug, { cwd: ROOT });
+    console.log(`  ✓ repo → ${formatRepo(r)}`);
+    if (!r.path) console.log(`  · no matching checkout under ~/Dev — clone it there and reconnect to link the folder`);
+    return true;
+  } catch (e) {
+    console.log(`  ✗ ${e?.message || e}`);
+    return false;
+  }
+}
+
+function timeAgo(iso) {
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (!Number.isFinite(s)) return "";
+  const units = [["y", 31536000], ["mo", 2592000], ["d", 86400], ["h", 3600], ["m", 60]];
+  for (const [u, n] of units) if (s >= n) return `${Math.floor(s / n)}${u} ago`;
+  return "just now";
+}
+
+const REPO_PAGE_SIZE = 10;
+
+/** Latest-pushed GitHub repos, 10 per page; pick one to connect to the project. */
+async function pickGithubRepo(slug, { optional = false } = {}) {
+  const gh = await import("./github-connect.mjs");
+  const { loadRepo, connectRepo, disconnectRepo, formatRepo } = await import("./project-context.mjs");
+  console.log("\n  Loading your GitHub repos (latest changes first)…");
+  const res = withTty(() => gh.listRecentRepos());
+  if (!res.ok || !res.repos?.length) {
+    console.log(`  · ${res.ok ? "no repos on this GitHub account" : res.error}`);
+    await connectRepoPrompt(slug, { optional });
+    await pause();
+    return;
+  }
+  const repos = res.repos;
+  const totalPages = Math.ceil(repos.length / REPO_PAGE_SIZE);
+  let page = 0;
+  for (;;) {
+    const cur = loadRepo(slug);
+    const slice = repos.slice(page * REPO_PAGE_SIZE, (page + 1) * REPO_PAGE_SIZE);
+    const width = Math.max(...slice.map((r) => r.fullName.length));
+    clear();
+    title("Connect to GitHub repo");
+    console.log(`  project  ${slug}`);
+    console.log(`  repo     ${formatRepo(cur)}\n`);
+    console.log(`  ${repos.length} repos · latest changes first · page ${page + 1}/${totalPages}`);
+    const options = slice.map((r) => ({
+      key: "repo",
+      repo: r,
+      label: [
+        r.fullName.padEnd(width),
+        timeAgo(r.pushedAt).padStart(8),
+        r.private ? "private" : "",
+        r.local ? "· local" : "",
+      ]
+        .filter(Boolean)
+        .join("  "),
+    }));
+    if (page < totalPages - 1) options.push({ key: "next", hotkey: "n", label: "Next page" });
+    if (page > 0) options.push({ key: "prev", hotkey: "p", label: "Previous page" });
+    options.push({ key: "manual", hotkey: "m", label: "Type a folder, git URL, or owner/repo" });
+    if (cur) options.push({ key: "disconnect", hotkey: "d", label: "Disconnect repo" });
+    options.push({ key: "back", hotkey: "b", label: optional ? "Skip" : "Back" });
+
+    const pick = await choose("Which repo?", options);
+    if (!pick || pick.key === "back") return;
+    if (pick.key === "next") page++;
+    else if (pick.key === "prev") page--;
+    else if (pick.key === "manual") {
+      const changed = await connectRepoPrompt(slug);
+      await pause();
+      if (changed) return;
+    } else if (pick.key === "disconnect") {
+      disconnectRepo(slug);
+      console.log(`  ✓ repo disconnected from ${slug}`);
+      await pause();
+    } else {
+      try {
+        const r = connectRepo(pick.repo.fullName, slug, { cwd: ROOT });
+        console.log(`\n  ✓ repo → ${formatRepo(r)}`);
+        if (!r.path) console.log("  · no matching checkout under ~/Dev — clone it there and reconnect to link the folder");
+        await pause();
+        return;
+      } catch (e) {
+        console.log(`  ✗ ${e?.message || e}`);
+        await pause();
+      }
+    }
+  }
+}
+
 async function selectProjectMenu({ freshInstall = false } = {}) {
   title("Select project");
   console.log("  Projects are sealed rooms — bots, meetings, and notes stay inside.");
   console.log("  Cart mirror: signed checkpoint (local default; IPFS via Settings).\n");
   const current = currentProjectSlug();
-  if (current) console.log(`  current  ${current}\n`);
+  if (current) {
+    const { loadRepo, formatRepo } = await import("./project-context.mjs");
+    console.log(`  current  ${current}`);
+    console.log(`  repo     ${formatRepo(loadRepo(current))}\n`);
+  }
 
   // Always list dossiers so a just-created project can be re-picked if the
   // pointer was cleared. Fresh nest only changes the nudge copy — not the list.
@@ -169,11 +279,17 @@ async function selectProjectMenu({ freshInstall = false } = {}) {
       key: `proj:${slug}`,
       label: slug === current ? `${slug}  (current)` : slug,
     })),
+    ...(current ? [{ key: "repo", label: "Connect to GitHub repo…" }] : []),
     { key: "new", label: "Create new project…" },
     { key: "back", label: "Back to cockpit" },
   ];
   const pick = await choose("Which project?", options);
   if (!pick || pick.key === "back") return;
+
+  if (pick.key === "repo") {
+    await pickGithubRepo(current);
+    return;
+  }
 
   if (pick.key === "new") {
     const raw = (await rl.question("  New project slug (a-z0-9._-): ")).trim();
@@ -200,7 +316,8 @@ async function selectProjectMenu({ freshInstall = false } = {}) {
       return;
     }
     console.log(`  ✓ project → ${raw}`);
-    await pause();
+    await pause("Press Enter to connect a GitHub repo (you can skip)…");
+    await pickGithubRepo(raw, { optional: true });
     return;
   }
 
@@ -227,24 +344,6 @@ rl.question = (query, ...rest) => {
   }
   return answer;
 };
-
-/** A tmux scrollbar on the cockpit pane while the cockpit runs (tmux >= 3.6). */
-function cockpitScrollbar(on) {
-  const pane = process.env.TMUX_PANE;
-  if (!process.env.TMUX || !pane) return;
-  const sets = on
-    ? [
-        ["pane-scrollbars", "on"],
-        ["pane-scrollbars-style", "fg=colour39,bg=colour236,width=1,pad=1"],
-      ]
-    : [["pane-scrollbars"], ["pane-scrollbars-style"]];
-  for (const [name, value] of sets) {
-    const args = value ? ["set-option", "-p", "-t", pane, name, value] : ["set-option", "-p", "-u", "-t", pane, name];
-    spawnSync("tmux", args, { stdio: "ignore" });
-  }
-}
-cockpitScrollbar(true);
-process.on("exit", () => cockpitScrollbar(false));
 
 function clear() {
   output.write("\x1b[2J\x1b[H\x1b[3J");
@@ -478,7 +577,7 @@ async function viewCartCAavegotchisMenu(wallet, cartridgeId) {
     return null;
   }
   const nest = await fetchDeskHeroes(wallet, cartridgeId);
-  const orch = await resolveValidOrchestratorId(wallet, cartridgeId);
+  const orch = await resolveValidOrchestratorId(wallet, cartridgeId, nest);
   const meta = loadMeta() || {};
   console.log(`  cart       #${cartridgeId}`);
   console.log(`  desk orch  ${orch || "(none)"}`);
@@ -919,15 +1018,15 @@ async function fetchDeskHeroes(wallet, cartridgeId) {
   }
 }
 
-/** Orch from cartridge heroes or the desk-local pin. */
-async function resolveValidOrchestratorId(wallet, cartridgeId) {
+/** Orch from cartridge heroes or the desk-local pin. Pass `nest` when already fetched. */
+async function resolveValidOrchestratorId(wallet, cartridgeId, nest = null) {
   const ob = loadOnboarding();
   const meta = loadMeta() || {};
   const raw = ob.orchestratorHeroId || null;
   if (!cartridgeId) return raw;
   if (!raw) return null;
 
-  const nest = await fetchDeskHeroes(wallet, cartridgeId);
+  nest = nest ?? (await fetchDeskHeroes(wallet, cartridgeId));
   const nestIds = new Set((nest || []).map((h) => String(h.id)));
   if (nestIds.has(String(raw))) return raw;
 
@@ -1477,10 +1576,90 @@ function speedLabel(n) {
   return hit ? `${hit.label} (${n})` : String(n);
 }
 
+/** abra may prompt (Touch ID / hidden input) — cockpit readline must let go of the tty. */
+function withTty(fn) {
+  try {
+    rl.pause();
+  } catch {}
+  try {
+    return fn();
+  } finally {
+    try {
+      rl.resume();
+    } catch {}
+  }
+}
+
+async function githubMenu() {
+  const gh = await import("./github-connect.mjs");
+  for (;;) {
+    clear();
+    title("GitHub");
+    console.log("  One token in abra (gotchibot / GOTCHIBOT_GITHUB_PAT) — the GitHub MCP");
+    console.log("  and repo tools read it from there. The value is never shown or saved elsewhere.\n");
+    const state = gh.loadGithubState();
+    const inAbra = gh.abraHasToken();
+    const ghUser = gh.ghLogin();
+    console.log(`  connected  ${gh.githubSummary()}`);
+    if (state?.scopes?.length) console.log(`  scopes     ${state.scopes.join(", ")}`);
+    console.log(
+      `  abra       ${inAbra ? "token stored" : inAbra === false ? "no token" : "(abra unavailable)"}`,
+    );
+    console.log(`  gh CLI     ${ghUser ? `logged in as @${ghUser}` : "not logged in"}`);
+    hr();
+
+    const opts = [];
+    if (ghUser) opts.push({ key: "gh", label: `Connect with gh CLI login (@${ghUser})` });
+    opts.push({ key: "token", label: "Connect with a personal access token" });
+    if (inAbra) {
+      opts.push({ key: "test", label: "Test connection" });
+      opts.push({ key: "disconnect", label: "Disconnect (remove token from abra)" });
+    }
+    opts.push({ key: "back", label: "Back to settings" });
+    const pick = await choose("GitHub", opts);
+    if (!pick || pick.key === "back") return;
+
+    let r;
+    if (pick.key === "gh") {
+      console.log("\n  Copying the gh token into abra (approve Touch ID if asked)…");
+      r = withTty(() => gh.connectWithGh());
+    } else if (pick.key === "token") {
+      console.log(`\n  Opening GitHub token page (scopes: repo, read:org, workflow)…`);
+      console.log(`  ${gh.TOKEN_URL}`);
+      try {
+        spawn("open", [gh.TOKEN_URL], { stdio: "ignore", detached: true }).unref();
+      } catch {
+        /* user can open manually */
+      }
+      console.log("  Generate it, copy it, then paste at abra's hidden prompt below.\n");
+      r = withTty(() => gh.connectWithToken());
+    } else if (pick.key === "test") {
+      console.log("\n  Checking the stored token with GitHub…");
+      r = withTty(() => gh.verifyGithub());
+    } else if (pick.key === "disconnect") {
+      const ans = (await rl.question("  Remove the GitHub token from abra? [y/N]: ")).trim().toLowerCase();
+      if (ans !== "y" && ans !== "yes") continue;
+      r = withTty(() => gh.disconnectGithub());
+      if (r.ok) {
+        console.log(r.removed ? "  ✓ disconnected" : "  ✓ nothing was stored");
+        await pause();
+        continue;
+      }
+    }
+    if (r?.ok) {
+      console.log(`  ✓ connected as @${r.login}${r.scopes?.length ? ` · ${r.scopes.join(", ")}` : ""}`);
+    } else if (r) {
+      console.log(`  ✗ ${r.error}`);
+    }
+    await pause();
+  }
+}
+
 async function settingsMenu() {
   for (;;) {
     const tts = loadTtsSettings();
     const tui = loadTuiPrefs();
+    const { githubSummary } = await import("./github-connect.mjs");
     let ipfsOn = false;
     try {
       const { isIpfsStorageEnabled } = await import("./project-context.mjs");
@@ -1495,6 +1674,7 @@ async function settingsMenu() {
     console.log(`  Mouse         ${tui.mouse ? "on" : "off"}  (OpenCode)`);
     console.log(`  Chat replay   ${tui.replay ? "on" : "off"}  (keeps history scrollable)`);
     console.log(`  Project store local always · IPFS ${ipfsOn ? "on" : "off"}`);
+    console.log(`  GitHub        ${githubSummary()}`);
     hr();
 
     const pick = await choose("Settings", [
@@ -1507,9 +1687,15 @@ async function settingsMenu() {
         key: "ipfs",
         label: `IPFS storage — ${ipfsOn ? "on" : "off"}  (local default; turn on when you have a pin)`,
       },
+      { key: "github", label: `GitHub — ${githubSummary()}` },
       { key: "back", label: "Back to cockpit" },
     ]);
     if (!pick || pick.key === "back") return;
+
+    if (pick.key === "github") {
+      await githubMenu();
+      continue;
+    }
 
     if (pick.key === "voice") {
       saveTtsSettings({ enabled: !tts.enabled });
@@ -2212,22 +2398,26 @@ async function runSealedCartMintMenu(wallet, { abraSnap = null } = {}) {
   }
 }
 
+let cockpitReadyMarked = false;
+
 async function mainMenu(wallet, cartridgeId) {
   for (;;) {
     clear();
     console.log(readWelcomeArt(12));
-    const heroes = await fetchDeskHeroes(wallet, cartridgeId);
-    const orchId = await resolveValidOrchestratorId(wallet, cartridgeId);
+    const [heroes, abraRead] = await Promise.all([
+      fetchDeskHeroes(wallet, cartridgeId),
+      readAbraCartridgeSepolia(wallet).then(
+        (snap) => ({ snap }),
+        (e) => ({ error: e }),
+      ),
+    ]);
+    const orchId = await resolveValidOrchestratorId(wallet, cartridgeId, heroes);
     const ob = { ...loadOnboarding(), orchestratorHeroId: orchId };
     const orch = orchId ?? "(none)";
-    let abraSnap = null;
-    let abraLine = "(skipped)";
-    try {
-      abraSnap = await readAbraCartridgeSepolia(wallet);
-      abraLine = formatAbraCartLine(abraSnap);
-    } catch (e) {
-      abraLine = `(read failed: ${e?.message || e})`;
-    }
+    const abraSnap = abraRead.snap ?? null;
+    const abraLine = abraRead.error
+      ? `(read failed: ${abraRead.error?.message || abraRead.error})`
+      : formatAbraCartLine(abraSnap);
 
     // Sepolia desk needs a GotchiBot cart before the full cockpit — open mint UI.
     // (Abra may already be minted; mint menu still offers Abra / Bundle / GBOT.)
@@ -2251,6 +2441,11 @@ async function mainMenu(wallet, cartridgeId) {
     }
     console.log(`  orchestrator ${orch}`);
     console.log(`  project     ${project || "(none — select local · Sepolia)"}`);
+    if (project) {
+      const { loadRepo, formatRepo } = await import("./project-context.mjs");
+      const repo = loadRepo(project);
+      if (repo) console.log(`  repo        ${formatRepo(repo)}`);
+    }
     if (needsGotchiBotCart) {
       const haveAbra = Boolean(abraSnap && abraSnap.cartridgeId);
       console.log(
@@ -2319,11 +2514,14 @@ async function mainMenu(wallet, cartridgeId) {
         : [{ key: "hub-implement", label: "Advanced: fleet ops over SSH" }]),
     ];
 
+    if (!cockpitReadyMarked) {
+      cockpitReadyMarked = true;
+      bootMark("cockpit menu ready");
+    }
     const pick = await choose("What next?", [
       { key: "launch", label: "Open desk" },
       { key: "select-project", label: "Switch to another project" },
-      { key: "checkpoint-project", label: "Save project to Sepolia" },
-      { key: "checkpoint-chat", label: "Checkpoint chat sync to Sepolia" },
+      { key: "checkpoint-project", label: "Save project to Sepolia (with chat sync)" },
       ...hubMenu,
       { key: "meet", label: "Start meeting / morning recap" },
       { key: "roster", label: "View agent roster (MBP + iMac · status)" },
@@ -2335,7 +2533,7 @@ async function mainMenu(wallet, cartridgeId) {
       { key: "mint", label: "Mint another wallet gotchi — Free (sub-agent identity)" },
       { key: "mint-collateral", label: "Mint a base collateral cAavegotchi ($5 USDC)" },
       { key: "marketplace", label: "View Marketplace" },
-      { key: "settings", label: "Settings (voice, read speed, mouse, replay, IPFS)" },
+      { key: "settings", label: "Settings (voice, read speed, mouse, replay, IPFS, GitHub)" },
       { key: "avatar", label: "Change orchestrator avatar" },
     ]);
     if (!pick) quitToTerminal();
@@ -2383,9 +2581,31 @@ async function mainMenu(wallet, cartridgeId) {
         continue;
       }
       console.log(`  Current project  ${proj}`);
-      console.log("  Writes gameState.projects onto the cartridge (signed checkpoint).");
-      console.log("  Local dossier stays on disk; Sepolia gets hash + URI pointer.\n");
+      console.log("  1) Snapshot the chat sync on your Hub");
+      console.log("  2) One signed checkpoint onto the cartridge: gameState.projects + chatSync");
+      console.log("  3) MetaMask checkpointSave on Base Sepolia (hash + URI pointer)");
+      console.log("  Local dossier stays on disk. No Hub / infra token → project only.\n");
       const label = `project:${proj}`;
+      // The chat path writes this pin right after the Hub snapshot and before its identity
+      // checkpoint; if it did not move, nothing was checkpointed and the project saves alone.
+      const pinPath = `${ROOT}/sessions/.chat-sync-checkpoint.json`;
+      const pinBefore = existsSync(pinPath) ? statSync(pinPath).mtimeMs : 0;
+      const chat = spawnSync(
+        process.execPath,
+        [`${ROOT}/scripts/chat-sync.mjs`, "checkpoint-prompt", "--onchain"],
+        {
+          cwd: ROOT,
+          env: { ...process.env, GOTCHIBOT_CHAT_CHECKPOINT: "1", GOTCHIBOT_CHAT_CHECKPOINT_LABEL: label },
+          stdio: "inherit",
+        },
+      );
+      const snapshotted = existsSync(pinPath) && statSync(pinPath).mtimeMs > pinBefore;
+      if (snapshotted) {
+        if (chat.status !== 0) console.log("  ✗ Sepolia send failed — the local checkpoint is saved; retry: gotchibot chats onchain");
+        await pause();
+        continue;
+      }
+      console.log("\n  · Chat sync unavailable — saving the project without it.");
       const r = spawnSync(
         process.execPath,
         [`${ROOT}/scripts/identity.mjs`, "checkpoint"],
@@ -2403,29 +2623,6 @@ async function mainMenu(wallet, cartridgeId) {
       } else {
         console.log(`  ✗ checkpoint failed: ${(err || out).slice(0, 400)}`);
         console.log("  Retry when Base Sepolia / Hub is healthy.");
-      }
-      await pause();
-      continue;
-    }
-
-    if (pick.key === "checkpoint-chat") {
-      title("Checkpoint chat sync to Sepolia");
-      console.log("  1) Snapshot on your Hub");
-      console.log("  2) Desk identity checkpoint (local snapshot)");
-      console.log("  3) Optional MetaMask checkpointSave on Base Sepolia\n");
-      console.log("  Needs GOTCHIBOT_INFRA_TOKEN + your pinned Hub's gotchibot-api healthy.\n");
-      const r = spawnSync(
-        process.execPath,
-        [`${ROOT}/scripts/chat-sync.mjs`, "checkpoint-prompt", "--onchain"],
-        {
-          cwd: ROOT,
-          encoding: "utf8",
-          env: { ...process.env, GOTCHIBOT_CHAT_CHECKPOINT: "1" },
-          stdio: "inherit",
-        },
-      );
-      if (r.status !== 0) {
-        console.log("  ✗ chat checkpoint failed — check home API + install token.");
       }
       await pause();
       continue;
@@ -2623,8 +2820,10 @@ async function runCockpit() {
     }
     const cartridgeId = await ensureCartridge(wallet);
     // Cockpit is settings/mint/roster — not first-time onboarding bind flow.
-    const heroes = await loadCartridgeHeroesQuiet(wallet, cartridgeId);
-    await ensureOrchestratorHero(heroes);
+    // mainMenu loads the roster itself; only fetch here when an orch must be picked first.
+    if (!loadOnboarding().orchestratorHeroId) {
+      await ensureOrchestratorHero(await loadCartridgeHeroesQuiet(wallet, cartridgeId));
+    }
     await mainMenu(wallet, cartridgeId);
   } finally {
     rl.close();

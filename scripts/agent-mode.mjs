@@ -139,7 +139,7 @@ function restartChatPane(agent) {
   rememberAgentSession(agent);
 
   const label = paneLabel(agent);
-  spawnSync("tmux", ["set-option", "-t", `${sess}:work.1`, "pane-border-format", label], {
+  spawnSync("tmux", ["set-option", "-p", "-t", `${sess}:work.1`, "pane-border-format", label], {
     stdio: "ignore",
   });
   const hasTmux = spawnSync("tmux", ["has-session", "-t", `=${sess}`], { stdio: "ignore" }).status === 0;

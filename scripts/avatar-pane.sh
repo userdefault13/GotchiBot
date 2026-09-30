@@ -81,11 +81,20 @@ if [ "${TUI_GLYPHS}" = "ascii" ]; then
   AV_ARROW_L="<"
   AV_ARROW_R=">"
   AV_RULE="--"
+  AV_SPIN=('|' '/' '-' '\')
 else
   AV_ARROW_L="←"
   AV_ARROW_R="→"
   AV_RULE="──"
+  AV_SPIN=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
 fi
+
+# Loading tiles spin until the roster resolves their colors. After this many
+# seconds of pane uptime a still-unresolved tile falls back to the default art,
+# so a gotchi the wallet never reports cannot spin forever.
+AV_LOADING_MAX="${GOTCHIBOT_AVATAR_LOADING_MAX:-90}"
+SPIN_FRAME=0
+LOADING_VISIBLE=0
 
 # chafa (optional SVG path): same flags as before for truecolor/unicode;
 # otherwise step colors down and use ascii symbols.
@@ -648,7 +657,7 @@ refresh_roster_async() {
   ) &
 }
 
-# Roster JSON -> "id␟status␟svg␟collateral␟haunt␟name␟role" rows (US-separated:
+# Roster JSON -> "id␟status␟svg␟collateral␟haunt␟name␟role␟loading" rows (US-separated:
 # `read` collapses runs of tab, so an empty tab field shifts every later one).
 roster_ids() {
   printf '%s' "${1:-}" | node -e '
@@ -656,7 +665,7 @@ roster_ids() {
       try {
         const j=JSON.parse(d);
         for (const o of (j.others||[])) {
-          console.log([o.id, o.status, o.svg||"", o.collateral||"", o.hauntId||"", o.name||"", o.role||""].join("\x1f"));
+          console.log([o.id, o.status, o.svg||"", o.collateral||"", o.hauntId||"", o.name||"", o.role||"", o.loading?"1":"0"].join("\x1f"));
         }
       } catch {}
     });
@@ -845,8 +854,23 @@ blank_block() {
   done
 }
 
+# Placeholder thumb while colors load: dim ghost outline, spinner in the middle.
+# Same 9x12 footprint as the roster thumb so the row does not jump when it resolves.
+loading_art() {
+  local s="${AV_SPIN[$(( ${1:-0} % ${#AV_SPIN[@]} ))]}" line
+  for line in '  _""""""_  ' '_"        "_' '#          #' '#          #' \
+    "#    $s     #" '#          #' '#          #' '#          #' '#__""__""__#'; do
+    if [ "${TUI_GLYPHS}" != "ascii" ]; then
+      line="${line//_/▄}"
+      line="${line//\"/▀}"
+      line="${line//#/█}"
+    fi
+    printf '%b%s%b\n' "$AV_MUTED" "$line" "$AV_RST"
+  done
+}
+
 cell_block() {
-  local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}" role="${9:-}"
+  local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}" role="${9:-}" loading="${10:-}"
   local art label status_color
   case "$status" in
     working)
@@ -879,8 +903,13 @@ cell_block() {
       label="available"
       ;;
   esac
+  if [ -n "$loading" ]; then
+    art="$(loading_art "$loading")"
+    name="loading…"
+    [ "${TUI_GLYPHS}" = "ascii" ] && name="loading..."
+  fi
   # Prefer the shared thumb ASCII; optional SVG only when explicitly enabled.
-  if [ "${GOTCHIBOT_THUMB_CHAFA:-0}" = "1" ]; then
+  if [ -z "${art:-}" ] && [ "${GOTCHIBOT_THUMB_CHAFA:-0}" = "1" ]; then
     art="$(mini_chafa "$svg" "$cell_w" "$cell_h")"
   fi
   if [ -z "${art:-}" ]; then
@@ -998,8 +1027,9 @@ render() {
   fi
 }
 
-# Framed orch block (art + caption), padded once per art/caption/width and
-# memoized by the caller. Same left pad on every line so the box stays aligned.
+# Framed orch block (art + caption lines), padded once per art/caption/width and
+# memoized by the caller. The art keeps one left pad on every line so the box
+# stays aligned; each caption line is centered on its own, like a roster tile.
 render_header_block() {
   local main="$1" caption="$2" cols="$3" max_rows="$4"
   local -a ART_LINES=()
@@ -1010,8 +1040,6 @@ render_header_block() {
     vislen_set "$line"
     [ "$VIS" -gt "$max_vis" ] && max_vis=$VIS
   done < <(printf '%s\n' "$main")
-  vislen_set "$caption"
-  [ "$VIS" -gt "$max_vis" ] && max_vis=$VIS
   if [ "$cols" -gt 0 ] && [ "$max_vis" -lt "$cols" ]; then
     block_lp=$(( (cols - max_vis) / 2 ))
   fi
@@ -1022,8 +1050,10 @@ render_header_block() {
     printf '\n'
     n=$((n + 1))
   done
-  block_pad_line "$caption" "$cols" "$block_lp"
-  printf '\n'
+  while IFS= read -r line || [ -n "$line" ]; do
+    center_pad "$line" "$cols"
+    printf '\n'
+  done < <(printf '%s\n' "$caption")
 }
 
 # One 3-col roster row: blank-fill missing cells, then join. Memoized by the
@@ -1050,7 +1080,8 @@ warm_other_cells() {
   local i v
   dbg "warm: $WARM_N tiles @ ${WARM_W}x${WARM_H}"
   for ((i = 0; i < WARM_N; i++)); do
-    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|${W_NAME[i]}|${W_ROLE[i]}|$WARM_W|$WARM_H" \
+    [ -n "${W_LOAD[i]:-}" ] && continue
+    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|${W_NAME[i]}|${W_ROLE[i]}||$WARM_W|$WARM_H" \
       cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}" "${W_NAME[i]}" "${W_ROLE[i]}"
   done
   WARM_DONE=1
@@ -1091,7 +1122,8 @@ render_body() {
   local grid_budget=15
   [ "$pane_h" -lt 28 ] && grid_budget=11
   [ "$pane_h" -gt 40 ] && grid_budget=19
-  local main_budget=$((pane_h - grid_budget - 3))
+  # -7: the 3-line caption (status · name · role) plus room for the roster's prev/next row.
+  local main_budget=$((pane_h - grid_budget - 7))
   [ "$main_budget" -lt 10 ] && main_budget=10
   # Meet-gallery tiles: face + caption only (no roster strip).
   if [ "$gallery" = 1 ]; then
@@ -1127,8 +1159,12 @@ render_body() {
   [ "$pin_name" = "$(printf '%s' "$pin_id" | tr '[:lower:]' '[:upper:]')" ] && pin_name=""
   pin_show="$pin_id"
   [ -n "$pin_name" ] && pin_show="$pin_name · $pin_id"
+  # Same stack as a roster tile: status, name, role — one centered line each.
   local caption
-  caption="$(printf '%b%s %s %s%b  %b%s%b  %s' "$role_color" "$AV_RULE" "$role" "$AV_RULE" "$AV_RST" "$status_color" "$status" "$AV_RST" "${pin_show}")"
+  caption="$(printf '%b%s%b\n%b%s%b\n%b%s%b' \
+    "$status_color" "$status" "$AV_RST" \
+    "$AV_ROSTER" "${pin_name:-$pin_id}" "$AV_RST" \
+    "$role_color" "$role" "$AV_RST")"
 
   # Framed orch (art + caption) padded once per (art, caption, width); a page
   # flip or a repaint only replays the lines. Do not clip the face.
@@ -1171,8 +1207,9 @@ render_body() {
   local cell_h=10
   [ "$cols" -ge 90 ] && cell_h=12
 
-  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR ROLE_ARR
-  while IFS=$'\x1f' read -r iid ist isvg icol ihaunt iname irole; do
+  # LOAD_ARR holds the spinner frame for a loading tile, empty once it resolved.
+  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR ROLE_ARR LOAD_ARR
+  while IFS=$'\x1f' read -r iid ist isvg icol ihaunt iname irole iload; do
     [ -z "$iid" ] && continue
     ID_ARR+=("$iid")
     ST_ARR+=("$ist")
@@ -1181,6 +1218,11 @@ render_body() {
     HAUNT_ARR+=("$ihaunt")
     NAME_ARR+=("$iname")
     ROLE_ARR+=("$irole")
+    if [ "$iload" = 1 ] && [ "$SECONDS" -lt "$AV_LOADING_MAX" ]; then
+      LOAD_ARR+=("$((SPIN_FRAME % ${#AV_SPIN[@]}))")
+    else
+      LOAD_ARR+=("")
+    fi
   done < <(printf '%s\n' "$ids")
 
   load_page
@@ -1202,27 +1244,32 @@ render_body() {
   W_HAUNT=("${HAUNT_ARR[@]}")
   W_NAME=("${NAME_ARR[@]}")
   W_ROLE=("${ROLE_ARR[@]}")
+  W_LOAD=("${LOAD_ARR[@]}")
 
   local i left mid right pair k1="" k2="" k3=""
   i=$((PAGE * page_size))
   left=""
   mid=""
   right=""
+  LOADING_VISIBLE=0
+  if [ -n "${LOAD_ARR[i]:-}${LOAD_ARR[i+1]:-}${LOAD_ARR[i+2]:-}" ]; then
+    LOADING_VISIBLE=1
+  fi
   if [ "$i" -lt "$n_ids" ]; then
     # r| = roster traits on large thumb; bump if roster tile art format changes
-    k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|$cell_w|$cell_h"
+    k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
     memo_call left "$k1" \
-      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}"
+      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}"
   fi
   if [ $((i + 1)) -lt "$n_ids" ]; then
-    k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|${ROLE_ARR[i+1]}|$cell_w|$cell_h"
+    k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|${ROLE_ARR[i+1]}|${LOAD_ARR[i+1]}|$cell_w|$cell_h"
     memo_call mid "$k2" \
-      cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}" "${ROLE_ARR[i+1]}"
+      cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}" "${ROLE_ARR[i+1]}" "${LOAD_ARR[i+1]}"
   fi
   if [ $((i + 2)) -lt "$n_ids" ]; then
-    k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|${ROLE_ARR[i+2]}|$cell_w|$cell_h"
+    k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|${ROLE_ARR[i+2]}|${LOAD_ARR[i+2]}|$cell_w|$cell_h"
     memo_call right "$k3" \
-      cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}" "${ROLE_ARR[i+2]}"
+      cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}" "${ROLE_ARR[i+2]}" "${LOAD_ARR[i+2]}"
   fi
   memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
   while IFS= read -r line || [ -n "$line" ]; do
@@ -1387,18 +1434,24 @@ case "${1:-watch}" in
     [ -n "$read_t" ] || read_t=8
     dbg "watch: start"
     watch_enter
-    refresh_roster
-    dbg "watch: roster refreshed"
+    # First paint from the last roster on disk; the rebuild reads the Sepolia cartridge
+    # (~2s, longer while the cockpit hits the same RPC). The tick repaints when it lands.
+    [ -f "$ROSTER_CACHE" ] || refresh_roster
     render_now || true
     dbg "watch: first paint done"
     LAST_FP="$(state_fingerprint)"
+    ( refresh_roster; kill -USR1 $$ 2>/dev/null ) &
     refresh_roster_async
     load_page; LAST_PAGE_DRAWN="$PAGE"
     warm_other_cells || true
     dbg "watch: warm done"
+    spin_t=1
+    [ "${BASH_VERSINFO[0]}" -ge 4 ] && spin_t=0.25
     while true; do
       key=""
-      if read -rsn1 -t "$read_t" key; then
+      tick_t="$read_t"
+      [ "$LOADING_VISIBLE" = 1 ] && tick_t="$spin_t"
+      if read -rsn1 -t "$tick_t" key; then
         if handle_key "$key"; then
           safe_render
         fi
@@ -1414,7 +1467,13 @@ case "${1:-watch}" in
         continue
       fi
       fp="$(state_fingerprint)"
-      [ "$fp" = "$LAST_FP" ] && continue
+      if [ "$fp" = "$LAST_FP" ]; then
+        if [ "$LOADING_VISIBLE" = 1 ]; then
+          SPIN_FRAME=$((SPIN_FRAME + 1))
+          safe_render
+        fi
+        continue
+      fi
       dbg "tick: fp changed ($LAST_FP -> $fp)"
       memo_reset
       refresh_roster

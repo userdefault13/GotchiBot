@@ -17,6 +17,8 @@
  *   node scripts/project-context.mjs roster [<slug>] [--json]
  *   node scripts/project-context.mjs roster-add <hero> [<slug>]
  *   node scripts/project-context.mjs mail show|set [<slug>] [--address …] [--inbox-id …]
+ *   node scripts/project-context.mjs repo show|clear [<slug>] [--json]
+ *   node scripts/project-context.mjs repo set <path|git-url|owner/repo> [<slug>]
  *   node scripts/project-context.mjs ensure [<slug>]
  */
 import {
@@ -25,12 +27,18 @@ import {
   mkdirSync,
   existsSync,
   readdirSync,
+  statSync,
+  unlinkSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+/** Sibling checkouts (~/Dev) — where bare repo names and URL checkouts are looked up. */
+const DEV_ROOT = dirname(ROOT);
 const SESSIONS = join(ROOT, "sessions");
 const PSTACK_ROOT = join(SESSIONS, "pstack");
 const DOSSIER_CURRENT = join(SESSIONS, ".pstack-dossier-current");
@@ -250,6 +258,138 @@ export function saveMail(patch = {}, slug = currentProjectSlug()) {
   delete next.AGENTMAIL_API_KEY;
   writeFileSync(mailPath(slug), `${JSON.stringify(next, null, 2)}\n`, "utf8");
   return next;
+}
+
+export function repoPath(slug = currentProjectSlug()) {
+  const root = projectRoot(slug);
+  return root ? join(root, "repo.json") : null;
+}
+
+/** Connected code repo for a project, or null when none is connected. */
+export function loadRepo(slug = currentProjectSlug()) {
+  const rp = repoPath(slug);
+  if (!rp || !existsSync(rp)) return null;
+  try {
+    return JSON.parse(readFileSync(rp, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function gitOut(cwd, args) {
+  const r = spawnSync("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  return r.status === 0 ? String(r.stdout || "").trim() || null : null;
+}
+
+function isDir(p) {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isGitUrl(s) {
+  return /^(https?:\/\/|ssh:\/\/|git:\/\/|[\w.-]+@[\w.-]+:)/.test(s);
+}
+
+/** https://user:token@host/… must never land in repo.json. */
+function stripUrlCredentials(url) {
+  return String(url || "").replace(/^(https?:\/\/)[^@/]+@/i, "$1");
+}
+
+/** Comparable form of a remote: host/owner/repo, lowercase, no scheme/user/.git. */
+function remoteKey(url) {
+  return String(url || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z+]+:\/\//, "")
+    .replace(/^[^@/]+@/, "")
+    .replace(/:(?!\d)/, "/")
+    .replace(/\.git$/, "")
+    .replace(/\/+$/, "");
+}
+
+function repoNameFromRemote(url) {
+  return (
+    String(url || "")
+      .trim()
+      .replace(/\.git$/, "")
+      .replace(/\/+$/, "")
+      .split(/[/:]/)
+      .pop() || null
+  );
+}
+
+function describeCheckout(dir) {
+  const top = gitOut(dir, ["rev-parse", "--show-toplevel"]);
+  if (!top) return null;
+  const origin = gitOut(top, ["remote", "get-url", "origin"]);
+  return {
+    path: top,
+    remote: origin ? stripUrlCredentials(origin) : null,
+    branch: gitOut(top, ["rev-parse", "--abbrev-ref", "HEAD"]),
+  };
+}
+
+/**
+ * Resolve what the user typed into a repo binding:
+ *   local folder (~/Dev/x, absolute, relative, or a bare name under ~/Dev) → must be a git checkout
+ *   git URL or owner/repo (GitHub) → remote, plus the ~/Dev checkout when its origin matches
+ */
+export function resolveRepoTarget(input, { cwd = process.cwd() } = {}) {
+  const raw = String(input || "").trim();
+  if (!raw) throw new Error("repo path, git URL, or owner/repo required");
+
+  const expanded = raw.replace(/^~(?=$|\/)/, homedir());
+  const bare = !/[/~]/.test(raw) && raw !== "." && raw !== "..";
+  const candidates = bare ? [join(DEV_ROOT, raw), resolve(cwd, raw)] : [resolve(cwd, expanded)];
+  const dir = isGitUrl(raw) ? null : candidates.find(isDir);
+  if (dir) {
+    const checkout = describeCheckout(dir);
+    if (!checkout) throw new Error(`${dir} is not a git repo`);
+    return { name: checkout.path.split("/").pop(), ...checkout };
+  }
+
+  let remote = null;
+  if (isGitUrl(raw)) remote = stripUrlCredentials(raw);
+  else if (/^[\w.-]+\/[\w.-]+$/.test(raw)) remote = `https://github.com/${raw.replace(/\.git$/, "")}.git`;
+  if (!remote) throw new Error(`no such folder, git URL, or owner/repo: ${raw}`);
+
+  const name = repoNameFromRemote(remote);
+  const local = name ? join(DEV_ROOT, name) : null;
+  const checkout = local && isDir(local) ? describeCheckout(local) : null;
+  if (checkout?.remote && remoteKey(checkout.remote) === remoteKey(remote)) {
+    return { name, path: checkout.path, remote, branch: checkout.branch };
+  }
+  return { name, path: null, remote, branch: null };
+}
+
+export function connectRepo(input, slug = currentProjectSlug(), opts = {}) {
+  if (!slug) throw new Error("no project selected");
+  ensureProjectDirs(slug);
+  const next = {
+    project: slug,
+    ...resolveRepoTarget(input, opts),
+    connectedAt: new Date().toISOString(),
+  };
+  writeFileSync(repoPath(slug), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
+}
+
+export function disconnectRepo(slug = currentProjectSlug()) {
+  const rp = repoPath(slug);
+  if (rp && existsSync(rp)) unlinkSync(rp);
+}
+
+export function formatRepo(repo) {
+  if (!repo) return "(none)";
+  const where = repo.path ? repo.path.replace(homedir(), "~") : "no local checkout";
+  const branch = repo.branch ? ` @ ${repo.branch}` : "";
+  return `${repo.name || "repo"} · ${where}${branch}`;
 }
 
 export function ensureProjectDirs(slug = currentProjectSlug()) {
@@ -544,6 +684,8 @@ function usage() {
   project-context roster-add <hero> [<slug>]
   project-context mail show [<slug>] [--json]
   project-context mail set [<slug>] --address <email> [--inbox-id <id>]
+  project-context repo show|clear [<slug>] [--json]
+  project-context repo set <path|git-url|owner/repo> [<slug>]
   project-context ensure [<slug>]`);
   process.exit(2);
 }
@@ -692,6 +834,43 @@ async function main() {
       if (inboxId) patch.inboxId = inboxId;
       const m = saveMail(patch, slug);
       console.log(`mail → ${slug}  ${m.address || "—"}  inbox ${m.inboxId || "—"}`);
+      return;
+    }
+    usage();
+  }
+  if (cmd === "repo") {
+    const sub = args[0] || "show";
+    if (sub === "set") {
+      const target = args[1];
+      const slug = args[2] || currentProjectSlug();
+      if (!target) usage();
+      if (!slug) {
+        console.error("no project selected");
+        process.exit(1);
+      }
+      const r = connectRepo(target, slug);
+      if (json) console.log(JSON.stringify(r, null, 2));
+      else console.log(`repo → ${slug}  ${formatRepo(r)}${r.remote ? `  (${r.remote})` : ""}`);
+      return;
+    }
+    const slug = args[1] || currentProjectSlug();
+    if (!slug) {
+      console.error("no project selected");
+      process.exit(1);
+    }
+    if (sub === "clear") {
+      disconnectRepo(slug);
+      console.log(`repo → ${slug}  (none)`);
+      return;
+    }
+    if (sub === "show") {
+      const r = loadRepo(slug);
+      if (json) console.log(JSON.stringify(r, null, 2));
+      else {
+        console.log(`project  ${slug}`);
+        console.log(`repo     ${formatRepo(r)}`);
+        if (r?.remote) console.log(`remote   ${r.remote}`);
+      }
       return;
     }
     usage();

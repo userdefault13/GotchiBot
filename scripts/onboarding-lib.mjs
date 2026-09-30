@@ -625,31 +625,102 @@ export async function fetchWalletGotchiById(address, gotchiId) {
  * Gotchi names by token id — core subgraph first, Base RPC for any it misses.
  * @returns {Promise<Map<string, string>>} tokenId → name (unnamed/unknown ids omitted)
  */
-export async function fetchGotchiNames(tokenIds) {
-  const ids = [...new Set((tokenIds || []).map((t) => String(t).trim()).filter((t) => /^\d+$/.test(t)))];
-  const names = new Map();
-  if (!ids.length) return names;
-  try {
-    const data = await postSubgraph(
-      `query GotchiNames($ids: [String!]!) {
-        aavegotchis(first: 1000, where: { id_in: $ids }) { id gotchiId name }
-      }`,
-      { ids },
-    );
-    for (const g of data?.aavegotchis ?? []) {
-      const name = String(g.name || "").trim();
-      if (name) names.set(String(g.gotchiId ?? g.id), name);
-    }
-  } catch {}
+const NAME_CACHE_PATH = `${SESSIONS}/.gotchi-names.json`;
+/** Names rarely change; without the subgraph key a cold lookup is ~1s of Base RPC per gotchi. */
+const NAME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** A failed RPC lookup walks every fallback RPC (~10s) — don't repeat it on every launch. */
+const NAME_FAIL_TTL_MS = 60 * 60 * 1000;
 
-  const missing = ids.filter((id) => !names.has(id));
+function readNameCache() {
+  try {
+    return JSON.parse(readFileSync(NAME_CACHE_PATH, "utf8")).names || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeNameCache(names) {
+  try {
+    mkdirSync(SESSIONS, { recursive: true });
+    writeFileSync(NAME_CACHE_PATH, `${JSON.stringify({ names, updatedAt: new Date().toISOString() }, null, 2)}\n`);
+  } catch {
+    /* cache is best-effort */
+  }
+}
+
+/**
+ * Gotchi profiles by token id — name, collateral token address, haunt — core subgraph first,
+ * Base RPC for any it misses. The collateral address keys straight into the AarcadeGh-t
+ * collateral library (colors + SVGs), so colors never depend on guessing from a name.
+ * Cached in sessions/.gotchi-names.json; entries from before collateral was stored refetch once.
+ * @returns {Promise<Map<string, { name: string|null, collateral: string|null, hauntId: number|null }>>}
+ */
+export async function fetchGotchiProfiles(tokenIds) {
+  const ids = [...new Set((tokenIds || []).map((t) => String(t).trim()).filter((t) => /^\d+$/.test(t)))];
+  const profiles = new Map();
+  if (!ids.length) return profiles;
+
+  const cache = readNameCache();
+  const now = Date.now();
+  const at = new Date(now).toISOString();
+  let dirty = false;
+  const remember = (id, info) => {
+    const hauntId = Number(info.hauntId);
+    cache[id] = {
+      name: String(info.name || "").trim(),
+      collateral: info.collateral ? String(info.collateral).toLowerCase() : null,
+      hauntId: Number.isFinite(hauntId) && hauntId > 0 ? hauntId : null,
+      at,
+    };
+    dirty = true;
+    profiles.set(id, cache[id]);
+  };
+  const stale = [];
+  for (const id of ids) {
+    const hit = cache[id];
+    const ttl = hit?.failed ? NAME_FAIL_TTL_MS : NAME_CACHE_TTL_MS;
+    const complete = hit && (hit.failed || hit.collateral !== undefined);
+    if (complete && now - Date.parse(hit.at) < ttl) {
+      profiles.set(id, hit);
+    } else {
+      stale.push(id);
+    }
+  }
+
+  if (stale.length) {
+    try {
+      const data = await postSubgraph(
+        `query GotchiProfiles($ids: [String!]!) {
+          aavegotchis(first: 1000, where: { id_in: $ids }) { id gotchiId name collateral hauntId }
+        }`,
+        { ids: stale },
+      );
+      for (const g of data?.aavegotchis ?? []) remember(String(g.gotchiId ?? g.id), g);
+    } catch {}
+  }
+
+  const missing = stale.filter((id) => !profiles.has(id));
   for (let i = 0; i < missing.length; i += RPC_NAME_BATCH) {
     const chunk = missing.slice(i, i + RPC_NAME_BATCH);
     const infos = await Promise.all(chunk.map((id) => fetchAavegotchiInfo(id).catch(() => null)));
     chunk.forEach((id, j) => {
-      const name = String(infos[j]?.name || "").trim();
-      if (name) names.set(id, name);
+      if (infos[j]) {
+        remember(id, infos[j]);
+      } else {
+        cache[id] = { ...cache[id], failed: true, at };
+        dirty = true;
+        profiles.set(id, cache[id]);
+      }
     });
+  }
+  if (dirty) writeNameCache(cache);
+  return profiles;
+}
+
+export async function fetchGotchiNames(tokenIds) {
+  const names = new Map();
+  for (const [id, p] of await fetchGotchiProfiles(tokenIds)) {
+    if (p?.name) names.set(id, p.name);
   }
   return names;
 }

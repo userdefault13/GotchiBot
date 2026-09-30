@@ -152,6 +152,11 @@ function roleFromFocus() {
   return "orchestrator";
 }
 
+// A tile is still loading while its id is an unmapped cartridge key, or it is a
+// wallet gotchi whose collateral colors have not been fetched yet.
+const RAW_HERO_KEY = /^0x[0-9a-f]{64}$/i;
+const TOKEN_HERO_ID = /^(owned|rental)-\d+$/;
+
 async function build() {
   const refresh = process.argv.includes("--refresh");
   const meta = loadMeta();
@@ -174,6 +179,20 @@ async function build() {
   for (const b of builtinHeroes()) {
     if (list.some((h) => h.id === b.id)) continue;
     list.push({ id: b.id, name: b.name, collateral: null, hauntId: null, bindType: b.bindType, agentStatus: "available" });
+  }
+  // --refresh runs in the pane's background refresh (under abra, so the subgraph token is
+  // set): pull each gotchi's collateral address for resolveThumbCollateral below. The
+  // plain-node fast path only reads what this cached.
+  if (refresh) {
+    const tokenIds = list
+      .map((h) => h.sourceTokenId || /^(?:owned|rental)-(\d+)$/.exec(String(h.id))?.[1])
+      .filter(Boolean);
+    if (tokenIds.length) {
+      try {
+        const { fetchGotchiProfiles } = await import("./onboarding-lib.mjs");
+        await fetchGotchiProfiles(tokenIds);
+      } catch {}
+    }
   }
   const busy = busyHeroIds();
   const roles = readJson(`${ROOT}/config/agent-roles.json`, {}) || {};
@@ -199,6 +218,7 @@ async function build() {
         hauntId: thumb.hauntId || h.hauntId || null,
         bindType: h.bindType || null,
         role: roles[h.id] || null,
+        loading: RAW_HERO_KEY.test(h.id) || (TOKEN_HERO_ID.test(h.id) && !thumb?.primary),
         status,
         svg: existsSync(`${AVATARS}/${h.id}.svg`) ? `${AVATARS}/${h.id}.svg` : null,
       };

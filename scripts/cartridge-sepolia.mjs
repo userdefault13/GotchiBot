@@ -4,7 +4,7 @@
  * RPC: BASE_SEPOLIA_RPC or https://sepolia.base.org
  * Addresses: config/subgraph.endpoints.json identityLayer + env overrides.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
@@ -209,17 +209,69 @@ export async function readSepoliaHeroes(cartridgeId) {
   } catch {
     activeKey = null;
   }
-  const heroes = await Promise.all(
-    keys.map(async (key) => {
+  // Public Sepolia RPC rate-limits a burst of getHero calls (13–16 of 22 failed back to
+  // back), and a failed read used to surface the raw bytes32 key as the hero id. Keys are
+  // immutable, so a resolved hero is cached and stands in when a later read fails.
+  const cache = readHeroCache();
+  const cacheKey = (key) => `${cartId}:${key}`;
+  let dirty = false;
+  const heroes = await mapLimit(keys, HERO_READ_CONCURRENCY, async (key) => {
+    for (let attempt = 0; attempt < HERO_READ_ATTEMPTS; attempt++) {
       try {
-        return heroFromChain(key, await cartC.getHero(cartId, key), activeKey);
+        const hero = heroFromChain(key, await cartC.getHero(cartId, key), activeKey);
+        const { active: _active, ...keep } = hero;
+        cache[cacheKey(key)] = keep;
+        dirty = true;
+        return hero;
       } catch {
-        return heroFromChain(key, null, activeKey);
+        if (attempt < HERO_READ_ATTEMPTS - 1) await sleep(250 * 2 ** attempt);
       }
-    }),
-  );
+    }
+    const cached = cache[cacheKey(key)];
+    if (cached) return { ...cached, active: Boolean(activeKey) && activeKey === key, stale: true };
+    return heroFromChain(key, null, activeKey);
+  });
+  if (dirty) writeHeroCache(cache);
   const active = heroes.find((h) => h.active);
   return { cartridgeId: cartId.toString(), activeHeroId: active?.id ?? null, heroes };
+}
+
+const HERO_CACHE = resolve(ROOT, "sessions", ".sepolia-heroes.json");
+const HERO_READ_CONCURRENCY = 4;
+const HERO_READ_ATTEMPTS = 3;
+
+function readHeroCache() {
+  try {
+    return JSON.parse(readFileSync(HERO_CACHE, "utf8")).heroes || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeHeroCache(heroes) {
+  try {
+    mkdirSync(dirname(HERO_CACHE), { recursive: true });
+    writeFileSync(HERO_CACHE, `${JSON.stringify({ heroes, updatedAt: new Date().toISOString() }, null, 2)}\n`);
+  } catch {
+    /* cache is best-effort */
+  }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 /**

@@ -403,7 +403,7 @@ export async function promptChatCheckpointAfterCommit({
     json: Boolean(process.env.GOTCHIBOT_CHAT_CHECKPOINT_QUIET),
   });
   const short = String(commitSha || snap.gitCommit || "").slice(0, 7);
-  const label = `chat-sync:${short || "head"}`;
+  const label = process.env.GOTCHIBOT_CHAT_CHECKPOINT_LABEL || `chat-sync:${short || "head"}`;
   const pin = {
     label,
     stateUri: snap.stateUri,

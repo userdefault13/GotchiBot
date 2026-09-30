@@ -22,6 +22,7 @@ usage() {
 gotchibot — GotchiBot orchestrator CLI
 
   gotchibot tmux                  open orchestrator (sidebar | chat | avatar)
+  gotchibot boot-trace [--json]   where the last launch spent its time
   gotchibot chat                    chat pane runtime (OpenCode)
   gotchibot sidebar               toggle medium file explorer (mc)
                                   # in mc: F2 → Add to Gotchi chat (or press a)
@@ -246,6 +247,25 @@ maybe_update_check() {
   node "$ROOT/scripts/update-check.mjs" --launch 2>/dev/null || true
 }
 
+# Grow the terminal window to the desk size (orchestrator-layout.sh defaults) before
+# attach, so a stock 80x24 Terminal does not push the avatar pane off-screen. xterm
+# window op CSI 8;rows;cols t — Apple Terminal and iTerm2 honor it and clamp to the
+# screen. Never shrinks; skipped over SSH and inside tmux. GOTCHIBOT_RESIZE_WINDOW=0 opts out.
+fit_terminal_window() {
+  [ "${GOTCHIBOT_RESIZE_WINDOW:-1}" = 0 ] && return 0
+  [ -n "${SSH_CONNECTION:-}${TMUX:-}" ] && return 0
+  local want_c="${GOTCHIBOT_WINDOW_WIDTH:-131}" want_r="${GOTCHIBOT_WINDOW_HEIGHT:-40}"
+  local cols rows
+  cols="$(tput cols 2>/dev/null || echo 0)"
+  rows="$(tput lines 2>/dev/null || echo 0)"
+  [ "$cols" -ge "$want_c" ] && [ "$rows" -ge "$want_r" ] && return 0
+  [ "$cols" -gt "$want_c" ] && want_c="$cols"
+  [ "$rows" -gt "$want_r" ] && want_r="$rows"
+  printf '\033[8;%d;%dt' "$want_r" "$want_c"
+  # The resize lands asynchronously; let the tty size settle before tmux reads it.
+  sleep 0.2
+}
+
 cmd_tmux() {
   if ! command -v tmux >/dev/null 2>&1; then
     node "$ROOT/scripts/wsl-setup.mjs" 2>/dev/null || true
@@ -259,14 +279,21 @@ cmd_tmux() {
   fi
   # shellcheck source=scripts/progress-bar.sh
   source "$ROOT/scripts/progress-bar.sh"
+  # shellcheck source=scripts/boot-trace.sh
+  source "$ROOT/scripts/boot-trace.sh"
+  boot_mark "launch" reset
+  fit_terminal_window
   # Gotchi pink while the shell is blank before tmux attach.
   PROGRESS_FG=$'\033[38;5;213m'
   progress_pulse "GotchiBot · starting…" 0
   maybe_update_check
-  progress_pulse "GotchiBot · syncing fleet…" 4
+  boot_mark "update check"
   # Do not wrap in abra — tmux attach needs a real TTY (abra breaks attach).
   # API keys are injected inside chat/sub-agent panes when needed.
-  sync_openclaw_fleet
+  # Fleet config only feeds sub-agent spawns — refresh it behind the desk, not in front of it.
+  ( trap '' HUP; sync_openclaw_fleet; boot_mark "fleet sync done (background)" ) \
+    </dev/null >>"$SESSIONS/.fleet-sync.log" 2>&1 &
+  disown 2>/dev/null || true
   local sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
   sess_name="${sess_name#=}"
   local sess="$sess_name"
@@ -286,6 +313,7 @@ cmd_tmux() {
       echo "orchestrator enter-cockpit failed — try: tmux kill-session -t '=$sess_name' && ./scripts/gotchibot tmux" >&2
       exit 1
     fi
+    boot_mark "desk layout (reattach)"
     progress_pulse "GotchiBot · attaching…" 12
     progress_end
     exec tmux attach -t "=$sess_name" \; select-pane -t "$sess:work.1" \; run-shell "'$layout' fit-quiet"
@@ -299,7 +327,9 @@ cmd_tmux() {
   fi
   # Orch calls poke-avatar — must run after 3-pane layout (USR1 on work.2 before
   # that hits the lone boot shell and kills the tmux server).
+  boot_mark "desk layout (new session)"
   node "$ROOT/scripts/agent-focus.mjs" orch >/dev/null 2>&1 || true
+  boot_mark "orch focus"
   progress_pulse "GotchiBot · attaching…" 14
   progress_end
   exec tmux attach -t "=$sess_name" \; select-pane -t "$sess:work.1" \; run-shell "'$layout' fit-quiet"
@@ -714,6 +744,7 @@ cmd_wisp() {
 cmd="$1"; shift
 case "$cmd" in
   tmux) cmd_tmux ;;
+  boot-trace) exec node "$ROOT/scripts/boot-trace.mjs" show "$@" ;;
   chat) cmd_chat "$@" ;;
   spawn) cmd_spawn "$@" ;;
   sandbox)

@@ -2,17 +2,20 @@
 /**
  * Resolve AarcadeGh-t collateral colors for a cAavegotchi.
  *
- * Body color comes from assets/collateral-colors.json (primary + secondary),
- * never from agent status. Status stays on the avatar label only.
+ * Body color comes from the AarcadeGh-t collateral library
+ * (../AarcadeGh-t/public/data/aavegotchi_db_collaterals.json, else the
+ * assets/collateral-colors.json copy), never from agent status. Status stays on
+ * the avatar label only.
  *
  * Lookup order:
  *   1. hero.collateralAddress
  *   2. hero.collateral
  *   3. hero.collateralType
- *   4. persisted sessions/.hero-agent-state.json
- *   5. sourceTokenId / owned-<tokenId> → sessions/.wallet-gotchis.json
- *   6. id starter-<spirit>-hN
- *   7. JSON by spirit id (wbtc), name (amWBTC), label (BTC)
+ *   4. subgraph collateral address by token id (sessions/.gotchi-names.json)
+ *   5. persisted sessions/.hero-agent-state.json
+ *   6. sourceTokenId / owned-<tokenId> → sessions/.wallet-gotchis.json
+ *   7. id starter-<spirit>-hN
+ *   8. JSON by spirit id (wbtc), name (amWBTC), label (BTC)
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -25,6 +28,7 @@ const SESSIONS = `${ROOT}/sessions`;
 const COLORS_PATH = `${ROOT}/assets/collateral-colors.json`;
 const AARCADE_COLORS = resolve(ROOT, "../AarcadeGh-t/public/data/aavegotchi_db_collaterals.json");
 const WALLET_CACHE = `${SESSIONS}/.wallet-gotchis.json`;
+const GOTCHI_PROFILES = `${SESSIONS}/.gotchi-names.json`;
 const HERO_STATE = `${SESSIONS}/.hero-agent-state.json`;
 const ATOKEN_SPIRITS = new Set([
   "dai", "weth", "aave", "link", "usdt", "usdc", "tusd", "uni", "yfi",
@@ -136,10 +140,12 @@ function packColors(row) {
 let _table = null;
 export function loadCollateralTable() {
   if (_table) return _table;
+  // AarcadeGh-t's library is the source (colors + collateral SVGs); the assets copy is
+  // the colors-only fallback for a desk without an AarcadeGh-t checkout.
   const paths = [
     process.env.GOTCHIBOT_COLLATERAL_COLORS,
-    COLORS_PATH,
     AARCADE_COLORS,
+    COLORS_PATH,
   ].filter(Boolean);
   for (const p of paths) {
     try {
@@ -307,6 +313,12 @@ function walletHitForToken(tokenId) {
   return null;
 }
 
+/** Subgraph profile (fetchGotchiProfiles in onboarding-lib.mjs): on-chain collateral address + haunt. */
+function subgraphProfileForToken(tokenId) {
+  if (!tokenId) return null;
+  return readJson(GOTCHI_PROFILES, null)?.names?.[String(tokenId)] || null;
+}
+
 /**
  * Resolve colors for a hero record. Does not use agent status.
  */
@@ -320,9 +332,10 @@ export function resolveHeroColors(hero = {}, heroIdArg = null) {
     tokenIdFromHeroId(heroId) ||
     null;
   const walletHit = walletHitForToken(tokenId);
+  const profile = subgraphProfileForToken(tokenId);
 
   const hauntHint =
-    Number(hero.hauntId ?? walletHit?.hauntId ?? persisted?.hauntId ?? starter?.hauntId) ||
+    Number(hero.hauntId ?? profile?.hauntId ?? walletHit?.hauntId ?? persisted?.hauntId ?? starter?.hauntId) ||
     (tokenId ? 2 : 1);
 
   const keys = [];
@@ -330,6 +343,8 @@ export function resolveHeroColors(hero = {}, heroIdArg = null) {
   if (isAddr(hero.collateralAddress)) pushUnique(keys, hero.collateralAddress);
   if (isAddr(hero.collateral)) pushUnique(keys, hero.collateral);
   if (isAddr(hero.collateralType)) pushUnique(keys, hero.collateralType);
+  // The gotchi's collateral as the subgraph reports it — exact row in the collateral library.
+  if (isAddr(profile?.collateral)) pushUnique(keys, profile.collateral);
   if (isAddr(persisted?.collateralAddress)) pushUnique(keys, persisted.collateralAddress);
   // Wallet roster by token id (owned-22899 → amWBTC). Beats a stale "dai" on the hero record.
   if (walletHit) {
@@ -364,6 +379,7 @@ export function resolveHeroColors(hero = {}, heroIdArg = null) {
       collateral: colors.spirit || usedKey,
       collateralAddress:
         (usedKey && /^0x[a-f0-9]{40}$/i.test(usedKey) ? usedKey : null) ||
+        profile?.collateral ||
         walletHit?.collateral ||
         hero.collateralAddress ||
         persisted?.collateralAddress,

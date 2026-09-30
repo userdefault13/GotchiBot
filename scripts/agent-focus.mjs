@@ -779,12 +779,27 @@ function respawnChatPane(extraEnv = {}) {
   );
 }
 
+/** True when this process runs inside the desk's chat pane (work.1) — not a Hub OpenCode server. */
+function inDeskChatPane() {
+  if (!process.env.TMUX || !process.env.TMUX_PANE) return false;
+  const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
+  const r = spawnSync("tmux", ["display", "-p", "-t", `${sess}:work.1`, "#{pane_id}"], { encoding: "utf8" });
+  return r.status === 0 && r.stdout.trim() === process.env.TMUX_PANE;
+}
+
 async function cmdCockpit() {
+  if (process.env.TMUX ? !inDeskChatPane() : !process.stdin.isTTY) {
+    console.log("The cockpit opens on the desk, not from here (this chat runs on the Hub).");
+    console.log("On the desk press Ctrl+Space then Shift+K.");
+    return;
+  }
   if (process.env.TMUX) {
-    runLayout("enter-chat-max");
     console.log("Opening GotchiBot cockpit in chat pane…");
     console.log("  mint cAavegotchi · change orchestrator avatar · return to project · select project");
-    respawnChatPane({ GOTCHIBOT_COCKPIT: "1" });
+    // One respawn, run by the tmux server (-b): this process is inside work.1 and is
+    // killed by it, so nothing after the layout call would run.
+    const r = runLayout("enter-cockpit", { background: true });
+    if (!r?.ok) respawnChatPane({ GOTCHIBOT_COCKPIT: "1" });
     return;
   }
   console.log("Opening GotchiBot cockpit…");

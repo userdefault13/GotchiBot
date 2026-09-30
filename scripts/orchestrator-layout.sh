@@ -17,7 +17,7 @@ min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
 chat_collapsed="${GOTCHIBOT_CHAT_COLLAPSED:-3}"
 min_center="${GOTCHIBOT_TMUX_CENTER_WIDTH:-50}"
-win_w_default="${GOTCHIBOT_WINDOW_WIDTH:-143}"
+win_w_default="${GOTCHIBOT_WINDOW_WIDTH:-131}"
 win_h_default="${GOTCHIBOT_WINDOW_HEIGHT:-40}"
 resize_hook="$ROOT/scripts/orchestrator-resize.sh"
 status_bar="$ROOT/scripts/session-status-bar.sh"
@@ -279,6 +279,10 @@ install_avatar_page_keys() {
   tmux bind-key -T prefix N if-shell -F "$sess_if" "run-shell \"$rpd\"" 2>/dev/null || true
   tmux bind-key -n M-, if-shell -F "$sess_if" "run-shell \"$rpu\"" "send-keys M-," 2>/dev/null || true
   tmux bind-key -n M-. if-shell -F "$sess_if" "run-shell \"$rpd\"" "send-keys M-." 2>/dev/null || true
+  # Cockpit from any pane: Ctrl+Space then Shift+K. The Hub chat runs OpenCode on the
+  # hub over SSH, where /cockpit cannot reach this desk's tmux.
+  local rck="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh enter-cockpit"
+  tmux bind-key -T prefix K if-shell -F "$sess_if" "run-shell -b \"$rck\"" 2>/dev/null || true
 }
 
 start_pane_commands() {
@@ -396,7 +400,7 @@ build_meet_gallery_tiles() {
   collapse_to_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
   collapse_sidebar
-  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
 
   local channel_w
   channel_w=$(( $(window_width) * 42 / 100 ))
@@ -427,7 +431,7 @@ build_meet_gallery_tiles() {
   fi
   tmux set-option -p -t "$sess:work.2" @gotchibot-meet-channel 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.2" -u @gotchibot-meet-room 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }# meet ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }# meet ' 2>/dev/null || true
 
   local c1
   c1="$(pane_start_cmd 1)"
@@ -440,7 +444,7 @@ build_meet_gallery_tiles() {
   tmux set-option -p -t "$sess:work.1" @gotchibot-meet-room 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-channel 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Meet · room ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Meet · room ' 2>/dev/null || true
   # Drop overflow tiles beyond room + channel.
   while [ "$(pane_count)" -gt 3 ]; do
     tmux kill-pane -t "$sess:work.3" 2>/dev/null || break
@@ -534,14 +538,14 @@ leave_meet_gallery() {
   mark_avatar_pane
   collapse_sidebar
   apply_pane_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-channel 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.2" -u @gotchibot-meet-channel 2>/dev/null || true
   tmux set-option -p -t "$sess:work.2" -u @gotchibot-meet-room 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
   signal_panes
@@ -562,7 +566,7 @@ build_pstack_dossier_tiles() {
   collapse_to_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
   collapse_sidebar
-  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
 
   # Center pane = pstack-window (dossier replaces chat). Unmark chat so the
   # pane is not treated as the OpenCode chat pane.
@@ -574,7 +578,7 @@ build_pstack_dossier_tiles() {
   tmux set-option -p -t "$sess:work.1" @gotchibot-pstack-dossier 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }pstack · dossier ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }pstack · dossier ' 2>/dev/null || true
 
   # Right pane = avatar (kept, like a normal desk).
   local c2
@@ -583,7 +587,7 @@ build_pstack_dossier_tiles() {
     tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
   fi
   tmux set-option -p -t "$sess:work.2" -u @gotchibot-pstack-dossier 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   mark_avatar_pane
 
   while [ "$(pane_count)" -gt 3 ]; do
@@ -657,13 +661,13 @@ leave_pstack_dossier() {
   mark_avatar_pane
   collapse_sidebar
   apply_pane_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-pstack-dossier 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
   tmux set-option -p -t "$sess:work.2" -u @gotchibot-pstack-dossier 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
   signal_panes
@@ -733,9 +737,9 @@ boot_cockpit_desk() {
   tmux set-option -p -t "$sess:work.2" -u @gotchibot-pstack-dossier 2>/dev/null || true
   collapse_sidebar
   apply_pane_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
   signal_panes
@@ -757,9 +761,9 @@ enter_files_max() {
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   apply_files_max_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files · full ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files · full ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   set_layout_mode files-max
   tmux select-pane -t "$sess:work.0"
   save_layout
@@ -781,9 +785,9 @@ enter_avatar_max() {
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   apply_avatar_max_sizes
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar · full ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar · full ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
   set_layout_mode avatar-max
   tmux select-pane -t "$sess:work.2"
   save_layout
@@ -800,9 +804,9 @@ enter_chat_max() {
   tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh"
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   apply_chat_max_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi · full ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi · full ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   set_layout_mode chat-max
   tmux select-pane -t "$sess:work.1"
   save_layout
@@ -842,7 +846,7 @@ restore_avatar_pane() {
   set_layout_mode normal
   tmux resize-pane -t "$sess:work.2" -x "$min_avatar" 2>/dev/null || true
   tmux resize-pane -t "$sess:work.0" -x "$sidebar_collapsed" 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
   save_layout
   signal_panes
@@ -873,9 +877,9 @@ restore_normal_layout() {
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   collapse_sidebar
   apply_pane_sizes
-  tmux set-option -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   set_layout_mode normal
   tmux select-pane -t "$sess:work.1"
   save_layout
@@ -1191,9 +1195,9 @@ apply_pane_border_labels() {
       ;;
   esac
   # #{?pane_active,…} is evaluated per pane by tmux.
-  tmux set-option -t "$sess:work.0" pane-border-format " #{?pane_active,●, }${label0}" 2>/dev/null || true
-  tmux set-option -t "$sess:work.1" pane-border-format " #{?pane_active,●, }${label1}" 2>/dev/null || true
-  tmux set-option -t "$sess:work.2" pane-border-format " #{?pane_active,●, }${label2}" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format " #{?pane_active,●, }${label0}" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format " #{?pane_active,●, }${label1}" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format " #{?pane_active,●, }${label2}" 2>/dev/null || true
 }
 
 install_resize_hook() {

@@ -10,3 +10,4 @@ Open the GotchiBot cockpit (mint cAavegotchi, change orchestrator avatar, Settin
 ```
 
 That respawns this pane into the cockpit menu. When they leave the menu, chat comes back.
+If it prints that the cockpit opens on the desk, relay that line verbatim (Hub chat: Ctrl+Space then Shift+K on the desk).
