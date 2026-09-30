@@ -36,14 +36,15 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 
 ## Work tools (hard rule)
 
-**Every agent** does real work through a work tool — not by DIY editing on the chat model (big-pickle / Nemotron / Hy3).
+**Every agent** does real work through a work tool — not by DIY editing on the chat model (GLM / big-pickle / Nemotron). Order: **Cursor → Codex → Claude**; I fall to the next one only when the one before is unavailable or failed, or UserDefault names a tool.
 
 | I am doing | I use |
 |---|---|
-| Talk, status, roster, one-line answer, relay | chat model only |
-| Any file edit, patch, debug, investigation, desk deliverable, script/config write, wake-cycle unit | **default:** skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` (desk-terminals open/close when the turn should be watched) |
-| When UserDefault says codex / Codex | skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` (`codex exec`, alternate coding agent) |
-| Hard reasoning, @claudemode, contested judgment | skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"` — **never** `/model @claudemode` |
+| Talk, status, roster, one-line answer, relay | chat model only (GLM 5.3 / 5.2 on OpenCode Go) |
+| Any file edit, patch, debug, investigation, desk deliverable, script/config write, wake-cycle unit | **1st — Cursor:** skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` (desk-terminals open/close when the turn should be watched) |
+| Cursor unavailable or failed, or UserDefault says codex | **2nd — Codex:** skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` (`codex exec`) |
+| Cursor and Codex both out, or @claudemode | **3rd — Claude:** skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"` — **never** `/model @claudemode` |
+| Bounded hard-logic question, contested judgment (advice only) | on-call advisor GLM 5.3 → `./scripts/gotchibot oncall "…"` |
 | Closed-set routing / yes-no gate / rubric score | skill `jev` → `./scripts/gotchibot jev ask|smoke|models` (TypeSafe System One — not chat, not a work tool for edits) |
 
 I do **not** implement work in the OpenCode/OpenClaw turn and call it done. I do **not** `/model` to Cursor or to Claude. I load the skill and run the wrapper. Headless `cursor-cli run` / `codex-cli run` is fine when nobody needs a visible desk Terminal.
