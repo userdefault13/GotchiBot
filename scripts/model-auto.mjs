@@ -19,10 +19,10 @@ const PIN_PATH = `${ROOT}/sessions/.gotchi-model.env`;
 
 const DEFAULT_CFG = {
   goPrefer: [
-    "opencode-go/kimi-k3",
-    "opencode-go/glm-5.3-flash",
     "opencode-go/glm-5.3",
     "opencode-go/glm-5.2",
+    "opencode-go/glm-5.3-flash",
+    "opencode-go/kimi-k3",
     "opencode-go/gpt-5.6-luna",
     "opencode-go/grok-4.6",
   ],
@@ -83,9 +83,13 @@ function aliases() {
   return {
     auto: "AUTO",
     free: "AUTO",
-    go: hasOpencodeGoKey() ? "opencode-go/kimi-k3" : "AUTO",
+    go: hasOpencodeGoKey() ? "opencode-go/glm-5.3" : "AUTO",
+    glm: hasOpencodeGoKey() ? "opencode-go/glm-5.3" : "AUTO",
+    "glm-5.3": "opencode-go/glm-5.3",
+    "glm-5.2": "opencode-go/glm-5.2",
+    kimi: "opencode-go/kimi-k3",
     hy3: "opencode/big-pickle",
-    nim: "opencode/big-pickle",
+    nim: hasOpencodeGoKey() ? "opencode-go/glm-5.3" : "opencode/big-pickle",
     fast: "opencode/big-pickle",
     heavy: "opencode/nemotron-3-ultra-free",
     ultra: "opencode/nemotron-3-ultra-free",

@@ -18,7 +18,7 @@ const PINNED_MODEL_PATH = `${ROOT}/sessions/.gotchi-model.env`;
 const OPENCODE_GO_DEFAULT_MODEL =
   process.env.GOTCHIBOT_OPENCLAW_MODEL?.trim() ||
   readPinnedOpencodeModel() ||
-  "opencode-go/kimi-k3";
+  "opencode-go/glm-5.3";
 const CF_FALLBACK_MODEL = "cloudflare-wai/@cf/zai-org/glm-4.7-flash";
 // Paid OpenCode Go model used only as a FALLBACK behind the free primary
 // (config/model-policy.json: preferZenFree, paidGoDefault=false). OpenClaw walks

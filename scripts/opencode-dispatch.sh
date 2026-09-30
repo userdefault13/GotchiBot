@@ -116,7 +116,20 @@ sandbox_name() {
 model_for() {
   case "$1" in
     auto|free) node "$ROOT/scripts/model-auto.mjs" pick ;;
-    nim) echo "opencode/big-pickle" ;;
+    nim|glm|glm-5.3)
+      if [ -n "${OPENCODE_API_KEY:-}" ]; then
+        echo "opencode-go/glm-5.3"
+      else
+        echo "opencode/big-pickle"
+      fi
+      ;;
+    glm-5.2)
+      if [ -n "${OPENCODE_API_KEY:-}" ]; then
+        echo "opencode-go/glm-5.2"
+      else
+        echo "opencode/big-pickle"
+      fi
+      ;;
     pickle) echo "opencode/big-pickle" ;;
     ultra) echo "opencode/nemotron-3-ultra-free" ;;
     # Prefer NIM when key present; else OpenCode Zen free (big-pickle).

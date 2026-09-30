@@ -1,22 +1,25 @@
 ---
-description: All agents must run real work through a work tool (Cursor CLI default, Codex CLI alternate, Hub Claude for hard logic) — never DIY on the chat model
+description: All agents must run real work through a work tool (Cursor CLI primary, then Codex CLI, then Hub Claude) — never DIY on the chat model
 alwaysApply: true
 ---
 
 # Work tools (hard rule)
 
 Every GotchiBot agent (orchestrator, OpenClaw heroes, OpenCode dispatch sessions)
-does **real work** through a work tool.
+does **real work** through a work tool, in this order. Fall to the next one only
+when the one before is unavailable or failed, or when UserDefault names a tool.
 
 ## Mandatory
 
-- Edits, patches, debug, investigation, desk deliverables, wake-cycle units →
-  skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` (**default**)
-- When UserDefault says **codex** / **Codex** → skill `codex-cli` →
-  `./scripts/codex-cli.mjs run "…"` (`codex exec`, alternate coding agent)
-- Hard reasoning, `@claudemode`, contested judgment → skill `gotchibot-bridge` →
-  `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`
-  — **never** `/model @claudemode`
+1. **Cursor (primary)** — edits, patches, debug, investigation, desk deliverables,
+   wake-cycle units → skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"`
+2. **Codex** — skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` (`codex exec`)
+3. **Claude** — skill `gotchibot-bridge` →
+   `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`
+   — **never** `/model @claudemode`
+
+- Bounded hard-logic questions (advice, not edits) → on-call advisor GLM 5.3:
+  `./scripts/gotchibot oncall "…"` / `/oncall`
 - Workers: desk-terminals open → run → close when the turn should be watched;
   headless run is fine otherwise
 - Spawn briefs must tell workers to use a work tool for the work
@@ -24,7 +27,8 @@ does **real work** through a work tool.
 ## Chat model only
 
 Talk, status, roster, one-line answers, routing, spawn, summarize, relay Claude
-verbatim — stay on big-pickle / Nemotron / Hy3.
+verbatim — stay on the chat model (sessions and sub-agents: `opencode-go/glm-5.3`,
+then `glm-5.2`; big-pickle / Nemotron when no Go key).
 
 ## Forbidden
 

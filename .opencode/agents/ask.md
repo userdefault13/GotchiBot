@@ -2,7 +2,7 @@
 description: Read-only Q&A — explain code and answer questions without edits or spawns
 mode: primary
 order: 6
-model: opencode-go/glm-5.2
+model: opencode-go/glm-5.3
 temperature: 0.3
 color: "#98FFB3"
 permission:

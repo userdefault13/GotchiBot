@@ -1,19 +1,23 @@
 {
   "goPrefer": [
-    "opencode-go/kimi-k3",
-    "opencode-go/glm-5.3-flash",
     "opencode-go/glm-5.3",
     "opencode-go/glm-5.2",
+    "opencode-go/glm-5.3-flash",
+    "opencode-go/kimi-k3",
     "opencode-go/gpt-5.6-luna",
     "opencode-go/grok-4.6"
   ],
   "subagentPrefer": [
+    "opencode-go/glm-5.3",
+    "opencode-go/glm-5.2",
     "opencode/big-pickle",
     "opencode/mimo-v2.5-free",
     "opencode/nemotron-3.5-lightning-free",
     "opencode/nemotron-3-ultra-free"
   ],
   "subagentFallback": "opencode/big-pickle",
+  "advisor": "opencode-go/glm-5.3",
+  "advisorFallback": ["opencode-go/glm-5.2"],
   "prefer": [
     "opencode/big-pickle",
     "opencode/mimo-v2.5-free",

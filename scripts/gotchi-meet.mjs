@@ -178,7 +178,7 @@ function meetPinnedModel() {
   } catch {
     /* fall through */
   }
-  return "opencode-go/kimi-k3";
+  return "opencode-go/glm-5.3";
 }
 
 function meetMentionAgentBody({ slug, name, heroId, meetingRole, topic, roleId, playbook }) {

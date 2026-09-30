@@ -45,7 +45,7 @@ if [ -f "$ROOT/sessions/.chat-model" ]; then
   unset _chat_model
 fi
 if [ -z "${GOTCHIBOT_OPENCODE_MODEL:-}" ]; then
-  MODEL="$(node "$ROOT/scripts/model-auto.mjs" pick 2>/dev/null || echo opencode-go/kimi-k3)"
+  MODEL="$(node "$ROOT/scripts/model-auto.mjs" pick 2>/dev/null || echo opencode-go/glm-5.3)"
   export GOTCHIBOT_OPENCODE_MODEL="$MODEL"
 else
   MODEL="$GOTCHIBOT_OPENCODE_MODEL"

@@ -47,12 +47,12 @@ must use one of these three tools only:
 | Preference (default order) | Tool | How |
 |---|---|---|
 | **1st — Cursor** | Cursor agent CLI | skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"` |
-| **2nd — Claude** | Hub Claude Code / Claude CLI | skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`; local `claude` when on desk |
-| **3rd — Codex** | Codex CLI | skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when Julius says codex |
+| **2nd — Codex** | Codex CLI | skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` |
+| **3rd — Claude** | Hub Claude Code / Claude CLI | skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` or `./scripts/gotchibot claude-submit "…"`; local `claude` when on desk |
 
-If Cursor is unavailable, pick Claude then Codex by fit unless
-Julius resets preference. Do **not** DIY edits on chat/route models
-(big-pickle / Nemotron / etc.). Talk, route, and one-line answers stay on the
+If Cursor is unavailable or fails, use Codex; if Codex is out too, use Claude —
+unless Julius names a tool. Do **not** DIY edits on chat/route models
+(GLM 5.3 / 5.2 / big-pickle / Nemotron). Talk, route, and one-line answers stay on the
 chat model; the worker then runs a work tool for the actual work.
 
 Paid OpenCode Go paths (`flash` → `opencode-go/glm-5.3-flash`, `pro` → `opencode-go/kimi-k3`) are **override-only** (Julius must ask).
@@ -171,6 +171,6 @@ NVIDIA / DeepSeek keys, when used, flow through abracadabra — never written to
 - Secrets: Touch ID-gated via abracadabra, never in env files or prompts.
 - Skills: allowlist-only, human-vetted additions.
 - Workers: sandboxed per OpenClaw / gotchibot-policy; no autonomous installs.
-- Work tools only for code: Cursor (cursor-cli) → Claude → Codex.
+- Work tools only for code: Cursor (cursor-cli) → Codex → Claude.
 - Remote access (post-migration): Cloudflare Access policy gates the hostname;
   gateway token as second layer.

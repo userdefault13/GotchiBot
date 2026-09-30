@@ -57,7 +57,7 @@ steal LINK/YFI/WBTC standing desks.
 |---|---|
 | **Chief** | the gotchi / orch (`orchestrator`) — see `ORCHESTRATOR.md`, `AGENTS.md`, pack `orchestrator` |
 | **Workers** | Specialist heroes and Grok coding bots (dossier-*, prof-modal, gotchi-omarchy, standing desks LINK/YFI/WBTC, …) |
-| **Work tools** | Cursor (cursor-cli) → Claude → Codex — see `ORCHESTRATOR.md` |
+| **Work tools** | Cursor (cursor-cli) → Codex → Claude — see `ORCHESTRATOR.md` |
 
 CoS: `gotchibot graph` (sessions/graph state) + fleet skill `agent-graph`.
 Orch owns product routing. Central owns makers. Bend crew owns LAWS/PROOF.

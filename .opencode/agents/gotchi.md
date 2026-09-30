@@ -5,7 +5,7 @@ order: 1
 color: "#B650FF"
 # Gotchi mode loads on OpenCode Go GLM 5.2. OpenClaw orch is opt-in via
 # GOTCHIBOT_GOTCHI_BACKEND=openclaw-gateway / GOTCHIBOT_OPENCLAW_OPENCODE_MODEL.
-model: opencode-go/glm-5.2
+model: opencode-go/glm-5.3
 temperature: 0.5
 permission:
   plan_enter: allow

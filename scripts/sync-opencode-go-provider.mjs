@@ -160,7 +160,7 @@ export async function syncOpenCodeGoProvider({ force = false } = {}) {
   cfg.provider = cfg.provider || {};
   cfg.provider["opencode-go"] = buildProvider(ids, metaById);
   if (!String(cfg.model || "").startsWith("opencode-go/")) {
-    cfg.model = "opencode-go/kimi-k3";
+    cfg.model = "opencode-go/glm-5.3";
   }
   writeFileSync(CONFIG, `${JSON.stringify(cfg, null, 2)}\n`);
   saveCache(hash, ids.length);

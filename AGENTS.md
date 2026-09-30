@@ -69,17 +69,15 @@ Your session dir contains:
 5. **Architect** — design-space / options matrix via skill `architect` (pack `architect`, Grok Bot `architect`). Exhaust options, hand off build; do not DIY implement.
 6. **Jev (TypeSafe System One)** — closed-set decisions via `./scripts/gotchibot jev` / skill `jev` (pack `jev`). Not a chat model and not a work tool for edits. Key: abra `general` / `JEV_DEV_API_KEY` (names only).
 7. **Work tools (hard rule)** — any file edit, patch, debug, investigation, or
-   desk deliverable goes through a work tool only — **Claude**, **Cursor**, or
-   **Codex**. Prefer **Cursor (cursor-cli) first**, then
-   Cursor, then Codex. After that date, pick among the three by fit unless
-   Julius resets preference.
-   - Claude: skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"`
-     or `./scripts/gotchibot claude-submit "…"` (hard logic / @claudemode); local
-     `claude` on desk when available
-   - Cursor: skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"`
-   - Codex: skill `codex-cli` → `./scripts/codex-cli.mjs run "…"` when Julius
-     says codex
-   Do **not** DIY on big-pickle / Nemotron / Hy3. Talk/route/status/one-line
+   desk deliverable goes through a work tool only, in this order:
+   **Cursor** (primary) → **Codex** → **Claude**. Fall to the next one only when
+   the one before is unavailable or failed, or when Julius names a tool.
+   1. Cursor: skill `cursor-cli` → `./scripts/cursor-cli.mjs run "…"`
+   2. Codex: skill `codex-cli` → `./scripts/codex-cli.mjs run "…"`
+   3. Claude: skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"`
+      or `./scripts/gotchibot claude-submit "…"` (hard logic / @claudemode); local
+      `claude` on desk when available
+   Do **not** DIY on the chat model (GLM / big-pickle / Nemotron). Talk/route/status/one-line
    answers stay on the chat model. Do not `/model` to Cursor or Claude; do not
    add a Cursor provider. Desk-terminals open/close when the turn should be
    watched; headless work-tool runs are fine otherwise.
@@ -151,11 +149,12 @@ Route instead of DIY: laws/proofs → bend crew; skills/rules/policies/tools/MCP
 
 | Tier | Model / tool | Use |
 |---|---|---|
-| default talk/route | `opencode/big-pickle` (`--model nim`; free Zen) | talk, route, spawn, summarize |
+| default talk/route (sessions) | `opencode-go/glm-5.3` (`--model nim`; needs `OPENCODE_API_KEY`; else `opencode/big-pickle`) | talk, route, spawn, summarize |
+| on-call advisor | `opencode-go/glm-5.3` (fallback `glm-5.2`) via `./scripts/gotchibot oncall "…"` / `/oncall` | bounded hard-logic questions; read-only |
 | task talk | Nemotron Lightning / Ultra free (`opencode/nemotron-*`) | talk/route/task only; `/model heavy` = Ultra free |
-| **all work** (Cursor (cursor-cli) → Claude → Codex) | Hub Claude / `claude` · `./scripts/cursor-cli.mjs` → `cursor-agent` · `./scripts/codex-cli.mjs` → `codex exec` | edits, debug, patches, investigation, desk deliverables — mandatory; Cursor (cursor-cli) first |
+| **all work** (Cursor → Codex → Claude) | `./scripts/cursor-cli.mjs` → `cursor-agent` · `./scripts/codex-cli.mjs` → `codex exec` · Hub Claude / `claude` | edits, debug, patches, investigation, desk deliverables — mandatory; Cursor (cursor-cli) first |
 | escalation (`pro`) | `opencode-go/kimi-k3` (needs `OPENCODE_API_KEY`; else `opencode/nemotron-3-ultra-free`) | **override-only** (Julius must ask); still prefer a work tool for edits |
-| sub-agent delegation | `sub` (big-pickle → mimo → lightning → ultra free) | spawn chat/route model; the worker then runs a **work tool** (Cursor-first / cursor-cli applies) for the actual work |
+| sub-agent delegation | `sub` (glm-5.3 → glm-5.2 → big-pickle → mimo → lightning → ultra free; GLM needs `OPENCODE_API_KEY`) | spawn chat/route model; the worker then runs a **work tool** (Cursor → Codex → Claude) for the actual work |
 
 
 NVIDIA_API_KEY flows through abracadabra (`abra run gotchibot -- ...`); opencode
@@ -206,7 +205,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 - Wallet gate: `./scripts/wallet-gate.mjs`
 - **Project intake (`/project`):** Sandbox-only modal for unsupervised requirements — `./scripts/gotchibot project show` (`config/project-policy.json`). Does **not** gate installs or non-Sandbox work.
 - Hub monitor: `./scripts/gotchibot hub` / `/hub` (skill `gotchibot-hub`)
-- **`@claudemode` (Hub Claude Code tool):** stay on `opencode/big-pickle`.
+- **`@claudemode` (Hub Claude Code tool, third work tool):** stay on the chat model.
   `node ./scripts/claudemode-ask.mjs "…"` → Hub VS Code
   Claude pane → reply on stdout → you continue the task. Skill `gotchibot-bridge`.
   Commands: `/claudemode`, `/bridge`. Do **not** `/model @claudemode`.
@@ -221,9 +220,11 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 ## Models
 
-- Bot task / routing / talk: `opencode/big-pickle` (`nim`, default free Zen). Lightning/Ultra free remain available. `/model heavy` → `opencode/nemotron-3-ultra-free`. Do not switch OpenCode to a Cursor provider.
-- **All work** (edits / debug / investigation / desk deliverables): `./scripts/cursor-cli.mjs run "…"` → `cursor-agent` (UserDefault's logged-in Cursor Pro+ on **MBP or iMac**). Never `--api-key`. Mandatory — do not DIY on the chat model.
-- Paid OpenCode fallback: `opencode-go/kimi-k3` (`pro`; needs `OPENCODE_API_KEY` via abra)
+- Bot task / routing / talk (sessions): `opencode-go/glm-5.3` (`nim`; OpenCode Go, `OPENCODE_API_KEY` via abra). Without the key it falls back to `opencode/big-pickle`. Lightning/Ultra free remain available. `/model heavy` → `opencode/nemotron-3-ultra-free`. Do not switch OpenCode to a Cursor provider.
+- Sub-agent dispatch: `sub` picks `opencode-go/glm-5.3`, then `glm-5.2`, then the free Zen chain (`config/models.auto.json` `subagentPrefer`).
+- On-call advisor: `opencode-go/glm-5.3` (`advisor` in `config/models.auto.json`, `glm-5.2` fallback) — `./scripts/gotchibot oncall "…"`.
+- **All work** (edits / debug / investigation / desk deliverables): Cursor first — `./scripts/cursor-cli.mjs run "…"` → `cursor-agent` (UserDefault's logged-in Cursor Pro+ on **MBP or iMac**; never `--api-key`), then Codex (`./scripts/codex-cli.mjs run`), then Claude (`claudemode-ask` / `claude-submit`). Mandatory — do not DIY on the chat model.
+- Paid OpenCode escalation: `opencode-go/kimi-k3` (`pro`; needs `OPENCODE_API_KEY` via abra)
 - No local Ollama/llama and no Gemini (decision 2026-09-25). Hosted providers only: OpenCode, NVIDIA NIM, Cloudflare Workers AI.
 - **Tab:** cycles agents **in the OpenCode TUI** (`config/tui-policy.json`) including **Project**. tmux must not steal Tab. No pane restart. `./scripts/gotchibot tui-policy show|enforce|apply`
 - Avatar roster page (any pane): **Ctrl+Space** then **P** / **N**, or **Alt+,** / **Alt+.** Headless/SSH desk notes: `DEPLOYMENT.md` § Headless / SSH.

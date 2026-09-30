@@ -97,6 +97,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot hub runner [--once|--check]           Hub phone-reply runner (prefer: abra run gotchibot -- node scripts/hub-runner.mjs)
   gotchibot hub projects push|watch|service       Push pstack rooms + avatars to the Hub for the phone app
   gotchibot hub cockpit push [--force] [--json]   Push the cockpit snapshot (roster · kanban · inbox · Hub) for the phone
+  gotchibot hub tree push [--force] [--json]      Push this desk's agent tree (Factory Tree view, merged across desks)
   gotchibot hub desk open|new|ssh|run|service     Project chat: one orchestrator conversation per project, on every device
   gotchibot hub join <host> <code>                on a desk: pair with your Hub
   gotchibot api start|stop|status                 run gotchibot-api by hand (dev)
@@ -160,6 +161,7 @@ gotchibot — GotchiBot orchestrator CLI
                                   Desk→Hub Claude VS Code; reply on Desk
   gotchibot vscode-open|vscode-ensure [--check]  open/focus Hub VS Code on GotchiBot (code -r)
   gotchibot bridge-ensure|ensure-bridge [--json]  one-shot Hub Claude bridge recovery (receiver + bridge + restart)
+  gotchibot oncall "…" | oncall status  on-call advisor (GLM 5.3 via OpenCode Go; 5.2 fallback)
   gotchibot claude-ask|claudemode-ask "…"  bridge ask sync (short; orch stays on big-pickle)
   gotchibot claude-submit "…"             async submit → {id,pending}; prefer for long Claude
   gotchibot claude-collect <id>           collect ready job after push-wake
@@ -913,6 +915,11 @@ case "$cmd" in
         [ "${1:-}" = "push" ] && shift
         exec node "$ROOT/scripts/hub-projects-push.mjs" cockpit "$@"
         ;;
+      tree)
+        shift || true
+        [ "${1:-}" = "push" ] && shift
+        exec node "$ROOT/scripts/hub-projects-push.mjs" tree "$@"
+        ;;
       desk)
         shift || true
         exec node "$ROOT/scripts/hub-desk.mjs" "$@"
@@ -988,6 +995,11 @@ case "$cmd" in
   bridge-ensure|ensure-bridge)
     # One-shot Hub Claude bridge recovery (receiver + bridge + restart).
     abra_or_node "$ROOT/scripts/hub-bridge-ensure.mjs" "$@"
+    ;;
+  oncall|oncall-ask)
+    # On-call advisor: bounded question to GLM 5.3 (OpenCode Go), reply on stdout.
+    if [ "${1:-}" = "status" ]; then exec node "$ROOT/scripts/oncall-ask.mjs" "$@"; fi
+    abra_or_node "$ROOT/scripts/oncall-ask.mjs" "$@"
     ;;
   claude-ask|claudemode-ask)
     # Orchestrator tool: stay on big-pickle; print Hub Claude reply only (sync).

@@ -11,7 +11,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const DEFAULT_GO = "opencode-go/kimi-k3";
+const DEFAULT_GO = "opencode-go/glm-5.3";
 
 function loadGoPrefer() {
   try {
@@ -19,9 +19,10 @@ function loadGoPrefer() {
     return (cfg.goPrefer || []).map(String);
   } catch {
     return [
-      "opencode-go/kimi-k3",
-      "opencode-go/glm-5.3-flash",
       "opencode-go/glm-5.3",
+      "opencode-go/glm-5.2",
+      "opencode-go/glm-5.3-flash",
+      "opencode-go/kimi-k3",
       "opencode-go/grok-4.6",
     ];
   }

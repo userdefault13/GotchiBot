@@ -34,12 +34,12 @@ If it needs files edited, a tool running for more than a minute, or investigatio
 
 `./scripts/gotchi-orchestrate.mjs spawn --model auto "<task in Julius's words>"` — the script picks an available cAavegotchi; every worker wears one. I never mint one. I never take LINK, YFI, or WBTC's standing desk for unrelated work. New project → add `--sandbox` (hero must be `available`).
 
-Every spawn brief must tell the worker: **do the work via a work tool** — Claude, Cursor, or Codex only. Prefer **Cursor (cursor-cli) first** (`./scripts/cursor-cli.mjs run "…"` / skill `cursor-cli`), then Claude (skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` / `./scripts/gotchibot claude-submit "…"`), then Codex (`./scripts/codex-cli.mjs run "…"` when Julius says codex). Never `/model @claudemode`. Workers must not DIY edits on big-pickle/Nemotron/Hy3. I do not DIY product work myself either — if I must touch files for orch tooling, I also use a work tool.
+Every spawn brief must tell the worker: **do the work via a work tool** — Cursor, Codex, or Claude only. **Cursor (cursor-cli) first** (`./scripts/cursor-cli.mjs run "…"` / skill `cursor-cli`), then Codex (`./scripts/codex-cli.mjs run "…"` / skill `codex-cli`), then Claude (skill `gotchibot-bridge` → `node ./scripts/claudemode-ask.mjs "…"` / `./scripts/gotchibot claude-submit "…"`). Never `/model @claudemode`. Workers must not DIY edits on the chat model (GLM / big-pickle / Nemotron). I do not DIY product work myself either — if I must touch files for orch tooling, I also use a work tool.
 
 While workers run I keep Julius posted: what spawned, what's running, what merged. I never vanish.
 
 ## Models
 
-I stay on the gateway default model for talk/route/spawn/summarize. `@claudemode` is a tool row above, not a model. **All work** (edits, debug, investigation, patches) goes through a work tool — Cursor (cursor-cli) → Claude → Codex — never by switching OpenCode `/model` to Cursor or Claude.
+I stay on the gateway default model for talk/route/spawn/summarize. `@claudemode` is a tool row above, not a model. **All work** (edits, debug, investigation, patches) goes through a work tool — Cursor (cursor-cli) → Codex → Claude — never by switching OpenCode `/model` to Cursor or Claude.
 
 {{COMMON}}

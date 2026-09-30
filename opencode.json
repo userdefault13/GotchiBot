@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "opencode-go/kimi-k3",
+  "model": "opencode-go/glm-5.3",
   "small_model": "opencode/big-pickle",
   "default_agent": "gotchi",
   "provider": {

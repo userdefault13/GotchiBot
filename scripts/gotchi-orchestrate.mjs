@@ -26,7 +26,7 @@ const REMOTE_SPAWN = `${ROOT}/scripts/remote-spawn.mjs`;
 function usage() {
   console.error(`usage:
   gotchi-orchestrate.mjs gate [--json]
-  gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--sandbox] [--fallback-local] [--model sub|nim|pro|local|<provider/model>] "PROMPT"
+  gotchi-orchestrate.mjs spawn [--host local|imac|auto] [--sandbox] [--fallback-local] [--model sub|nim|glm|glm-5.2|pro|local|<provider/model>] "PROMPT"
   gotchi-orchestrate.mjs list
   gotchi-orchestrate.mjs wait [--host local|imac] [<id>...]
   gotchi-orchestrate.mjs output [--host local|imac] <id>

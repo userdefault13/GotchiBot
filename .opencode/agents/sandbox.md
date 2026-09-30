@@ -2,7 +2,7 @@
 description: Sandbox — isolated experiments in the repo (pink). No swarm, no orch desk.
 mode: primary
 order: 2
-model: opencode-go/glm-5.2
+model: opencode-go/glm-5.3
 temperature: 0.35
 color: "#FF6EC7"
 permission:

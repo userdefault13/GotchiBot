@@ -2,7 +2,7 @@
 description: Build mode — implement planned work in the GotchiBot repo
 mode: primary
 order: 5
-model: opencode-go/glm-5.2
+model: opencode-go/glm-5.3
 temperature: 0.3
 color: "#22D3EE"
 permission:
