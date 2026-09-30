@@ -16,10 +16,11 @@ const cfg = JSON.parse(readFileSync(`${ROOT}/config/subgraph.endpoints.json`, "u
 const json = process.argv.includes("--json");
 const remote = process.argv.includes("--remote");
 
+const proxyKey = (process.env.GOTCHIBOT_SUBGRAPH_PROXY_KEY || process.env.SUBGRAPH_PROXY_SECRET || "").trim();
+
 function headers() {
   const h = { "Content-Type": "application/json", Accept: "application/json" };
-  const key = (process.env.GOTCHIBOT_SUBGRAPH_PROXY_KEY || process.env.SUBGRAPH_PROXY_SECRET || "").trim();
-  if (key) h[cfg.auth?.header || "X-Subgraph-Proxy-Key"] = key;
+  if (proxyKey) h[cfg.auth?.header || "X-Subgraph-Proxy-Key"] = proxyKey;
   return h;
 }
 
@@ -52,10 +53,16 @@ async function probeUrl(label, url) {
       };
     }
     const block = body?.data?._meta?.block?.number;
+    // A JSON 401/403 is the iMac proxy answering through the tunnel: the tunnel is up,
+    // the data just needs a key. Keyless is expected off-abra; a rejected key is a real failure.
+    const authRequired = res.status === 401 || res.status === 403;
     return {
       label,
       url,
-      ok: res.ok && body?.data?._meta,
+      ok: Boolean(res.ok && body?.data?._meta),
+      tunnelUp: true,
+      authRequired,
+      keySent: Boolean(proxyKey),
       status: res.status,
       latencyMs: Date.now() - started,
       block: block ?? null,
@@ -101,18 +108,20 @@ function probeRemoteLocal() {
 async function main() {
   const coreUrl = cfg.subgraphs["aavegotchi-core-base"].url;
   const publicProbe = await probeUrl("aavegotchi-core-base", coreUrl);
+  const tunnelOk = publicProbe.ok || (publicProbe.authRequired && !publicProbe.keySent);
   const out = {
     checkedAt: new Date().toISOString(),
     gateway: cfg.gateway,
+    ok: Boolean(tunnelOk),
     public: publicProbe,
     localImac: null,
   };
 
   if (remote) {
     out.localImac = probeRemoteLocal();
-    if (!publicProbe.ok && out.localImac.ok) {
+    if (!tunnelOk && out.localImac.ok) {
       out.diagnosis = "iMac subgraph proxy is up but Cloudflare tunnel is down — restart cloudflared on iMac";
-    } else if (!publicProbe.ok && !out.localImac.ok) {
+    } else if (!tunnelOk && !out.localImac.ok) {
       out.diagnosis = "iMac subgraph proxy and tunnel both failing — check Docker monolith on iMac";
     }
   }
@@ -120,21 +129,25 @@ async function main() {
   if (json) {
     console.log(JSON.stringify(out, null, 2));
   } else {
-    const tag = publicProbe.ok ? "ok" : "DOWN";
+    const tag = publicProbe.ok ? "ok" : tunnelOk ? "up (auth required)" : "DOWN";
     console.log(`subgraph tunnel: ${tag}  HTTP ${publicProbe.status ?? "?"}  ${publicProbe.latencyMs}ms`);
     if (publicProbe.block != null) console.log(`  core block: ${publicProbe.block}`);
-    if (publicProbe.error) console.log(`  error: ${publicProbe.error}`);
+    if (!publicProbe.ok && tunnelOk) {
+      console.log("  proxy wants a key and none is in env — run under abra to read data");
+    } else if (publicProbe.error) {
+      console.log(`  error: ${publicProbe.error}`);
+    }
     if (out.localImac) {
       console.log(`iMac localhost:8787: ${out.localImac.ok ? "ok" : "DOWN"}`);
       if (out.localImac.error) console.log(`  error: ${out.localImac.error}`);
     }
     if (out.diagnosis) console.log(`\n${out.diagnosis}`);
-    if (!publicProbe.ok) {
+    if (!tunnelOk) {
       console.log("\nfix: abra run gotchibot -- ./scripts/gotchibot tunnel restart");
     }
   }
 
-  process.exit(publicProbe.ok ? 0 : 1);
+  process.exit(tunnelOk ? 0 : 1);
 }
 
 main();
