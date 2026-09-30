@@ -222,24 +222,39 @@ function loadRoleForHero(heroId) {
   return { roleId, playbook };
 }
 
-/** Canonical workspace path — must match Docker bind mount on iMac (capital Dev). */
+/**
+ * Canonical workspace path — must match the Docker bind mount on the iMac, which
+ * uses a capital Dev. On a case-insensitive FS ~/dev and ~/Dev are one directory,
+ * so folding is cosmetic. On a case-sensitive FS they are two directories, and
+ * folding blindly points the fleet at an empty ghost tree. Only fold when the
+ * folded path resolves to the same directory.
+ */
 export function fleetWorkspace() {
   const override = process.env.GOTCHIBOT_OPENCLAW_WORKSPACE?.trim();
   if (override) return override;
-  // Case-fold the "dev" component under $HOME to the capital "Dev" the Docker
-  // bind mount uses, without assuming a specific username.
   const home = (process.env.HOME || homedir()).replace(/\/+$/, "");
-  const fold = (p) => {
-    const s = String(p);
-    const dev = `${home}/dev/`;
-    const Dev = `${home}/Dev/`;
-    return s.toLowerCase().startsWith(dev.toLowerCase()) ? `${Dev}${s.slice(dev.length)}` : s;
-  };
+  let p;
   try {
-    return fold(realpathSync(ROOT));
+    p = realpathSync(ROOT);
   } catch {
-    return fold(ROOT);
+    p = ROOT;
   }
+  const dev = `${home}/dev/`;
+  if (!p.toLowerCase().startsWith(dev.toLowerCase())) return p;
+  const folded = `${home}/Dev/${p.slice(dev.length)}`;
+  if (folded === p) return p;
+  try {
+    if (realpathSync(folded) === p) return folded;
+  } catch {
+    /* folded path does not exist — the case difference is a different directory */
+  }
+  if (existsSync(folded) && !fleetWorkspace.warned) {
+    fleetWorkspace.warned = true;
+    console.error(
+      `openclaw-fleet: ${dev}GotchiBot and ${home}/Dev/GotchiBot both exist and are different directories. Using ${p}.`,
+    );
+  }
+  return p;
 }
 
 export function heroWorkspaceRoot() {
@@ -755,6 +770,13 @@ export function doctorFleet({ entries } = {}) {
   const problems = [];
   const checks = [];
   const repo = fleetWorkspace();
+  // A wrong root makes every script reference look missing. Say it once, not per file.
+  if (!existsSync(`${repo}/scripts`)) {
+    problems.push(
+      `fleet root ${repo} has no scripts/ — heroes would be rendered against a tree that is not the repo`,
+    );
+    return { ok: false, problems, checks };
+  }
   if (!cfgEntries || !Object.keys(cfgEntries).length) {
     problems.push(`no fleet entries at ${FLEET_ENTRIES} — run sync`);
     return { ok: false, problems, checks };
