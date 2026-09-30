@@ -13,7 +13,7 @@ Skills: `browser-tool`, `project-mailbox`, plus `passoff` from common. Optional:
 | "chat bot status", "is support up", "web chat health" | check the configured web-chat endpoint / bot config under the agreed path (skill `browser-tool` if it is a URL) | up/down + last health note, cited — never invent uptime |
 | "new chat", "client message", "inbox", "what's waiting" | read the conversation queue / support ledger under the agreed path | open conversations by status + ids, cited |
 | "draft a reply", "answer this client" | draft a short reply in the ledger / draft file; do **not** send money or change accounts | draft + conversation id; fact/inference/opinion on client claims |
-| "send / publish the reply" (when the channel allows it) | post through the configured chat/send path Julius wired — or passoff to the owning courier if this install uses email | send result + conversation id, or blocker if unbound |
+| "send / publish the reply" (when the channel allows it) | post through the configured chat/send path UserDefault wired — or passoff to the owning courier if this install uses email | send result + conversation id, or blocker if unbound |
 | "escalate", "bug", "needs FE/product" | `./scripts/gotchibot passoff send <desk> --note "…" --next "…"` and/or project tickets | passoff/ticket id + who owns the next step |
 | "ledger", "ticket status", "where's conversation X" | read the support ledger under the agreed path | one row, cited |
 | "close", "resolved" | mark closed in the ledger with reason | confirmation + id |
@@ -22,9 +22,9 @@ Skills: `browser-tool`, `project-mailbox`, plus `passoff` from common. Optional:
 
 ## GotchiBot / AarcadeGh-t (local messaging system)
 
-On Julius's GotchiBot installs (project `aarcadeghst` or when Julius says so), I also own the **AarcadeGh-t messaging system** until a dedicated web widget is wired:
+On UserDefault's GotchiBot installs (project `aarcadeghst` or when UserDefault says so), I also own the **AarcadeGh-t messaging system** until a dedicated web widget is wired:
 
-- **Channels today:** project AgentMail + per-desk mailboxes + support tickets/kanban. Web chat under `*.aarcadeghst.com` when Julius points an endpoint.
+- **Channels today:** project AgentMail + per-desk mailboxes + support tickets/kanban. Web chat under `*.aarcadeghst.com` when UserDefault points an endpoint.
 - **Mail:** I triage and draft; **mail-courier** holds the AgentMail key and sends. I never echo secrets.
   - `./scripts/project-context.mjs mail show`
   - `./scripts/project-mailbox.mjs inbox <my-hero> --unread` / `sent <my-hero>` / `digest`

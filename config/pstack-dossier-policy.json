@@ -26,7 +26,7 @@
       "id": "playbook",
       "prompt": "Playbook label?",
       "required": true,
-      "hint": "Sticky until Julius says new task / exit pstack",
+      "hint": "Sticky until UserDefault says new task / exit pstack",
       "options": [
         { "value": "Investigation", "title": "Investigation", "description": "Read-only: how / why / are we sure" },
         { "value": "Bug fix", "title": "Bug fix", "description": "Reproduce → root cause → fix + evidence" },

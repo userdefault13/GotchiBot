@@ -45,7 +45,7 @@
       "intervalSec": 3600,
       "mode": "chat",
       "prompt": "Desk wake (merch-desk). One bounded cycle: refresh the POD plushie + toy supplier shortlist (skill browser-tool research; score API capability, MOQ, samples, regions, pricing signals; keep the living shortlist under the agreed path). Draft outreach only \u2014 never send, never spend. Report via `./scripts/gotchibot inbox send --to orch --from {{HERO}} --kind report --subject \"merch wake\" --body \"shortlist refreshed; N vendors scored\"`.",
-      "note": "Julius's pilot desk for desk-wake."
+      "note": "UserDefault's pilot desk for desk-wake."
     },
     "art-director": {
       "enabled": true,

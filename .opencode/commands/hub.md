@@ -18,5 +18,5 @@ abra run gotchibot -- ./scripts/gotchibot hub --infra
 
 Fallback without abracadabra: `./scripts/gotchibot hub` / `hub --infra`.
 
-Summarize the output for Julius. Do not invent container or gateway state.
+Summarize the output for UserDefault. Do not invent container or gateway state.
 Do not modify theme or color files.

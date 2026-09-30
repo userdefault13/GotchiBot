@@ -156,7 +156,7 @@ onboarding_complete() {
 }
 
 quit_to_terminal() {
-  # Exit this pane only — never kill the whole gotchibot session (that left Julius
+  # Exit this pane only — never kill the whole gotchibot session (that left UserDefault
   # with a dead desk whenever OpenCode/abra exited).
   exit 0
 }

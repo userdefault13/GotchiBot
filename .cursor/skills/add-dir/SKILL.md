@@ -2,7 +2,7 @@
 name: add-dir
 description: >-
   Add an extra directory to the GotchiBot session allowlist (/add-dir). Use when
-  Julius wants reads/writes in another repo tree beside GotchiBot.
+  UserDefault wants reads/writes in another repo tree beside GotchiBot.
 ---
 
 # add-dir (Cursor)

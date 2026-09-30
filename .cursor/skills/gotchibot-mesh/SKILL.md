@@ -2,7 +2,7 @@
 name: gotchibot-mesh
 description: >-
   Cross-machine GotchiBot agent status across the MBP and iMac. Read-only. Use
-  when Julius asks how many agents are running, iMac/MBP status, or whether the
+  when UserDefault asks how many agents are running, iMac/MBP status, or whether the
   iMac orchestrator is up.
 ---
 

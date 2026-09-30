@@ -7,5 +7,5 @@
   ],
   "skillsExternal": [],
   "reportCmd": "./scripts/gotchibot link-cube status",
-  "autonomy": "Owns systems/software architecture for the current GotchiBot / Julius project: options matrix, phased plan, rollback, handoff. Does not build. Routes execution to CoS, makers, bend, or coding desks."
+  "autonomy": "Owns systems/software architecture for the current GotchiBot / UserDefault project: options matrix, phased plan, rollback, handoff. Does not build. Routes execution to CoS, makers, bend, or coding desks."
 }

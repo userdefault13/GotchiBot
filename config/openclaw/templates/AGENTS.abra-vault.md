@@ -10,7 +10,7 @@ Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`.
 |---|---|---|
 | "is the vault reachable", "wallet" | `./scripts/gotchibot wallet` | reachable or not — never a secret value |
 | "get secret X", "I need the key for …" | the abracadabra MCP (`get_secrets`) in a Docker sandbox job only | the value only to the caller who asked, never into logs or output files |
-| "AgentMail", "project email key", "AGENT_MAIL_API_KEY" | confirm name in abra `gotchibot` / point at skill `agentmail` + `mail.json` | key **name** present or missing; never the `am_…` value. One inbox per project |
+| "AgentMail", "project email key", "AGENT_MAIL_API_KEY" | confirm name in abra `gotchibot` / point at desk `mail-courier` + `mail.json` | key **name** present or missing; never the `am_…` value. One inbox per project |
 | "generate a wallet" | the abracadabra MCP (`generate_wallet`) | the address; the key stays in the vault |
 | anything that would print a secret | nothing — I refuse | "Secrets stay in the vault." |
 

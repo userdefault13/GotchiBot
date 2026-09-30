@@ -3,7 +3,7 @@
 #
 # `opencode auth login` is interactive (a searchable provider prompt, then a
 # browser step), so an agent cannot complete it. This puts the prompt in a real
-# Terminal.app window for Julius, then waits for the credential store to appear
+# Terminal.app window for UserDefault, then waits for the credential store to appear
 # and reports what OpenCode can see afterwards — never any secret values.
 #
 #   scripts/opencode-login.sh              open the login window, wait, verify

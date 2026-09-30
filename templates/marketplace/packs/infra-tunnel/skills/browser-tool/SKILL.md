@@ -173,13 +173,13 @@ Close the current browser session.
 ### Host Allowlist
 
 - Default allows: `localhost`, `127.0.0.1`, `.aarcadeghst.com`
-- Navigation to any other host fails with a clear error explaining that Julius adds hosts by editing `config/browser.allowlist.json` manually
+- Navigation to any other host fails with a clear error explaining that UserDefault adds hosts by editing `config/browser.allowlist.json` manually
 - The allowlist file is **documented** with examples (see `config/browser.allowlist.json`)
 
 ### Dry-run / Confirm Gate (critical)
 
 - By default, **any click** targeting elements matching `destructivePatterns` is **BLOCKED**
-- Patterns list lives in the allowlist config, editable by Julius
+- Patterns list lives in the allowlist config, editable by UserDefault
 - To override: pass `--confirm "<exact action phrase>"` on the command line
 - Example: `--confirm "click checkout on safeway cart"` allows the click
 
@@ -220,7 +220,7 @@ gotchi browser-tool --session grocery extract '.cart-count'
 
 # 5. At this point, the cart is filled. STOP before checkout.
 #    The dry-run gate will block any click matching 'checkout'/'buy' patterns
-#    unless --confirm is passed. This is intentional — Julius must confirm.
+#    unless --confirm is passed. This is intentional — UserDefault must confirm.
 
 # 6. When ready to checkout (only after explicit human confirmation):
 gotchi browser-tool --session grocery --confirm "confirm checkout on starterbros cart" click '#checkout'

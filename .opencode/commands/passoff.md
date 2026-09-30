@@ -9,7 +9,7 @@ Run immediately, do not ask. `$ARGUMENTS` is the passoff subcommand.
 ./scripts/gotchibot passoff $ARGUMENTS
 ```
 
-| Julius types | What runs |
+| UserDefault types | What runs |
 | --- | --- |
 | `/passoff LINK` | `send LINK` — capture + message LINK (bare name = send) |
 | `/passoff send LINK --note "…" --next "…"` | full send with the human context |
@@ -32,4 +32,4 @@ Unknown name → error. **Do not invent agents.**
 If delivery fails the packet stays pending; say so and offer `--via spawn` or
 `passoff resume --as <hero>` on the other side.
 
-Show script stdout to Julius. Load skill **passoff**.
+Show script stdout to UserDefault. Load skill **passoff**.

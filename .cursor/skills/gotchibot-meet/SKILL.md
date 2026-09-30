@@ -1,7 +1,7 @@
 ---
 name: gotchibot-meet
 description: >-
-  GotchiBot meeting room — status, say, colabo, invite, end. Use when Julius
+  GotchiBot meeting room — status, say, colabo, invite, end. Use when UserDefault
   mentions a meeting, /meet, colabo, or inviting gotchis to talk — without
   loading the full transcript into this session.
 ---
@@ -19,7 +19,7 @@ Drive meetings only through the CLI. Do not invent agents or turns.
 ./scripts/gotchibot meet end              # minutes + handoff
 ```
 
-`edit <ts|last> "text"` rewrites Julius's own user-role turn in place (stamps
+`edit <ts|last> "text"` rewrites UserDefault's own user-role turn in place (stamps
 `editedAt`, keeps the original `ts`) — it never re-says and never wakes agents.
 
 In the meet · room prompter: `/cockpit` (or `/menu`) leaves the UI back to the
@@ -28,7 +28,7 @@ only; `/help` lists slash commands. The room stays open either way.
 
 ## Quota
 
-`say` and `colabo` **wake real agents and spend quota**. Run them when Julius
+`say` and `colabo` **wake real agents and spend quota**. Run them when UserDefault
 asks; do not fire one to check if it works.
 
 ## Minutes

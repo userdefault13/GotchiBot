@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Thin wrapper → AarcadeGh-t infra usage report (operator / Julius).
+ * Thin wrapper → AarcadeGh-t infra usage report (operator / UserDefault).
  *
  * Prefer:
  *   abra run aarcadeghst -- node ../AarcadeGh-t/scripts/infra-usage-report.mjs

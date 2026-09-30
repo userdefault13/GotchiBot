@@ -12,7 +12,7 @@ Read `SOUL.md`. That is how you talk and how you decide. Short version:
 
 1. Reply immediately. Don't go silent while you work.
 2. Act on internal work (read, inspect, draft, memory). Ask before external or destructive work.
-3. Lead with the result. Match Julius's length. No help-desk filler.
+3. Lead with the result. Match UserDefault's length. No help-desk filler.
 4. Don't guess. Use tools. Don't fabricate.
 5. Write down anything that should survive this session (`memory/YYYY-MM-DD.md`, `MEMORY.md`, `TOOLS.md`).
 6. Call the human **UserDefault** (or "you") in every reply. The real name in these docs is internal history; never say it.
@@ -33,7 +33,7 @@ opencode dispatch session under `sessions/<id>/`.
 - Sub-agents are other fleet heroes (e.g. `starter-link-h1-1`) or headless dispatch sessions — not you.
 - Read `ORCHESTRATOR.md` and your agentDir `config/openclaw/agents/orchestrator/AGENTS.md`.
 - **Ignore** the sub-agent session protocol below (it does not apply to you).
-- While sub-agents run, keep Julius posted: what spawned, what's running, what merged. Don't vanish.
+- While sub-agents run, keep UserDefault posted: what spawned, what's running, what merged. Don't vanish.
 - Focus: `/orch` `/list` `/switch` `/cockpit` in OpenClaw TUI (after `./scripts/openclaw-gotchi-build.sh`). Without the patch: **Ctrl+O** in the chat pane, **Ctrl+b o** from any pane, or `./scripts/gotchibot orch`.
 
 ### Sub-agent — dispatch session or non-orchestrator OpenClaw hero
@@ -172,11 +172,11 @@ the tunnel hostnames.
 
 # TOOLS.md - Local Notes
 
-Skills define how tools work. This file is the cheat sheet for Julius's actual setup.
+Skills define how tools work. This file is the cheat sheet for UserDefault's actual setup.
 
 ## Machines
 
-- **MBP** — Julius's MacBook. Client. Repo at `~/Dev/GotchiBot`.
+- **MBP** — UserDefault's MacBook. Client. Repo at `~/Dev/GotchiBot`.
 - **iMac** — home always-on host for GotchiBot + `opencode serve`. Prefer this when Tailscale SSH is up.
 - Remote attach: `abra run gotchibot -- ./scripts/gotchibot attach`
 - Remote status: `abra run gotchibot -- ./scripts/gotchibot remote-status`
@@ -185,13 +185,13 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 - **Agents:** abra MCP / `abra run` are **denied on host Desk**. Only Docker `--sandbox`
   jobs may fetch secrets (`ABRA_KEY` → `host.docker.internal:7331`).
-- Julius may still use `abra run gotchibot -- <cmd>` in his own terminal.
-- Never ask Julius to paste a key. Never write secrets to disk, session logs, or `output.md`.
+- UserDefault may still use `abra run gotchibot -- <cmd>` in their own terminal.
+- Never ask UserDefault to paste a key. Never write secrets to disk, session logs, or `output.md`.
 - **GitHub MCP:** `GOTCHIBOT_GITHUB_PAT` in abra project `gotchibot` → `./scripts/mcp/github.sh` (Docker `ghcr.io/github/github-mcp-server`).
 
 ## Orchestration commands
 
-- Pick an agent: `./scripts/delegate-pick.mjs` (Julius may wrap with abra; agents must not)
+- Pick an agent: `./scripts/delegate-pick.mjs` (UserDefault may wrap with abra; agents must not)
 - Spawn: `./scripts/gotchi-orchestrate.mjs spawn --host auto --model nim "…"`
 - Sandbox (new project): `GOTCHIBOT_HERO_ID=<available> ./scripts/gotchi-orchestrate.mjs spawn --host auto --sandbox --model nim "…"`
   - Hero must be `available`. Never auto-mint. Never steal trader/comms/infra desks.
@@ -216,7 +216,7 @@ Skills define how tools work. This file is the cheat sheet for Julius's actual s
 
 ## Voice / TTS
 
-- Opt-in only (`config/tts.personas.json5`). Don't surprise Julius with speech.
+- Opt-in only (`config/tts.personas.json5`). Don't surprise UserDefault with speech.
 
 ## Models
 

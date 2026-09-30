@@ -132,7 +132,7 @@
     "Do not DIY file work on the chat model \u2014 use a work tool",
     "Do not leave desk-terminals open",
     "Do not print secrets",
-    "Do not spend / post / chain tx without Julius yes in conversation",
+    "Do not spend / post / chain tx without UserDefault yes in conversation",
     "Do not install npm globals or new MCPs without UserDefault yes"
   ],
   "requestFlow": [
@@ -194,12 +194,12 @@
         "requestedAt": "2026-09-19T08:00:00Z"
       },
       "appendHelper": "node ./scripts/worker-skill-request.mjs --session <id> --skill <name> --reason \"\u2026\"",
-      "harvest": "./scripts/opencode-dispatch.sh requests   # lists all sessions/*/skill-requests.jsonl for orch/Julius",
+      "harvest": "./scripts/opencode-dispatch.sh requests   # lists all sessions/*/skill-requests.jsonl for orch/UserDefault",
       "rules": [
         "Append one JSON object per line \u2014 never rewrite the whole file casually",
         "Continue the job without the skill if possible; do not block forever",
         "Never npm-install / add MCP yourself \u2014 request then continue",
-        "Orch surfaces requests to Julius (synergy / morning merge)"
+        "Orch surfaces requests to UserDefault (synergy / morning merge)"
       ]
     },
     "desk-terminals": {

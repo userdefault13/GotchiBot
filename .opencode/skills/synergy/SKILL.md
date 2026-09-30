@@ -20,7 +20,7 @@ Related skills: **delegate-first**, **gotchibot**, **hub-sop**, **caavegotchi-sp
 
 The roster is the live set of **cAavegotchi heroes** on the `gotchibot` cartridge
 plus **dispatch sessions** (local MBP + remote iMac). It answers: who exists,
-who is busy, who is focused, who Julius is talking to.
+who is busy, who is focused, who UserDefault is talking to.
 
 | Layer | Source of truth | Script / cache |
 | --- | --- | --- |
@@ -50,11 +50,11 @@ abra run gotchibot -- node ./scripts/hero-agent-state.mjs list
 abra run gotchibot -- node ./scripts/hero-agent-state.mjs set <heroId> available
 ```
 
-**Cooperation rule:** only assign work to `available` or `idle` unless Julius
+**Cooperation rule:** only assign work to `available` or `idle` unless UserDefault
 explicitly reassigns. Never steal `assigned` / `watching` desks (esp. trader /
 named collateral).
 
-## Focus modes (who hears Julius)
+## Focus modes (who hears UserDefault)
 
 | Mode | Meaning | How |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ to return.
 
 ## Decision table (synergy)
 
-| Julius / situation | Do this |
+| UserDefault / situation | Do this |
 | --- | --- |
 | Who is on the roster? | `agent-focus.mjs list` or MCP `roster_list` |
 | Talk as / to a specific gotchi | `select <id>` then `chat "…"` |
@@ -100,9 +100,9 @@ to return.
 2. `agent-focus.mjs select <hero>` (optional pin).
 3. Spawn self-contained prompt → `sessions/<id>/output.md`.
 4. `wait` / `output` on correct `--host`.
-5. Merge; surface `skill-requests.jsonl` to Julius.
+5. Merge; surface `skill-requests.jsonl` to UserDefault.
 
-### 2) Direct SUB chat (Julius talking to one hero)
+### 2) Direct SUB chat (UserDefault talking to one hero)
 
 1. `/switch <hero>` → SUB focus.
 2. Messages go to that OpenClaw agent (not orch).
@@ -134,14 +134,14 @@ Separate API roster (`/api/goball-agent/roster`). Map seat ↔ hero; release to
 
 ## Agent communication norms
 
-1. **Orch speaks to Julius**; workers speak in first person as their gotchi when
+1. **Orch speaks to UserDefault**; workers speak in first person as their gotchi when
    SUB-focused or spawned.
 2. **Prompts are self-contained**: context, constraints, definition of done,
    `output.md` path.
 3. **No secrets in prompts** — abracadabra only.
 4. **One hero per live dispatch session** unless multitask assigns distinct heroes.
 5. **Skill requests**: append `sessions/<id>/skill-requests.jsonl`; orch asks
-   Julius before editing `skills/registry.json`.
+   UserDefault before editing `skills/registry.json`.
 6. **Handoff / checkpoint**: `gotchibot handoff` / `checkpoint` across sessions.
 7. **Claude tool from a sub-agent**: `node ./scripts/claudemode-ask.mjs "…"` or MCP
    `claude_ask` — **never** `abra run …` (Touch ID blocked headless). On Hub,
@@ -185,7 +185,7 @@ Prefer MCP when loaded; otherwise Bash the commands above.
 
 - Spawn without a cAavegotchi / wallet gate
 - Chat as orch while pretending to be a sub (or the reverse)
-- Assign `assigned`/`watching` heroes without Julius
+- Assign `assigned`/`watching` heroes without UserDefault
 - Bypass `delegate-pick` when idle agents exist
 - Install skills autonomously
 - Invent Tailscale SSH when `abra run gotchibot --` exists

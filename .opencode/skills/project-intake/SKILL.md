@@ -2,7 +2,7 @@
 name: project-intake
 description: >-
   Sandbox-only unsupervised project intake (/project modal). Load ONLY in
-  Sandbox when Julius runs /project or asks to start an unsupervised project.
+  Sandbox when UserDefault runs /project or asks to start an unsupervised project.
   Does NOT gate desk installs, Claude CLI setup, Gotchi mode, or ordinary
   spawns. config/project-policy.json + scripts/project-intake.mjs.
 license: MIT
@@ -14,7 +14,7 @@ metadata:
 
 # Project intake — Sandbox only
 
-**Scope:** This skill and `config/project-policy.json` apply **only** when Julius
+**Scope:** This skill and `config/project-policy.json` apply **only** when UserDefault
 is in **Sandbox** and using **`/project`** (unsupervised project intake).
 
 They do **not** apply to:
@@ -26,7 +26,7 @@ They do **not** apply to:
 
 **Hard rule (Sandbox `/project` only):** collect **all** requirements. Never
 spawn that unsupervised project until `project-intake ready` succeeds **and**
-Julius confirms.
+UserDefault confirms.
 
 ## TUI
 

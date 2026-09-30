@@ -13,7 +13,7 @@ GotchiBot has two spawn-host topologies. The file `sessions/.topology.json`
   asks you to run `gotchibot topology solo` explicitly. Init also writes solo
   on first successful run when not fleetish — never if `REMOTE_*` is set.
 
-## Fleet (Julius's template)
+## Fleet (UserDefault's template)
 
 - MBP / iPhone are clients; the iMac is the always-on orchestrator
   (`opencode serve` + sub-agents over Tailscale SSH).
@@ -50,10 +50,10 @@ Solo friends run one command after clone:
 That connects a wallet (MetaMask), registers the install, saves
 `GOTCHIBOT_INFRA_TOKEN` in abra, mints the cartridge, and runs doctor.
 
-Julius's desk keeps operator secrets in abra with no install token. Rollout:
+UserDefault's desk keeps operator secrets in abra with no install token. Rollout:
 [docs/FRIENDS-BETA-ROLLOUT.md](./FRIENDS-BETA-ROLLOUT.md).
 
-**Friends beta:** Julius adds the friend's `0x` to Vercel `GOTCHIBOT_INSTALL_ALLOWLIST`,
+**Friends beta:** UserDefault adds the friend's `0x` to Vercel `GOTCHIBOT_INSTALL_ALLOWLIST`,
 then the friend runs `onboard`. Invite / revoke / cost-usage steps live in that
 rollout doc. Golden/Silver airdrops and paid Infra Pass are deferred until usage
 costs are measured.

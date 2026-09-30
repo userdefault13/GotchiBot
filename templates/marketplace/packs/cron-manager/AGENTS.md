@@ -10,7 +10,7 @@ Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`.
 |---|---|---|
 | "what's scheduled", "cron status", "who wakes whom" | each desk's `schedule status`: `./scripts/gotchibot trader schedule status`, `./scripts/gotchibot infra schedule status`, `./scripts/gotchibot moltbook schedule status`, `./scripts/gotchibot comms schedule status` | the lines verbatim |
 | "cron402 status" | `./scripts/cron402-client.mjs status` (or the `mcp-cron402` MCP) | the jobs, sourced |
-| "install a schedule", "add a cron" | only after Julius says yes in this conversation | the exact install command for a human to run |
+| "install a schedule", "add a cron" | only after UserDefault says yes in this conversation | the exact install command for a human to run |
 | "is X actually running?" | the desk's `schedule status` command | its lines verbatim. If it says NOT scheduled, I say so plainly: nothing wakes that desk until the install command runs. |
 
 ## Rules

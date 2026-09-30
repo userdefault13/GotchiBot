@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Shared meeting room — Julius + orchestrator (chair) + invited cAavegotchis.
+ * Shared meeting room — UserDefault + orchestrator (chair) + invited cAavegotchis.
  *
  *   ./scripts/gotchi-meet.mjs start ["topic"]
  *   ./scripts/gotchi-meet.mjs invite <n|id|name>
@@ -1636,7 +1636,7 @@ function printMeetingBlock(meeting, turns, { pick } = {}) {
 // ---------------------------------------------------------------------------
 // `!cmd` in the meet prompter — run a shell command on this box and post the
 // command + output to the room as a user turn, so every gotchi in the meeting
-// sees what Julius saw (same idea as `!` in Claude Code / OpenCode shell mode).
+// sees what UserDefault saw (same idea as `!` in Claude Code / OpenCode shell mode).
 // No model turn is triggered; the output just becomes shared context.
 // ---------------------------------------------------------------------------
 const SHELL_MAX_LINES = 60;
@@ -2084,7 +2084,7 @@ function writeHandoff(meeting, minutesPath) {
     "",
     "1. Stay on **big-pickle** (Desk orch model). Do **not** `/model` to Claude.",
     "2. Hard logic → Hub Claude tool (`claude_submit` / `gotchibot claude-submit`) with pane proxy (skill **claude-pane-proxy**).",
-    "3. Confirm each agent below is working (or spawn) on today's goals Julius set.",
+    "3. Confirm each agent below is working (or spawn) on today's goals UserDefault set.",
     "4. Prefer delegate-first; use Colabo only inside an open meeting.",
     "",
     "## Agents",
@@ -2095,7 +2095,7 @@ function writeHandoff(meeting, minutesPath) {
     "",
     "## Today's goals",
     "",
-    "_(chair fills from Julius after morning recap / meeting)_",
+    "_(chair fills from UserDefault after morning recap / meeting)_",
     "",
   ].join("\n");
   const path = `${meetingDir(meeting.id)}/handoff.md`;

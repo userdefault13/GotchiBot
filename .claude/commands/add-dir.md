@@ -13,7 +13,7 @@ Run this now, do not ask first:
 Rules:
 
 - Empty / `list` → show current extra roots.
-- A path → resolve it, require it exists as a directory Julius named, append to
+- A path → resolve it, require it exists as a directory UserDefault named, append to
   the session allowlist (`sessions/.gotchibot-add-dirs.json`). Write-guard
   then permits Write/Delete under that root for this desk.
 - `remove <path>` → drop that root (use `remove`, not `rm` — bash guard).
@@ -21,7 +21,7 @@ Rules:
 - Prefer repos under `~/Dev/…`. Absolute paths only after resolve.
 - This is GotchiBot's remap of Cursor/Claude `--add-dir` / `/add-dir`: policy
   allowlist + agent awareness. It does not restart the Cursor CLI with a new
-  `--add-dir` flag mid-session — say so if Julius expected that.
+  `--add-dir` flag mid-session — say so if UserDefault expected that.
 
 After success: confirm the path and that writes under it are now allowed.
 Skill: **add-dir**.

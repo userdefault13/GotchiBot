@@ -49,7 +49,7 @@ function runOps(action, extra = []) {
 const TOOLS = [
   {
     name: "hub_status",
-    description: "Hub iMac status (OpenClaw OC✓/OC✗, Docker, tunnel). Use when Julius asks if gateway is down.",
+    description: "Hub iMac status (OpenClaw OC✓/OC✗, Docker, tunnel). Use when UserDefault asks if gateway is down.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {

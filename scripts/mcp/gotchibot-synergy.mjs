@@ -55,7 +55,7 @@ const TOOLS = [
   },
   {
     name: "roster_status",
-    description: "Current ORCH/SUB focus (who Julius is talking to).",
+    description: "Current ORCH/SUB focus (who UserDefault is talking to).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {

@@ -4,12 +4,12 @@ agent: gotchi
 ---
 
 Load skill **pstack** (`.opencode/skills/pstack/SKILL.md`) and stay sticky until
-Julius says `new task` or exits pstack. You are the **chief** (orchestrator): frames,
+UserDefault says `new task` or exits pstack. You are the **chief** (orchestrator): frames,
 briefs, drain, judgment — **no product-code edits**. Heroes run role-tagged briefs.
 
 `$ARGUMENTS` is the goal / subcommand.
 
-| Julius types | What to do |
+| UserDefault types | What to do |
 | --- | --- |
 | `/pstack` | Ask one short question for the goal / done predicate if none yet; or continue sticky playbook |
 | `/pstack <goal>` | Match a playbook → `gotchibot pstack init` (if multi-unit) → `brief` → `delegate-pick` / spawn |

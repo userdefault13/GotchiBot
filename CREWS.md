@@ -61,13 +61,13 @@ steal LINK/YFI/WBTC standing desks.
 
 CoS: `gotchibot graph` (sessions/graph state) + fleet skill `agent-graph`.
 Orch owns product routing. Central owns makers. Bend crew owns LAWS/PROOF.
-Do not cross-steal lanes without Julius saying so.
+Do not cross-steal lanes without UserDefault saying so.
 
 ## architect
 
 | | |
 |---|---|
-| **Grok Bot** | `architect` — general systems/software architecture for any Julius project |
+| **Grok Bot** | `architect` — general systems/software architecture for any UserDefault project |
 | **Desk pack** | `templates/marketplace/packs/architect` — `gotchibot templates apply architect --hero <available> --yes` |
 | **Playbook** | Pack skill `architect` (mirrors fleet skill `architect`) |
 | **Anti-jobs** | No silent build; no one-option plans; hand off to CoS/crews |

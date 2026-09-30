@@ -35,7 +35,7 @@ Each item exists because it shipped as a bug in this repo.
    Docker-only. Never echo a fetched value.
 6. **No autonomous installs** — a script must not `npm i -g`, add MCP servers, or
    install skills. New capability goes through `skills/registry.json`.
-7. **CLI wiring** — a new `scripts/foo.mjs` that Julius will run needs a
+7. **CLI wiring** — a new `scripts/foo.mjs` that UserDefault will run needs a
    `scripts/gotchibot` dispatch entry, a usage line, and (if it is a workflow) a
    `.opencode/commands/*.md` and a `skills/registry.json` entry. A script nobody
    can invoke is half-shipped.

@@ -1,7 +1,7 @@
 ---
 name: passoff
 description: >-
-  Hand live work from one cAavegotchi to another. Julius starts a job with one
+  Hand live work from one cAavegotchi to another. UserDefault starts a job with one
   gotchi, walks away, comes back on a different gotchi — the outgoing agent
   packages what it already knows and messages the incoming agent, which picks
   up mid-stride. Load for /passoff, "pass this to LINK", "hand off to WBTC",
@@ -25,7 +25,7 @@ messages the next *gotchi* and leaves a packet it can accept.
 
 ## When to load
 
-- Julius says: pass this to X · hand off to X · X takes it from here · switch
+- UserDefault says: pass this to X · hand off to X · X takes it from here · switch
   this job to X · continue what DAI was doing
 - You are starting work and the tree already has changes you did not make
 - You are about to go idle / be replaced mid-job
@@ -76,7 +76,7 @@ an error, not a guess.
    Re-check the files it names.
 2. **Do not restart the job.** Continue from `Next step`.
 3. **Do not redo finished work** listed under `Done so far`.
-4. Reply to Julius with what you inherited in one line, then keep working.
+4. Reply to UserDefault with what you inherited in one line, then keep working.
 
 ## What a packet carries
 

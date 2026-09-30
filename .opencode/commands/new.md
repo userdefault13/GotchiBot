@@ -3,7 +3,7 @@ description: Open a fresh OpenCode session to multitask while current chat is QU
 agent: gotchi
 ---
 
-When Julius wants to keep working while this session is **QUEUED** / busy (Codex-style parallel chat):
+When UserDefault wants to keep working while this session is **QUEUED** / busy (Codex-style parallel chat):
 
 1. Tell them to type **`/new`** (or **`/multitask-session`**).
 2. That creates a **new OpenCode session** and switches the TUI to it. The previous session **keeps running** — queued prompts there are not cancelled.

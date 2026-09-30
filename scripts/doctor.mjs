@@ -236,7 +236,7 @@ if (mode === "solo_install_token") {
     fail(`install token status probe failed: ${e?.message ?? e}`);
   }
 } else if (mode === "legacy_operator") {
-  ok("infra auth: legacy operator secrets (Julius path — no install token required)");
+  ok("infra auth: legacy operator secrets (UserDefault path — no install token required)");
 } else if (topo.mode === "solo") {
   warn("solo topology but no GOTCHIBOT_INFRA_TOKEN — run: ./scripts/gotchibot onboard");
 } else {

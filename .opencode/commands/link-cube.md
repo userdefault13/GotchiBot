@@ -9,7 +9,7 @@ Run immediately, do not ask. `$ARGUMENTS` is the link-cube subcommand.
 ./scripts/gotchibot link-cube $ARGUMENTS
 ```
 
-| Julius types | What runs |
+| UserDefault types | What runs |
 | --- | --- |
 | `/link-cube` | `--help` — the flow |
 | `/link-cube intake --job "financial analyst" --non-coding --voice "…" --collateral link --mode resummon --hero starter-link-h1-1` | collect prefs |
@@ -34,4 +34,4 @@ Rules:
 - No installs, no secrets, no Blockscout, no token-id hunting.
 - Aliases: `hatch`→`summon`, `rehatch`→`resummon`.
 
-Show script stdout to Julius. Load skill **prof-link-cube**.
+Show script stdout to UserDefault. Load skill **prof-link-cube**.

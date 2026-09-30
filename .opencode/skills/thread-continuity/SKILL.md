@@ -15,7 +15,7 @@ metadata:
 
 # thread-continuity
 
-**Do not rediscover from scratch** when Julius continues the last edit.
+**Do not rediscover from scratch** when UserDefault continues the last edit.
 
 Load this skill on follow-ups, same-surface tweaks, and any handoff that
 continues My Paarcels / AarcadeGh-t UI work.

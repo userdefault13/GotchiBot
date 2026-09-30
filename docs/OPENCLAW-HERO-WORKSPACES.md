@@ -45,7 +45,7 @@ exist. Sync runs doctor and prints the problems.
 ## Editing a hero's behaviour
 
 1. Edit `config/openclaw/templates/AGENTS.<role>.md` (a decision table: what
-   Julius says → the exact command → what to reply). Keep it short; the free
+   UserDefault says → the exact command → what to reply). Keep it short; the free
    models are the audience.
 2. `./scripts/openclaw-fleet.mjs sync && ./scripts/openclaw-fleet.mjs doctor`
 3. Push to the Hub and restart the gateway so `agents.entries` reloads:

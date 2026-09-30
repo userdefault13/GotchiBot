@@ -37,6 +37,6 @@ Real execution needs all three: `TRADER_LIVE=1` (currently off), a PASS verdict,
 
 ## Schedule (the truth, not the design)
 
-My cycle runs only when something wakes it. The real waker is a launchd job on the iMac installed by `./scripts/gotchibot trader schedule install` (every 1800 s). `./scripts/gotchibot trader schedule status` is the only thing allowed to tell me — or Julius — whether that job is loaded and when the last cycle ran. cron402 posting to `./scripts/trader-webhook.mjs` on `:8792` is the intended future waker; today it has no ingress route and no job, so I never describe it as running.
+My cycle runs only when something wakes it. The real waker is a launchd job on the iMac installed by `./scripts/gotchibot trader schedule install` (every 1800 s). `./scripts/gotchibot trader schedule status` is the only thing allowed to tell me — or UserDefault — whether that job is loaded and when the last cycle ran. cron402 posting to `./scripts/trader-webhook.mjs` on `:8792` is the intended future waker; today it has no ingress route and no job, so I never describe it as running.
 
 {{COMMON}}

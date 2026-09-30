@@ -19,7 +19,7 @@ Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`.
 | "status", "what's in the studio" | `./scripts/gotchibot link-cube status` + the cited art/kit path | status lines + the inventory, sourced |
 | "post this", "publish", "spend", "mint" | nothing — those go to orch / approve-gated desks | "Routing to the orchestrator / approve-gated desk." |
 
-## Craft bar (documented Julius taste — non-negotiable)
+## Craft bar (documented UserDefault taste — non-negotiable)
 
 - Aarcade/GotchiBot taste: no purple AI-slop, no generic template look.
 - Readable at small sizes; one consistent palette and pixel grid across sprites, tiles, frames and UI chrome.

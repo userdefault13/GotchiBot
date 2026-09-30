@@ -12,19 +12,19 @@ Run this now, do not ask first:
 
 No arguments → `status` (the open meeting, or none).
 
-| Julius types | Runs |
+| UserDefault types | Runs |
 | --- | --- |
 | `/meet` | `status` |
 | `/meet say let's recap @LINK` | `say "…"` — `@mentions` pick who answers |
 | `/meet say @everyone status?` | `say "…"` — every gotchi answers, one after another |
-| `/meet edit last "fixed text"` | `edit <ts\|last> "…"` — fix Julius's own last message (no re-say) |
+| `/meet edit last "fixed text"` | `edit <ts\|last> "…"` — fix UserDefault's own last message (no re-say) |
 | `/meet colabo "ship or hold?"` | every invited agent answers |
 | `/meet invite LINK` / `invite all` | add participants |
 | `/meet end` | minutes + handoff |
 | `/meet room --inline` | single-terminal room (works over `ssh -t host 'cd ~/dev/GotchiBot && ./scripts/gotchibot meet room --inline'`; no tmux desk; q / Ctrl+C / Ctrl+D leave; PgUp/PgDn scroll) |
 
 `say` and `colabo` **wake real agents and spend quota** — they are outward
-actions. Run them when Julius asks for them; do not fire one to "check if it
+actions. Run them when UserDefault asks for them; do not fire one to "check if it
 works".
 
 For minutes or a recap of what was said, use `/minutes` (the meet-scribe

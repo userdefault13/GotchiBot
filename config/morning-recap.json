@@ -3,7 +3,7 @@
   "title": "Morning recap",
   "defaultTasks": [
     "What did you finish yesterday (or last session)? Cite paths/PRs if any.",
-    "What is blocked or waiting on Julius / another agent?",
+    "What is blocked or waiting on UserDefault / another agent?",
     "What will you do today if no new goals are set?",
     "Any infra/alerts (cron, bridge, trader, tunnel) you own?"
   ],
@@ -12,7 +12,7 @@
       "Gotchi-Trader desk health: run ./scripts/gotchi-trader-desk.mjs monitor --json if reachable; one-line status.",
       "Paper PnL / alerts since last recap.",
       "What you finished yesterday on trader.",
-      "Today's default trader goals if Julius sets none."
+      "Today's default trader goals if UserDefault sets none."
     ],
     "owned-22899": [
       "Comms / cron status you own.",
@@ -32,5 +32,5 @@
     "infra": ["Infra health", "Yesterday", "Blockers", "Today default"]
   },
   "reportMaxWords": 180,
-  "presentPauseHint": "Ask Julius questions for this agent in the meet room (@HERO …). When done: /recap-next"
+  "presentPauseHint": "Ask UserDefault questions for this agent in the meet room (@HERO …). When done: /recap-next"
 }

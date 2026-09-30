@@ -28,8 +28,8 @@ export function classifyFocusRoute(prompt) {
 
   // Multi-clause / multi-task → orch. Only when it reads like WORK: a question
   // such as "who are you, what is your job, and who is your boss?" has three
-  // clauses and zero tasks, and escalating it silently threw Julius off the hero
-  // he had just /switch-ed to.
+  // clauses and zero tasks, and escalating it silently threw UserDefault off the hero
+  // they had just /switch-ed to.
   const parts = text.split(/[,;]|\band\b|\bthen\b/i).map((s) => s.trim()).filter(Boolean);
   const TASK_VERB = /\b(build|implement|create|add|refactor|migrate|fix|write|deploy|update|install|run|test|edit|change|remove|delete|rename|spawn)\b/i;
   const looksLikeQuestion = /\?\s*$/.test(text) || /^(who|what|when|where|why|how|which|is|are|do|does|can|could|should)\b/i.test(text);

@@ -2,7 +2,7 @@
 name: gotchibot-pdf
 description: >-
   Structured PDF tools via PyMuPDF — info, search, read pages, tables, chunks,
-  render. Use for PDF extract, RAG chunks, or when Julius says gotchibot pdf.
+  render. Use for PDF extract, RAG chunks, or when UserDefault says gotchibot pdf.
 ---
 
 # gotchibot-pdf (Cursor)

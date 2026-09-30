@@ -87,7 +87,7 @@ If `truncated: true`, request fewer pages or lower `--max-tokens`.
 
 ## Forbidden
 
-- Global pip / installs outside `.venv-pdf` without Julius
+- Global pip / installs outside `.venv-pdf` without UserDefault
 - Paths outside allowReadRoots / allowWriteRoots
 - Inventing PDF contents without running the tool
 - Dumping entire multi-hundred-page PDFs into the model context

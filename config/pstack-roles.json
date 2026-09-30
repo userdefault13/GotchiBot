@@ -52,7 +52,7 @@
     "starter-yfi-h1-1",
     "owned-22899"
   ],
-  "protectedNotes": "LINK trader, YFI infra, WBTC comms — never generic pstack workers unless Julius explicitly routes that desk's work.",
+  "protectedNotes": "LINK trader, YFI infra, WBTC comms — never generic pstack workers unless UserDefault explicitly routes that desk's work.",
   "modelHints": {
     "orch-chat": "OpenClaw / Cursor orch chat (big-pickle)",
     "sub": "gotchi-orchestrate --model sub (model-policy subagentPrefer)",

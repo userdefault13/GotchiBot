@@ -18,7 +18,7 @@ GotchiBot's **cron manager** role. Backend: **ai-cron-site / cron402** (x402 USD
 
 ## When to load
 
-- Julius or a hero asks to schedule, list, pause, topup, or delete a cron
+- UserDefault or a hero asks to schedule, list, pause, topup, or delete a cron
 - "wake X every 15 minutes", "is cron402 up", "job credits"
 - Mapping a desk (moltbook / infra / trader / comms) to a cloud waker
 
@@ -38,7 +38,7 @@ Use MCP namespace `cron402` (see `config/mcp.stack.json`). Procedure:
 - Never double-call paid tools for one request
 - Never schedule `localhost`
 - Never invent a schedule — quote MCP or desk `schedule status` output
-- Local `gotchibot … schedule install` is fallback only, on the iMac, after Julius yes
+- Local `gotchibot … schedule install` is fallback only, on the iMac, after UserDefault yes
 - Do not steal LINK/YFI/WBTC standing product work — only coordinate wakes
 
 ## Desk catalog (dogfood)

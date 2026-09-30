@@ -33,7 +33,7 @@ Catalog: `config/desk-wakes.json`. Logs: `sessions/desk-wake-logs/<hero>.jsonl`.
 
 ## When to load
 
-- Julius: "wake the desks", "install the wake", "merch on its own like grokbot"
+- UserDefault: "wake the desks", "install the wake", "merch on its own like grokbot"
 - Cron-manager coordinating wakes for marketplace desks
 - A desk checking whether *it* is scheduled: `gotchibot wake status --role <my-role>`
 
@@ -41,7 +41,7 @@ Catalog: `config/desk-wakes.json`. Logs: `sessions/desk-wake-logs/<hero>.jsonl`.
 
 1. **Defer** trader / financial-analyst / infra / moltbook / comms — quote their
    `gotchibot <desk> schedule status` lines; do not double-install.
-2. **No paid cron402** from this skill unless Julius explicitly confirms spend.
+2. **No paid cron402** from this skill unless UserDefault explicitly confirms spend.
    Launchd on the iMac is the install path here.
 3. Approve-gates stay: wakes may draft; they never send mail, post, or spend.
 4. Never invent a schedule — only `wake status` / dedicated schedule status.

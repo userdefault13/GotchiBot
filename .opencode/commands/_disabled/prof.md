@@ -14,4 +14,4 @@ Or:
 ./scripts/gotchibot templates list
 ```
 
-Do not invent packs. Show stdout to Julius. Stay in this TUI.
+Do not invent packs. Show stdout to UserDefault. Stay in this TUI.

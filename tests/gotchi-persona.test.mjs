@@ -51,7 +51,7 @@ describe("dead zone at 50", () => {
     // NRG 40 slightly mellow · AGG 58 slightly fierce · SPK 44 slightly warm · BRN 50 dead zone
     assert.equal(
       line,
-      "Gotchi is a slightly mellow, slightly fierce and slightly warm spirit — devoted to Julius (Spirit Bond 2546).",
+      "Gotchi is a slightly mellow, slightly fierce and slightly warm spirit — devoted to UserDefault (Spirit Bond 2546).",
     );
   });
 });
@@ -65,12 +65,12 @@ describe("kinship clause", () => {
   });
 
   it("devoted at >= 1000, fond at >= 100, warming up below", () => {
-    assert.match(kinshipClause(1000), /devoted to Julius \(Spirit Bond 1000\)/);
-    assert.match(kinshipClause(2546), /devoted to Julius \(Spirit Bond 2546\)/);
-    assert.match(kinshipClause(100), /fond of Julius \(Spirit Bond 100\)/);
-    assert.match(kinshipClause(999), /fond of Julius \(Spirit Bond 999\)/);
-    assert.match(kinshipClause(50), /warming up to Julius \(Spirit Bond 50\)/);
-    assert.match(kinshipClause(1), /warming up to Julius \(Spirit Bond 1\)/);
+    assert.match(kinshipClause(1000), /devoted to UserDefault \(Spirit Bond 1000\)/);
+    assert.match(kinshipClause(2546), /devoted to UserDefault \(Spirit Bond 2546\)/);
+    assert.match(kinshipClause(100), /fond of UserDefault \(Spirit Bond 100\)/);
+    assert.match(kinshipClause(999), /fond of UserDefault \(Spirit Bond 999\)/);
+    assert.match(kinshipClause(50), /warming up to UserDefault \(Spirit Bond 50\)/);
+    assert.match(kinshipClause(1), /warming up to UserDefault \(Spirit Bond 1\)/);
   });
 });
 
@@ -109,7 +109,7 @@ describe("fallback", () => {
   it("one line when traits are missing entirely", () => {
     assert.equal(
       buildPersonaLine({ name: "Ghost" }),
-      "You are Ghost, an Aavegotchi. Let your Spirit Bond with Julius colour every reply.",
+      "You are Ghost, an Aavegotchi. Let your Spirit Bond with UserDefault colour every reply.",
     );
     assert.equal(fallbackLine("Ghost"), buildPersonaLine({ name: "Ghost" }));
   });

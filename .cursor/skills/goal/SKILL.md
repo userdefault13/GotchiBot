@@ -1,7 +1,7 @@
 ---
 name: goal
 description: >-
-  Start a durable Cursor goal (/goal). Use when Julius wants a long-lived
+  Start a durable Cursor goal (/goal). Use when UserDefault wants a long-lived
   objective pursued until fully complete. Not for recurring ticks (/loop).
 disable-model-invocation: true
 ---

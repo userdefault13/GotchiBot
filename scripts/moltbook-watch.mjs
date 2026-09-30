@@ -327,7 +327,7 @@ function main() {
         snippet: textOf(p).slice(0, 280),
         url: `${BASE}/posts/${id}`,
         why: `api-key-issue: ${issue.why}`,
-        suggested: "offer abra-adjacent help: key rotation steps, secrets vault hygiene, .env handling — no posting without Julius's go-ahead",
+        suggested: "offer abra-adjacent help: key rotation steps, secrets vault hygiene, .env handling — no posting without UserDefault's go-ahead",
       });
     }
   }
@@ -389,7 +389,7 @@ function main() {
         snippet: textOf(s).slice(0, 280),
         url: `${BASE}/posts/${s.post_id || s.id}`,
         why: `api-key-issue: ${issue.why} (found via search "${s._query || "?"}")`,
-        suggested: "offer abra-adjacent help: key rotation steps, secrets vault hygiene, .env handling — no posting without Julius's go-ahead",
+        suggested: "offer abra-adjacent help: key rotation steps, secrets vault hygiene, .env handling — no posting without UserDefault's go-ahead",
       });
     }
   }

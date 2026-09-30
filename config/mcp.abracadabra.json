@@ -4,7 +4,7 @@
       "command": "abra",
       "args": ["mcp"],
       "enabled": false,
-      "note": "DISABLED on host Desk/OpenCode. Abra is Docker --sandbox only (ABRA_KEY → host.docker.internal:7331). Julius may still use abra in his own terminal."
+      "note": "DISABLED on host Desk/OpenCode. Abra is Docker --sandbox only (ABRA_KEY → host.docker.internal:7331). UserDefault may still use abra in their own terminal."
     }
   }
 }

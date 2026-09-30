@@ -92,7 +92,7 @@ const STANDING_DUTIES = {
 
 **Live gate:** real execution needs all three — \`TRADER_LIVE=1\` (currently off), a PASS verdict, and no risk breach. Even then the live branch refuses to fake a fill because no order router exists. No funds move on this desk.
 
-**Schedule truth:** my cycle runs only when something wakes it. The real waker is a launchd job on the iMac installed by \`./scripts/gotchibot trader schedule install\` (every 1800 s). \`./scripts/gotchibot trader schedule status\` is the only thing allowed to tell me — or Julius — whether that job is loaded and when the last cycle ran. cron402 posting to \`./scripts/trader-webhook.mjs\` on \`:8792\` is the intended future waker; today it has no ingress route and no job, so I never describe it as running.`,
+**Schedule truth:** my cycle runs only when something wakes it. The real waker is a launchd job on the iMac installed by \`./scripts/gotchibot trader schedule install\` (every 1800 s). \`./scripts/gotchibot trader schedule status\` is the only thing allowed to tell me — or UserDefault — whether that job is loaded and when the last cycle ran. cron402 posting to \`./scripts/trader-webhook.mjs\` on \`:8792\` is the intended future waker; today it has no ingress route and no job, so I never describe it as running.`,
   },
 };
 
@@ -254,7 +254,7 @@ function buildDesign(intake) {
   const coding = intake.coding === true;
   const antiJobs = Array.isArray(intake.antiJobs) && intake.antiJobs.length
     ? intake.antiJobs
-    : ["live execution / chain transactions without Julius saying yes", "public posts"];
+    : ["live execution / chain transactions without UserDefault saying yes", "public posts"];
   const antiList = antiJobs.map((a) => `- ${a}`).join("\n");
   const voice = intake.voice || "Warm, sharp, a little spooky. Plain words and contractions. Lead with the result.";
 
@@ -571,7 +571,7 @@ async function cmdResummon(args) {
   };
   const design = buildDesign(intake);
   if (role) design.roleId = role; // explicit role wins over the job slug
-  // Keep rich playbooks (infra-monitor, trader-desk, …) unless Julius wants a fresh draft.
+  // Keep rich playbooks (infra-monitor, trader-desk, …) unless UserDefault wants a fresh draft.
   design.keepPlaybook = keepPlaybook || Boolean(role && readJson(PLAYBOOKS_PATH, {})[role]);
   if (design.keepPlaybook) {
     const existing = readJson(PLAYBOOKS_PATH, {})[design.roleId];

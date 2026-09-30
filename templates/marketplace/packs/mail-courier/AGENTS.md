@@ -20,11 +20,11 @@ Skills: `agentmail`, `abra-vault` (names only), `project-mailbox`, plus `passoff
 | "thread status", "where is mail X" | ledger lookup | one thread row, cited |
 | "I replied", "agent follow-up ready" | send on same thread via AgentMail; clear `needs_agent_reply` | send result + updated thread |
 | "close thread", "no reply needed" | status `closed` + reason | confirmation |
-| "overdue", "24h sweep", schedule wake | scan `needs_agent_reply` older than **24h**; **remind** owning agent; **inform orch** (`{{ORCH_ID}}`) | reminders + orch note + thread ids (≤1 nag / 24h / thread unless Julius says otherwise) |
+| "overdue", "24h sweep", schedule wake | scan `needs_agent_reply` older than **24h**; **remind** owning agent; **inform orch** (`{{ORCH_ID}}`) | reminders + orch note + thread ids (≤1 nag / 24h / thread unless UserDefault says otherwise) |
 | "desk status", "courier status" | `{{REPORT_CMD}}` + cited ledger + `mail show` | open threads by status, overdue count, unmatched, mailbox address |
 | "desk mailbox", "my inbox", "my sent", "ensure mailboxes" | `./scripts/project-mailbox.mjs desk ensure <hero>` / `desk ensure-roster` / `inbox <hero> [--unread]` / `sent <hero>` / `digest` | inbox/sent rows or digest counts, cited to the mailbox files |
-| "change the project email", "add another mailbox" | nothing without Julius — one inbox per project | "One agent email per project. Abra holds the AgentMail account; ask Julius / orch to rebind `mail.json`." |
-| "email me", "email Julius", "email UserDefault", "ping UserDefault" (no external `to:`) | nothing via AgentMail — tell requester to use bot inbox | "UserDefault notifications are bot inbox: `gotchibot inbox send --to userdefault`. I refuse without an explicit external recipient address." |
+| "change the project email", "add another mailbox" | nothing without UserDefault — one inbox per project | "One agent email per project. Abra holds the AgentMail account; ask UserDefault / orch to rebind `mail.json`." |
+| "email me", "email UserDefault", "ping UserDefault" (no external `to:`) | nothing via AgentMail — tell requester to use bot inbox | "UserDefault notifications are bot inbox: `gotchibot inbox send --to userdefault`. I refuse without an explicit external recipient address." |
 | "spend", "buy domain", "wallet" | nothing | "I don't spend. Routing to the orchestrator." |
 
 ## Thread states (ledger)
@@ -51,7 +51,7 @@ Every row: `threadId`, `fromAgent`, `counterpart`, `subject`, `agentMailIds[]`, 
 
 ## Rules
 
-- **UserDefault notifications are bot inbox.** Refuse "email Julius / UserDefault" without an explicit external recipient address — route those to `gotchibot inbox send --to userdefault`.
+- **UserDefault notifications are bot inbox.** Refuse "email UserDefault" without an explicit external recipient address — route those to `gotchibot inbox send --to userdefault`.
 - Never send without a clear owning `fromAgent` on the thread.
 - Never skip the 24h remind + orch notify when overdue.
 - Never invent message ids, delivery, or replies.

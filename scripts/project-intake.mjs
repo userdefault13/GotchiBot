@@ -106,7 +106,7 @@ export function readiness(project = loadCurrent(), policy = loadPolicy()) {
     issues.push({ code: gate.code || "gate", detail: gate.message, fix: gate.fix });
   }
   if (live.includes("live") && !live.includes("paper")) {
-    issues.push({ code: "live-confirm", detail: "live execution needs explicit Julius confirm — default is paper-only" });
+    issues.push({ code: "live-confirm", detail: "live execution needs explicit UserDefault confirm — default is paper-only" });
   }
   return {
     ok: issues.length === 0,
@@ -121,7 +121,7 @@ export function readiness(project = loadCurrent(), policy = loadPolicy()) {
 }
 
 /**
- * How to run after intake is ready + Julius confirms.
+ * How to run after intake is ready + UserDefault confirms.
  * claude-tool: Hub Claude CLI owns the project; subagent stays on big-pickle / Zen fallbacks.
  */
 export function resolveExecution(project) {
@@ -194,7 +194,7 @@ function printShow(project, policy) {
     console.log("Set:  node scripts/project-intake.mjs set <field> <value>");
     console.log("Do not spawn until: node scripts/project-intake.mjs ready");
   } else {
-    console.log("Intake complete. Do not auto-spawn. Confirm with Julius, then delegate-first spawn.");
+    console.log("Intake complete. Do not auto-spawn. Confirm with UserDefault, then delegate-first spawn.");
   }
   const ex = resolveExecution(project);
   console.log("");

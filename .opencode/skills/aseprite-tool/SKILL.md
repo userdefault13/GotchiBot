@@ -18,7 +18,7 @@ metadata:
 - **Aseprite** installed with CLI on PATH (`aseprite --version`), or set `ASEPRITE_BIN`.
 - Verify: `./scripts/gotchibot aseprite check`
 
-No autonomous installs — if missing, ask Julius to install Aseprite or add the binary to PATH.
+No autonomous installs — if missing, ask UserDefault to install Aseprite or add the binary to PATH.
 
 ## Subcommands
 

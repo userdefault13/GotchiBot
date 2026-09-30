@@ -4,7 +4,7 @@ Move the iMac-hosted data plane (subgraph + Aarcade API) to DigitalOcean.
 OpenClaw / OpenCode / GotchiBot orchestration stays off DO — only data moves.
 
 - [ ] **DO droplet up** — Envio indexer + Aarcade API services running, health
-      endpoints green. Docker compose or systemd, Julius's pick.
+      endpoints green. Docker compose or systemd, UserDefault's pick.
 - [ ] **Cloudflare DNS** — point `subgraph.aarcadeghst.com` (and API host) at
       DO. Keep the CF proxy orange-cloud only if tunnel is removed; otherwise
       repoint the cloudflared tunnel config to DO origins.
@@ -19,4 +19,4 @@ OpenClaw / OpenCode / GotchiBot orchestration stays off DO — only data moves.
       a fleet worker (OpenClaw) — just not a data origin.
 
 Do **not** put OpenClaw, OpenCode serve, or sub-agent spawning on DO. Those
-stay on Julius's machines (Solo) or the iMac (Fleet).
+stay on UserDefault's machines (Solo) or the iMac (Fleet).

@@ -1,7 +1,7 @@
 ---
 name: architect
 description: >-
-  Use when GotchiBot or Julius needs systems/software architecture: compare
+  Use when GotchiBot or UserDefault needs systems/software architecture: compare
   infra or design options, exhaust the design space, rank best + alternatives,
   phased plan + rollback, then hand off build to CoS/crews. Anti-jobs: no silent
   implementation, no one-option "architecture," no CoS identity theft.

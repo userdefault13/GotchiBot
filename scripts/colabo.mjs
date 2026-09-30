@@ -234,7 +234,7 @@ export async function colabo(prompt, { timeoutS = 90, resumeFrom = null, ring = 
     clearPardonStack(mid);
     clearPardonRequest(mid);
     await m.sayTurn(
-      "[colabo · " + (ring ? "ring:" + ring : "everyone") + "] Julius asks:\n\n" + text,
+      "[colabo · " + (ring ? "ring:" + ring : "everyone") + "] UserDefault asks:\n\n" + text,
       { keepStack: true },
     );
   }

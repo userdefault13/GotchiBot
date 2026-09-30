@@ -409,7 +409,7 @@ if [ "\${GOTCHIBOT_AUTO_APPROVE:-1}" = "1" ]; then
 fi
 run_opencode() {
   local m="\$1"
-  # Host agents must NOT call abra. Keys must already be in env (Julius wrapped spawn).
+  # Host agents must NOT call abra. Keys must already be in env (UserDefault wrapped spawn).
   opencode run -m "\$m" --title "gotchibot:$id" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" \
     > "$dir/output.md" 2> "$dir/output.log"
 }

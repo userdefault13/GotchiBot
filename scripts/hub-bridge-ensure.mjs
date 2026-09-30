@@ -186,7 +186,7 @@ async function main() {
     process.exit(0);
   }
 
-  // Failed — clear next steps for Julius
+  // Failed — clear next steps for UserDefault
   const nextStep = [
     "Bridge still down after recovery attempts.",
     "",

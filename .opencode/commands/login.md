@@ -2,7 +2,7 @@
 description: Login — restore the OpenCode Go credential in auth.json (console API key; subscription quotas, not balance)
 ---
 
-Julius has an OpenCode Go **subscription**. Per OpenCode's source and docs, the
+UserDefault has an OpenCode Go **subscription**. Per OpenCode's source and docs, the
 Go provider has no OAuth flow: its credential is the API key from the console
 (opencode.ai/auth → API Keys), pasted into `opencode auth login` → **OpenCode Go**,
 which stores it in `~/.local/share/opencode/auth.json`. That key routes to the
@@ -25,7 +25,7 @@ Otherwise:
 ./scripts/gotchibot login
 ```
 
-That opens a Terminal window running `opencode auth login`. Tell Julius: in the
+That opens a Terminal window running `opencode auth login`. Tell UserDefault: in the
 provider list type **opencode**, pick **OpenCode Go**, and paste the API key
 copied from the console (API Keys tab). The command waits for the credential store to appear, then
 reports provider names (never values) and how many `opencode-go/*` models are

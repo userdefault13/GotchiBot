@@ -16,7 +16,7 @@ prompt arrives
             ├─ have file+selector?
             │     ├─ yes → resolve parent/sibling/value → edit → write anchor → reply line
             │     └─ no  → scoped search budget (file → dir → named views → tree)
-            └─ still blocked → ask Julius one question OR full search with reason
+            └─ still blocked → ask UserDefault one question OR full search with reason
 ```
 
 ## Parent / sibling resolution (CSS / Vue)

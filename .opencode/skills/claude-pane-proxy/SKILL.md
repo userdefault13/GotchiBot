@@ -2,7 +2,7 @@
 name: claude-pane-proxy
 description: >-
   On new Hub VS Code Claude pane init, always set up the GotchiBot Hub proxy
-  agent (CLAUDE.md + @gotchibot-proxy). Load when Julius says proxy agent,
+  agent (CLAUDE.md + @gotchibot-proxy). Load when UserDefault says proxy agent,
   create-agent, Claude has no role, or before first claude_submit on a cold pane.
 license: MIT
 compatibility: opencode
@@ -36,7 +36,7 @@ What it writes into the GotchiBot workspace:
 | Symptom | First command | Then |
 | --- | --- | --- |
 | New / cold Claude pane | `claude-pane-init` | `claude_submit` / `claude_ask` |
-| Julius: “set up proxy agent” / `/create-agent` | `claude-pane-init` | Done (files + identity) |
+| UserDefault: “set up proxy agent” / `/create-agent` | `claude-pane-init` | Done (files + identity) |
 | “Claude doesn’t know it’s GotchiBot” | `claude-pane-init` | Retry submit |
 | Before first long Claude job this session | `claude-pane-init` then `claude_submit` | Collect on wake |
 
@@ -51,7 +51,7 @@ What it writes into the GotchiBot workspace:
 
 - Invent Claude identity / skip init “because headless”
 - Say Anthropic extension conflicts with the bridge
-- Ask Julius to manually `/create-agent` without running `claude-pane-init`
+- Ask UserDefault to manually `/create-agent` without running `claude-pane-init`
 
 ## Related
 
