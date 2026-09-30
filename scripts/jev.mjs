@@ -17,12 +17,27 @@
  *
  * Exit: 0 ok, 1 API/runtime error, 2 usage
  */
-import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, existsSync, appendFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const API = "https://api.typesafe.ai/v1/systemone";
 const MODELS_URL = "https://api.typesafe.ai/v1/models";
 const DEFAULT_MODEL = "jev-latest";
+// Read by the Factory tree's fork layer. Answers only — never the request state.
+const LEDGER = resolve(dirname(fileURLToPath(import.meta.url)), "..", "sessions", ".jev-ledger.jsonl");
+
+function logForks(data) {
+  const answers = {};
+  for (const [id, a] of Object.entries(data?.answers || {})) {
+    if (!a || typeof a !== "object") continue;
+    answers[id] = { type: a.type, choice: a.choice ?? a.score ?? a.noul ?? null, confidence: a.confidence ?? null };
+  }
+  if (!Object.keys(answers).length) return;
+  try {
+    appendFileSync(LEDGER, `${JSON.stringify({ at: new Date().toISOString(), model: data.model || null, answers })}\n`);
+  } catch {}
+}
 
 function usage(msg) {
   if (msg) console.error(msg);
@@ -189,6 +204,7 @@ async function cmdAsk(flags) {
     usage("request missing questions map");
   }
   const data = await postSystemOne(body);
+  logForks(data);
   printResult(data, !!flags.json);
 }
 

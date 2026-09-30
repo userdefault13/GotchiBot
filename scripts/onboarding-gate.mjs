@@ -92,6 +92,16 @@ function enterPstackDossierLayout() {
   console.log("    Leave with: ./scripts/orchestrator-layout.sh leave-pstack-dossier");
 }
 
+/** Factory pane in the dossier slot: project bots + workflows, Hub, desk infra. */
+function enterFactoryLayout() {
+  if (!tmuxSessionName()) {
+    console.log("\n  ✗ attach tmux first: ./scripts/gotchibot tmux\n");
+    return;
+  }
+  runLayout("enter-factory");
+  console.log("\n  ✓ Factory pane open (work.1) · c returns to the cockpit.");
+}
+
 /** Current project slug — desk resolves local dossiers + Sepolia checkpoint (ignores smoke leftovers). */
 function currentProjectSlug() {
   const r = spawnSync(
@@ -2528,6 +2538,7 @@ async function mainMenu(wallet, cartridgeId) {
       { key: "kanban", label: "Kanban (agents · tasks · seats)" },
       { key: "inbox", label: "Bot inbox (iMessage · agents | thread)" },
       { key: "pstack", label: "Pstack (dossier pane · program store)" },
+      { key: "factory", label: "Factory (project bots · Hub · desk infra)" },
       { key: "export-roster", label: "Export agent roster to CSV" },
       { key: "import", label: "Browse cartridge cAavegotchis" },
       { key: "mint", label: "Mint another wallet gotchi — Free (sub-agent identity)" },
@@ -2686,6 +2697,13 @@ async function mainMenu(wallet, cartridgeId) {
       // (iMessage-style left pane) — same handoff as "Return to project" when
       // inside chat-pane.sh.
       enterPstackDossierLayout();
+      if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") return;
+      await pause();
+      continue;
+    }
+
+    if (pick.key === "factory") {
+      enterFactoryLayout();
       if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") return;
       await pause();
       continue;

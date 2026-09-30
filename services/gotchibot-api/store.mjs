@@ -132,6 +132,8 @@ export async function connectStore({ mongoUri, dbName }) {
   const walletVerifyCodes = db.collection("wallet_verify_codes");
   const projectSnapshot = db.collection("project_snapshot");
   const cockpitSnapshot = db.collection("cockpit_snapshot");
+  /** deskId → that desk's agent-tree snapshot (Factory Tree view, merged by readers). */
+  const treeSnapshots = db.collection("tree_snapshots");
   /** slug → { sessionId, threadId, lastMirroredId }: the project's OpenCode desk session. */
   const deskSessions = db.collection("desk_sessions");
 
@@ -1090,6 +1092,28 @@ export async function connectStore({ mongoUri, dbName }) {
     };
   }
 
+  async function putTreeSnapshot({ deskId, deskName, tree }) {
+    const pushedAt = new Date();
+    await treeSnapshots.replaceOne(
+      { _id: deskId },
+      { _id: deskId, deskId, deskName: deskName || null, pushedAt, tree },
+      { upsert: true },
+    );
+    return { pushedAt: pushedAt.toISOString() };
+  }
+
+  /** Every desk's tree pushed within maxAgeMs (default 24h), newest first. */
+  async function listTreeSnapshots({ maxAgeMs = 86400_000 } = {}) {
+    const since = new Date(Date.now() - maxAgeMs);
+    const docs = await treeSnapshots.find({ pushedAt: { $gte: since } }).sort({ pushedAt: -1 }).toArray();
+    return docs.map((d) => ({
+      deskId: d.deskId,
+      deskName: d.deskName || null,
+      pushedAt: d.pushedAt instanceof Date ? d.pushedAt.toISOString() : d.pushedAt,
+      tree: d.tree || {},
+    }));
+  }
+
   /** The project's shared desk thread; created on first open, never owned by a phone. */
   async function ensureDeskThread({ slug, title }) {
     const projectSlug = normalizeProjectSlug(slug);
@@ -1686,6 +1710,8 @@ export async function connectStore({ mongoUri, dbName }) {
     getProjectSnapshot,
     putCockpitSnapshot,
     getCockpitSnapshot,
+    putTreeSnapshot,
+    listTreeSnapshots,
     ensureDeskThread,
     getThread,
     getDeskSession,

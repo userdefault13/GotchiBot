@@ -10,6 +10,7 @@
  *   gotchibot hub projects watch                      # foreground, event-driven
  *   gotchibot hub projects service install | uninstall | status
  *   gotchibot hub cockpit push [--force] [--dry-run] [--json]
+ *   gotchibot hub tree push [--force] [--dry-run] [--json]
  *
  * push skips when nothing changed since the last successful push (--force
  * sends anyway). watch uses recursive fs.watch (FSEvents on macOS, inotify on
@@ -17,7 +18,9 @@
  * keeps watch running: LaunchAgent on macOS, systemd user unit on Linux.
  * watch also pushes the cockpit snapshot (services/gotchibot-api/cockpit.mjs)
  * with each project push and every 60s, since roster/kanban/inbox change
- * outside the watched files.
+ * outside the watched files. It pushes the agent-tree snapshot
+ * (services/gotchibot-api/tree.mjs) every 30s too, so the Factory Tree view is
+ * the same on every desk even where the Factory pane is not open.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
@@ -29,6 +32,7 @@ import { contentHashOf } from "./chat-canonical.mjs";
 import { hubRequest } from "./chat-hub-client.mjs";
 import { collectProjectSnapshot, snapshotPathOk } from "../services/gotchibot-api/projects.mjs";
 import { collectCockpitSnapshot } from "../services/gotchibot-api/cockpit.mjs";
+import { collectTreeSnapshot } from "../services/gotchibot-api/tree.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_PATH = join(ROOT, "sessions/.hub-projects-push.json");
@@ -37,6 +41,9 @@ export const SERVICE_LABEL = "com.gotchibot.hub-projects-watch";
 export const SYSTEMD_UNIT = "gotchibot-hub-projects-watch.service";
 const DEBOUNCE_MS = 2000;
 const COCKPIT_INTERVAL_MS = 60_000;
+const TREE_INTERVAL_MS = 30_000;
+/** Resend an unchanged tree this often so other desks see this one as alive. */
+const TREE_HEARTBEAT_MS = 60_000;
 const RETRY_MS = 30_000;
 const RETRY_MAX_MS = 5 * 60_000;
 const TOP_SESSION_FILES = new Set([".hero-agent-state.json", ".project-current", ".pstack-dossier-current"]);
@@ -112,6 +119,21 @@ export async function pushCockpit({ force = false, dryRun = false, root = ROOT }
   if (!force && readState().cockpitHash === hash) return { ok: true, skipped: "unchanged", ...summary };
   const res = await hubRequest("POST", "/api/gotchibot/cockpit/push", { body: cockpit });
   writeState({ cockpitHash: hash, cockpitPushedAt: res.pushedAt });
+  return { ok: true, pushedAt: res.pushedAt, ...summary };
+}
+
+/** Agent-tree snapshot (Factory Tree view) → Hub, merged there with every other desk's. */
+export async function pushTree({ force = false, dryRun = false, root = ROOT } = {}) {
+  const tree = await collectTreeSnapshot({ root });
+  const { collectedAt: _at, ...rest } = tree;
+  const hash = contentHashOf(rest);
+  const summary = { runs: tree.runs.length, bots: tree.bots.length, bytes: Buffer.byteLength(JSON.stringify(tree), "utf8"), hash };
+  if (dryRun) return { ok: true, dryRun: true, ...summary };
+  const st = readState();
+  const fresh = Date.now() - Date.parse(st.treePushedAt || 0) < TREE_HEARTBEAT_MS;
+  if (!force && st.treeHash === hash && fresh) return { ok: true, skipped: "unchanged", ...summary };
+  const res = await hubRequest("POST", "/api/gotchibot/tree/push", { body: tree });
+  writeState({ treeHash: hash, treePushedAt: res.pushedAt });
   return { ok: true, pushedAt: res.pushedAt, ...summary };
 }
 
@@ -370,10 +392,29 @@ function startWatch() {
     },
   });
   const tick = setInterval(() => void cockpit(), COCKPIT_INTERVAL_MS);
+  let treeRunning = false;
+  let treeFailed = false;
+  const tree = async () => {
+    if (treeRunning) return;
+    treeRunning = true;
+    try {
+      await pushTree();
+      treeFailed = false;
+    } catch (err) {
+      // Log once per failure streak — a Hub without the tree route would spam every 30s.
+      if (!treeFailed) console.log(`${new Date().toISOString()} tree push failed: ${err.message || err}`);
+      treeFailed = true;
+    } finally {
+      treeRunning = false;
+    }
+  };
+  const treeTick = setInterval(() => void tree(), TREE_INTERVAL_MS);
+  void tree();
   console.log(`${new Date().toISOString()} watching ${w.watching().join(", ")} under ${ROOT}`);
   void w.flush();
   const stop = () => {
     clearInterval(tick);
+    clearInterval(treeTick);
     w.close();
     process.exit(0);
   };
@@ -389,17 +430,25 @@ async function main(argv) {
     result = await push({ force: rest.includes("--force"), dryRun: rest.includes("--dry-run") });
   } else if (cmd === "cockpit") {
     result = await pushCockpit({ force: rest.includes("--force"), dryRun: rest.includes("--dry-run") });
+  } else if (cmd === "tree") {
+    result = await pushTree({ force: rest.includes("--force"), dryRun: rest.includes("--dry-run") });
   } else if (cmd === "service") {
     result = service(rest[0] || "status");
   } else {
     console.error(
       "usage: hub projects push [--force] [--dry-run] [--json] | watch | service install|uninstall|status\n" +
-        "       hub cockpit push [--force] [--dry-run] [--json]",
+        "       hub cockpit push [--force] [--dry-run] [--json]\n" +
+        "       hub tree push [--force] [--dry-run] [--json]",
     );
     process.exit(2);
   }
   if (rest.includes("--json") || cmd === "service") {
     console.log(JSON.stringify(result, null, 2));
+  } else if (cmd === "tree") {
+    const what = `${result.runs} runs, ${result.bots} working bots`;
+    if (result.skipped) console.log(`tree unchanged — ${what} (use --force to resend)`);
+    else if (result.dryRun) console.log(`would push tree: ${what}, ${result.bytes} bytes`);
+    else console.log(`pushed tree: ${what} at ${result.pushedAt}`);
   } else if (cmd === "cockpit") {
     const what = `${result.agents} agents, ${result.cards} cards, ${result.messages} messages`;
     if (result.skipped) console.log(`cockpit unchanged — ${what} (use --force to resend)`);

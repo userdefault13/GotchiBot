@@ -14,6 +14,7 @@ import { checkOrigin } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
 import { createProjectSource, validateProjectSnapshot } from "./projects.mjs";
 import { validateCockpitSnapshot } from "./cockpit.mjs";
+import { validateTreeSnapshot } from "./tree.mjs";
 import {
   adoptDeskSessionFromTerminal,
   createOpencodeClient,
@@ -643,6 +644,23 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
             pushedAt: snap?.pushedAt || null,
             cockpit: snap?.cockpit || null,
           });
+        }
+
+        if (req.method === "POST" && path === "/api/gotchibot/tree/push") {
+          if (deskKind === "phone") {
+            return json(res, 403, {
+              ok: false,
+              error: "not allowed for phone desks",
+            });
+          }
+          const tree = validateTreeSnapshot(await readBody(req));
+          const { pushedAt } = await store.putTreeSnapshot({ deskId: desk.deskId, deskName: desk.name, tree });
+          return json(res, 200, { ok: true, pushedAt });
+        }
+
+        if (req.method === "GET" && path === "/api/gotchibot/tree") {
+          const desks = await store.listTreeSnapshots();
+          return json(res, 200, { ok: true, self: desk.deskId, desks });
         }
 
         if (req.method === "GET" && path === "/api/gotchibot/projects") {

@@ -67,7 +67,7 @@ layout_safe_reexec() {
     # Soft / idempotent — safe to run in-pane (no kill-pane -a).
     fit|install-mouse) return 0 ;;
   esac
-  tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$ROOT/scripts/orchestrator-layout.sh\" $c"
+  tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$ROOT/scripts/orchestrator-layout.sh\" $*"
   exit 0
 }
 
@@ -111,14 +111,29 @@ meet_gallery_correct() {
   [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *meet-room* ]] && [[ "$c2" == *meet-channel* ]]
 }
 
-# pstack dossier: sidebar | pstack-window (center) | avatar (right).
+# The pstack-dossier layout hosts one center app: the dossier (default) or the Factory.
+center_app() {
+  local app
+  app="$(tmux show-options -qv -t "$sess" @gotchibot-center-app 2>/dev/null)"
+  [ "$app" = "factory" ] && echo factory || echo pstack
+}
+
+center_script() {
+  [ "$(center_app)" = "factory" ] && echo factory-window || echo pstack-window
+}
+
+center_label() {
+  [ "$(center_app)" = "factory" ] && echo 'Factory' || echo 'pstack · dossier'
+}
+
+# pstack dossier: sidebar | pstack-window or factory-window (center) | avatar (right).
 pstack_dossier_correct() {
   layout_ready || return 1
   local c0 c1 c2
   c0="$(pane_start_cmd 0)"
   c1="$(pane_start_cmd 1)"
   c2="$(pane_start_cmd 2)"
-  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *pstack-window* ]] && [[ "$c2" == *avatar-pane* ]]
+  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *"$(center_script)"* ]] && [[ "$c2" == *avatar-pane* ]]
 }
 
 rebuild_panes() {
@@ -283,6 +298,9 @@ install_avatar_page_keys() {
   # hub over SSH, where /cockpit cannot reach this desk's tmux.
   local rck="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh enter-cockpit"
   tmux bind-key -T prefix K if-shell -F "$sess_if" "run-shell -b \"$rck\"" 2>/dev/null || true
+  # Factory pane from any pane: Ctrl+Space then Shift+F (again to go back to the cockpit).
+  local rfa="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-factory"
+  tmux bind-key -T prefix F if-shell -F "$sess_if" "run-shell -b \"$rfa\"" 2>/dev/null || true
 }
 
 start_pane_commands() {
@@ -570,15 +588,21 @@ build_pstack_dossier_tiles() {
 
   # Center pane = pstack-window (dossier replaces chat). Unmark chat so the
   # pane is not treated as the OpenCode chat pane.
-  local c1
+  local c1 app
   c1="$(pane_start_cmd 1)"
-  if [[ "$c1" != *pstack-window* ]]; then
-    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/pstack-window.mjs watch" 2>/dev/null || true
+  app="$(center_script)"
+  if [[ "$c1" != *"$app"* ]]; then
+    local view="" launch="./scripts/$app.mjs"
+    if [ "$app" = "factory-window" ]; then
+      view="GOTCHIBOT_FACTORY_VIEW='$(tmux show-options -qv -t "$sess" @gotchibot-factory-view 2>/dev/null || echo tree)' "
+      launch="./scripts/factory-window-pane.sh"
+    fi
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && ${view}exec $launch watch" 2>/dev/null || true
   fi
   tmux set-option -p -t "$sess:work.1" @gotchibot-pstack-dossier 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }pstack · dossier ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format " #{?pane_active,●, }$(center_label) " 2>/dev/null || true
 
   # Right pane = avatar (kept, like a normal desk).
   local c2
@@ -652,6 +676,7 @@ leave_pstack_dossier() {
   fi
   # Mark normal before respawns so resize hooks don't re-enter pstack-dossier.
   set_layout_mode normal
+  tmux set-option -t "$sess" -u @gotchibot-center-app 2>/dev/null || true
   if [ "$(pane_count)" -lt 3 ]; then
     require_three_panes || true
   fi
@@ -746,8 +771,16 @@ boot_cockpit_desk() {
   install_avatar_mouse 2>/dev/null || true
 }
 
+# Pane-max keys (Ctrl+B / Ctrl+F / Ctrl+A) step out of the pstack/Factory center
+# instead of refusing; the caller respawns work.1, so skip the cockpit respawn.
+leave_dossier_for_max() {
+  [ "$(layout_mode)" = "pstack-dossier" ] || return 0
+  GOTCHIBOT_BOOT_COCKPIT=1 leave_pstack_dossier
+}
+
 # Files take remaining width; chat collapses to a thin Gotchi bar; avatar stays.
 enter_files_max() {
+  leave_dossier_for_max
   if ! guard_special_modes; then return 1; fi
   require_three_panes || return 1
   if [ "$(layout_mode)" = "avatar-max" ]; then
@@ -772,6 +805,7 @@ enter_files_max() {
 
 # Avatar takes remaining width; chat → bar; files stay collapsed.
 enter_avatar_max() {
+  leave_dossier_for_max
   if ! guard_special_modes; then return 1; fi
   require_three_panes || return 1
   if [ "$(layout_mode)" = "files-max" ]; then
@@ -795,6 +829,7 @@ enter_avatar_max() {
 }
 
 enter_chat_max() {
+  leave_dossier_for_max
   if ! guard_special_modes; then return 1; fi
   require_three_panes || return 1
   if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ]; then
@@ -1012,6 +1047,8 @@ install_layout_keys() {
   tmux bind-key -T "$table" C-a run-shell "$layout_run enter-avatar-max" 2>/dev/null || true
   tmux bind-key -T "$table" C-g run-shell "$layout_run show-avatar" 2>/dev/null || true
   tmux bind-key -T "$table" C-b run-shell "$layout_run enter-chat-max" 2>/dev/null || true
+  tmux bind-key -T "$table" C-w run-shell -b "$layout_run toggle-factory" 2>/dev/null || true
+  tmux bind-key -T "$table" M-w run-shell -b "$layout_run toggle-factory" 2>/dev/null || true
   tmux bind-key -T "$table" M-f run-shell "$layout_run enter-files-max" 2>/dev/null || true
   tmux bind-key -T "$table" M-a run-shell "$layout_run enter-avatar-max" 2>/dev/null || true
   tmux bind-key -T "$table" M-g run-shell "$layout_run show-avatar" 2>/dev/null || true
@@ -1182,7 +1219,7 @@ apply_pane_border_labels() {
       label2=' # meet '
       ;;
     pstack-dossier)
-      label1=' pstack · dossier '
+      label1=" $(center_label) "
       ;;
     files-max)
       label0=' Files · full '
@@ -1223,7 +1260,7 @@ finish_ensure() {
 }
 
 cmd="${1:-ensure}"
-layout_safe_reexec "$cmd"
+layout_safe_reexec "$cmd" ${2:+"$2"}
 
 case "$cmd" in
   ensure)
@@ -1309,7 +1346,27 @@ case "$cmd" in
     leave_meet_gallery cockpit
     ;;
   enter-pstack-dossier|pstack-dossier)
+    tmux set-option -t "$sess" -u @gotchibot-center-app 2>/dev/null || true
     enter_pstack_dossier
+    ;;
+  enter-factory|factory)
+    # Optional view: tree (default) | factory (bots) | hub | infra.
+    tmux set-option -t "$sess" @gotchibot-center-app factory 2>/dev/null || true
+    tmux set-option -t "$sess" @gotchibot-factory-view "${2:-tree}" 2>/dev/null || true
+    # Already open on another view: respawn so the requested view shows.
+    if [[ "$(pane_start_cmd 1)" == *factory-window* ]] && [[ "$(pane_start_cmd 1)" != *"VIEW='${2:-tree}'"* ]]; then
+      tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_FACTORY_VIEW='${2:-tree}' exec ./scripts/factory-window-pane.sh watch" 2>/dev/null || true
+    fi
+    enter_pstack_dossier
+    ;;
+  toggle-factory)
+    if [ "$(layout_mode)" = "pstack-dossier" ] && [ "$(center_app)" = "factory" ]; then
+      leave_pstack_dossier cockpit
+    else
+      tmux set-option -t "$sess" @gotchibot-center-app factory 2>/dev/null || true
+      tmux set-option -t "$sess" @gotchibot-factory-view tree 2>/dev/null || true
+      enter_pstack_dossier
+    fi
     ;;
   refresh-pstack-dossier)
     refresh_pstack_dossier
@@ -1354,7 +1411,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|require-three|fit|install-mouse]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|enter-factory [tree|factory|hub|infra]|toggle-factory|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|require-three|fit|install-mouse]" >&2
     exit 2
     ;;
 esac
