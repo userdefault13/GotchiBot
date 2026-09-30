@@ -1,0 +1,38 @@
+{
+  "_doc": "Orchestrator message router (scripts/orch-route.mjs, enforced by .opencode/plugins/gotchi-orch-route.js). First matching route wins; self patterns and opt-out phrases win over everything. Regexes are case-insensitive.",
+  "optOut": [
+    "\\byou answer\\b",
+    "\\b(don'?t|do not|no) (delegate|spawn|route|consult)\\b",
+    "\\banswer (it )?yourself\\b",
+    "\\bjust tell me\\b"
+  ],
+  "self": [
+    "^\\s*[/!]",
+    "^\\s*(hi|hey|hello|yo|gm|gn|sup|thanks|thank you|ty|ok|okay|k|cool|nice|yes|no|yep|nope|y|n)\\b[\\s!.?]*$",
+    "^\\s*how (are|r) (you|u)\\b",
+    "^\\s*how'?s it going\\b",
+    "\\b(status|what'?s running|who'?s (busy|free|working)|roster)\\b\\??\\s*$"
+  ],
+  "routes": [
+    {
+      "to": "architect",
+      "why": "design / how / build planning",
+      "match": [
+        "\\bhow (would|should|do|does|can|could|might|will) (we|you|i|it|one|they)\\b",
+        "\\bhow to\\b",
+        "\\bwhat'?s the best way\\b",
+        "\\bshould (we|i)\\b",
+        "\\b(architect(ure)?|design|approach|trade-?offs?|options matrix|compare|structure|re-?arrange|restructure)\\b",
+        "\\b(build|make|create) (a|an|the|me|us|new)\\b",
+        "\\bbuild\\b"
+      ]
+    },
+    {
+      "to": "worker",
+      "why": "hands-on job",
+      "match": [
+        "\\b(fix|debug|implement|patch|refactor|rename|remove|delete|deploy|update|upgrade|write|add|wire|investigate|look into|find out|why (is|does|did))\\b"
+      ]
+    }
+  ]
+}

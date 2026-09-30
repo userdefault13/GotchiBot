@@ -54,6 +54,26 @@
       "store": "passoff packets (see passoff skill)"
     },
     {
+      "id": "consult",
+      "kind": "internal-sync",
+      "owner": "asking desk \u2192 answering desk (answer comes back, asker keeps the job)",
+      "useFor": [
+        "ask another desk and wait for the answer",
+        "follow-up questions in the same thread",
+        "orch \u2192 architect design passes (auto-routed by gotchi-orch-route)"
+      ],
+      "notFor": [
+        "handing the job over (use passoff)",
+        "FYI / reports (use bot-inbox)"
+      ],
+      "cli": {
+        "ask": "./scripts/gotchibot consult <role|hero> --from <hero> \"\u2026\"",
+        "followup": "./scripts/gotchibot consult followup <thread> \"\u2026\"",
+        "list": "./scripts/gotchibot consult list"
+      },
+      "store": "sessions/consults/<thread>.json"
+    },
+    {
       "id": "meet",
       "kind": "live",
       "owner": "orch + desks on iMessage meet channel",

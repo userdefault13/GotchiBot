@@ -165,12 +165,27 @@ Inbox goes to role `kanban-manager` (alias `pkm`); if unseated, falls back to or
 |---|---|
 | Agent → agent (durable) | **bot-inbox** |
 | Agent → UserDefault / orch (durable) | **bot-inbox** |
+| Agent → agent, need the answer now | **consult** (waits for the reply) |
 | Work packet / continue job | **passoff** |
 | Outbound external email | **passoff → mail-courier** |
 | Inbound external email | **mail-courier → desk mailbox + relay** |
 | Live talk | **meet** |
 
 Index: `./scripts/gotchibot messaging --text`. Rule: `config/rules/messaging-channels.md`.
+
+### Ask another desk and wait (consult)
+
+When I need another desk's judgment before I can continue (design → `architect`, numbers → `accountant`, …), I ask and block on the answer instead of guessing:
+
+```bash
+cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot consult <role|hero> --from owned-14338 "question"
+./scripts/gotchibot consult followup <thread> "follow-up question"   # same thread, keeps context
+./scripts/gotchibot consult list                                     # my open threads
+```
+
+- Roles resolve through `config/agent-roles.json`; the reply prints with the thread id to follow up on.
+- A consult is a question, not a handoff: the answer comes back to me and I keep the job. To give the job away, **passoff**.
+- When I am the one consulted, I answer in my role, lead with the answer, name the right desk if it is not mine, and do not start building.
 
 
 ## Nightly department report (every day, 03:00 America/Los_Angeles)

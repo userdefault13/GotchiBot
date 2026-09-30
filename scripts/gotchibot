@@ -118,6 +118,9 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot passoff send <to> [--from …] [--note "…"] [--next "…"] [--dry-run]
                                   hand live work to another gotchi (packet + message)
   gotchibot passoff list|show|accept|resume|drop  the receiving side (/passoff)
+  gotchibot consult <role|hero> "question" [--from …]  ask another gotchi and wait for the reply
+  gotchibot consult followup <thread> "…" | show <thread> | list   same thread, same context
+  gotchibot route "prompt" [--json]  where the orchestrator sends it (architect | worker | self)
   gotchibot wake status|list|run|install|uninstall [hero|role|--all] [--role <id>] [--json]
                                   common desk-wake (skill desk-wake; launchd on iMac;
                                   defer desks keep their own schedule CLIs)
@@ -841,6 +844,8 @@ case "$cmd" in
   roster) cmd_roster "$@" ;;
   handoff) cmd_handoff "$@" ;;
   passoff) exec node "$ROOT/scripts/passoff.mjs" "$@" ;;
+  consult) exec node "$ROOT/scripts/gotchi-consult.mjs" "$@" ;;
+  route) exec node "$ROOT/scripts/orch-route.mjs" "$@" ;;
   wake|desk-wake) exec node "$ROOT/scripts/desk-wake.mjs" "$@" ;;
   pstack)
     if [ "${1:-}" = "dossier" ]; then

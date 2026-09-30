@@ -90,6 +90,74 @@ pane_start_cmd() {
   tmux display -p -t "$sess:work.$1" '#{pane_start_command}' 2>/dev/null || echo ""
 }
 
+# Respawn work.N only when it is dead or runs something else, so a live pane keeps its state.
+respawn_unless() {
+  local n="$1" want="$2" cmd="$3"
+  if [[ "$(pane_start_cmd "$n")" == *"$want"* ]] && \
+     [ "$(tmux display -p -t "$sess:work.$n" '#{pane_dead}' 2>/dev/null)" = "0" ]; then
+    return 0
+  fi
+  tmux respawn-pane -t "$sess:work.$n" -k "$cmd" 2>/dev/null || true
+}
+
+# A chat app is running under the pane: OpenCode, the OpenClaw TUI, or the Hub desk
+# chat over SSH. pane_current_command only ever shows chat-pane.sh's bash.
+pane_has_chat() {
+  local pid
+  pid="$(tmux display -p -t "$1" '#{pane_pid}' 2>/dev/null)"
+  [ -n "$pid" ] || return 1
+  ps -axo pid=,ppid=,args= 2>/dev/null | awk -v root="$pid" '
+    { p[$1] = $2; a[$1] = $0 }
+    END {
+      for (k in a) {
+        if (k == root || a[k] !~ /opencode|openclaw|hub-desk\.mjs/) continue
+        x = k; d = 0
+        while (x != "" && x != root && x > 1 && d < 32) { x = p[x]; d++ }
+        if (x == root) exit 0
+      }
+      exit 1
+    }'
+}
+
+chat_live() {
+  pane_has_chat "$sess:work.1"
+}
+
+# Factory / files-max / avatar-max take over work.1. The live chat waits in a hidden
+# session instead of dying, so coming back skips chat-pane.sh's full startup.
+# Not "<sess>-park": tmux prefix-matches "gotchibot" onto it when the desk is gone.
+park_session() {
+  echo "gbpark-$sess_name"
+}
+
+park_chat_pane() {
+  chat_live || return 0
+  local park
+  park="$(park_session)"
+  tmux kill-session -t "=$park" 2>/dev/null || true
+  tmux new-session -d -s "$park" -x "$(tmux display -p -t "$sess:work.1" '#{pane_width}')" \
+    -y "$(tmux display -p -t "$sess:work.1" '#{pane_height}')" "exec tail -f /dev/null" 2>/dev/null || return 1
+  tmux swap-pane -d -s "$sess:work.1" -t "=$park:0.0" 2>/dev/null || {
+    tmux kill-session -t "=$park" 2>/dev/null || true
+    return 1
+  }
+}
+
+unpark_chat_pane() {
+  local park old
+  park="$(park_session)"
+  tmux has-session -t "=$park" 2>/dev/null || return 1
+  if ! pane_has_chat "=$park:0.0"; then
+    tmux kill-session -t "=$park" 2>/dev/null || true
+    return 1
+  fi
+  tmux swap-pane -d -s "=$park:0.0" -t "$sess:work.1" 2>/dev/null || return 1
+  # The swapped-out app may be our caller (Factory keys); kill it from the server, last.
+  old="$park-old-$$"
+  tmux rename-session -t "=$park" "$old" 2>/dev/null || true
+  tmux run-shell -b "tmux kill-session -t '=$old'" 2>/dev/null || true
+}
+
 layout_correct() {
   layout_ready || return 1
   local c0 c1 c2
@@ -597,6 +665,7 @@ build_pstack_dossier_tiles() {
       view="GOTCHIBOT_FACTORY_VIEW='$(tmux show-options -qv -t "$sess" @gotchibot-factory-view 2>/dev/null || echo tree)' "
       launch="./scripts/factory-window-pane.sh"
     fi
+    park_chat_pane || true
     tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && ${view}exec $launch watch" 2>/dev/null || true
   fi
   tmux set-option -p -t "$sess:work.1" @gotchibot-pstack-dossier 1 2>/dev/null || true
@@ -681,8 +750,10 @@ leave_pstack_dossier() {
     require_three_panes || true
   fi
   collapse_to_three_panes || true
-  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+  local restored=0
+  unpark_chat_pane && restored=1
+  respawn_unless 0 sidebar-pane "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
+  respawn_unless 2 avatar-pane "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   mark_avatar_pane
   collapse_sidebar
   apply_pane_sizes
@@ -697,9 +768,9 @@ leave_pstack_dossier() {
   save_layout
   signal_panes
   install_avatar_mouse 2>/dev/null || true
-  # Always return to cockpit when leaving pstack (policy). Skip when boot_cockpit_desk
-  # will do the single final chat respawn (GOTCHIBOT_BOOT_COCKPIT=1).
-  if [ "${GOTCHIBOT_BOOT_COCKPIT:-}" != "1" ]; then
+  # Return to cockpit when leaving pstack unless the parked chat came back. Skip when
+  # boot_cockpit_desk will do the single final chat respawn (GOTCHIBOT_BOOT_COCKPIT=1).
+  if [ "$restored" -eq 0 ] && [ "${GOTCHIBOT_BOOT_COCKPIT:-}" != "1" ]; then
     tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
   fi
 }
@@ -709,7 +780,7 @@ leave_pstack_dossier() {
 leave_pstack_user() {
   GOTCHIBOT_BOOT_COCKPIT=1 leave_pstack_dossier
   set_layout_mode normal
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  chat_live || tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
 }
@@ -791,7 +862,8 @@ enter_files_max() {
   # Widen the files column before mc starts — mc in a 3-col pane makes tmux drop neighbors.
   apply_files_max_sizes
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/mc-pane.sh"
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
+  park_chat_pane || true
+  respawn_unless 1 chat-bar-pane "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
   apply_files_max_sizes
   tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files · full ' 2>/dev/null || true
@@ -815,9 +887,10 @@ enter_avatar_max() {
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
   collapse_sidebar
   apply_avatar_max_sizes
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
+  park_chat_pane || true
+  respawn_unless 1 chat-bar-pane "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch"
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
+  respawn_unless 2 avatar-pane "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   apply_avatar_max_sizes
   tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar · full ' 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
@@ -832,12 +905,11 @@ enter_chat_max() {
   leave_dossier_for_max
   if ! guard_special_modes; then return 1; fi
   require_three_panes || return 1
-  if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ]; then
-    tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
-  fi
-  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh"
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
+  respawn_unless 0 sidebar-pane "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
+  unpark_chat_pane || chat_live || \
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh"
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  respawn_unless 2 avatar-pane "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   apply_chat_max_sizes
   tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi · full ' 2>/dev/null || true
@@ -907,9 +979,11 @@ restore_normal_layout() {
     return
   fi
   layout_ready || return 1
-  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh"
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
+  respawn_unless 0 sidebar-pane "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch"
+  unpark_chat_pane || chat_live || \
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh"
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  respawn_unless 2 avatar-pane "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch"
   collapse_sidebar
   apply_pane_sizes
   tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true

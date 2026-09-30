@@ -8,7 +8,7 @@
 1. **Agent ↔ agent** durable messages → **bot-inbox** only (`gotchibot inbox send --to <hero|role> --from <me>`).
 2. **External mail outbound** → **passoff to mail-courier** only; courier sends via AgentMail.
 3. **External mail inbound** → **mail-courier** receives, appends desk mailbox mirror, relays owner. Desks never poll AgentMail themselves.
-4. **Work packets** → passoff. **Live talk** → meet. **UserDefault with no external address** → bot-inbox (never AgentMail).
+4. **Work packets** → passoff. **Ask a desk and wait for the answer** → consult (`gotchibot consult <role|hero> --from <me> "…"`). **Live talk** → meet. **UserDefault with no external address** → bot-inbox (never AgentMail).
 
 ## Anti-jobs
 

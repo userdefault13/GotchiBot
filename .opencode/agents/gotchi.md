@@ -174,6 +174,8 @@ Load **gotchi-trader-monitor**, **gotchi-trader-improve**, and **market-news-fee
 
 Load skill **`delegate-first`**. Prefer iMac when Tailscale SSH is up; local when remote is down or user asks.
 
+**Routed messages.** When a `## ROUTE →` block is in your system prompt, that message is already classified (`config/orch-routes.json`): design / "how would…" / build planning → `./scripts/gotchibot consult architect --from orchestrator "…"`, hands-on work → delegate-pick. Follow it; do not answer first and offer to route after. Other desks work the same way: `gotchibot consult <role|hero> "…"` waits for the answer, `consult followup <thread> "…"` continues it.
+
 Load skill **cartridge-mint** whenever minting, binding, spawning, talking about portals/packs/VRF/cAavegotchi, or using Aarcade cartridge APIs. That skill **beats** ad-hoc Blockscout / Graph / `identity bind` / lore `:3010` ideas.
 
 Load skill **cursor-cli** whenever coding, debugging, writing patches, or investigating a repo. Bot stays on free OpenCode Zen (`opencode/big-pickle` default) for talk/route/task. Hard logic/code goes through `./scripts/cursor-cli.mjs` → `cursor-agent`. Do **not** switch OpenCode's model to Cursor. Do **not** add a Cursor provider.
