@@ -794,8 +794,14 @@ export function doctorFleet({ entries } = {}) {
       return null;
     }
   };
+  // Fleet files store absolute paths, so a copy committed on one machine points
+  // at the other machine's tree. Rebase them onto this repo before checking.
+  const rebase = (p) => {
+    const i = String(p || "").indexOf("/config/openclaw/");
+    return i > 0 ? `${repo}${p.slice(i)}` : p;
+  };
   for (const [id, e] of Object.entries(cfgEntries)) {
-    const ws = e.workspace;
+    const ws = rebase(e.workspace);
     if (!ws || !existsSync(ws)) {
       problems.push(`${id}: workspace missing (${ws})`);
       continue;
