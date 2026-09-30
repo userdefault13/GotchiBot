@@ -24,6 +24,7 @@ import { resolveHeroColors } from "./collateral-resolve.mjs";
 import { renderKanbanAscii } from "./gotchi-art.mjs";
 import { loadRoster, currentProjectSlug } from "./project-context.mjs";
 import { loadBox, listMessages } from "./bot-inbox.mjs";
+import { factoryModel, factoryBand } from "./gotchi-factory.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PSTACK_ROOT = join(ROOT, "sessions", "pstack");
@@ -1611,7 +1612,17 @@ function render({
   const afterPanelsTeam = 1 + panelRows + teamBudget;
   const remainForMidGrid = Math.max(4, rowsN - footerH - afterPanelsTeam);
   // Prefer ~half of mid band for inbox+cron, leave ≥3 rows for Gotchis header+art
-  const midBand = Math.max(6, remainForMidGrid - 3);
+  // e2) FACTORY is budgeted out of midBand up front so the Gotchis grid cannot starve it.
+  const factoryModelNow = factoryModel(currentProjectSlug(), roster || []);
+  const factoryBody = factoryModelNow.slug
+    ? factoryBand(factoryModelNow, {
+        cols,
+        color: !process.env.NO_COLOR,
+        tick: Math.floor(Date.now() / 1000),
+      })
+    : [`  ${c.dim}${factoryModelNow.reason || "no project selected"}${c.reset}`];
+  const factoryH = Math.min(9, Math.max(4, factoryBody.length + 2));
+  const midBand = Math.max(6, remainForMidGrid - 3 - factoryH);
   let inboxH = Math.min(12, Math.max(5, Math.floor(midBand * 0.5)));
   let cronH = Math.min(12, Math.max(5, midBand - inboxH));
   if (inboxH + cronH > midBand) {
@@ -1628,8 +1639,11 @@ function render({
   for (const row of inboxLines) lines.push(pad(row, cols));
   for (const row of cronLines) lines.push(pad(row, cols));
 
+  const factoryLines = packFullWidthPanel("FACTORY", factoryBody, cols, factoryH);
+  for (const row of factoryLines) lines.push(pad(row, cols));
+
   // f) GOTCHIS grid — fill remaining body, never eat footer
-  const afterMid = afterPanelsTeam + inboxLines.length + cronLines.length;
+  const afterMid = afterPanelsTeam + inboxLines.length + cronLines.length + factoryLines.length;
   lastGridStartRow = afterMid;
   lastRows = rowsN;
   const gridBudget = Math.max(1, rowsN - footerH - afterMid);
