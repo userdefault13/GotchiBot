@@ -1051,17 +1051,32 @@ enforce_sizes() {
   fi
 }
 
+# A drag on the chat/avatar border fires client-resized, and re-applying the max
+# layout snaps the border back, which fires the hook again. Each pass queues
+# dozens of tmux commands, so a few drags stall the server and the desk freezes.
+# On a resize, only fix a pane that collapsed; leave a width the user dragged.
+fit_max_keep_drag() {
+  local side="$1" floor="$2" w
+  w="$(tmux display -p -t "$sess:work.$side" '#{pane_width}' 2>/dev/null || echo 0)"
+  [ "$w" -ge "$floor" ] && return 0
+  case "$(layout_mode)" in
+    files-max) apply_files_max_sizes ;;
+    avatar-max) apply_avatar_max_sizes ;;
+    chat-max) apply_chat_max_sizes ;;
+  esac
+}
+
 fit_quiet() {
   if [ "$(layout_mode)" = "files-max" ]; then
-    apply_files_max_sizes
+    fit_max_keep_drag 0 20
     return 0
   fi
   if [ "$(layout_mode)" = "avatar-max" ]; then
-    apply_avatar_max_sizes
+    fit_max_keep_drag 2 40
     return 0
   fi
   if [ "$(layout_mode)" = "chat-max" ]; then
-    apply_chat_max_sizes
+    fit_max_keep_drag 1 20
     return 0
   fi
   if [ "$(layout_mode)" = "meet-gallery" ]; then
