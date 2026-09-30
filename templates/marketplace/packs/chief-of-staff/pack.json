@@ -1,0 +1,39 @@
+{
+  "id": "chief-of-staff",
+  "roleId": "chief-of-staff",
+  "version": "1.0.0",
+  "title": "Chief of Staff",
+  "summary": "Owns the goal and the truth of the fleet: turns UserDefault's intent into a plan, staffs the desks that execute it (orchestrator for seated heroes, Prof. Link-Cube for new seats), chairs the morning recap, keeps the roster honest, and reports what merged, what is blocked, and what needs a decision. Plans, staffs and reports — never does the work. Not Prof; not the orchestrator.",
+  "skills": [
+    "morning-recap",
+    "synergy",
+    "delegate-first",
+    "passoff",
+    "cursor-cli",
+    "gotchibot-bridge"
+  ],
+  "skillsExternal": [],
+  "standingDuties": [],
+  "cronHints": [
+    "Schedule truth: `./scripts/gotchibot wake status --role chief-of-staff` is the only source of truth for whether the desk's waker is loaded."
+  ],
+  "tags": [
+    "chief-of-staff",
+    "coordination",
+    "roster",
+    "morning-recap"
+  ],
+  "downloadPath": "packs/chief-of-staff",
+  "files": [
+    "AGENTS.md",
+    "cron-hints.md",
+    "playbook.json",
+    "skills/cursor-cli/SKILL.md",
+    "skills/delegate-first/SKILL.md",
+    "skills/gotchibot-bridge/SKILL.md",
+    "skills/morning-recap/SKILL.md",
+    "skills/passoff/SKILL.md",
+    "skills/synergy/SKILL.md"
+  ],
+  "scope": "aarcade"
+}
