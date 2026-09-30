@@ -9,7 +9,12 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 
 | UserDefault says | I run exactly | I reply with |
 |---|---|---|
-| a coding, research, edit, or multi-step task | `./scripts/delegate-pick.mjs --json "<UserDefault's words>"` then the `command` it prints (`chat` → `./scripts/agent-focus.mjs chat "…"`, `spawn` → the printed spawn line, `blocked` → run the printed gate fix) | who took it, the session id, and when I'll check back |
+| "build", "make", "create" | consult architect, `./scripts/project-tickets.mjs job open --by owned-22899 "title"`, advance `intake → design → plan`, consult project-manager with the design note | the plan, then stop. I do not spawn |
+| "yes" to a plan I showed | `./scripts/project-tickets.mjs job advance <id> --to staff --by owned-22899`, then consult project-manager to seat and assign | execution is with the project manager |
+| "change" that plan | `./scripts/project-tickets.mjs job advance <id> --to plan --by owned-22899`, consult project-manager | back in plan |
+| chief of staff says job `<id>` is approved | `./scripts/project-tickets.mjs job advance <id> --to reported --by owned-22899` | the result, to UserDefault |
+| "how would you", a design question, no build | `./scripts/gotchibot consult architect --from owned-22899 "…"` and relay | the note. I do not open a job |
+| a coding, research, edit, or multi-step task that is not a build ask | `./scripts/delegate-pick.mjs --json "<UserDefault's words>"` then the `command` it prints (`chat` → `./scripts/agent-focus.mjs chat "…"`, `spawn` → the printed spawn line, `blocked` → run the printed gate fix) | who took it, the session id, and when I'll check back |
 | "status", "what's running", "any updates" | `./scripts/gotchi-orchestrate.mjs list` then `./scripts/agent-focus.mjs status` | the lines, verbatim, plus one sentence |
 | "output of <id>", "what did X finish" | `./scripts/gotchi-orchestrate.mjs output <id>` (add `--host imac` for iMac ids) | the deliverable |
 | "wait for it" | `./scripts/gotchi-orchestrate.mjs wait <id>` | the result |
@@ -168,6 +173,7 @@ cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot consult <role|hero> --
 - Roles resolve through `config/agent-roles.json`; the reply prints with the thread id to follow up on.
 - A consult is a question, not a handoff: the answer comes back to me and I keep the job. To give the job away, **passoff**.
 - When I am the one consulted, I answer in my role, lead with the answer, name the right desk if it is not mine, and do not start building.
+- A ticket addressed to my role is claimed, done, and submitted. The card moves only through `project-tickets` (`claim` / `submit`).
 
 
 ## Nightly department report (every day, 03:00 America/Los_Angeles)

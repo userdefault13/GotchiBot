@@ -195,7 +195,8 @@ export function collectProjectSnapshot({ root, heroName } = {}) {
     for (const f of PROJECT_FILES) add(`sessions/pstack/${slug}/${f}`);
     const roster = readJson(join(root, "sessions/pstack", slug, "roster.json"), {}) || {};
     for (const h of Array.isArray(roster.heroes) ? roster.heroes : []) {
-      if (heroIdOk(String(h))) heroes.add(String(h));
+      const id = typeof h === "string" ? h : h?.id;
+      if (heroIdOk(String(id || ""))) heroes.add(String(id));
     }
   }
   for (const rel of [...CURRENT_FILES, HERO_STATE_FILE, ROLES_FILE]) add(rel);
@@ -264,10 +265,12 @@ export function createProjectSource({ root, heroName, snapshot } = {}) {
     return { state, roles };
   }
 
-  function heroRecord(id, table, orchIds) {
+  function heroRecord(id, table, orchIds, projectRole) {
     const st = table.state?.[id] || {};
     const roleRaw = table.roles?.[id];
-    const role = typeof roleRaw === "string" ? roleRaw : roleRaw?.roleId || roleRaw?.role || null;
+    const fleetRole = typeof roleRaw === "string" ? roleRaw : roleRaw?.roleId || roleRaw?.role || null;
+    // A stored project role wins, including null (unassigned). A plain id falls back to the fleet role.
+    const role = projectRole === undefined ? fleetRole : projectRole;
     let name = snap()?.heroNames?.[id] || null;
     if (!name && heroName) {
       try {
@@ -280,7 +283,7 @@ export function createProjectSource({ root, heroName, snapshot } = {}) {
       id,
       name,
       role,
-      orchestrator: role === "orchestrator" || orchIds.has(id),
+      orchestrator: projectRole === undefined ? role === "orchestrator" || orchIds.has(id) : role === "orchestrator",
       collateral: st.collateral || null,
       color: cssColor(st.primary),
       colorSecondary: cssColor(st.secondary),
@@ -302,9 +305,9 @@ export function createProjectSource({ root, heroName, snapshot } = {}) {
     const kanban = fileJson(`${dir}/kanban.json`, {}) || {};
     const fields = dossier?.fields || {};
     const cards = Array.isArray(kanban.cards) ? kanban.cards : [];
-    const heroes = Array.isArray(roster.heroes)
-      ? roster.heroes.filter((h) => heroIdOk(String(h)))
-      : [];
+    const heroes = (Array.isArray(roster.heroes) ? roster.heroes : [])
+      .map((h) => (typeof h === "string" ? { id: h, role: undefined } : { id: String(h?.id || ""), role: h?.role ? String(h.role) : null }))
+      .filter((h) => heroIdOk(h.id));
     return {
       dir,
       dossier,
@@ -369,8 +372,10 @@ export function createProjectSource({ root, heroName, snapshot } = {}) {
 
   function rankRoster(roster) {
     const rank = { working: 0, active: 0, assigned: 1, watching: 1, available: 2, idle: 3 };
+    const seated = (h) => (h.role ? 0 : 1);
     return roster.sort((a, b) => {
       if (a.orchestrator !== b.orchestrator) return a.orchestrator ? -1 : 1;
+      if (seated(a) !== seated(b)) return seated(a) - seated(b);
       return (rank[a.status] ?? 4) - (rank[b.status] ?? 4);
     });
   }
@@ -381,7 +386,7 @@ export function createProjectSource({ root, heroName, snapshot } = {}) {
     const orchIds = orchestratorIds(table);
     const projects = listSlugs().map((slug) => {
       const files = loadProjectFiles(slug);
-      const roster = rankRoster(files.heroes.map((id) => heroRecord(id, table, orchIds)));
+      const roster = rankRoster(files.heroes.map((h) => heroRecord(h.id, table, orchIds, h.role)));
       return {
         ...summary(slug, files, slug === current),
         accent: roster.find((h) => h.color)?.color || null,
@@ -409,7 +414,7 @@ export function createProjectSource({ root, heroName, snapshot } = {}) {
     const files = loadProjectFiles(slug);
     const table = heroTable();
     const roster = rankRoster(
-      files.heroes.map((id) => heroRecord(id, table, orchestratorIds(table))),
+      files.heroes.map((h) => heroRecord(h.id, table, orchestratorIds(table), h.role)),
     );
     const cards = [...files.cards]
       .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))

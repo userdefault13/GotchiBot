@@ -41,6 +41,11 @@ describe("tree snapshot", () => {
       advisor: { calls: 3, lastText: "t".repeat(400), lastOk: "yes" },
       jev: { byId: [{ id: "q", n: 1, sum: 0.9, known: 1, raw: [1] }, { n: 2 }] },
       bots: [{ id: "owned-1", state: "dancing", focus: "f".repeat(300) }, { name: "no id" }],
+      jobs: [
+        { id: "j1", stage: "plan", owner: "project-manager", title: "t".repeat(200), limbo: true, updatedAt: "2026-09-30T00:00:00.000Z", secret: "no" },
+        { id: "j2", stage: "reported", owner: "orchestrator", title: "done" },
+        { stage: "plan", title: "no id" },
+      ],
     });
     assert.equal(out.secret, undefined);
     assert.equal(out.orch.token, undefined);
@@ -51,6 +56,10 @@ describe("tree snapshot", () => {
     assert.equal(out.bots.length, 1);
     assert.equal(out.bots[0].state, "idle");
     assert.equal(out.bots[0].focus.length, 120);
+    assert.equal(out.jobs.length, 1);
+    assert.equal(out.jobs[0].title.length, 80);
+    assert.equal(out.jobs[0].limbo, true);
+    assert.equal(out.jobs[0].secret, undefined);
     assert.throws(() => validateTreeSnapshot(null), /tree object required/);
     assert.throws(() => validateTreeSnapshot([]), /tree object required/);
   });
@@ -87,6 +96,32 @@ describe("tree snapshot", () => {
     assert.equal(remote.desk, "Hub terminal");
     assert.deepEqual(remote.op, { id: "u-1" });
     assert.deepEqual(desks, [{ name: "Hub terminal", pushedAt: hub.pushedAt, runs: 1, bots: 2 }]);
+  });
+
+  it("merges open jobs by id and keeps the later update", () => {
+    const local = {
+      ...localFactory(),
+      jobs: [
+        { id: "j1", stage: "plan", owner: "project-manager", title: "old", limbo: false, updatedAt: "2026-09-30T00:00:00.000Z" },
+        { id: "j2", stage: "rework", owner: "project-manager", title: "notes", limbo: true, updatedAt: "2026-09-30T01:00:00.000Z" },
+      ],
+    };
+    const hub = {
+      deskId: "d-hub",
+      deskName: "Hub terminal",
+      pushedAt: new Date(NOW).toISOString(),
+      tree: validateTreeSnapshot({
+        jobs: [
+          { id: "j1", stage: "approval", owner: "orchestrator", title: "newer", limbo: false, updatedAt: "2026-09-30T02:00:00.000Z" },
+          { id: "j3", stage: "reported", owner: "orchestrator", title: "closed" },
+        ],
+      }),
+    };
+    const { tree } = mergeTrees(localTree(), local, [hub]);
+    assert.equal(tree.jobs.find((j) => j.id === "j1").stage, "approval");
+    assert.equal(tree.jobs.find((j) => j.id === "j1").title, "newer");
+    assert.equal(tree.jobs[0].id, "j2");
+    assert.equal(tree.jobs.find((j) => j.id === "j3"), undefined);
   });
 
   it("without remotes the local tree passes through unchanged", () => {

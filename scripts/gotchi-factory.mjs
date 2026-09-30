@@ -20,6 +20,7 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { STAGE_OWNER, jobSignals } from "./project-tickets.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -64,6 +65,33 @@ export function roleLabels() {
   return out;
 }
 
+function roleIds() {
+  return readJson(join(ROOT, "config/agent-roles.json")) || {};
+}
+
+/** Open jobs, limbo recomputed from ticket age so the pane does not wait for digest. */
+export function readJobs(root, tickets, now = Date.now()) {
+  const out = [];
+  for (const name of jsonDir(join(root, "jobs"))) {
+    const j = readJson(join(root, "jobs", name));
+    if (!j?.id || j.stage === "reported") continue;
+    const sig = jobSignals(j, tickets, now);
+    out.push({
+      id: String(j.id),
+      stage: j.stage,
+      owner: STAGE_OWNER[j.stage] || j.owner || null,
+      title: String(j.title || j.id).replace(/\s+/g, " ").trim().slice(0, 80),
+      limbo: sig.limbo,
+      limboTickets: sig.limboTickets,
+      tickets: Array.isArray(j.tickets) ? j.tickets.map(String) : [],
+      updatedAt: j.updatedAt || null,
+    });
+  }
+  const heat = (j) => (j.stage === "rework" ? 0 : j.limbo ? 1 : 2);
+  out.sort((a, b) => heat(a) - heat(b) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  return out.slice(0, 8);
+}
+
 function readTickets(root) {
   const dir = join(root, "tickets");
   const index = readJson(join(dir, "index.json"));
@@ -84,6 +112,9 @@ function readTickets(root) {
       to: t.to ?? null,
       status: TICKET_STATUS.has(t.status) ? t.status : "open",
       acceptance: t.acceptance ?? null,
+      jobId: t.jobId ?? null,
+      claimer: t.claimer ?? null,
+      createdAt: t.createdAt ?? null,
       updatedAt: t.updatedAt ?? t.at ?? null,
     });
   }
@@ -127,14 +158,18 @@ function readMail(root) {
 }
 
 /** The whole belt model for one project. Never throws. */
-export function factoryModel(slug, roster = []) {
-  if (!slug) return { slug: null, reason: "no project selected", machines: [], items: [], stats: {} };
+export function factoryModel(slug, roster = [], projectRoles = null) {
+  if (!slug) return { slug: null, reason: "no project selected", machines: [], items: [], jobs: [], stats: {} };
   const root = join(ROOT, "sessions", "pstack", slug);
-  if (!existsSync(root)) return { slug: null, reason: `${slug}: project room not found`, machines: [], items: [], stats: {} };
+  if (!existsSync(root)) return { slug: null, reason: `${slug}: project room not found`, machines: [], items: [], jobs: [], stats: {} };
 
   const tickets = readTickets(root);
   const mail = readMail(root);
+  const jobs = readJobs(root, tickets);
   const roles = roleLabels();
+  const byRole = projectRoles
+    ? Object.fromEntries(Object.entries(projectRoles).filter(([, role]) => role))
+    : roleIds();
 
   const heroes = new Set();
   for (const entry of roster) {
@@ -150,6 +185,11 @@ export function factoryModel(slug, roster = []) {
     if (m.from) heroes.add(m.from);
     if (m.to) heroes.add(m.to);
   }
+  for (const job of jobs) {
+    for (const [heroId, roleId] of Object.entries(byRole)) {
+      if (roleId === job.owner) heroes.add(heroId);
+    }
+  }
 
   const machines = [...heroes]
     .map((heroId) => {
@@ -159,9 +199,22 @@ export function factoryModel(slug, roster = []) {
       const bounced = sent.filter((t) => t.status === "rework");
       const doing = held.filter((t) => t.status === "claimed" || t.status === "submitted");
       const steps = [...held, ...bounced].map((t) => STEP[t.status] ?? 0);
+      const roleId = byRole[heroId] || null;
+      const roleLabel = projectRoles ? roleId : roles[heroId] || null;
+      const holds = (job) =>
+        tickets.some(
+          (t) =>
+            (job.tickets.includes(t.id) || t.jobId === job.id) &&
+            (t.to === heroId || t.claimer === heroId || t.from === heroId),
+        );
+      const blocking = jobs.filter((job) => job.owner === roleId || ((job.stage === "rework" || job.limbo) && holds(job)));
+      const hot = (job) => (job.stage === "rework" ? 0 : job.limbo ? 1 : 2);
+      blocking.sort((a, b) => hot(a) - hot(b));
+      const job = blocking[0] || null;
       return {
         heroId,
-        role: roles[heroId] || null,
+        role: roleLabel,
+        roleId,
         state: machineState(held, bounced),
         wip: doing.length + bounced.length,
         in: held.length,
@@ -169,12 +222,21 @@ export function factoryModel(slug, roster = []) {
         step: steps.length ? Math.max(...steps) : 0,
         rework: bounced.length,
         unread: mail.filter((m) => m.hero === heroId && m.dir === "in" && !m.read).length,
+        jobStage: job?.stage || null,
+        jobLimbo: !!job?.limbo,
       };
     })
     // Only heroes with work on the belt are machines. A full cartridge roster
-    // with no tickets would otherwise render as 20 idle rows.
-    .filter((m) => m.in || m.out || m.rework || m.unread || m.wip)
-    .sort((a, b) => (a.state === "rework" ? -1 : 0) - (b.state === "rework" ? -1 : 0) || b.wip - a.wip || a.heroId.localeCompare(b.heroId));
+    // with no tickets would otherwise render as 20 idle rows. A hero the job
+    // is waiting on still shows, so the stage has a machine.
+    .filter((m) => m.in || m.out || m.rework || m.unread || m.wip || m.jobStage)
+    .sort(
+      (a, b) =>
+        (a.state === "rework" || a.jobStage === "rework" || a.jobLimbo ? -1 : 0) -
+          (b.state === "rework" || b.jobStage === "rework" || b.jobLimbo ? -1 : 0) ||
+        b.wip - a.wip ||
+        a.heroId.localeCompare(b.heroId),
+    );
 
   const items = [
     ...tickets.map((t) => ({ kind: "ticket", id: t.id, label: t.title, from: t.from, to: t.to, status: t.status, step: STEP[t.status] ?? 0 })),
@@ -188,6 +250,7 @@ export function factoryModel(slug, roster = []) {
   return {
     slug,
     roles,
+    jobs,
     machines,
     items,
     stats: {
@@ -277,7 +340,8 @@ export function factoryBand(model, { cols = 80, tick = 0, height = 8, color = tr
       .map((x) => (x === "item" ? c.cyan + GLYPH.item : x === "mail" ? c.dim + GLYPH.item : x === "loop" ? c.yellow + GLYPH.loop : c.grey + GLYPH.track) + c.reset)
       .join("");
     const label = `${glyph} ${fit(m.heroId, nameW - 2)}`;
-    const tail = `${c.dim}${bar} ${fit(m.role || m.state, inner - nameW - beltW - 8)}${m.unread ? ` · ${c.yellow}${m.unread} new${c.reset}` : ""}${c.reset}`;
+    const stage = m.jobStage ? `${m.jobStage}${m.jobLimbo ? " limbo" : ""}` : m.role || m.state;
+    const tail = `${c.dim}${bar} ${fit(stage, inner - nameW - beltW - 8)}${m.unread ? ` · ${c.yellow}${m.unread} new${c.reset}` : ""}${c.reset}`;
     out.push(`  ${tint}${label}${c.reset} ${belt} ${tail}`);
   }
   if (s.rework) {
@@ -303,7 +367,20 @@ if (isMain) {
       slug = null;
     }
   }
-  const model = factoryModel(slug);
+  let model = factoryModel(slug);
+  if (slug) {
+    try {
+      const { loadRoster } = await import("./project-context.mjs");
+      const rows = loadRoster(slug).heroes || [];
+      const ids = rows.map((h) => (typeof h === "string" ? h : h?.id)).filter(Boolean);
+      const projectRoles = Object.fromEntries(
+        rows.filter((h) => h && typeof h === "object" && h.role).map((h) => [h.id, h.role]),
+      );
+      model = factoryModel(slug, ids, projectRoles);
+    } catch {
+      model = factoryModel(slug);
+    }
+  }
   if (argv.includes("--json")) {
     process.stdout.write(`${JSON.stringify(model, null, 2)}\n`);
   } else {

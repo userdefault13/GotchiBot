@@ -9,7 +9,7 @@
  *   sessions/.pstack-dossier-current  — pane/dossier pointer (canonical slug)
  *   sessions/.project-current         — alias kept in sync (passoff / intake)
  *   sessions/pstack/<slug>/
- *     dossier.json · roster.json · mail.json · meetings/ · passoff/ · notes/ · tickets/
+ *     dossier.json · roster.json (id + per-project role) · mail.json · meetings/ · passoff/ · notes/ · tickets/ · jobs/
  *
  *   node scripts/project-context.mjs current [--json]
  *   node scripts/project-context.mjs set <slug>
@@ -400,6 +400,7 @@ export function ensureProjectDirs(slug = currentProjectSlug()) {
   mkdirSync(join(root, "notes"), { recursive: true });
   mkdirSync(join(root, "desks"), { recursive: true });
   mkdirSync(join(root, "tickets"), { recursive: true });
+  mkdirSync(join(root, "jobs"), { recursive: true });
   mkdirSync(join(root, "inbox"), { recursive: true });
   const rp = rosterPath(slug);
   if (!existsSync(rp)) {
@@ -410,7 +411,7 @@ export function ensureProjectDirs(slug = currentProjectSlug()) {
           project: slug,
           heroes: [],
           updatedAt: new Date().toISOString(),
-          note: "Closed roster when non-empty — only listed heroes meet, pass notes, and work this project. Empty = not sealed yet.",
+          note: ROSTER_NOTE,
         },
         null,
         2,
@@ -459,6 +460,7 @@ export function ensureProjectDirs(slug = currentProjectSlug()) {
       "utf8",
     );
   }
+  seedProjectRoster(slug);
   return root;
 }
 
@@ -581,6 +583,67 @@ export function projectCheckpointSlice() {
   };
 }
 
+const HERO_ID_RE = /^(owned|starter|rental)-[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const ROSTER_NOTE =
+  "Fresh copy of the main roster. role is this project's assignment; null means unassigned. The same gotchi may hold a different role in another project.";
+
+/** One roster row. A string entry is an id with no role stored yet. */
+export function normalizeRosterHero(entry) {
+  if (typeof entry === "string" && entry.trim()) return { id: entry.trim(), role: null };
+  if (entry && typeof entry === "object" && entry.id) {
+    const raw = entry.role == null ? "" : String(entry.role).trim();
+    const role = !raw || raw === "none" || raw === "unassigned" ? null : raw;
+    return { id: String(entry.id), role };
+  }
+  return null;
+}
+
+export function rosterHeroId(entry) {
+  return normalizeRosterHero(entry)?.id || null;
+}
+
+/** Ids of the user's cAavegotchis. This is the main roster a project copies. */
+export function mainRosterIds() {
+  try {
+    const j = JSON.parse(readFileSync(join(SESSIONS, ".hero-agent-state.json"), "utf8"));
+    return Object.keys(j)
+      .filter((id) => HERO_ID_RE.test(id))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Keep roles already stored on this project. Add any main-roster gotchi that
+ * is missing, unassigned. Does not copy fleet roles from agent-roles.json.
+ */
+export function mergeRosterHeroes(existing, mainIds) {
+  const out = [];
+  const seen = new Set();
+  for (const entry of existing || []) {
+    const hero = normalizeRosterHero(entry);
+    if (!hero?.id || seen.has(hero.id)) continue;
+    seen.add(hero.id);
+    out.push(hero);
+  }
+  for (const id of mainIds || []) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, role: null });
+  }
+  return out;
+}
+
+function knownRole(role) {
+  try {
+    const playbooks = JSON.parse(readFileSync(join(ROOT, "config/agent-role-playbooks.json"), "utf8"));
+    return Object.hasOwn(playbooks, role);
+  } catch {
+    return false;
+  }
+}
+
 export function loadRoster(slug = currentProjectSlug()) {
   const rp = rosterPath(slug);
   if (!rp || !existsSync(rp)) {
@@ -588,7 +651,7 @@ export function loadRoster(slug = currentProjectSlug()) {
   }
   try {
     const j = JSON.parse(readFileSync(rp, "utf8"));
-    const heroes = Array.isArray(j.heroes) ? j.heroes.map(String) : [];
+    const heroes = mergeRosterHeroes(Array.isArray(j.heroes) ? j.heroes : [], []);
     return { project: j.project || slug, heroes, updatedAt: j.updatedAt || null, note: j.note };
   } catch {
     return { project: slug, heroes: [], updatedAt: null };
@@ -600,26 +663,67 @@ export function saveRoster(roster, slug = currentProjectSlug()) {
   const rp = rosterPath(slug);
   const body = {
     project: slug,
-    heroes: [...new Set((roster.heroes || []).map(String))],
+    heroes: mergeRosterHeroes(roster.heroes || [], []),
     updatedAt: new Date().toISOString(),
-    note: roster.note || "Closed roster — only listed heroes meet, pass notes, and work this project.",
+    note: roster.note || ROSTER_NOTE,
   };
   writeFileSync(rp, `${JSON.stringify(body, null, 2)}\n`, "utf8");
+  return body;
+}
+
+/** Fill this project with the main roster. Existing project roles stay. */
+export function seedProjectRoster(slug = currentProjectSlug()) {
+  if (!slug) return null;
+  const rp = rosterPath(slug);
+  const current = rp && existsSync(rp) ? loadRoster(slug) : { project: slug, heroes: [], note: ROSTER_NOTE };
+  const heroes = mergeRosterHeroes(current.heroes, mainRosterIds());
+  const same =
+    heroes.length === current.heroes.length &&
+    heroes.every((h, i) => h.id === current.heroes[i]?.id && h.role === current.heroes[i]?.role);
+  if (same && rp && existsSync(rp)) return current;
+  const dir = projectRoot(slug);
+  mkdirSync(dir, { recursive: true });
+  const body = {
+    project: slug,
+    heroes,
+    updatedAt: new Date().toISOString(),
+    note: current.note || ROSTER_NOTE,
+  };
+  writeFileSync(join(dir, "roster.json"), `${JSON.stringify(body, null, 2)}\n`, "utf8");
   return body;
 }
 
 export function rosterHas(heroId, slug = currentProjectSlug()) {
   if (!heroId) return false;
   const { heroes } = loadRoster(slug);
-  if (!heroes.length) return true; // empty roster = not yet sealed; allow until first add
-  return heroes.includes(String(heroId));
+  if (!heroes.length) return true; // empty roster = not yet seeded; allow until the copy lands
+  return heroes.some((h) => h.id === String(heroId));
+}
+
+export function rosterRole(heroId, slug = currentProjectSlug()) {
+  const { heroes } = loadRoster(slug);
+  return heroes.find((h) => h.id === String(heroId))?.role ?? null;
 }
 
 export function rosterAdd(heroId, slug = currentProjectSlug()) {
   if (!heroId) throw new Error("hero id required");
   ensureProjectDirs(slug);
   const r = loadRoster(slug);
-  if (!r.heroes.includes(String(heroId))) r.heroes.push(String(heroId));
+  if (!r.heroes.some((h) => h.id === String(heroId))) r.heroes.push({ id: String(heroId), role: null });
+  return saveRoster(r, slug);
+}
+
+/** Set this project's role for one gotchi. `none` clears it. Other projects are untouched. */
+export function rosterAssign(heroId, role, slug = currentProjectSlug()) {
+  if (!heroId) throw new Error("hero id required");
+  if (!slug) throw new Error("no project selected");
+  const next = !role || role === "none" || role === "unassigned" ? null : String(role).trim();
+  if (next && !knownRole(next)) throw new Error(`unknown role: ${next}`);
+  ensureProjectDirs(slug);
+  const r = loadRoster(slug);
+  const row = r.heroes.find((h) => h.id === String(heroId));
+  if (!row) r.heroes.push({ id: String(heroId), role: next });
+  else row.role = next;
   return saveRoster(r, slug);
 }
 
@@ -682,6 +786,7 @@ function usage() {
   project-context ipfs [on|off|status]
   project-context roster [<slug>] [--json]
   project-context roster-add <hero> [<slug>]
+  project-context roster-assign <hero> <role|none> [<slug>]
   project-context mail show [<slug>] [--json]
   project-context mail set [<slug>] --address <email> [--inbox-id <id>]
   project-context repo show|clear [<slug>] [--json]
@@ -781,8 +886,10 @@ async function main() {
     const r = loadRoster(slug);
     if (json) console.log(JSON.stringify(r, null, 2));
     else {
+      const assigned = r.heroes.filter((h) => h.role);
       console.log(`project ${r.project || "(none)"}`);
-      console.log(`heroes (${r.heroes.length}): ${r.heroes.join(", ") || "(empty)"}`);
+      console.log(`heroes ${r.heroes.length} · assigned ${assigned.length}`);
+      for (const h of r.heroes) console.log(`  ${h.id}  ${h.role || "unassigned"}`);
     }
     return;
   }
@@ -791,7 +898,17 @@ async function main() {
     const slug = args[1] || currentProjectSlug();
     if (!hero || !slug) usage();
     const r = rosterAdd(hero, slug);
-    console.log(`roster ${slug}: ${r.heroes.join(", ")}`);
+    console.log(`roster ${slug}: ${r.heroes.length} heroes`);
+    return;
+  }
+  if (cmd === "roster-assign") {
+    const hero = args[0];
+    const role = args[1];
+    const slug = args[2] || currentProjectSlug();
+    if (!hero || !role || !slug) usage();
+    const r = rosterAssign(hero, role, slug);
+    const row = r.heroes.find((h) => h.id === hero);
+    console.log(`roster ${slug}: ${hero} → ${row?.role || "unassigned"}`);
     return;
   }
   if (cmd === "mail") {

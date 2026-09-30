@@ -472,8 +472,10 @@
     "workspace": "/Users/juliuswong/Dev/GotchiBot/config/openclaw/workspaces/owned-23336",
     "agentDir": "/Users/juliuswong/Dev/GotchiBot/config/openclaw/agents/owned-23336",
     "skills": [
-      "browser-tool",
+      "project-tickets",
+      "project-kanban",
       "passoff",
+      "browser-tool",
       "desk-wake",
       "cursor-cli",
       "codex-cli",
@@ -493,7 +495,7 @@
     "workspace": "/Users/juliuswong/Dev/GotchiBot/config/openclaw/workspaces/owned-954",
     "agentDir": "/Users/juliuswong/Dev/GotchiBot/config/openclaw/agents/owned-954",
     "skills": [
-      "market-news-feed",
+      "architect",
       "browser-tool",
       "passoff",
       "desk-wake",

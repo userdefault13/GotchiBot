@@ -28,7 +28,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import readline from "node:readline";
 import { loadRoster, currentProjectSlug } from "./project-context.mjs";
-import { factoryModel, roleLabels } from "./gotchi-factory.mjs";
+import { factoryModel } from "./gotchi-factory.mjs";
 import { resolveHeroColors } from "./collateral-resolve.mjs";
 import { isMainModule } from "./is-main.mjs";
 import { hubRequest } from "./chat-hub-client.mjs";
@@ -238,12 +238,15 @@ export function buildFactory() {
   if (!slug) return { slug: null, reason: "no project selected" };
   if (!existsSync(join(PSTACK_ROOT, slug))) return { slug: null, reason: `${slug}: project room not found` };
 
-  const roster = loadRoster(slug).heroes || [];
+  const rosterRows = loadRoster(slug).heroes || [];
+  const roster = rosterRows.map((h) => (typeof h === "string" ? h : h?.id)).filter(Boolean);
+  const projectRoles = Object.fromEntries(
+    rosterRows.filter((h) => h && typeof h === "object" && h.role).map((h) => [h.id, h.role]),
+  );
   const units = loadUnits(slug);
   const cards = loadCards(slug);
-  const model = factoryModel(slug, roster);
+  const model = factoryModel(slug, roster, projectRoles);
   const machines = new Map(model.machines.map((m) => [m.heroId, m]));
-  const roles = roleLabels();
   const names = gotchiNames();
 
   const ids = new Set([...roster, ...units.map((u) => u.hero), ...cards.map((k) => k.owner), ...machines.keys()].filter(Boolean));
@@ -270,7 +273,7 @@ export function buildFactory() {
     return {
       id,
       name: nameFor(id, names),
-      role: roles[id] || null,
+      role: projectRoles[id] || null,
       state,
       lanes,
       op,
@@ -279,12 +282,15 @@ export function buildFactory() {
       focus,
       inflight: running.length + lanes.doing + lanes.review + (m?.wip || 0),
       rework: m?.rework || 0,
+      jobStage: m?.jobStage || null,
+      jobLimbo: !!m?.jobLimbo,
       unread: m?.unread || 0,
       onRoster: roster.includes(id),
     };
   });
   const rank = { rework: 0, working: 1, review: 2, queued: 3, idle: 4 };
-  bots.sort((a, b) => rank[a.state] - rank[b.state] || b.inflight - a.inflight || a.id.localeCompare(b.id));
+  const hot = (b) => b.state === "rework" || b.jobStage === "rework" || b.jobLimbo;
+  bots.sort((a, b) => (hot(a) ? 0 : 1) - (hot(b) ? 0 : 1) || rank[a.state] - rank[b.state] || b.inflight - a.inflight || a.id.localeCompare(b.id));
 
   const totals = Object.fromEntries(LANES.map((l) => [l, cards.filter((k) => (LANES.includes(k.column) ? k.column : "backlog") === l).length]));
   const recent = [...cards].sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0)).slice(0, 6);
@@ -295,6 +301,7 @@ export function buildFactory() {
     recent,
     ops: { running: units.filter((u) => RUNNING.test(u.state || "")).length, done: units.filter((u) => u.state === "done").length },
     tickets: model.items.filter((it) => it.kind === "ticket").length,
+    jobs: model.jobs || [],
     sealed: roster.length > 0,
   };
 }
@@ -888,6 +895,16 @@ function viewTree(tLocal, f, cols) {
     TREE.orch,
   );
   orchBox.forEach((l, i) => tree.push(i === 2 && S ? `${TREE.advisor}${"┄".repeat(Math.max(0, oOff - 2))}◉${c.reset} ${l}` : at(oOff, l)));
+
+  const jobs = (t.jobs || []).filter((j) => j.stage && j.stage !== "reported").slice(0, 6);
+  if (jobs.length) {
+    tree.push(at(cx, `${TREE.orch}│${c.reset}`));
+    const rail = jobs.map((j) => {
+      const flag = j.limbo ? " · LIMBO" : "";
+      return trunc(`${j.stage} · ${j.owner || "—"} · ${j.title || j.id}${flag}`, ow - 4);
+    });
+    dbox([`${TREE.orch}${c.bold}JOBS${c.reset}`, ...rail], ow, TREE.orch, { left: true }).forEach((l) => tree.push(at(oOff, l)));
+  }
   tree.push(at(cx, `${TREE.orch}│${c.reset}`), at(cx, `${TREE.jev}▼${c.reset}`));
 
   const jw = Math.min(T - 2, 72);

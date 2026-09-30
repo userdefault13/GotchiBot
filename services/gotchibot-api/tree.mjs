@@ -12,6 +12,7 @@ export const TREE_MAX_BYTES = 192 * 1024;
 const MAX_RUNS = 500;
 const MAX_JEV_IDS = 30;
 const MAX_BOTS = 60;
+const MAX_JOBS = 8;
 const RUN_KINDS = new Set(["cursor", "codex", "dispatch"]);
 const BOT_STATES = new Set(["rework", "working", "review", "queued", "idle"]);
 /** Keep two weeks of run history plus anything still marked running. */
@@ -47,6 +48,20 @@ function list(v, max) {
 function run(r) {
   const kind = RUN_KINDS.has(r?.kind) ? r.kind : null;
   return { kind, status: str(r?.status, 16) || "?", started: num(r?.started) || 0 };
+}
+
+function job(j) {
+  const id = str(j?.id, 64);
+  const stage = str(j?.stage, 16);
+  if (!id || !stage || stage === "reported") return null;
+  return {
+    id,
+    stage,
+    owner: str(j?.owner, 32),
+    title: str(j?.title, 80),
+    limbo: j?.limbo === true,
+    updatedAt: iso(j?.updatedAt),
+  };
 }
 
 function bot(b) {
@@ -92,6 +107,7 @@ export function validateTreeSnapshot(body) {
         .filter((x) => x.id),
     },
     bots: list(o.bots, MAX_BOTS).map(bot).filter((b) => b.id),
+    jobs: list(o.jobs, MAX_JOBS).map(job).filter(Boolean),
   };
   if (Buffer.byteLength(JSON.stringify(out), "utf8") > TREE_MAX_BYTES) throw treeError("tree snapshot too large");
   return out;
@@ -115,6 +131,7 @@ export function treeSnapshotFrom(tree, factory) {
     bots: (factory?.slug ? factory.bots : [])
       .filter((b) => b.state !== "idle")
       .map((b) => ({ id: b.id, name: b.name, role: b.role, state: b.state, op: b.op?.id, opStale: b.opStale, focus: b.focus?.title })),
+    jobs: factory?.jobs || [],
   });
 }
 
@@ -175,6 +192,19 @@ export function mergeTrees(tree, factory, remotes, { sharp = 0.75 } = {}) {
     }
   }
 
+  const jobs = new Map();
+  const takeJob = (row) => {
+    if (!row?.id || row.stage === "reported") return;
+    const prev = jobs.get(row.id);
+    if (!prev || Date.parse(row.updatedAt || 0) >= Date.parse(prev.updatedAt || 0)) jobs.set(row.id, row);
+  };
+  for (const row of factory?.jobs || []) takeJob(row);
+  for (const r of remotes || []) for (const row of r.tree?.jobs || []) takeJob(row);
+  const heat = (j) => (j.stage === "rework" ? 0 : j.limbo ? 1 : 2);
+  const openJobs = [...jobs.values()]
+    .sort((a, b) => heat(a) - heat(b) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+    .slice(0, MAX_JOBS);
+
   const byId = [...jevById.values()];
   let forks = 0;
   let sharpN = 0;
@@ -194,6 +224,7 @@ export function mergeTrees(tree, factory, remotes, { sharp = 0.75 } = {}) {
       top: byId.sort((a, b) => b.n - a.n).slice(0, 3).map((x) => ({ id: x.id, n: x.n, avg: x.known ? x.sum / x.known : null })),
       byId,
     },
+    jobs: openJobs,
   };
   return { tree: merged, bots: [...(factory?.slug ? factory.bots : []), ...extraBots], desks };
 }

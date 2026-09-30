@@ -345,7 +345,10 @@ function parseDesks(unitsText) {
 function loadProjectRoster(slug) {
   const r = loadRoster(slug);
   const sealed = Array.isArray(r.heroes) && r.heroes.length > 0;
-  return { heroes: sealed ? r.heroes.map(String) : [], sealed };
+  return {
+    heroes: sealed ? r.heroes.map((h) => (typeof h === "string" ? h : h?.id)).filter(Boolean) : [],
+    sealed,
+  };
 }
 
 /** Units-only selectable list. */
@@ -1613,7 +1616,11 @@ function render({
   const remainForMidGrid = Math.max(4, rowsN - footerH - afterPanelsTeam);
   // Prefer ~half of mid band for inbox+cron, leave ≥3 rows for Gotchis header+art
   // e2) FACTORY is budgeted out of midBand up front so the Gotchis grid cannot starve it.
-  const factoryModelNow = factoryModel(currentProjectSlug(), roster || []);
+  const projectRows = slug ? loadRoster(slug).heroes : [];
+  const projectRoles = Object.fromEntries(
+    projectRows.filter((h) => h && typeof h === "object" && h.role).map((h) => [h.id, h.role]),
+  );
+  const factoryModelNow = factoryModel(slug || currentProjectSlug(), roster || [], projectRoles);
   const factoryBody = factoryModelNow.slug
     ? factoryBand(factoryModelNow, {
         cols,

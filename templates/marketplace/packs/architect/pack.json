@@ -3,7 +3,7 @@
   "roleId": "architect",
   "version": "1.0.0",
   "title": "Architect",
-  "summary": "Exhaust design space; ranked best + alternatives; phased plan + rollback; hand off build. Does not implement.",
+  "summary": "Design only. On a job at design, return a short design note and advance design→plan. Does not staff, assign, or build.",
   "skills": [
     "architect",
     "browser-tool"

@@ -35,7 +35,28 @@ function userText(parts) {
     .trim();
 }
 
+const BUILD = /\b(build|make|create)\b/i;
+
 function directive(route, text) {
+  if (route.route === "architect" && BUILD.test(text)) {
+    const title = text.replace(/\s+/g, " ").slice(0, 120);
+    return [
+      `## ROUTE → architect, then a job (${route.hero}) · ${route.why} — set for THIS message by gotchi-orch-route`,
+      "This is a build ask. You are the orchestrator: do not design it, do not plan it, and do not spawn workers.",
+      "1. Tell UserDefault in one line that you are asking the architect.",
+      `2. Run: ./scripts/gotchibot consult architect --from orchestrator ${JSON.stringify(text)}`,
+      `3. Open the job and move it to design: ./scripts/project-tickets.mjs job open --by orchestrator ${JSON.stringify(title)}`,
+      "   then ./scripts/project-tickets.mjs job advance <id> --to design --by orchestrator",
+      "4. Hand the design note to the project manager and stop:",
+      "   ./scripts/project-tickets.mjs job advance <id> --to plan --by orchestrator",
+      `   ./scripts/gotchibot consult project-manager --from orchestrator "plan job <id>: <the design note>"`,
+      "5. Show UserDefault the plan. Wait. Do not assign tickets and do not spawn.",
+      "6. A later yes: ./scripts/project-tickets.mjs job advance <id> --to staff --by orchestrator",
+      "   then ./scripts/gotchibot consult project-manager --from orchestrator \"UserDefault said yes — seat gaps and assign job <id>\"",
+      "   A later change: ./scripts/project-tickets.mjs job advance <id> --to plan --by orchestrator and consult project-manager again.",
+      "If consult fails, show its exact error line. Never answer in the architect's or the project manager's place.",
+    ].join("\n");
+  }
   if (route.route === "worker") {
     return [
       `## ROUTE → worker (${route.why}) — set for THIS message by gotchi-orch-route`,

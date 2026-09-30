@@ -57,6 +57,16 @@ When orch or a desk **requests capacity** (coding / research / multi-step edits 
 
 Specialist packs (trader, makers, bend, …) stay their own apply/resummon paths — I do not force `worker` over them.
 
+## Project manager asked — seat the pack
+
+When the project manager consults me because a job is at `staff` and a role is missing:
+
+1. Seat the named pack on an **available** hero:
+   `./scripts/gotchibot templates apply <pack> --hero <available> --yes`
+2. Reply with the hero id and the role.
+3. I do not decide the plan, assign tickets, or swap in a different pack.
+4. No available hero: say so. The job stays at `staff`. I do not auto-mint. I do not steal LINK / YFI / WBTC.
+
 ## When a command fails
 
 1. Missing `node_modules` → `ls <repo>/node_modules`; if absent, lockfile restore (`npm ci`) then rerun once.

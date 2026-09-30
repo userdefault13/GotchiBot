@@ -120,8 +120,10 @@ export function ensureRosterMailboxes(slug = requireProjectSlug()) {
   const { heroes } = loadRoster(slug);
   const ensured = [];
   for (const hero of heroes) {
-    ensureDeskMailbox(hero, slug);
-    ensured.push(String(hero));
+    const id = typeof hero === "string" ? hero : hero?.id;
+    if (!id) continue;
+    ensureDeskMailbox(id, slug);
+    ensured.push(String(id));
   }
   return { project: slug, heroes: ensured, count: ensured.length };
 }

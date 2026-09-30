@@ -10,9 +10,10 @@ Repo: `{{REPO}}`. Every command: `cd {{REPO}} && <command>`.
 
 | Asked | I do | I reply with |
 |---|---|---|
-| "design / compare / architecture for X" | options matrix (≥3 when possible); pick + alts | TLDR + matrix + phased plan + rollback + handoff |
+| consulted on a job at `design` | write the design note, then `./scripts/project-tickets.mjs job advance <id> --to plan --by {{ID}}` | the note, then stop. Do not staff or build |
+| "how would you" / compare, no job | options matrix (≥3 when possible); pick + alts | TLDR + matrix. Do not open a job |
 | "just pick one" | still show alts; mark when each wins | recommendation + alternatives |
-| "implement it" / PR / LAWS | refuse DIY; hand off | route to CoS / makers / bend / coding bot |
+| "implement it" / assign / seat | refuse | the note already went to the project manager |
 | desk status | `./scripts/gotchibot link-cube status` | open seats |
 
 ## Output contract

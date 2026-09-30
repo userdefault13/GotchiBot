@@ -7,13 +7,14 @@
  *
  * Store:   sessions/pstack/<slug>/tickets/<ticketId>.json
  * Index:   sessions/pstack/<slug>/tickets/index.json   (rewritten on mutation)
+ * Jobs:    sessions/pstack/<slug>/jobs/<jobId>.json
  *
  * States:  open → claimed → submitted → accepted | rework → closed
  *          (open → closed cancel; rework → submitted resubmit loop)
  * Card:    request→todo · claim→doing · submit→review · accept→done ·
  *          rework→todo · close→done (only when a card exists)
  *
- *   node scripts/project-tickets.mjs request --from <hero> --to <hero|role> "title" [--acceptance "…"] [--body "…"] [--card|--no-card] [--project <slug>]
+ *   node scripts/project-tickets.mjs request --from <hero> --to <hero|role> "title" [--acceptance "…"] [--body "…"] [--card|--no-card] [--job <jobId>] [--project <slug>]
  *   node scripts/project-tickets.mjs claim <id> --by <hero>
  *   node scripts/project-tickets.mjs submit <id> --by <hero> [--note "…"] [--passoff <passoffId>]
  *   node scripts/project-tickets.mjs accept <id> --by <hero> [--note "…"]
@@ -23,6 +24,15 @@
  *   node scripts/project-tickets.mjs list [--to <hero>] [--from <hero>] [--status <s>] [--json]
  *   node scripts/project-tickets.mjs inbox <hero> [--json]
  *   node scripts/project-tickets.mjs digest [--json]
+ *
+ * A job is the ask those tickets belong to. Stages move only through `job advance`;
+ * limbo is a flag, set when a child ticket sits open or claimed for 30 minutes.
+ *
+ *   node scripts/project-tickets.mjs job open --by <role|hero> "title" [--body]
+ *   node scripts/project-tickets.mjs job advance <id> --to <stage> --by <role|hero> [--note]
+ *   node scripts/project-tickets.mjs job show <id> [--json]
+ *   node scripts/project-tickets.mjs job list [--json]
+ *   node scripts/project-tickets.mjs job digest [--json]
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -58,6 +68,72 @@ export const TRANSITIONS = {
   accepted: ["closed"], // archive
   closed: [],
 };
+
+export const JOB_STAGES = [
+  "intake",
+  "design",
+  "plan",
+  "approval",
+  "staff",
+  "assigned",
+  "doing",
+  "review",
+  "rework",
+  "verify",
+  "approved",
+  "reported",
+];
+
+/** Role that holds the job while it sits in a stage. Shown on the Factory rail. */
+export const STAGE_OWNER = {
+  intake: "orchestrator",
+  design: "architect",
+  plan: "project-manager",
+  approval: "orchestrator",
+  staff: "project-manager",
+  assigned: "project-manager",
+  doing: "kanban-manager",
+  review: "chief-of-staff",
+  rework: "project-manager",
+  verify: "project-manager",
+  approved: "chief-of-staff",
+  reported: "orchestrator",
+};
+
+/**
+ * Who may cross each edge. Orch owns intake, the UserDefault yes/no, and the
+ * final report. PM owns the plan, staffing, assignment, and rework routing.
+ * Kanban owns the move into review and the "all children accepted" signal.
+ * CoS owns review notes and the final approval. CoS does not implement.
+ */
+export const JOB_MOVES = {
+  "intake→design": ["orchestrator"],
+  "design→plan": ["architect", "orchestrator"],
+  "plan→approval": ["project-manager"],
+  "approval→staff": ["orchestrator"],
+  "approval→plan": ["orchestrator"],
+  "staff→assigned": ["project-manager"],
+  "assigned→doing": ["project-manager"],
+  "doing→review": ["kanban-manager"],
+  "review→rework": ["chief-of-staff"],
+  "review→verify": ["kanban-manager", "chief-of-staff"],
+  "rework→doing": ["project-manager"],
+  "rework→assigned": ["project-manager"],
+  "verify→approved": ["chief-of-staff"],
+  "verify→rework": ["project-manager", "chief-of-staff"],
+  "approved→reported": ["orchestrator"],
+};
+
+const ROLE_ALIAS = {
+  orch: "orchestrator",
+  pm: "project-manager",
+  pkm: "kanban-manager",
+  kanban: "kanban-manager",
+  cos: "chief-of-staff",
+};
+
+/** Same bar as a stuck dispatch session. */
+export const LIMBO_MS = 30 * 60 * 1000;
 
 /** Kanban column per ticket status (only when a card exists). */
 export const CARD_COLUMN = {
@@ -142,6 +218,7 @@ export function rebuildIndex(slug = requireProjectSlug()) {
           title: t.title,
           status: t.status,
           cardId: t.cardId ?? null,
+          jobId: t.jobId ?? null,
           updatedAt: t.updatedAt,
         });
       } catch {
@@ -162,6 +239,173 @@ export function loadIndex(slug = requireProjectSlug()) {
     return JSON.parse(readFileSync(ip, "utf8"));
   } catch {
     return rebuildIndex(slug);
+  }
+}
+
+/* ── jobs ──────────────────────────────────────────────────────────────── */
+
+export function jobsDir(slug = currentProjectSlug()) {
+  const root = projectRoot(slug);
+  return root ? join(root, "jobs") : null;
+}
+
+export function jobPath(jobId, slug = currentProjectSlug()) {
+  const dir = jobsDir(slug);
+  return dir && jobId ? join(dir, `${jobId}.json`) : null;
+}
+
+function newJobId() {
+  return `j${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+export function loadRoles() {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, "config/agent-roles.json"), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+/** Role id, whether `by` is already a role or a seated hero. */
+export function actorRole(by, roles = loadRoles()) {
+  const raw = String(by || "").trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (ROLE_ALIAS[lower]) return ROLE_ALIAS[lower];
+  if (Object.values(STAGE_OWNER).includes(raw)) return raw;
+  return roles[raw] || null;
+}
+
+export function assertJobMove(stage, next, role) {
+  const owners = JOB_MOVES[`${stage}→${next}`];
+  if (!owners) {
+    const allowed = Object.keys(JOB_MOVES)
+      .filter((k) => k.startsWith(`${stage}→`))
+      .map((k) => k.slice(stage.length + 1));
+    throw new Error(`job: ${stage} → ${next} not allowed (allowed: ${allowed.join("|") || "—"})`);
+  }
+  if (!owners.includes(role)) {
+    throw new Error(`job: ${role || "unknown"} cannot move ${stage} → ${next} (${owners.join("|")} only)`);
+  }
+}
+
+export function isTicketLimbo(ticket, now = Date.now(), windowMs = LIMBO_MS) {
+  if (ticket?.status !== "open" && ticket?.status !== "claimed") return false;
+  const at = Date.parse(ticket.updatedAt || ticket.createdAt || "");
+  return Number.isFinite(at) && now - at >= windowMs;
+}
+
+/** Live limbo and all-done, from the job's child tickets. Does not write. */
+export function jobSignals(job, tickets, now = Date.now()) {
+  const ids = new Set(job?.tickets || []);
+  const children = (tickets || []).filter((t) => ids.has(t.id) || (t.jobId && t.jobId === job?.id));
+  const limboTickets = children.filter((t) => isTicketLimbo(t, now)).map((t) => t.id);
+  const unfinished = children.filter((t) => t.status !== "accepted" && t.status !== "closed");
+  const allAccepted =
+    children.length > 0 && unfinished.length === 0 && children.some((t) => t.status === "accepted");
+  return { limbo: limboTickets.length > 0, limboTickets, allAccepted, children: children.length };
+}
+
+/**
+ * Write the limbo flag onto the job. Stamps that stop a repeat consult are set
+ * only when `notify` is set (kanban digest). A later stall, or a later
+ * completion after rework, notifies once more.
+ */
+export function applyJobSignals(job, tickets, { now = Date.now(), notify = false } = {}) {
+  const sig = jobSignals(job, tickets, now);
+  const key = sig.limboTickets.slice().sort().join(",");
+  const hints = { consultPmLimbo: false, consultPmAllDone: false };
+  job.limbo = sig.limbo;
+  job.limboTickets = sig.limboTickets;
+  if (!sig.limbo) job.limboNotifiedKey = "";
+  else if (notify && key !== (job.limboNotifiedKey || "")) {
+    hints.consultPmLimbo = true;
+    job.limboNotifiedKey = key;
+  }
+  if (!sig.allAccepted) job.allDoneNotifiedAt = null;
+  else if (notify && !job.allDoneNotifiedAt) {
+    hints.consultPmAllDone = true;
+    job.allDoneNotifiedAt = new Date(now).toISOString();
+  }
+  return hints;
+}
+
+export function loadJob(jobId, slug = requireProjectSlug()) {
+  const p = jobPath(jobId, slug);
+  if (!p || !existsSync(p)) throw new Error(`job not found: ${jobId}`);
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    throw new Error(`job corrupt: ${jobId}`);
+  }
+}
+
+export function saveJob(job, slug = requireProjectSlug()) {
+  const p = jobPath(job.id, slug);
+  if (!p) throw new Error("job id required");
+  mkdirSync(dirname(p), { recursive: true });
+  const next = { ...job, owner: STAGE_OWNER[job.stage] || job.owner || null, updatedAt: nowIso() };
+  writeFileSync(p, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
+}
+
+export function listJobs(slug = requireProjectSlug()) {
+  const dir = jobsDir(slug);
+  const out = [];
+  if (!dir || !existsSync(dir)) return out;
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith(".json")) continue;
+    try {
+      const j = JSON.parse(readFileSync(join(dir, f), "utf8"));
+      if (j?.id) out.push(j);
+    } catch {
+      /* skip corrupt job file */
+    }
+  }
+  out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  return out;
+}
+
+export function listTicketFiles(slug = requireProjectSlug()) {
+  const dir = ticketsDir(slug);
+  const out = [];
+  if (!dir || !existsSync(dir)) return out;
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith(".json") || f === "index.json") continue;
+    try {
+      const t = JSON.parse(readFileSync(join(dir, f), "utf8"));
+      if (t?.id) out.push(t);
+    } catch {
+      /* skip */
+    }
+  }
+  return out;
+}
+
+function refreshJobs(slug, { notify = false } = {}) {
+  const tickets = listTicketFiles(slug);
+  const hints = [];
+  for (const job of listJobs(slug)) {
+    if (job.stage === "reported") continue;
+    const h = applyJobSignals(job, tickets, { notify });
+    saveJob(job, slug);
+    if (h.consultPmLimbo) {
+      hints.push({ job: job.id, kind: "limbo", tickets: job.limboTickets, consult: "project-manager" });
+    }
+    if (h.consultPmAllDone) {
+      hints.push({ job: job.id, kind: "all-accepted", consult: "project-manager" });
+    }
+  }
+  return hints;
+}
+
+function printHints(hints) {
+  for (const h of hints) {
+    if (h.kind === "limbo") {
+      console.log(`consult project-manager: job ${h.job} limbo (${h.tickets.join(", ")})`);
+    } else {
+      console.log(`consult project-manager: job ${h.job} all child tickets accepted`);
+    }
   }
 }
 
@@ -208,7 +452,8 @@ function moveLinkedCard(slug, ticket, column) {
 function printTicket(t) {
   console.log(`${t.id}  [${t.status}]  ${t.title}`);
   console.log(`  project ${t.project}  from ${t.from} → ${t.to}`);
-  if (t.acceptance) console.log(`  acceptance: ${t.acceptance}`);
+    if (t.jobId) console.log(`  job ${t.jobId}`);
+    if (t.acceptance) console.log(`  acceptance: ${t.acceptance}`);
   if (t.body) console.log(`  body: ${t.body}`);
   const links = [
     t.cardId ? `card ${t.cardId}` : null,
@@ -226,7 +471,7 @@ function printTicket(t) {
 
 function usage() {
   console.error(`usage:
-  project-tickets request --from <hero> --to <hero|role> "title" [--acceptance "…"] [--body "…"] [--card|--no-card] [--project <slug>]
+  project-tickets request --from <hero> --to <hero|role> "title" [--acceptance "…"] [--body "…"] [--card|--no-card] [--job <jobId>] [--project <slug>]
   project-tickets claim <id> --by <hero>
   project-tickets submit <id> --by <hero> [--note "…"] [--passoff <passoffId>]
   project-tickets accept <id> --by <hero> [--note "…"]
@@ -236,7 +481,13 @@ function usage() {
   project-tickets list [--to <hero>] [--from <hero>] [--status <s>] [--json]
   project-tickets inbox <hero> [--json]
   project-tickets digest [--json]
-states: ${TICKET_STATUSES.join("|")}`);
+  project-tickets job open --by <role|hero> "title" [--body] [--project]
+  project-tickets job advance <id> --to <stage> --by <role|hero> [--note]
+  project-tickets job show <id> [--json]
+  project-tickets job list [--json]
+  project-tickets job digest [--json]
+states: ${TICKET_STATUSES.join("|")}
+job stages: ${JOB_STAGES.join("|")}`);
   process.exit(2);
 }
 
@@ -253,6 +504,8 @@ function parseFlags(argv) {
     note: null,
     passoff: null,
     status: null,
+    job: null,
+    toStage: null,
     json: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -260,7 +513,10 @@ function parseFlags(argv) {
     if (a === "--json") out.json = true;
     else if (a === "--project") out.project = argv[++i];
     else if (a === "--from") out.from = argv[++i];
-    else if (a === "--to") out.to = argv[++i];
+    else if (a === "--to") {
+      out.to = argv[++i];
+      out.toStage = out.to;
+    }
     else if (a === "--acceptance") out.acceptance = argv[++i];
     else if (a === "--body") out.body = argv[++i];
     else if (a === "--card") out.card = true;
@@ -269,6 +525,7 @@ function parseFlags(argv) {
     else if (a === "--note") out.note = argv[++i];
     else if (a === "--passoff") out.passoff = argv[++i];
     else if (a === "--status") out.status = argv[++i];
+    else if (a === "--job") out.job = argv[++i];
     else out.positional.push(a);
   }
   return out;
@@ -323,10 +580,20 @@ async function main() {
       passoffId: null,
       claimer: null,
       submission: null,
+      jobId: null,
       history: [{ at: nowIso(), by: flags.from, op: "request", note: "" }],
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
+    if (flags.job) {
+      const job = loadJob(flags.job, slug);
+      ticket.jobId = job.id;
+      job.tickets = Array.isArray(job.tickets) ? job.tickets : [];
+      if (!job.tickets.includes(ticket.id)) job.tickets.push(ticket.id);
+      job.history = job.history || [];
+      job.history.push({ at: nowIso(), by: flags.from, op: "ticket", note: ticket.id });
+      saveJob(job, slug);
+    }
     if (flags.card) {
       const card = createLinkedCard(slug, ticket);
       ticket.cardId = card.id;
@@ -459,15 +726,120 @@ async function main() {
     const index = loadIndex(slug);
     const counts = { open: 0, claimed: 0, submitted: 0, accepted: 0, rework: 0, closed: 0 };
     for (const r of index.tickets) counts[r.status] = (counts[r.status] || 0) + 1;
-    const out = { project: slug, updatedAt: index.updatedAt, counts, total: index.tickets.length };
+    const hints = refreshJobs(slug, { notify: true });
+    const out = { project: slug, updatedAt: index.updatedAt, counts, total: index.tickets.length, jobs: hints };
     if (flags.json) console.log(JSON.stringify(out, null, 2));
     else {
       console.log(`ticket digest ${slug} — total ${out.total}`);
       for (const s of TICKET_STATUSES) {
         console.log(`  ${s.padEnd(9)} ${counts[s]}`);
       }
+      printHints(hints);
     }
     return;
+  }
+
+  if (cmd === "job") {
+    const sub = rest[0];
+    if (sub === "open") {
+      const title = rest.slice(1).join(" ").trim();
+      const role = actorRole(flags.by);
+      if (!role || !title) usage();
+      if (role !== "orchestrator") throw new Error("job open is orchestrator's move");
+      const job = {
+        id: newJobId(),
+        project: slug,
+        title,
+        body: flags.body ? String(flags.body).trim() : "",
+        stage: "intake",
+        owner: STAGE_OWNER.intake,
+        limbo: false,
+        limboTickets: [],
+        limboNotifiedKey: "",
+        allDoneNotifiedAt: null,
+        tickets: [],
+        history: [{ at: nowIso(), by: role, actor: flags.by, op: "open", note: "" }],
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+      const saved = saveJob(job, slug);
+      if (flags.json) console.log(JSON.stringify(saved, null, 2));
+      else console.log(`job ${saved.id}  [intake]  owner orchestrator  ${saved.title}`);
+      return;
+    }
+    if (sub === "advance") {
+      const id = rest[1];
+      const role = actorRole(flags.by);
+      const next = flags.toStage;
+      if (!id || !role || !next) usage();
+      if (!JOB_STAGES.includes(next)) throw new Error(`unknown stage: ${next}`);
+      const job = loadJob(id, slug);
+      assertJobMove(job.stage, next, role);
+      const from = job.stage;
+      job.stage = next;
+      job.history = job.history || [];
+      job.history.push({
+        at: nowIso(),
+        by: role,
+        actor: flags.by,
+        op: "advance",
+        from,
+        to: next,
+        note: flags.note || "",
+      });
+      const saved = saveJob(job, slug);
+      if (flags.json) console.log(JSON.stringify(saved, null, 2));
+      else console.log(`job ${saved.id}  ${from} → ${next}  by ${role}  owner ${saved.owner}`);
+      return;
+    }
+    if (sub === "show") {
+      const id = rest[1];
+      if (!id) usage();
+      const job = loadJob(id, slug);
+      const sig = jobSignals(job, listTicketFiles(slug));
+      const view = { ...job, limbo: sig.limbo, limboTickets: sig.limboTickets };
+      if (flags.json) console.log(JSON.stringify(view, null, 2));
+      else {
+        const flag = view.limbo ? `  LIMBO ${view.limboTickets.join(",")}` : "";
+        console.log(`job ${view.id}  [${view.stage}]  owner ${view.owner}${flag}  ${view.title}`);
+        if (view.body) console.log(`  body: ${view.body}`);
+        if (view.tickets?.length) console.log(`  tickets: ${view.tickets.join(" ")}`);
+        for (const h of view.history || []) {
+          const edge = h.from ? ` ${h.from} → ${h.to}` : "";
+          console.log(`  ${h.at}  ${h.op}${edge} by ${h.by}${h.note ? ` — ${h.note}` : ""}`);
+        }
+      }
+      return;
+    }
+    if (sub === "list") {
+      const rows = listJobs(slug).map((j) => ({
+        id: j.id,
+        stage: j.stage,
+        owner: STAGE_OWNER[j.stage] || j.owner,
+        title: j.title,
+        limbo: !!j.limbo,
+        updatedAt: j.updatedAt,
+      }));
+      if (flags.json) console.log(JSON.stringify(rows, null, 2));
+      else {
+        console.log(`jobs ${slug} (${rows.length})`);
+        for (const r of rows) {
+          console.log(`  ${r.id}  [${r.stage}]  ${r.owner}  ${r.limbo ? "LIMBO  " : ""}${r.title}`);
+        }
+      }
+      return;
+    }
+    if (sub === "digest") {
+      const hints = refreshJobs(slug, { notify: true });
+      if (flags.json) console.log(JSON.stringify({ project: slug, hints }, null, 2));
+      else {
+        console.log(`job digest ${slug}`);
+        printHints(hints);
+        if (!hints.length) console.log("  (no consult)");
+      }
+      return;
+    }
+    usage();
   }
 
   usage();
