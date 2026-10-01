@@ -132,11 +132,18 @@ park_session() {
 
 park_chat_pane() {
   chat_live || return 0
-  local park
+  local park park_id
   park="$(park_session)"
   tmux kill-session -t "=$park" 2>/dev/null || true
-  tmux new-session -d -s "$park" -x "$(tmux display -p -t "$sess:work.1" '#{pane_width}')" \
-    -y "$(tmux display -p -t "$sess:work.1" '#{pane_height}')" "exec tail -f /dev/null" 2>/dev/null || return 1
+  park_id="$(tmux new-session -d -P -F '#{session_id}' -s "$park" -x "$(tmux display -p -t "$sess:work.1" '#{pane_width}')" \
+    -y "$(tmux display -p -t "$sess:work.1" '#{pane_height}')" "exec tail -f /dev/null" 2>/dev/null)" || return 1
+  # Every target here assumes =$park:0.0. A user tmux.conf (Omarchy's) may set
+  # base-index / pane-base-index 1 globally, so pin 0-based numbering on this session only.
+  # base-index only applies to new windows, so move-window -r renumbers the one just created.
+  # The session id is the exact target: set-option rejects -t =name for session options.
+  tmux set-option -t "$park_id" base-index 0 2>/dev/null || true
+  tmux move-window -r -t "$park_id" 2>/dev/null || true
+  tmux set-option -w -t "$park_id:" pane-base-index 0 2>/dev/null || true
   tmux swap-pane -d -s "$sess:work.1" -t "=$park:0.0" 2>/dev/null || {
     tmux kill-session -t "=$park" 2>/dev/null || true
     return 1
@@ -226,7 +233,18 @@ save_layout() {
   tmux list-windows -t "$sess:work" -F '#{window_layout}' 2>/dev/null | head -1 > "$LAYOUT_FILE"
 }
 
+# Every target here assumes work.0 | work.1 | work.2. A user tmux.conf (Omarchy's) may set
+# base-index / pane-base-index 1 globally, so pin 0-based numbering on this session only.
+# session_exists guards the bare name: set-option rejects -t =name for session options and a
+# bare name prefix-matches (gotchibot → gotchibot-cursor) when the exact session is gone.
+own_pane_numbering() {
+  session_exists || return 0
+  tmux set-option -t "$sess" base-index 0 2>/dev/null || true
+  tmux set-option -w -t "=$sess_name:work" pane-base-index 0 2>/dev/null || true
+}
+
 apply_window_policy() {
+  own_pane_numbering
   tmux set-option -t "$sess" window-size manual 2>/dev/null || true
   tmux set-option -t "$sess" aggressive-resize off 2>/dev/null || true
 }
@@ -1349,6 +1367,9 @@ finish_ensure() {
 }
 
 cmd="${1:-ensure}"
+# Before any work.N lookup: the side-pane check below and paths that never reach
+# apply_window_policy (refresh-soft, sidebar, enter-*-max, fit, …) all resolve indices.
+own_pane_numbering
 layout_safe_reexec "$cmd" ${2:+"$2"}
 
 case "$cmd" in
