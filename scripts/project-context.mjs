@@ -35,6 +35,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { projectRoomHasFiles } from "../services/gotchibot-api/projects.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** Sibling checkouts (~/Dev) — where bare repo names and URL checkouts are looked up. */
@@ -464,13 +465,15 @@ export function ensureProjectDirs(slug = currentProjectSlug()) {
   return root;
 }
 
-export function listProjectSlugsOnDisk() {
-  if (!existsSync(PSTACK_ROOT)) return [];
+export function listProjectSlugsOnDisk(pstackRoot = PSTACK_ROOT) {
+  if (!existsSync(pstackRoot)) return [];
   try {
-    return readdirSync(PSTACK_ROOT)
+    return readdirSync(pstackRoot)
       .filter((name) => {
         try {
-          return existsSync(join(PSTACK_ROOT, name, "dossier.json"));
+          // Same predicate the Hub uses, so the phone and `project use` agree on
+          // which rooms exist. pstackRoot is honoured so this stays testable.
+          return projectRoomHasFiles(name, (slug, f) => existsSync(join(pstackRoot, slug, f)));
         } catch {
           return false;
         }

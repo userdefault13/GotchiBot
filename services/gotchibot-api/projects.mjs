@@ -120,7 +120,17 @@ export function normalizeAvatarSvg(text) {
   return /^<svg[\s>]/.test(svg) ? svg : null;
 }
 
-const PROJECT_FILES = ["dossier.json", "overview.md", "status.md", "roster.json", "kanban.json"];
+export const PROJECT_FILES = ["dossier.json", "overview.md", "status.md", "roster.json", "kanban.json"];
+
+/**
+ * A pstack room counts as a project when it holds at least one PROJECT_FILES entry.
+ * `hasFile(slug, fileName)` answers "does this room hold that file" so each caller keeps
+ * its own path composition — the Hub reads the pushed snapshot, the desk reads its disk.
+ * Single source of truth: gate on this, never on a hand-picked subset of PROJECT_FILES.
+ */
+export function projectRoomHasFiles(slug, hasFile) {
+  return PROJECT_FILES.some((f) => hasFile(slug, f));
+}
 const CURRENT_FILES = ["sessions/.pstack-dossier-current", "sessions/.project-current"];
 const HERO_STATE_FILE = "sessions/.hero-agent-state.json";
 const ROLES_FILE = "config/agent-roles.json";
@@ -342,7 +352,11 @@ export function createProjectSource({ root, heroName, snapshot } = {}) {
     };
   }
 
-  /** Every pstack room with a dossier, overview or status (smoke rooms hidden). */
+  /**
+   * Every pstack room holding at least one PROJECT_FILES entry (smoke rooms hidden).
+   * Uses the shared predicate because collectProjectSnapshot discovers slugs through
+   * this same function: a room gated out here is never pushed and can never be read back.
+   */
   function listSlugs() {
     const names = new Set();
     try {
@@ -356,9 +370,7 @@ export function createProjectSource({ root, heroName, snapshot } = {}) {
     }
     return [...names].filter((name) => {
       if (!projectSlugOk(name) || /smoke/i.test(name)) return false;
-      return ["dossier.json", "overview.md", "status.md"].some((f) =>
-        fileExists(`sessions/pstack/${name}/${f}`),
-      );
+      return projectRoomHasFiles(name, (slug, f) => fileExists(`sessions/pstack/${slug}/${f}`));
     });
   }
 

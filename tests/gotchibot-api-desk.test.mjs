@@ -22,6 +22,7 @@ import {
   snapshotPathOk,
   validateProjectSnapshot,
 } from "../services/gotchibot-api/projects.mjs";
+import { listProjectSlugsOnDisk } from "../scripts/project-context.mjs";
 import {
   cockpitHash,
   renderLaunchAgent,
@@ -285,6 +286,47 @@ describe("project snapshot push", () => {
       assert.equal(snapshotHash(touched), snapshotHash(snap));
       const edited = { ...snap, files: snap.files.map((f, i) => (i === 0 ? { ...f, text: `${f.text} ` } : f)) };
       assert.notEqual(snapshotHash(edited), snapshotHash(snap));
+    } finally {
+      rmSync(desk, { recursive: true, force: true });
+      rmSync(hub, { recursive: true, force: true });
+    }
+  });
+
+  it("a room with only roster.json + kanban.json is a project, and desk and Hub agree", () => {
+    const desk = makeRoot();
+    const hub = mkdtempSync(join(tmpdir(), "gb-hub-"));
+    try {
+      // No dossier.json / overview.md / status.md: the room must still ship and resolve.
+      mkdirSync(join(desk, "sessions/pstack/delta"), { recursive: true });
+      writeJson(join(desk, "sessions/pstack/delta/roster.json"), { heroes: ["owned-1"] });
+      writeJson(join(desk, "sessions/pstack/delta/kanban.json"), { cards: [] });
+      mkdirSync(join(desk, "sessions/pstack/loose-file"), { recursive: true });
+      writeFileSync(join(desk, "sessions/pstack/loose-file/unrelated.txt"), "not a project file\n");
+
+      const snap = collectProjectSnapshot({ root: desk, heroName });
+      assert.ok(
+        snap.files.some((f) => f.path === "sessions/pstack/delta/roster.json"),
+        "delta must be pushed — the pusher discovers rooms through listSlugs",
+      );
+
+      // Hub side: snapshot only, no local rooms on the Hub at all.
+      const onHub = createProjectSource({ root: hub, snapshot: () => snapshotView(snap) });
+      assert.deepEqual(
+        onHub.listProjects().map((p) => p.slug).sort(),
+        ["alpha", "beta", "delta"],
+        "Hub lists delta from the snapshot alone",
+      );
+      assert.equal(onHub.getProject("delta").slug, "delta");
+
+      // Desk side: the same predicate, so `project use` sees what the phone sees.
+      const onDesk = listProjectSlugsOnDisk(join(desk, "sessions/pstack"));
+      assert.ok(onDesk.includes("delta"), "desk picker must list delta too");
+      assert.ok(onDesk.includes("alpha") && onDesk.includes("beta"));
+      // A room holding none of PROJECT_FILES stays invisible on both sides.
+      assert.equal(onDesk.includes("loose-file"), false);
+      assert.equal(onHub.listProjects().some((p) => p.slug === "loose-file"), false);
+      // Note: the Hub additionally hides /smoke/i rooms; the desk picker does not.
+      // That is Hub display policy, not project identity, so it is not asserted equal.
     } finally {
       rmSync(desk, { recursive: true, force: true });
       rmSync(hub, { recursive: true, force: true });
