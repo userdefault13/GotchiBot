@@ -369,8 +369,9 @@ async function buildStatus({ live }) {
   }
 
   const remoteOk = ssh.ok === true;
+  const hubWord = remoteOk ? "ok" : sshReady() ? "bad" : "?";
   const barLine = [
-    `Hub: ${remoteOk ? "up" : "down"}`,
+    `Hub: ${hubWord}`,
     sessions.imac.running > 0
       ? `${sessions.imac.running} run`
       : sessions.imac.total > 0
