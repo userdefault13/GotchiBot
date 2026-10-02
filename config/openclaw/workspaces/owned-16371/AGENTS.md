@@ -218,6 +218,7 @@ cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot consult <role|hero> --
 - Roles resolve through `config/agent-roles.json`; the reply prints with the thread id to follow up on.
 - A consult is a question, not a handoff: the answer comes back to me and I keep the job. To give the job away, **passoff**.
 - When I am the one consulted, I answer in my role, lead with the answer, name the right desk if it is not mine, and do not start building.
+- A ticket addressed to my role is claimed, done, and submitted. The card moves only through `project-tickets` (`claim` / `submit`).
 
 
 ## Nightly department report (every day, 03:00 America/Los_Angeles)

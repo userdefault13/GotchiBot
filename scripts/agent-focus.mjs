@@ -794,7 +794,7 @@ async function cmdCockpit() {
     return;
   }
   if (process.env.TMUX) {
-    console.log("Opening GotchiBot cockpit in chat pane…");
+    console.log("Opening GotchiBot cockpit…");
     console.log("  mint cAavegotchi · change orchestrator avatar · return to project · select project");
     // One respawn, run by the tmux server (-b): this process is inside work.1 and is
     // killed by it, so nothing after the layout call would run.

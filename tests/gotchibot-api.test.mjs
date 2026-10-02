@@ -31,6 +31,8 @@ import {
 import {
   classifyRequest,
   checkOrigin,
+  forwardedTailscaleIp,
+  taggedPeerAllowed,
   normalizePairingCode,
 } from "../services/gotchibot-api/auth.mjs";
 import { connectStore } from "../services/gotchibot-api/store.mjs";
@@ -215,6 +217,14 @@ describe("classifyRequest / checkOrigin / normalizePairingCode", () => {
     );
     assert.equal(r.ok, false);
     assert.equal(r.status, 403);
+  });
+
+  it("allows a forwarded Tailscale IP only when the node tag is listed", () => {
+    assert.equal(forwardedTailscaleIp({ "x-forwarded-for": "100.97.16.8, 10.0.0.1" }), "100.97.16.8");
+    assert.equal(forwardedTailscaleIp({ "x-forwarded-for": "1.2.3.4" }), null);
+    assert.equal(taggedPeerAllowed(["tag:omarchy"], ["tag:omarchy"]), true);
+    assert.equal(taggedPeerAllowed(["tag:other"], ["tag:omarchy"]), false);
+    assert.equal(taggedPeerAllowed(["tag:omarchy"], []), false);
   });
 
   it("normalizePairingCode uppercases and strips dashes", () => {

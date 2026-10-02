@@ -279,7 +279,7 @@ ensure_desk_after_cockpit() {
   if [ "${count:-0}" -eq 3 ] && [[ "$c1" == *pstack-window* ]] && [[ "$c2" == *avatar-pane* ]]; then
     return 0
   fi
-  if [ "$mode" = "pstack-dossier" ]; then
+  if [ "$mode" = "pstack-dossier" ] || [ "$mode" = "cockpit" ]; then
     return 0
   fi
   tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess\" \"$ROOT/scripts/orchestrator-layout.sh\" refresh"

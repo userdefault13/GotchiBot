@@ -1,6 +1,7 @@
 /**
  * gotchibot-api — self-hosted Hub chat/desk HTTP API (node:http, no express).
  */
+import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -10,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { isMainModule } from "../../scripts/is-main.mjs";
 import { isUlid } from "../../scripts/chat-canonical.mjs";
 import { resolveApiConfig } from "./config.mjs";
-import { checkOrigin } from "./auth.mjs";
+import { checkOrigin, forwardedTailscaleIp, taggedPeerAllowed } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
 import { createProjectSource, validateProjectSnapshot } from "./projects.mjs";
 import { validateCockpitSnapshot } from "./cockpit.mjs";
@@ -167,8 +168,38 @@ async function loadHeroName() {
  * }} opts
  * @returns {import('node:http').Server}
  */
+const whoisCache = new Map();
+
+function nodeTags(ip) {
+  const hit = whoisCache.get(ip);
+  if (hit && Date.now() - hit.at < 60_000) return hit.tags;
+  const r = spawnSync("tailscale", ["whois", "--json", ip], { encoding: "utf8", timeout: 2500 });
+  let tags = [];
+  if (r.status === 0) {
+    try {
+      tags = JSON.parse(r.stdout || "{}")?.Node?.Tags || [];
+    } catch {
+      tags = [];
+    }
+  }
+  whoisCache.set(ip, { at: Date.now(), tags });
+  return tags;
+}
+
 export function createApiServer({ store, config, projects, verifyWallet, ownerWallet, opencode }) {
   const ownerLogin = config.ownerLogin;
+  const peerTags = Array.isArray(config.peerTags) ? config.peerTags : [];
+  function originAllowed(req) {
+    const origin = checkOrigin(
+      { remoteAddress: req.socket?.remoteAddress, headers: req.headers },
+      ownerLogin,
+    );
+    if (origin.ok || !peerTags.length) return origin;
+    if (!/Tailscale-User-Login/.test(origin.error || "")) return origin;
+    const ip = forwardedTailscaleIp(req.headers);
+    if (!ip || !taggedPeerAllowed(nodeTags(ip), peerTags)) return origin;
+    return { ok: true };
+  }
   /** Desk-pushed portfolio, loaded from Mongo once and replaced on each push. */
   let projectSnapshot = null;
   let projectSnapshotLoaded = false;
@@ -295,10 +326,7 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
         });
       }
 
-      const origin = checkOrigin(
-        { remoteAddress: req.socket?.remoteAddress, headers: req.headers },
-        ownerLogin,
-      );
+      const origin = originAllowed(req);
       if (!origin.ok) {
         return json(res, origin.status, { ok: false, error: origin.error });
       }
@@ -614,7 +642,7 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
             deskId: desk.deskId,
             ...snapshot,
           });
-          projectSnapshot = toSnapshotView({ ...snapshot, pushedAt });
+          projectSnapshot = toSnapshotView(await store.getProjectSnapshot()) || toSnapshotView({ ...snapshot, pushedAt });
           projectSnapshotLoaded = true;
           await loadHeroName();
           return json(res, 200, {

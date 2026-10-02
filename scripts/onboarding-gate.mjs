@@ -2439,8 +2439,8 @@ async function mainMenu(wallet, cartridgeId) {
     console.log(
       `  cartridge   ${
         cartridgeId
-          ? `${cartridgeId} (Base Sepolia)`
-          : "(none — mint on Base Sepolia)"
+          ? `${cartridgeId} (Base)`
+          : "(none — mint on Base)"
       }`,
     );
     console.log(`  abra cart   ${abraLine}`);
@@ -2450,7 +2450,7 @@ async function mainMenu(wallet, cartridgeId) {
       console.log(`  roster      ${heroes.length} cAavegotchi(s)`);
     }
     console.log(`  orchestrator ${orch}`);
-    console.log(`  project     ${project || "(none — select local · Sepolia)"}`);
+    console.log(`  project     ${project || "(none — select local · Base)"}`);
     if (project) {
       const { loadRepo, formatRepo } = await import("./project-context.mjs");
       const repo = loadRepo(project);
@@ -2556,7 +2556,7 @@ async function mainMenu(wallet, cartridgeId) {
       console.log(readWelcomeArt(10));
       const proj = currentProjectSlug();
       console.log(`\n  ✓ Orchestrator ready — ${heroId}`);
-      if (proj) console.log(`  ✓ Project — ${proj} (local · Sepolia)`);
+      if (proj) console.log(`  ✓ Project — ${proj} (local · Base)`);
       else console.log("  · No project selected — pick one from cockpit anytime.");
       console.log("  Opening the desk…");
       console.log("  Talk in natural language to spin up sub-agents.");
@@ -2569,6 +2569,12 @@ async function mainMenu(wallet, cartridgeId) {
         stdio: "ignore",
       });
       await pause("Press Enter to open the prompter");
+      // Cockpit pane: restore the parked chat and the avatar. Do not boot
+      // OpenCode inside this pane.
+      if (process.env.GOTCHIBOT_COCKPIT_PANE === "1") {
+        runLayout("leave-cockpit", { background: true, target: "work.0" });
+        process.exit(0);
+      }
       // chat-pane.sh continues into opencode after the gate exits.
       // Standalone `gotchibot onboarding` must exec the chat pane itself.
       if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") return;

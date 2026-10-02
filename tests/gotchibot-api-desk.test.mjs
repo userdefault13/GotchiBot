@@ -917,9 +917,19 @@ describe("phone desk API", async () => {
       assert.equal(pushed.status, 200);
       assert.equal(pushed.data.projects, 2);
 
+      const { code: code2 } = await store.mintPairingCode({ name: "imac", kind: "desk" });
+      const other = await store.claimPairingCode({ code: code2, name: "iMac" });
+      const partial = await call(hubPort, "POST", "/api/gotchibot/projects/push", {
+        token: other.deskToken,
+        body: {
+          files: [{ path: "sessions/pstack/gamma/overview.md", text: "# gamma\n\nGoal: Gamma things\n" }],
+        },
+      });
+      assert.equal(partial.status, 200, "another desk can push without replacing the portfolio");
+
       for (const p of [hubPort, await hubServer()]) {
         const list = await call(p, "GET", "/api/gotchibot/projects", { token: phone.deskToken });
-        assert.deepEqual(list.data.projects.map((x) => x.slug), ["beta", "alpha"]);
+        assert.deepEqual(list.data.projects.map((x) => x.slug), ["beta", "alpha", "gamma"]);
         const detail = await call(p, "GET", "/api/gotchibot/projects/alpha", { token: phone.deskToken });
         assert.equal(detail.data.project.roster[0].name, "UNI");
         const svg = await call(p, "GET", "/api/gotchibot/avatars/owned-1.svg", { token: phone.deskToken });

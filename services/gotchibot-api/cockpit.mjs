@@ -297,7 +297,7 @@ export async function collectCockpitSnapshot({ root, sources = {} } = {}) {
     header: {
       wallet: resolveOwnerWallet({}, root),
       cartridgeId: onboarding.cartridgeId ?? null,
-      cartridgeChain: onboarding.cartridgeId ? "Base Sepolia" : null,
+      cartridgeChain: onboarding.cartridgeId ? "Base" : null,
       orchestrator: orchId ? { id: orchId, name: nameOf(orchId, orchRow?.name), collateral: orchRow?.collateral } : null,
       rosterCount: rosterRaw?.heroes ?? numbered.length,
       project,

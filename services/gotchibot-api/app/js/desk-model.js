@@ -86,8 +86,8 @@ export function cockpitMenu({ project = null, cockpit = null } = {}) {
   return [
     phone("launch", "Open desk", project ? chatHash(project, null) : "#/projects"),
     phone("select-project", "Switch to another project", "#/projects"),
-    desk("checkpoint-project", "Save project to Sepolia"),
-    desk("checkpoint-chat", "Checkpoint chat sync to Sepolia"),
+    desk("checkpoint-project", "Save project to Base"),
+    desk("checkpoint-chat", "Checkpoint chat sync to Base"),
     phone("hub-network", hubHostLabel(cockpit?.hub), "#/hub"),
     desk("meet", "Start meeting / morning recap"),
     phone("roster", "View agent roster (MBP + iMac · status)", "#/roster"),

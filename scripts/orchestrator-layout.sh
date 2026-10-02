@@ -654,13 +654,13 @@ leave_meet_gallery() {
   save_layout
   signal_panes
   install_avatar_mouse 2>/dev/null || true
-  # boot_cockpit_desk does the single final chat respawn when GOTCHIBOT_BOOT_COCKPIT=1.
-  if [ "${GOTCHIBOT_BOOT_COCKPIT:-}" != "1" ]; then
-    if [ "$to_cockpit" -eq 1 ]; then
-      tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
-    else
-      tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
-    fi
+  # boot_cockpit_desk opens the cockpit pane when GOTCHIBOT_BOOT_COCKPIT=1.
+  if [ "${GOTCHIBOT_BOOT_COCKPIT:-}" = "1" ]; then
+    :
+  elif [ "$to_cockpit" -eq 1 ]; then
+    enter_cockpit_panes
+  else
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
   fi
 }
 
@@ -786,10 +786,13 @@ leave_pstack_dossier() {
   save_layout
   signal_panes
   install_avatar_mouse 2>/dev/null || true
-  # Return to cockpit when leaving pstack unless the parked chat came back. Skip when
-  # boot_cockpit_desk will do the single final chat respawn (GOTCHIBOT_BOOT_COCKPIT=1).
-  if [ "$restored" -eq 0 ] && [ "${GOTCHIBOT_BOOT_COCKPIT:-}" != "1" ]; then
-    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  # boot_cockpit_desk opens the cockpit pane when GOTCHIBOT_BOOT_COCKPIT=1.
+  if [ "${GOTCHIBOT_BOOT_COCKPIT:-}" = "1" ]; then
+    :
+  elif [ "$to_cockpit" -eq 1 ]; then
+    enter_cockpit_panes
+  elif [ "$restored" -eq 0 ]; then
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
   fi
 }
 
@@ -814,7 +817,63 @@ leave_pstack_orch() {
   tmux select-pane -t "$sess:work.1" 2>/dev/null || true
 }
 
-# Desk start / reattach: peel special modes and always land in cockpit.
+# Files bar | chat bar | cockpit (wide). Live chat is parked, not killed.
+apply_cockpit_sizes() {
+  apply_avatar_max_sizes
+}
+
+enter_cockpit_panes() {
+  session_exists || return 1
+  if [ "$(layout_mode)" = "cockpit" ]; then
+    local c1 c2
+    c1="$(pane_start_cmd 1 2>/dev/null || true)"
+    c2="$(pane_start_cmd 2 2>/dev/null || true)"
+    if [[ "$c1" == *chat-bar-pane* ]] && [[ "$c2" == *cockpit-pane* ]]; then
+      apply_cockpit_sizes
+      tmux select-pane -t "$sess:work.2" 2>/dev/null || true
+      return 0
+    fi
+  fi
+  require_three_panes || return 1
+  park_chat_pane || true
+  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  collapse_sidebar
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-pstack-dossier 2>/dev/null || true
+  apply_cockpit_sizes
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/cockpit-pane.sh" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" -u @gotchibot-pstack-dossier 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Cockpit ' 2>/dev/null || true
+  set_layout_mode cockpit
+  tmux select-pane -t "$sess:work.2" 2>/dev/null || true
+  save_layout
+  signal_panes
+}
+
+leave_cockpit_desk() {
+  [ "$(layout_mode)" = "cockpit" ] || return 0
+  set_layout_mode normal
+  unpark_chat_pane || chat_live || \
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
+  collapse_sidebar
+  apply_pane_sizes
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  save_layout
+  signal_panes
+  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+  mark_avatar_pane
+}
+
+# Desk start / reattach: peel special modes and land in the cockpit pane.
 # Mid-session zooms (files-max toggle, agent switches) keep SKIP_COCKPIT via restore_normal_layout.
 boot_cockpit_desk() {
   session_exists || return 1
@@ -824,7 +883,6 @@ boot_cockpit_desk() {
   mode="$(layout_mode)"
   case "$mode" in
     meet-gallery)
-      # Layout restore only — we do the single chat respawn below.
       GOTCHIBOT_BOOT_COCKPIT=1 leave_meet_gallery
       ;;
     pstack-dossier)
@@ -833,31 +891,12 @@ boot_cockpit_desk() {
     files-max|avatar-max|chat-max)
       set_layout_mode normal
       collapse_to_three_panes || true
-      tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
-      tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
-      mark_avatar_pane
+      ;;
+    cockpit)
       ;;
   esac
 
-  set_layout_mode normal
-  require_three_panes || return 1
-  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
-  mark_avatar_pane
-  # Single final chat respawn — always cockpit on desk boot / reattach.
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.2" -u @gotchibot-pstack-dossier 2>/dev/null || true
-  collapse_sidebar
-  apply_pane_sizes
-  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
-  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
-  save_layout
-  signal_panes
-  install_avatar_mouse 2>/dev/null || true
+  enter_cockpit_panes
 }
 
 # Pane-max keys (Ctrl+B / Ctrl+F / Ctrl+A) step out of the pstack/Factory center
@@ -988,6 +1027,10 @@ toggle_chat_max() {
 }
 
 restore_normal_layout() {
+  if [ "$(layout_mode)" = "cockpit" ]; then
+    leave_cockpit_desk
+    return
+  fi
   if [ "$(layout_mode)" = "meet-gallery" ]; then
     leave_meet_gallery
     return
@@ -1035,7 +1078,7 @@ toggle_sidebar() {
     guard_special_modes
     return
   fi
-  if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ]; then
+  if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ] || [ "$(layout_mode)" = "cockpit" ]; then
     restore_normal_layout
     return
   fi
@@ -1080,6 +1123,7 @@ fit_max_keep_drag() {
   case "$(layout_mode)" in
     files-max) apply_files_max_sizes ;;
     avatar-max) apply_avatar_max_sizes ;;
+    cockpit) apply_cockpit_sizes ;;
     chat-max) apply_chat_max_sizes ;;
   esac
 }
@@ -1089,7 +1133,7 @@ fit_quiet() {
     fit_max_keep_drag 0 20
     return 0
   fi
-  if [ "$(layout_mode)" = "avatar-max" ]; then
+  if [ "$(layout_mode)" = "avatar-max" ] || [ "$(layout_mode)" = "cockpit" ]; then
     fit_max_keep_drag 2 40
     return 0
   fi
@@ -1337,6 +1381,9 @@ apply_pane_border_labels() {
     chat-max)
       label1=' Gotchi · full '
       ;;
+    cockpit)
+      label2=' Cockpit '
+      ;;
   esac
   # #{?pane_active,…} is evaluated per pane by tmux.
   tmux set-option -p -t "$sess:work.0" pane-border-format " #{?pane_active,●, }${label0}" 2>/dev/null || true
@@ -1406,7 +1453,7 @@ case "$cmd" in
     fit_quiet
     ;;
   refresh)
-    if [ "$(layout_mode)" = "meet-gallery" ] || [ "$(layout_mode)" = "pstack-dossier" ]; then
+    if [ "$(layout_mode)" = "meet-gallery" ] || [ "$(layout_mode)" = "pstack-dossier" ] || [ "$(layout_mode)" = "cockpit" ]; then
       boot_cockpit_desk
       exit 0
     fi
@@ -1495,6 +1542,9 @@ case "$cmd" in
     ;;
   enter-cockpit|boot-cockpit)
     boot_cockpit_desk
+    ;;
+  leave-cockpit)
+    leave_cockpit_desk
     ;;
   require-three)
     # Invoked via run-shell from a side pane so rebuild is not aborted mid-flight.

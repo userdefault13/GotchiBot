@@ -69,6 +69,17 @@ export function resolveApiConfig(env = process.env) {
   const opencodeUrl =
     String(env.GOTCHIBOT_OPENCODE_URL || file.opencodeUrl || "http://127.0.0.1:4096").trim();
 
+  const peerTags = [
+    ...new Set(
+      [
+        ...(Array.isArray(file.peerTags) ? file.peerTags : []),
+        ...String(env.GOTCHIBOT_HUB_PEER_TAGS || "").split(","),
+      ]
+        .map((t) => String(t || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+
   return {
     host,
     port,
@@ -80,5 +91,6 @@ export function resolveApiConfig(env = process.env) {
     tailscaleHost: file.tailscaleHost ? String(file.tailscaleHost) : null,
     appUrl,
     opencodeUrl,
+    peerTags,
   };
 }

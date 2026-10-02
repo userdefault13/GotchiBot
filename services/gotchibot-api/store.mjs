@@ -1048,27 +1048,41 @@ export async function connectStore({ mongoUri, dbName }) {
   }
 
   /**
-   * Whole-portfolio snapshot from a desk (validated by the caller). Replaces
-   * the previous push; files stay an array because paths contain dots.
+   * One portfolio snapshot per desk. A later push from another desk must not
+   * erase rooms this desk already sent. Files stay an array because paths
+   * contain dots.
    */
   async function putProjectSnapshot({ deskId, files, heroNames }) {
+    const id = String(deskId || "current");
     const pushedAt = new Date();
     await projectSnapshot.replaceOne(
-      { _id: "current" },
-      { _id: "current", deskId, pushedAt, files, heroNames },
+      { _id: id },
+      { _id: id, deskId: id, pushedAt, files, heroNames },
       { upsert: true },
     );
     return { pushedAt: pushedAt.toISOString() };
   }
 
   async function getProjectSnapshot() {
-    const doc = await projectSnapshot.findOne({ _id: "current" });
-    if (!doc) return null;
+    const docs = await projectSnapshot.find({}).toArray();
+    if (!docs.length) return null;
+    const files = new Map();
+    const heroNames = {};
+    const ordered = docs.sort(
+      (a, b) => new Date(a.pushedAt || 0).getTime() - new Date(b.pushedAt || 0).getTime(),
+    );
+    let latest = ordered[ordered.length - 1];
+    for (const doc of ordered) {
+      for (const file of Array.isArray(doc.files) ? doc.files : []) {
+        if (file?.path) files.set(file.path, file);
+      }
+      Object.assign(heroNames, doc.heroNames || {});
+    }
     return {
-      deskId: doc.deskId,
-      pushedAt: doc.pushedAt instanceof Date ? doc.pushedAt.toISOString() : doc.pushedAt,
-      files: Array.isArray(doc.files) ? doc.files : [],
-      heroNames: doc.heroNames || {},
+      deskId: latest.deskId || null,
+      pushedAt: latest.pushedAt instanceof Date ? latest.pushedAt.toISOString() : latest.pushedAt,
+      files: [...files.values()],
+      heroNames,
     };
   }
 

@@ -41,6 +41,7 @@ const ALLOWED = new Set([
   "leave-pstack-dossier",
   "enter-cockpit",
   "boot-cockpit",
+  "leave-cockpit",
   "require-three",
 ]);
 

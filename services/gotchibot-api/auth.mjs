@@ -122,3 +122,22 @@ export function checkOrigin({ remoteAddress, headers } = {}, ownerLogin) {
   }
   return { ok: true };
 }
+
+/** First hop of X-Forwarded-For when it is a Tailscale address. */
+export function forwardedTailscaleIp(headers) {
+  const raw = headerGet(headers, "x-forwarded-for");
+  if (raw == null) return null;
+  const ip = String(Array.isArray(raw) ? raw[0] : raw)
+    .split(",")[0]
+    .trim()
+    .replace(/^::ffff:/i, "");
+  if (/^100\.\d+\.\d+\.\d+$/.test(ip)) return ip;
+  if (/^fd7a:/i.test(ip)) return ip;
+  return null;
+}
+
+/** A tagged fleet node may call the Hub when its tag is on the allowlist. */
+export function taggedPeerAllowed(tags, peerTags) {
+  const have = new Set((Array.isArray(tags) ? tags : []).map((t) => String(t)));
+  return (Array.isArray(peerTags) ? peerTags : []).some((t) => have.has(String(t)));
+}
