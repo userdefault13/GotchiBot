@@ -12,8 +12,8 @@ sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
 sess_name="${sess_name#=}"
 sess="$sess_name"
 min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-47}"
-# 65 fits 3 roster cells (12-col thumb, labels up to 20) at a 147-col desk; chat gives up 24 columns (81→57).
-min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-65}"
+# 43 at a 147-col desk (8 panes, 7 separators, content 140). Chat absorbs the rest (57→79). Roster cell is floor((43-4)/3)=13, so the 12-col thumb still fits; name labels longer than 13 clip.
+min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-43}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
 chat_collapsed="${GOTCHIBOT_CHAT_COLLAPSED:-3}"

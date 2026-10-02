@@ -1,5 +1,5 @@
 /**
- * Avatar pane width at a 147-column desk: three roster cells, labels up to 20.
+ * Avatar pane is 43 at a 147-column desk. Sprites stay 12 columns; labels may clip.
  *   node --test tests/avatar-roster-width.test.mjs
  * Does not start tmux.
  */
@@ -36,11 +36,13 @@ describe("avatar roster width", () => {
     const row = cellW * 3 + 4;
     const chat = content - chrome - avatar;
 
-    assert.ok(avatar >= 65, `avatar default ${avatar} >= 65`);
-    assert.ok(cellW >= 20, `cell_w ${cellW} >= 20`);
-    assert.ok(row <= avatar - 1, `row ${row} <= avatar-1 ${avatar - 1}`);
-    assert.ok(chat >= 36, `chat ${chat} stays above the 36-col focus floor`);
-    assert.ok(chat < 81, `chat ${chat} is the pane that shrank (was 81)`);
+    assert.equal(avatar, 43);
+    assert.equal(cellW, 13);
+    assert.ok(cellW >= 12, `cell_w ${cellW} >= 12 (12-column thumb fits)`);
+    assert.equal(row, 43);
+    assert.ok(row <= avatar, `row ${row} <= avatar ${avatar}`);
+    assert.equal(chat, 79);
+    assert.ok(chat > 57, `chat ${chat} grew when avatar shrank from 65 (was 57)`);
 
     const labels = [
       "User.Default.AAVE",
@@ -49,10 +51,14 @@ describe("avatar roster width", () => {
       "dossier-ai-cron-site".replaceAll("-", " "),
       "chief-of-staff".replaceAll("-", " "),
     ];
+    assert.ok(
+      labels.some((label) => label.length > cellW),
+      "at least one name label is longer than cell_w and clips",
+    );
     for (const label of labels) {
       assert.ok(
-        label.length <= cellW,
-        `${JSON.stringify(label)} length ${label.length} fits in cell_w ${cellW}`,
+        label.length > cellW,
+        `${JSON.stringify(label)} length ${label.length} clips in cell_w ${cellW}`,
       );
     }
   });
