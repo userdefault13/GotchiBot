@@ -12,7 +12,7 @@ sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
 sess_name="${sess_name#=}"
 sess="$sess_name"
 min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-47}"
-# 44 at a 147-col desk (8 panes, 7 separators, content 140). Chrome is files bar 3 + five 3-col label bars = 18, so chat = 140-18-44 = 78 (was 79 at width 43). Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
+# 44 at a 147-col desk (8 panes, 7 separators, content 140). Files bar stays 3. When chat is focused the five label bars drop from 3 to 1 (one column draws the glyph; the other two were slack), so chrome = 3+5 = 8 and chat = 140-8-44 = 88 (was 78 while those bars stayed 3). Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
 min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-44}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
@@ -1036,19 +1036,13 @@ place_focus_apps() {
   fi
 }
 
-apply_focus_sizes() {
-  local focus="$1"
-  local win bar sep content client_w
+# Pure widths for one focus at a window width. No tmux.
+# Echoes: files avatar cockpit chat factory dossier inbox meet
+focus_pane_widths() {
+  local focus="$1" win="$2"
+  local bar sep content
   local w0 w1 w2 w3 w4 w5 w6 w7 used budget
   local name cur progressed guard
-  client_w="$(tmux display -p -t "$sess" '#{client_width}' 2>/dev/null || true)"
-  client_w="${client_w:-0}"
-  win="$(window_width)"
-  # Use the whole terminal. The old 131-column window clipped the new labels.
-  if [ "$client_w" -gt "$win" ]; then
-    tmux resize-window -t "$sess:work" -x "$client_w" 2>/dev/null || true
-    win="$client_w"
-  fi
   bar="$chat_collapsed"
   sep=$((DESK_PANE_COUNT - 1))
   content=$((win - sep))
@@ -1061,7 +1055,16 @@ apply_focus_sizes() {
   w6="$label_w_inbox"
   w7="$label_w_meet"
   case "$focus" in
-    chat) w3=0 ;;
+    chat)
+      w3=0
+      # Each of these bars draws one glyph. The other two columns were slack.
+      # 5*2=10, all of it goes to chat. Files stays 3. Avatar is not a donor.
+      w2=1
+      w4=1
+      w5=1
+      w6=1
+      w7=1
+      ;;
     cockpit) w2=0 ;;
     factory) w4=0 ;;
     pstack) w5=0 ;;
@@ -1097,6 +1100,25 @@ apply_focus_sizes() {
     meet) w7="$budget" ;;
     *) w3="$budget" ;;
   esac
+  printf '%s %s %s %s %s %s %s %s\n' "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7"
+}
+
+apply_focus_sizes() {
+  local focus="$1"
+  local win client_w
+  local w0 w1 w2 w3 w4 w5 w6 w7
+  client_w="$(tmux display -p -t "$sess" '#{client_width}' 2>/dev/null || true)"
+  client_w="${client_w:-0}"
+  win="$(window_width)"
+  # Use the whole terminal. The old 131-column window clipped the new labels.
+  if [ "$client_w" -gt "$win" ]; then
+    tmux resize-window -t "$sess:work" -x "$client_w" 2>/dev/null || true
+    win="$client_w"
+  fi
+  # shellcheck disable=SC2162
+  read -r w0 w1 w2 w3 w4 w5 w6 w7 <<EOF
+$(focus_pane_widths "$focus" "$win")
+EOF
   apply_focus_layout "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" || true
 }
 
@@ -1708,6 +1730,22 @@ finish_ensure() {
 }
 
 cmd="${1:-ensure}"
+# Width math only. Must not touch tmux (no session lookup, no resize).
+if [ "$cmd" = "sizes" ]; then
+  win="${2:-}"
+  focus="${3:-chat}"
+  case "$win" in
+    ''|*[!0-9]*) echo "usage: orchestrator-layout.sh sizes <width> [focus]" >&2; exit 2 ;;
+  esac
+  # shellcheck disable=SC2162
+  read -r w0 w1 w2 w3 w4 w5 w6 w7 <<EOF
+$(focus_pane_widths "$focus" "$win")
+EOF
+  sum=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7))
+  printf 'files=%s avatar=%s cockpit=%s chat=%s factory=%s dossier=%s inbox=%s meet=%s sum=%s\n' \
+    "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$sum"
+  exit 0
+fi
 # Before any work.N lookup: the side-pane check below and paths that never reach
 # apply_window_policy (refresh-soft, sidebar, enter-*-max, fit, …) all resolve indices.
 own_pane_numbering
@@ -1880,7 +1918,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|enter-factory [tree|factory|hub|infra]|toggle-factory|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|enter-inbox|toggle-inbox|leave-inbox|require-three|fit|install-mouse]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|enter-factory [tree|factory|hub|infra]|toggle-factory|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|enter-inbox|toggle-inbox|leave-inbox|require-three|fit|install-mouse|sizes <width> [focus]]" >&2
     exit 2
     ;;
 esac

@@ -1,6 +1,6 @@
 /**
  * Avatar pane is 44 at a 147-column desk. One column is a left pad.
- * Sprites stay 12 columns; labels may clip.
+ * Chat focus is 88: five label bars shrink 3 → 1. Sprites stay 12 columns; names may clip.
  *   node --test tests/avatar-roster-width.test.mjs
  * Does not start tmux.
  */
@@ -31,7 +31,8 @@ describe("avatar roster width", () => {
     const windowW = 147;
     const separators = 8 - 1;
     const filesBar = 3;
-    const labelBars = 5 * 3;
+    // Chat focus: five label bars give up 2 columns of glyph slack each (3 → 1).
+    const labelBars = 5 * 1;
     const chrome = filesBar + labelBars;
     const content = windowW - separators;
     const pad = 1;
@@ -45,7 +46,7 @@ describe("avatar roster width", () => {
     assert.equal(row, 43);
     assert.equal(pad, 1);
     assert.ok(pad + row <= avatar, `pad+row ${pad + row} <= avatar ${avatar}`);
-    assert.equal(chat, 78);
+    assert.equal(chat, 88);
     assert.ok(chat > 57, `chat ${chat} still > 57`);
 
     const labels = [
@@ -103,5 +104,37 @@ describe("avatar roster width", () => {
     assert.ok(spriteCol >= 0, `sprite_col ${spriteCol} is not negative`);
     assert.notEqual(labelCol, 0);
     assert.notEqual(spriteCol, 0);
+  });
+
+  it("gives chat 10 columns from the five label bars at 147", () => {
+    const out = execFileSync("bash", ["scripts/orchestrator-layout.sh", "sizes", "147", "chat"], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, TMUX: "", TMUX_PANE: "", TERM: "xterm-256color" },
+    }).trim();
+    const got = Object.fromEntries(out.split(/\s+/).map((part) => part.split("=")));
+    assert.equal(got.files, "3");
+    assert.equal(got.avatar, "44");
+    assert.equal(got.cockpit, "1");
+    assert.equal(got.chat, "88");
+    assert.equal(got.factory, "1");
+    assert.equal(got.dossier, "1");
+    assert.equal(got.inbox, "1");
+    assert.equal(got.meet, "1");
+    assert.equal(got.sum, "140");
+    const widths = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet"].map((k) => Number(got[k]));
+    assert.equal(widths.reduce((n, w) => n + w, 0) + 7, 147);
+
+    const cockpit = execFileSync("bash", ["scripts/orchestrator-layout.sh", "sizes", "147", "cockpit"], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, TMUX: "", TMUX_PANE: "", TERM: "xterm-256color" },
+    }).trim();
+    const other = Object.fromEntries(cockpit.split(/\s+/).map((part) => part.split("=")));
+    assert.equal(other.avatar, "44");
+    assert.equal(other.chat, "3");
+    assert.equal(other.cockpit, "78");
+    assert.equal(other.factory, "3");
+    assert.equal(other.sum, "140");
   });
 });
