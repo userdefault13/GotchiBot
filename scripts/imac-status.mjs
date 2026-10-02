@@ -5,7 +5,7 @@
  * Reads sessions/.focus-list.json instantly; optionally refreshes over SSH in
  * the background when stale. OpenClaw gateway health is cached separately.
  *
- *   node scripts/imac-status.mjs            # "Hub: up · 2 run · OC✓ · tun✓ · dk✓"
+ *   node scripts/imac-status.mjs            # "Hub: ok · 2 run · OC✓ · tun✓ · dk✓"
  *   node scripts/imac-status.mjs --json
  *   node scripts/imac-status.mjs --refresh  # blocking roster + gateway probe
  */
@@ -14,6 +14,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { commandExists } from "./onboarding-lib.mjs";
+import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -143,8 +144,11 @@ function loadRemoteSnapshot() {
   return cached;
 }
 
-function formatStatus({ remoteOk, reason, running, total, openclawReachable, staleNoSsh }) {
-  const cached = readJson(CACHE) || {};
+export function formatStatus(
+  { remoteOk, reason, running, total, openclawReachable, staleNoSsh },
+  deps = {},
+) {
+  const cached = (deps.readCache ? deps.readCache() : readJson(CACHE)) || {};
   const oc =
     openclawReachable === true ? "OC✓" : openclawReachable === false ? "OC✗" : "OC?";
   const tun =
@@ -164,26 +168,26 @@ function formatStatus({ remoteOk, reason, running, total, openclawReachable, sta
   }
 
   if (staleNoSsh) {
-    const snap = loadRemoteSnapshot();
+    const snap = deps.loadSnapshot ? deps.loadSnapshot() : loadRemoteSnapshot();
     if (snap?.remoteOk === true) {
       const load =
         snap.running > 0 ? `${snap.running} run` : snap.total > 0 ? `${snap.total} idle` : "idle";
-      return `Hub: up · ${load} · ${extras}`;
+      return `Hub: ok · ${load} · ${extras}`;
     }
     if (snap?.remoteOk === false) {
-      return `Hub: down · ${extras}`;
+      return `Hub: bad · ${extras}`;
     }
-    return `Hub: … · ${extras}`;
+    return `Hub: ? · ${extras}`;
   }
 
   if (remoteOk === false) {
-    const hint = reason?.includes("no-remote-ssh-env") ? "no-ssh" : "down";
+    const hint = reason?.includes("no-remote-ssh-env") ? "no-ssh" : "bad";
     return `Hub: ${hint} · ${extras}`;
   }
 
   const load =
     running > 0 ? `${running} run` : total > 0 ? `${total} idle` : "idle";
-  return `Hub: up · ${load} · ${extras}`;
+  return `Hub: ok · ${load} · ${extras}`;
 }
 
 async function probeOpenClawGateway() {
@@ -261,6 +265,8 @@ async function main() {
   }
 }
 
-main().catch(() => {
-  console.log("Hub: ?");
-});
+if (isMainModule(import.meta.url)) {
+  main().catch(() => {
+    console.log("Hub: ?");
+  });
+}
