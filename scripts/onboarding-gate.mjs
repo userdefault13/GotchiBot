@@ -394,22 +394,42 @@ function quitToTerminal() {
   process.exit(QUIT_CODE);
 }
 
-/** Options with `hotkey` are listed under the numbered ones and picked by that letter. */
-async function choose(prompt, options) {
+/** Options with `hotkey` are listed under the numbered ones and picked by that letter.
+ *  `back` adds Esc (and the typed shortcut esc) to return without quitting.
+ *  Number shortcuts stay 1..n for the list on screen, including inside a group.
+ */
+async function choose(prompt, options, { back = false } = {}) {
   console.log("");
   const numbered = options.filter((o) => !o.hotkey);
   const hot = options.filter((o) => o.hotkey);
   numbered.forEach((o, i) => console.log(`    ${i + 1}) ${o.label}`));
   hot.forEach((o) => console.log(`    ${o.hotkey}) ${o.label}`));
+  if (back) console.log("    esc) Back");
   console.log(`    q) Quit`);
-  const range = [`1-${numbered.length}`, ...hot.map((o) => o.hotkey)].join("/");
+  const range = [`1-${numbered.length}`, ...hot.map((o) => o.hotkey), ...(back ? ["esc"] : [])].join("/");
   for (;;) {
-    const ans = (await rl.question(`\n  ${prompt} [${range}]: `)).trim().toLowerCase();
+    let esc = false;
+    const onKey = back
+      ? (_s, key) => {
+          if (key?.name !== "escape") return;
+          esc = true;
+          rl.write(null, { ctrl: true, name: "u" });
+          rl.write("\n");
+        }
+      : null;
+    if (onKey) input.on("keypress", onKey);
+    let ans = "";
+    try {
+      ans = (await rl.question(`\n  ${prompt} [${range}]: `)).trim().toLowerCase();
+    } finally {
+      if (onKey) input.off("keypress", onKey);
+    }
+    if (back && (esc || ans === "esc" || ans === "\u001b")) return { key: "back" };
     if (ans === "q" || ans === "quit") quitToTerminal();
     const hit = hot.find((o) => o.hotkey === ans);
     if (hit) return hit;
     const n = Number(ans);
-    if (n >= 1 && n <= numbered.length) return numbered[n - 1];
+    if (Number.isInteger(n) && n >= 1 && n <= numbered.length) return numbered[n - 1];
     console.log("  invalid choice");
   }
 }
@@ -2408,9 +2428,91 @@ async function runSealedCartMintMenu(wallet, { abraSnap = null } = {}) {
   }
 }
 
+function hubHostLabel(base) {
+  return String(base || "").replace(/^https?:\/\//, "").replace(/[:/].*$/, "");
+}
+
+/** Flat action count before nesting (every leaf was its own top-level row). */
+function cockpitMenuLeafCount(rows) {
+  let n = 0;
+  for (const row of rows) n += row.children ? row.children.length : 1;
+  return n;
+}
+
+/**
+ * Cockpit "What next?" rows. Related actions sit under a parent; Enter on that
+ * row opens the group, Esc returns here. Leaf labels and relative order match
+ * the old flat list, so 1..n inside a group still picks those siblings.
+ * Top-level is 8 rows. Leaves are 18 (Hub down) or 19 (Hub SSH up).
+ */
+function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
+  const item = (key, label) => ({ key, label });
+  const group = (key, label, children) => ({ key, label, children });
+  const hub = [
+    item(
+      "hub-network",
+      net.deskPaired
+        ? `Hub network (paired · ${hubHostLabel(net.deskApiBase)})`
+        : net.hubInstalled
+          ? "Hub network (this computer is the Hub)"
+          : "Set up Hub network (Tailscale)",
+    ),
+    ...(sshHubUp
+      ? [
+          item("hub", "Hub status (iMac OpenClaw · tunnel · Docker)"),
+          item("hub-infra", "Hub infra (Docker container table)"),
+        ]
+      : [item("hub-implement", "Advanced: fleet ops over SSH")]),
+  ];
+  return [
+    item("launch", "Open desk"),
+    group("group:project", "Project…", [
+      item("select-project", "Switch to another project"),
+      item("checkpoint-project", "Save project to Base (with chat sync)"),
+    ]),
+    group("group:hub", "Hub…", hub),
+    item("meet", "Start meeting / morning recap"),
+    group("group:desk", "Desk panes…", [
+      item("kanban", "Kanban (agents · tasks · seats)"),
+      item("inbox", "Bot inbox (iMessage · agents | thread)"),
+      item("pstack", "Pstack (dossier pane · program store)"),
+      item("factory", "Factory (project bots · Hub · desk infra)"),
+    ]),
+    group("group:view", "View & browse…", [
+      item("roster", "View agent roster (MBP + iMac · status)"),
+      item("export-roster", "Export agent roster to CSV"),
+      item("import", "Browse cartridge cAavegotchis"),
+      item("marketplace", "View Marketplace"),
+    ]),
+    group("group:mint", "Mint…", [
+      item("mint", "Mint another wallet gotchi — Free (sub-agent identity)"),
+      item("mint-collateral", "Mint a base collateral cAavegotchi ($5 USDC)"),
+    ]),
+    group("group:settings", "Settings…", [
+      item("settings", "Settings (voice, read speed, mouse, replay, IPFS, GitHub)"),
+      item("avatar", "Change orchestrator avatar"),
+    ]),
+  ];
+}
+
+function printCockpitMenu() {
+  const sshHubUp = process.argv.includes("--ssh-hub");
+  const rows = cockpitMenuRows({ sshHubUp });
+  console.log(`top ${rows.length}`);
+  for (const row of rows) console.log(row.label);
+  console.log(`flat ${cockpitMenuLeafCount(rows)}`);
+  if (!process.argv.includes("--tree")) return;
+  for (const row of rows) {
+    if (!row.children) continue;
+    console.log(`# ${row.key}`);
+    for (const child of row.children) console.log(`  ${child.key}`);
+  }
+}
+
 let cockpitReadyMarked = false;
 
 async function mainMenu(wallet, cartridgeId) {
+  let openGroup = null;
   for (;;) {
     clear();
     console.log(readWelcomeArt(12));
@@ -2511,49 +2613,29 @@ async function mainMenu(wallet, cartridgeId) {
 
     hr();
 
-    const hubHost = (base) => String(base || "").replace(/^https?:\/\//, "").replace(/[:/].*$/, "");
     const sshHubUp = isHubUpQuick() && !isHubNetworkUnset();
-    const hubMenu = [
-      {
-        key: "hub-network",
-        label: net.deskPaired
-          ? `Hub network (paired · ${hubHost(net.deskApiBase)})`
-          : net.hubInstalled
-            ? "Hub network (this computer is the Hub)"
-            : "Set up Hub network (Tailscale)",
-      },
-      ...(sshHubUp
-        ? [
-            { key: "hub", label: "Hub status (iMac OpenClaw · tunnel · Docker)" },
-            { key: "hub-infra", label: "Hub infra (Docker container table)" },
-          ]
-        : [{ key: "hub-implement", label: "Advanced: fleet ops over SSH" }]),
-    ];
+    const topRows = cockpitMenuRows({ sshHubUp, net });
+    const open = openGroup ? topRows.find((row) => row.key === openGroup) : null;
+    if (openGroup && !open?.children) openGroup = null;
+    const rows = open?.children || topRows;
 
     if (!cockpitReadyMarked) {
       cockpitReadyMarked = true;
       bootMark("cockpit menu ready");
     }
-    const pick = await choose("What next?", [
-      { key: "launch", label: "Open desk" },
-      { key: "select-project", label: "Switch to another project" },
-      { key: "checkpoint-project", label: "Save project to Base (with chat sync)" },
-      ...hubMenu,
-      { key: "meet", label: "Start meeting / morning recap" },
-      { key: "roster", label: "View agent roster (MBP + iMac · status)" },
-      { key: "kanban", label: "Kanban (agents · tasks · seats)" },
-      { key: "inbox", label: "Bot inbox (iMessage · agents | thread)" },
-      { key: "pstack", label: "Pstack (dossier pane · program store)" },
-      { key: "factory", label: "Factory (project bots · Hub · desk infra)" },
-      { key: "export-roster", label: "Export agent roster to CSV" },
-      { key: "import", label: "Browse cartridge cAavegotchis" },
-      { key: "mint", label: "Mint another wallet gotchi — Free (sub-agent identity)" },
-      { key: "mint-collateral", label: "Mint a base collateral cAavegotchi ($5 USDC)" },
-      { key: "marketplace", label: "View Marketplace" },
-      { key: "settings", label: "Settings (voice, read speed, mouse, replay, IPFS, GitHub)" },
-      { key: "avatar", label: "Change orchestrator avatar" },
-    ]);
+    const pick = await choose(open ? open.label.replace(/…$/, "") : "What next?", rows, {
+      back: Boolean(open),
+    });
     if (!pick) quitToTerminal();
+    if (pick.key === "back") {
+      openGroup = null;
+      continue;
+    }
+    if (pick.children) {
+      openGroup = pick.key;
+      continue;
+    }
+    openGroup = null;
     if (pick.key === "launch") {
       const heroId = ob.orchestratorHeroId ?? (await pickOrchestrator(heroes));
       pinAvatar(heroId);
@@ -2893,6 +2975,10 @@ async function runMeet() {
 
 const meetOnly = process.argv.includes("--meet");
 const cockpitOnly = process.argv.includes("--cockpit");
+if (process.argv.includes("--print-cockpit-menu")) {
+  printCockpitMenu();
+  process.exit(0);
+}
 (meetOnly ? runMeet() : cockpitOnly ? runCockpit() : run()).catch((e) => {
   console.error(`\n  ✗ ${e.message}`);
   process.exit(1);
