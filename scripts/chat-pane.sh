@@ -387,9 +387,9 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
       fi
       if [ -n "${TMUX:-}" ]; then
         if [ "$AGENT_ID" = "$ORCH_ID" ]; then
-          tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (orch) " 2>/dev/null || true
+          tmux set-option -p -t "${TMUX_PANE:-${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.3}" pane-border-format " Gotchi (orch) " 2>/dev/null || true
         else
-          tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " ${AGENT_ID} (sub) " 2>/dev/null || true
+          tmux set-option -p -t "${TMUX_PANE:-${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.3}" pane-border-format " ${AGENT_ID} (sub) " 2>/dev/null || true
         fi
       fi
       # GotchiBot slash commands: /orch /list /switch /cockpit (patched OpenClaw TUI via openclaw-gotchi.sh)
@@ -428,7 +428,7 @@ if [ "$AGENT" = "gotchi" ] && command -v node >/dev/null 2>&1; then
     openclaw/*) MODEL="${GOTCHIBOT_OPENCODE_MODEL:-opencode/big-pickle}" ;;
   esac
   if [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ] && [ -n "${TMUX:-}" ]; then
-    tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format " Gotchi (OpenClaw) " 2>/dev/null || true
+    tmux set-option -p -t "${TMUX_PANE:-${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.3}" pane-border-format " Gotchi (OpenClaw) " 2>/dev/null || true
   fi
 else
   unset GOTCHIBOT_GOTCHI_BACKEND GOTCHIBOT_GOTCHI_MODEL GOTCHIBOT_GOTCHI_RELAY \
@@ -525,7 +525,7 @@ if [ -n "${TMUX:-}" ]; then
   if [ "$AGENT" = "gotchi" ] && [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ]; then
     border=" Gotchi (OpenClaw) "
   fi
-  tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format "$border" 2>/dev/null || true
+  tmux set-option -p -t "${TMUX_PANE:-${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.3}" pane-border-format "$border" 2>/dev/null || true
   "$ROOT/scripts/tmux-chat-focus-hook.sh" 2>/dev/null || true
 fi
 
@@ -533,7 +533,7 @@ fi
 # one the phone and every other desk see. Offline/unpaired falls through to local OpenCode.
 set_chat_border() {
   [ -n "${TMUX:-}" ] || return 0
-  tmux set-option -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.1" pane-border-format "$1" 2>/dev/null || true
+  tmux set-option -p -t "${TMUX_PANE:-${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.3}" pane-border-format "$1" 2>/dev/null || true
 }
 if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
   && [ "${GOTCHIBOT_HUB_DESK:-1}" != "0" ] && [ -f "$ROOT/sessions/.hub.json" ] \

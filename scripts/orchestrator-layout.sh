@@ -43,7 +43,7 @@ set_layout_mode() {
 
 # Panes: 0 sidebar | 1 opencode chat | 2 avatar (sessions → tmux status bar)
 layout_ready() {
-  [ "$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')" -eq 3 ]
+  [ "$(tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' ')" -ge 3 ]
 }
 
 # Destructive rebuild must not run as a subprocess of work.1/work.2 — kill-pane -a
@@ -73,6 +73,11 @@ layout_safe_reexec() {
 
 require_three_panes() {
   tmux resize-pane -Z -t "$sess:work" 2>/dev/null || true
+  # Extra panes (cockpit, factory, pstack, meet) are permanent. Rebuilding
+  # here used to kill them whenever the count was not exactly 3.
+  if [ "$(pane_count)" -ge 3 ] && [[ "$(pane_start_cmd 0)" == *sidebar-pane* || "$(pane_start_cmd 0)" == *mc-pane* ]]; then
+    return 0
+  fi
   layout_ready && return 0
   if layout_caller_is_side_pane && [ "${GOTCHIBOT_LAYOUT_SAFE:-}" != "1" ]; then
     tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$ROOT/scripts/orchestrator-layout.sh\" require-three"
@@ -119,8 +124,21 @@ pane_has_chat() {
     }'
 }
 
+# Screen order: files, avatar, cockpit, chat, factory, dossier, meeting.
+chat_pane_index() {
+  local i cmd
+  for i in 0 1 2 3 4 5 6; do
+    cmd="$(pane_start_cmd "$i")"
+    if [[ "$cmd" == *chat-pane* || "$cmd" == *chat-bar-pane* ]]; then
+      echo "$i"
+      return 0
+    fi
+  done
+  echo 3
+}
+
 chat_live() {
-  pane_has_chat "$sess:work.1"
+  pane_has_chat "$sess:work.$(chat_pane_index)"
 }
 
 # Factory / files-max / avatar-max take over work.1. The live chat waits in a hidden
@@ -135,8 +153,10 @@ park_chat_pane() {
   local park park_id
   park="$(park_session)"
   tmux kill-session -t "=$park" 2>/dev/null || true
-  park_id="$(tmux new-session -d -P -F '#{session_id}' -s "$park" -x "$(tmux display -p -t "$sess:work.1" '#{pane_width}')" \
-    -y "$(tmux display -p -t "$sess:work.1" '#{pane_height}')" "exec tail -f /dev/null" 2>/dev/null)" || return 1
+  local chatp
+  chatp="$sess:work.$(chat_pane_index)"
+  park_id="$(tmux new-session -d -P -F '#{session_id}' -s "$park" -x "$(tmux display -p -t "$chatp" '#{pane_width}')" \
+    -y "$(tmux display -p -t "$chatp" '#{pane_height}')" "exec tail -f /dev/null" 2>/dev/null)" || return 1
   # Every target here assumes =$park:0.0. A user tmux.conf (Omarchy's) may set
   # base-index / pane-base-index 1 globally, so pin 0-based numbering on this session only.
   # base-index only applies to new windows, so move-window -r renumbers the one just created.
@@ -144,21 +164,22 @@ park_chat_pane() {
   tmux set-option -t "$park_id" base-index 0 2>/dev/null || true
   tmux move-window -r -t "$park_id" 2>/dev/null || true
   tmux set-option -w -t "$park_id:" pane-base-index 0 2>/dev/null || true
-  tmux swap-pane -d -s "$sess:work.1" -t "=$park:0.0" 2>/dev/null || {
+  tmux swap-pane -d -s "$chatp" -t "=$park:0.0" 2>/dev/null || {
     tmux kill-session -t "=$park" 2>/dev/null || true
     return 1
   }
 }
 
 unpark_chat_pane() {
-  local park old
+  local park old chatp
   park="$(park_session)"
+  chatp="$sess:work.$(chat_pane_index)"
   tmux has-session -t "=$park" 2>/dev/null || return 1
   if ! pane_has_chat "=$park:0.0"; then
     tmux kill-session -t "=$park" 2>/dev/null || true
     return 1
   fi
-  tmux swap-pane -d -s "=$park:0.0" -t "$sess:work.1" 2>/dev/null || return 1
+  tmux swap-pane -d -s "=$park:0.0" -t "$chatp" 2>/dev/null || return 1
   # The swapped-out app may be our caller (Factory keys); kill it from the server, last.
   old="$park-old-$$"
   tmux rename-session -t "=$park" "$old" 2>/dev/null || true
@@ -166,12 +187,18 @@ unpark_chat_pane() {
 }
 
 layout_correct() {
-  layout_ready || return 1
+  [ "$(pane_count)" -ge 3 ] || return 1
   local c0 c1 c2
   c0="$(pane_start_cmd 0)"
+  [[ "$c0" == *sidebar-pane* || "$c0" == *mc-pane* ]] || return 1
+  # files · avatar · cockpit · chat · factory · dossier · meeting
+  if [ "$(pane_count)" -ge 7 ]; then
+    pane_is_kind "$(pane_start_cmd 1)" avatar && pane_is_kind "$(pane_start_cmd 3)" chat
+    return
+  fi
   c1="$(pane_start_cmd 1)"
   c2="$(pane_start_cmd 2)"
-  [[ "$c0" == *sidebar-pane* ]] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *avatar-pane* ]]
+  [[ "$c1" == *chat-pane* || "$c1" == *chat-bar-pane* ]] && [[ "$c2" == *avatar-pane* ]]
 }
 
 meet_gallery_correct() {
@@ -393,9 +420,9 @@ start_pane_commands() {
   require_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || \
     tmux send-keys -t "$sess:work.0" C-c Enter "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" Enter
-  # Desk boot always opens the cockpit menu (GOTCHIBOT_COCKPIT=1 → show_cockpit in chat-pane).
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || \
-    tmux send-keys -t "$sess:work.1" C-c Enter "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_COCKPIT=1 exec ./scripts/chat-pane.sh" Enter
+  # Chat stays chat. Cockpit, factory, and meeting are their own panes.
+  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || \
+    tmux send-keys -t "$sess:work.1" C-c Enter "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" Enter
   tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
   tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || \
@@ -468,11 +495,12 @@ pane_count() {
   tmux list-panes -t "$sess:work" 2>/dev/null | wc -l | tr -d ' '
 }
 
-# Shrink window back to files | chat | one right pane (kill meet tiles).
+# Drop only overflow tiles past the reserved desk panes.
+# 0 files, 1 chat, 2 avatar, 3 cockpit, 4 factory, 5 pstack, 6 meet, 7 # meet.
 collapse_to_three_panes() {
   local count
   count="$(pane_count)"
-  while [ "${count:-0}" -gt 3 ]; do
+  while [ "${count:-0}" -gt 8 ]; do
     tmux kill-pane -t "$sess:work.$((count - 1))" 2>/dev/null || break
     count="$(pane_count)"
   done
@@ -550,8 +578,8 @@ build_meet_gallery_tiles() {
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-channel 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Meet · room ' 2>/dev/null || true
   # Drop overflow tiles beyond room + channel.
-  while [ "$(pane_count)" -gt 3 ]; do
-    tmux kill-pane -t "$sess:work.3" 2>/dev/null || break
+  while [ "$(pane_count)" -gt 8 ]; do
+    tmux kill-pane -t "$sess:work.8" 2>/dev/null || break
   done
   apply_meet_gallery_sizes
   printf '0\n' > "$ROOT/sessions/.meet-channel-scroll" 2>/dev/null || true
@@ -588,6 +616,8 @@ apply_meet_gallery_sizes() {
 enter_meet_gallery() {
   session_exists || return 1
   apply_window_policy
+  focus_desk meet
+  return 0
   # Leave other max modes back to a base 3-pane shell first.
   if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ] || [ "$(layout_mode)" = "chat-max" ]; then
     set_layout_mode normal
@@ -604,6 +634,11 @@ enter_meet_gallery() {
 }
 
 refresh_meet_gallery() {
+  if [ "$(layout_mode)" != "meet" ] && [ "$(layout_mode)" != "meet-gallery" ]; then
+    return 0
+  fi
+  focus_desk meet
+  return 0
   if [ "$(layout_mode)" != "meet-gallery" ]; then
     return 0
   fi
@@ -618,6 +653,12 @@ refresh_meet_gallery() {
 }
 
 leave_meet_gallery() {
+  if [ "${1:-}" = "cockpit" ] || [ "${GOTCHIBOT_BOOT_COCKPIT:-}" = "1" ]; then
+    focus_desk cockpit
+  else
+    focus_desk chat
+  fi
+  return 0
   local to_cockpit=0
   if [ "${1:-}" = "cockpit" ] || [ "${GOTCHIBOT_BOOT_COCKPIT:-}" = "1" ]; then
     to_cockpit=1
@@ -701,8 +742,8 @@ build_pstack_dossier_tiles() {
   tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   mark_avatar_pane
 
-  while [ "$(pane_count)" -gt 3 ]; do
-    tmux kill-pane -t "$sess:work.3" 2>/dev/null || break
+  while [ "$(pane_count)" -gt 8 ]; do
+    tmux kill-pane -t "$sess:work.8" 2>/dev/null || break
   done
   apply_pstack_dossier_sizes
   date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/sessions/.pstack-dossier.stamp" 2>/dev/null || true
@@ -725,6 +766,8 @@ apply_pstack_dossier_sizes() {
 enter_pstack_dossier() {
   session_exists || return 1
   apply_window_policy
+  focus_desk pstack
+  return 0
   if [ "$(layout_mode)" = "files-max" ] || [ "$(layout_mode)" = "avatar-max" ] || [ "$(layout_mode)" = "chat-max" ]; then
     set_layout_mode normal
     collapse_to_three_panes || true
@@ -754,6 +797,12 @@ refresh_pstack_dossier() {
 }
 
 leave_pstack_dossier() {
+  if [ "${1:-}" = "cockpit" ] || [ "${GOTCHIBOT_BOOT_COCKPIT:-}" = "1" ]; then
+    focus_desk cockpit
+  else
+    focus_desk chat
+  fi
+  return 0
   local to_cockpit=0
   if [ "${1:-}" = "cockpit" ] || [ "${GOTCHIBOT_BOOT_COCKPIT:-}" = "1" ]; then
     to_cockpit=1
@@ -799,104 +848,355 @@ leave_pstack_dossier() {
 
 # Leave dossier → normal chat (user desk, no cockpit menu).
 leave_pstack_user() {
-  GOTCHIBOT_BOOT_COCKPIT=1 leave_pstack_dossier
-  set_layout_mode normal
-  chat_live || tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
-  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  focus_desk chat
 }
 
 # Leave dossier → orch focus + chat (no cockpit menu).
 leave_pstack_orch() {
-  GOTCHIBOT_BOOT_COCKPIT=1 leave_pstack_dossier
-  set_layout_mode normal
-  # Pin orch focus before chat lands.
   (cd "$ROOT" && node ./scripts/agent-focus.mjs orch >/dev/null 2>&1) || true
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
-  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
+  focus_desk chat
 }
 
-# Files bar | chat bar | cockpit (wide). Live chat is parked, not killed.
+# On screen, left to right. Indexes match that order after arrange_visual_order.
+# files · avatar · cockpit · chat · factory · dossier · meeting
+# Avatar stays open. One of cockpit/chat/factory/dossier/meeting is the wide pane.
+DESK_PANE_COUNT=7
+
+focus_index() {
+  case "$1" in
+    chat) echo 3 ;;
+    cockpit) echo 2 ;;
+    factory) echo 4 ;;
+    pstack) echo 5 ;;
+    meet) echo 6 ;;
+    *) echo 3 ;;
+  esac
+}
+
+pane_is_kind() {
+  local cmd="$1" kind="$2"
+  case "$kind" in
+    files) [[ "$cmd" == *sidebar-pane* || "$cmd" == *mc-pane* ]] ;;
+    avatar) [[ "$cmd" == *avatar-pane* ]] ;;
+    cockpit) [[ "$cmd" == *cockpit-pane* || "$cmd" == *"label-bar-pane.sh Cockpit"* ]] ;;
+    chat) [[ "$cmd" == *chat-pane* || "$cmd" == *chat-bar-pane* ]] ;;
+    factory) [[ "$cmd" == *factory-window* || "$cmd" == *"label-bar-pane.sh Factory"* ]] ;;
+    dossier) [[ "$cmd" == *pstack-window* || "$cmd" == *"label-bar-pane.sh Dossier"* ]] ;;
+    meet) [[ "$cmd" == *meet-room* || "$cmd" == *"label-bar-pane.sh Meeting"* ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+# tmux apply widths in pane-index order, so the indexes have to be the screen order.
+arrange_visual_order() {
+  local -a kinds=(files avatar cockpit chat factory dossier meet)
+  local i j kind
+  for i in 0 1 2 3 4 5 6; do
+    kind="${kinds[$i]}"
+    pane_is_kind "$(pane_start_cmd "$i")" "$kind" && continue
+    for j in 1 2 3 4 5 6; do
+      [ "$j" -le "$i" ] && continue
+      if pane_is_kind "$(pane_start_cmd "$j")" "$kind"; then
+        tmux swap-pane -d -s "$sess:work.$i" -t "$sess:work.$j" 2>/dev/null || true
+        break
+      fi
+    done
+  done
+}
+
+ensure_app_panes() {
+  require_three_panes || return 1
+  while [ "$(pane_count)" -gt "$DESK_PANE_COUNT" ]; do
+    tmux kill-pane -t "$sess:work.$(( $(pane_count) - 1 ))" 2>/dev/null || break
+  done
+  while [ "$(pane_count)" -lt "$DESK_PANE_COUNT" ]; do
+    local last need
+    last="$(( $(pane_count) - 1 ))"
+    # The last pane is a thin bar. Give it room, then peel the next bar off it
+    # so pane indexes stay Files, chat, avatar, then the apps.
+    need="$(( chat_collapsed * 2 + 2 ))"
+    tmux resize-pane -t "$sess:work.$last" -x "$need" 2>/dev/null || true
+    tmux split-window -h -d -t "$sess:work.$last" -l "$chat_collapsed" \
+      "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch" || return 1
+  done
+  # Real apps are placed by place_focus_apps. New panes start as bars.
+}
+
+collapse_chat_to_bar() {
+  local p
+  park_chat_pane || true
+  p="$(chat_pane_index)"
+  if [[ "$(pane_start_cmd "$p")" != *chat-bar-pane* ]]; then
+    tmux respawn-pane -t "$sess:work.$p" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch" 2>/dev/null || true
+  fi
+  tmux set-option -p -t "$sess:work.$p" -u @gotchibot-chat 2>/dev/null || true
+}
+
+expand_chat() {
+  local p
+  p="$(chat_pane_index)"
+  if [[ "$(pane_start_cmd "$p")" == *chat-pane* ]] && chat_live; then
+    tmux set-option -p -t "$sess:work.$p" @gotchibot-chat 1 2>/dev/null || true
+    return 0
+  fi
+  unpark_chat_pane || \
+    tmux respawn-pane -t "$sess:work.$p" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.$p" @gotchibot-chat 1 2>/dev/null || true
+}
+
+# resize-pane -x on one cell of a flat row steals from the next cell and
+# collapses the others back to 1. A layout string sets every width at once.
+layout_checksum() {
+  local s="$1" i c ch
+  c=0
+  for ((i = 0; i < ${#s}; i++)); do
+    printf -v ch '%d' "'${s:i:1}"
+    c=$(( (c >> 1) + ((c & 1) << 15) ))
+    c=$(( (c + ch) & 65535 ))
+  done
+  printf '%04x' "$c"
+}
+
+apply_focus_layout() {
+  local -a widths=("$@")
+  local ww wh x i w id cell body inner sum idx
+  local -a ids
+  ww="$(tmux display -p -t "$sess:work" '#{window_width}' 2>/dev/null || echo 0)"
+  wh="$(tmux display -p -t "$sess:work" '#{window_height}' 2>/dev/null || echo 0)"
+  [ "$ww" -gt 0 ] && [ "$wh" -gt 0 ] || return 1
+  while IFS= read -r id; do
+    ids+=("${id#%}")
+  done < <(tmux list-panes -t "$sess:work" -F '#{pane_index} #{pane_id}' | sort -n | awk '{print $2}')
+  [ "${#ids[@]}" -eq "$DESK_PANE_COUNT" ] || return 1
+  x=0
+  body=""
+  for ((i = 0; i < ${#widths[@]}; i++)); do
+    w="${widths[$i]}"
+    id="${ids[$i]}"
+    cell="${w}x${wh},${x},0,${id}"
+    if [ -n "$body" ]; then body="${body},"; fi
+    body="${body}${cell}"
+    x=$((x + w + 1))
+  done
+  inner="${ww}x${wh},0,0{${body}}"
+  sum="$(layout_checksum "$inner")"
+  tmux select-layout -t "$sess:work" "${sum},${inner}"
+}
+
+# Collapsed app bars are three columns. The word is drawn vertically inside.
+label_w_cockpit=3
+label_w_factory=3
+label_w_dossier=3
+label_w_meet=3
+
+place_focus_apps() {
+  local focus="$1" view
+  view="$(tmux show-options -qv -t "$sess" @gotchibot-factory-view 2>/dev/null || true)"
+  view="${view:-tree}"
+  if [ "$focus" = "cockpit" ]; then
+    respawn_unless 2 cockpit-pane "cd \"$ROOT\" && exec ./scripts/cockpit-pane.sh"
+  else
+    respawn_unless 2 "label-bar-pane.sh Cockpit" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Cockpit"
+  fi
+  if [ "$focus" = "factory" ]; then
+    if [[ "$(pane_start_cmd 4)" != *factory-window* ]] || [[ "$(pane_start_cmd 4)" != *"VIEW='$view'"* ]]; then
+      tmux respawn-pane -t "$sess:work.4" -k "cd \"$ROOT\" && GOTCHIBOT_FACTORY_VIEW='$view' exec ./scripts/factory-window-pane.sh watch" 2>/dev/null || true
+    fi
+  else
+    respawn_unless 4 "label-bar-pane.sh Factory" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Factory"
+  fi
+  if [ "$focus" = "pstack" ]; then
+    respawn_unless 5 pstack-window "cd \"$ROOT\" && exec ./scripts/pstack-window.mjs watch"
+  else
+    respawn_unless 5 "label-bar-pane.sh Dossier" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Dossier"
+  fi
+  if [ "$focus" = "meet" ]; then
+    respawn_unless 6 meet-room-pane "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh"
+  else
+    respawn_unless 6 "label-bar-pane.sh Meeting" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Meeting"
+  fi
+}
+
+apply_focus_sizes() {
+  local focus="$1"
+  local win bar sep content client_w
+  local w0 w1 w2 w3 w4 w5 w6 used budget
+  local name cur progressed guard
+  client_w="$(tmux display -p -t "$sess" '#{client_width}' 2>/dev/null || true)"
+  client_w="${client_w:-0}"
+  win="$(window_width)"
+  # Use the whole terminal. The old 131-column window clipped the new labels.
+  if [ "$client_w" -gt "$win" ]; then
+    tmux resize-window -t "$sess:work" -x "$client_w" 2>/dev/null || true
+    win="$client_w"
+  fi
+  bar="$chat_collapsed"
+  sep=$((DESK_PANE_COUNT - 1))
+  content=$((win - sep))
+  w0="$bar"
+  w1="$min_avatar"
+  w2="$label_w_cockpit"
+  w3="$bar"
+  w4="$label_w_factory"
+  w5="$label_w_dossier"
+  w6="$label_w_meet"
+  case "$focus" in
+    chat) w3=0 ;;
+    cockpit) w2=0 ;;
+    factory) w4=0 ;;
+    pstack) w5=0 ;;
+    meet) w6=0 ;;
+    *) w3=0 ;;
+  esac
+  used=$((w0 + w1 + w2 + w3 + w4 + w5 + w6))
+  budget=$((content - used))
+  # Avatar stays open. If the terminal is tight, shrink the label panes first.
+  guard=0
+  while [ "$budget" -lt 36 ] && [ "$guard" -lt 40 ]; do
+    guard=$((guard + 1))
+    progressed=0
+    for name in w6 w5 w4 w3 w2; do
+      cur="${!name}"
+      if [ "$cur" -gt "$bar" ]; then
+        printf -v "$name" '%s' "$((cur - 1))"
+        budget=$((budget + 1))
+        progressed=1
+        [ "$budget" -ge 36 ] && break
+      fi
+    done
+    [ "$progressed" -eq 1 ] || break
+  done
+  [ "$budget" -lt 36 ] && budget=36
+  case "$focus" in
+    chat) w3="$budget" ;;
+    cockpit) w2="$budget" ;;
+    factory) w4="$budget" ;;
+    pstack) w5="$budget" ;;
+    meet) w6="$budget" ;;
+    *) w3="$budget" ;;
+  esac
+  apply_focus_layout "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" || true
+}
+
+label_desk_panes() {
+  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Cockpit ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.3" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.4" pane-border-format ' #{?pane_active,●, }Factory ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.5" pane-border-format ' #{?pane_active,●, }Dossier ' 2>/dev/null || true
+  tmux set-option -p -t "$sess:work.6" pane-border-format ' #{?pane_active,●, }Meeting ' 2>/dev/null || true
+}
+
+# Ctrl+Q / Ctrl+E walk the row. A tool pane opens; Files and Avatar only take the cursor.
+pane_kind_of() {
+  local cmd
+  cmd="$(pane_start_cmd "$1")"
+  if pane_is_kind "$cmd" files; then echo files; return; fi
+  if pane_is_kind "$cmd" avatar; then echo avatar; return; fi
+  if pane_is_kind "$cmd" cockpit; then echo cockpit; return; fi
+  if pane_is_kind "$cmd" chat; then echo chat; return; fi
+  if pane_is_kind "$cmd" factory; then echo factory; return; fi
+  if pane_is_kind "$cmd" dossier; then echo dossier; return; fi
+  if pane_is_kind "$cmd" meet; then echo meet; return; fi
+  echo other
+}
+
+pane_step() {
+  local dir="$1" i n active_i target_i idx kind line
+  local -a rows=()
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    rows+=("$line")
+  done < <(tmux list-panes -t "$sess:work" -F '#{pane_index} #{pane_left} #{pane_active}' | sort -k2 -n)
+  n="${#rows[@]}"
+  [ "$n" -gt 0 ] || return 1
+  active_i=0
+  for i in "${!rows[@]}"; do
+    set -- ${rows[$i]}
+    [ "${3:-0}" = "1" ] && active_i="$i"
+  done
+  if [ "$dir" = "left" ]; then
+    target_i=$(( (active_i + n - 1) % n ))
+  else
+    target_i=$(( (active_i + 1) % n ))
+  fi
+  set -- ${rows[$target_i]}
+  idx="$1"
+  kind="$(pane_kind_of "$idx")"
+  case "$kind" in
+    files|avatar|other) tmux select-pane -t "$sess:work.$idx" 2>/dev/null || true ;;
+    cockpit) focus_desk cockpit ;;
+    chat) focus_desk chat ;;
+    factory) focus_desk factory ;;
+    dossier) focus_desk pstack ;;
+    meet) focus_desk meet ;;
+  esac
+}
+
+install_pane_step_keys() {
+  local table step
+  tmux set-option -t "$sess" extended-keys always 2>/dev/null || \
+    tmux set-option -t "$sess" extended-keys on 2>/dev/null || true
+  # Terminal.app does not emit Ctrl+Shift+Arrow unless the profile sends it.
+  # These match the CSI the profile (and iTerm/Ghostty) actually write.
+  tmux set -s 'user-keys[20]' "$(printf '\033[1;6D')" 2>/dev/null || true
+  tmux set -s 'user-keys[21]' "$(printf '\033[1;6C')" 2>/dev/null || true
+  step="cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION='$sess_name' '$ROOT/scripts/orchestrator-layout.sh'"
+  # Ctrl+Q / Ctrl+E. Terminal.app does not deliver Ctrl+Shift+Arrow.
+  tmux bind-key -n C-q run-shell "$step pane-left" 2>/dev/null || true
+  tmux bind-key -n C-e run-shell "$step pane-right" 2>/dev/null || true
+  tmux bind-key -n C-S-Left run-shell "$step pane-left" 2>/dev/null || true
+  tmux bind-key -n C-S-Right run-shell "$step pane-right" 2>/dev/null || true
+  tmux bind-key -n User20 run-shell "$step pane-left" 2>/dev/null || true
+  tmux bind-key -n User21 run-shell "$step pane-right" 2>/dev/null || true
+  for table in root gotchi-chat gotchi-files gotchi-avatar; do
+    tmux bind-key -T "$table" C-q run-shell "$step pane-left" 2>/dev/null || true
+    tmux bind-key -T "$table" C-e run-shell "$step pane-right" 2>/dev/null || true
+    tmux bind-key -T "$table" C-S-Left run-shell "$step pane-left" 2>/dev/null || true
+    tmux bind-key -T "$table" C-S-Right run-shell "$step pane-right" 2>/dev/null || true
+    tmux bind-key -T "$table" User20 run-shell "$step pane-left" 2>/dev/null || true
+    tmux bind-key -T "$table" User21 run-shell "$step pane-right" 2>/dev/null || true
+  done
+}
+
+# Widen one app. The others stay as panes, collapsed to bars. Chat is parked, not killed.
+focus_desk() {
+  local focus="$1" idx view
+  session_exists || return 1
+  ensure_app_panes || return 1
+  arrange_visual_order
+  place_focus_apps "$focus"
+  if [ "$focus" = "chat" ]; then
+    expand_chat
+  else
+    collapse_chat_to_bar
+  fi
+  apply_focus_sizes "$focus"
+  label_desk_panes
+  set_layout_mode "$focus"
+  idx="$(focus_index "$focus")"
+  tmux select-pane -t "$sess:work.$idx" 2>/dev/null || true
+  install_pane_step_keys
+  save_layout
+}
+
 apply_cockpit_sizes() {
-  apply_avatar_max_sizes
+  apply_focus_sizes cockpit
 }
 
 enter_cockpit_panes() {
-  session_exists || return 1
-  if [ "$(layout_mode)" = "cockpit" ]; then
-    local c1 c2
-    c1="$(pane_start_cmd 1 2>/dev/null || true)"
-    c2="$(pane_start_cmd 2 2>/dev/null || true)"
-    if [[ "$c1" == *chat-bar-pane* ]] && [[ "$c2" == *cockpit-pane* ]]; then
-      apply_cockpit_sizes
-      tmux select-pane -t "$sess:work.2" 2>/dev/null || true
-      return 0
-    fi
-  fi
-  require_three_panes || return 1
-  park_chat_pane || true
-  tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
-  collapse_sidebar
-  tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch" 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" -u @gotchibot-chat 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" -u @gotchibot-pstack-dossier 2>/dev/null || true
-  apply_cockpit_sizes
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/cockpit-pane.sh" 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.2" -u @gotchibot-pstack-dossier 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Cockpit ' 2>/dev/null || true
-  set_layout_mode cockpit
-  tmux select-pane -t "$sess:work.2" 2>/dev/null || true
-  save_layout
-  signal_panes
+  focus_desk cockpit
 }
 
 leave_cockpit_desk() {
-  [ "$(layout_mode)" = "cockpit" ] || return 0
-  set_layout_mode normal
-  unpark_chat_pane || chat_live || \
-    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" @gotchibot-chat 1 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-room 2>/dev/null || true
-  collapse_sidebar
-  apply_pane_sizes
-  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
-  tmux select-pane -t "$sess:work.1" 2>/dev/null || true
-  save_layout
-  signal_panes
-  tmux respawn-pane -t "$sess:work.2" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
-  mark_avatar_pane
+  focus_desk chat
 }
 
-# Desk start / reattach: peel special modes and land in the cockpit pane.
-# Mid-session zooms (files-max toggle, agent switches) keep SKIP_COCKPIT via restore_normal_layout.
 boot_cockpit_desk() {
   session_exists || return 1
   apply_window_policy
-
-  local mode
-  mode="$(layout_mode)"
-  case "$mode" in
-    meet-gallery)
-      GOTCHIBOT_BOOT_COCKPIT=1 leave_meet_gallery
-      ;;
-    pstack-dossier)
-      GOTCHIBOT_BOOT_COCKPIT=1 leave_pstack_dossier
-      ;;
-    files-max|avatar-max|chat-max)
-      set_layout_mode normal
-      collapse_to_three_panes || true
-      ;;
-    cockpit)
-      ;;
-  esac
-
-  enter_cockpit_panes
+  focus_desk cockpit
 }
 
 # Pane-max keys (Ctrl+B / Ctrl+F / Ctrl+A) step out of the pstack/Factory center
@@ -1129,6 +1429,12 @@ fit_max_keep_drag() {
 }
 
 fit_quiet() {
+  case "$(layout_mode)" in
+    cockpit|factory|pstack|meet|chat)
+      apply_focus_sizes "$(layout_mode)"
+      return 0
+      ;;
+  esac
   if [ "$(layout_mode)" = "files-max" ]; then
     fit_max_keep_drag 0 20
     return 0
@@ -1230,6 +1536,7 @@ install_agent_keys() {
   install_layout_keys gotchi-chat
   install_layout_keys gotchi-files
   install_layout_keys gotchi-avatar
+  install_pane_step_keys
   # Pagination clicks on avatar; wheel unbound there (orch face stays pinned).
   if [ "$(layout_mode)" = "meet-gallery" ]; then
     install_meet_gallery_mouse 2>/dev/null || true
@@ -1401,16 +1708,13 @@ disable_resize_hook() {
 }
 
 finish_ensure() {
-  set_layout_mode normal
-  fit_window
   signal_panes
-  # Always boot with Files collapsed to a bar.
+  # Always boot with Files collapsed to a bar, then the full row.
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
   collapse_sidebar
-  save_layout
   install_ui_theme
   install_resize_hook
-  tmux select-pane -t "$sess:work.1"
+  focus_desk cockpit
 }
 
 cmd="${1:-ensure}"
@@ -1510,19 +1814,15 @@ case "$cmd" in
     # Optional view: tree (default) | factory (bots) | hub | infra.
     tmux set-option -t "$sess" @gotchibot-center-app factory 2>/dev/null || true
     tmux set-option -t "$sess" @gotchibot-factory-view "${2:-tree}" 2>/dev/null || true
-    # Already open on another view: respawn so the requested view shows.
-    if [[ "$(pane_start_cmd 1)" == *factory-window* ]] && [[ "$(pane_start_cmd 1)" != *"VIEW='${2:-tree}'"* ]]; then
-      tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && GOTCHIBOT_FACTORY_VIEW='${2:-tree}' exec ./scripts/factory-window-pane.sh watch" 2>/dev/null || true
-    fi
-    enter_pstack_dossier
+    focus_desk factory
     ;;
   toggle-factory)
-    if [ "$(layout_mode)" = "pstack-dossier" ] && [ "$(center_app)" = "factory" ]; then
-      leave_pstack_dossier cockpit
+    if [ "$(layout_mode)" = "factory" ]; then
+      focus_desk chat
     else
       tmux set-option -t "$sess" @gotchibot-center-app factory 2>/dev/null || true
       tmux set-option -t "$sess" @gotchibot-factory-view tree 2>/dev/null || true
-      enter_pstack_dossier
+      focus_desk factory
     fi
     ;;
   refresh-pstack-dossier)
@@ -1542,6 +1842,12 @@ case "$cmd" in
     ;;
   enter-cockpit|boot-cockpit)
     boot_cockpit_desk
+    ;;
+  pane-left)
+    pane_step left
+    ;;
+  pane-right)
+    pane_step right
     ;;
   leave-cockpit)
     leave_cockpit_desk

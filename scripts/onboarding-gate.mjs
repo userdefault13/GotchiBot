@@ -2531,7 +2531,7 @@ async function mainMenu(wallet, cartridgeId) {
     const pick = await choose("What next?", [
       { key: "launch", label: "Open desk" },
       { key: "select-project", label: "Switch to another project" },
-      { key: "checkpoint-project", label: "Save project to Sepolia (with chat sync)" },
+      { key: "checkpoint-project", label: "Save project to Base (with chat sync)" },
       ...hubMenu,
       { key: "meet", label: "Start meeting / morning recap" },
       { key: "roster", label: "View agent roster (MBP + iMac · status)" },
@@ -2590,7 +2590,7 @@ async function mainMenu(wallet, cartridgeId) {
     }
 
     if (pick.key === "checkpoint-project") {
-      title("Save project to Sepolia");
+      title("Save project to Base");
       const proj = currentProjectSlug();
       if (!proj) {
         console.log("  No project selected — create/pick one first.");

@@ -321,7 +321,7 @@ cmd_tmux() {
     boot_mark "desk layout (reattach)"
     progress_pulse "GotchiBot · attaching…" 12
     progress_end
-    exec tmux attach -t "=$sess_name" \; select-pane -t "$sess:work.1" \; run-shell "'$layout' fit-quiet"
+    exec tmux attach -t "=$sess_name" \; run-shell "'$layout' fit-quiet"
   fi
   progress_pulse "GotchiBot · building desk…" 8
   tmux new-session -d -s "$sess_name" -n work
@@ -337,7 +337,7 @@ cmd_tmux() {
   boot_mark "orch focus"
   progress_pulse "GotchiBot · attaching…" 14
   progress_end
-  exec tmux attach -t "=$sess_name" \; select-pane -t "$sess:work.1" \; run-shell "'$layout' fit-quiet"
+  exec tmux attach -t "=$sess_name" \; run-shell "'$layout' fit-quiet"
 }
 
 cmd_avatar() {
