@@ -997,6 +997,19 @@ function enterCardAction(card, { setStatus, onFocusDone } = {}) {
   else setStatus?.(`no session dir · ${card.sessionId}`);
 }
 
+function leaveKanbanPane(cmd) {
+  if (process.env.GOTCHIBOT_KANBAN_PANE !== "1") return false;
+  // Do not set GOTCHIBOT_LAYOUT_SAFE. This process is the kanban pane, and
+  // focus_desk respawns it. The layout script re-dispatches via tmux run-shell
+  // so the respawn cannot abort the resize mid-flight.
+  spawnSync("bash", [join(ROOT, "scripts/orchestrator-layout.sh"), cmd], {
+    cwd: ROOT,
+    env: process.env,
+    stdio: "ignore",
+  });
+  return true;
+}
+
 async function runTui() {
   const orchId = orchestratorId();
   let collapsed = {};
@@ -1092,6 +1105,10 @@ async function runTui() {
       if (!key) return;
       if ((key.ctrl && key.name === "c") || key.name === "q" || key.name === "escape") {
         cleanup();
+        // Desk pane: q/esc restores the cockpit menu. Do not exit into this pane.
+        if ((key.name === "q" || key.name === "escape") && leaveKanbanPane("leave-kanban")) {
+          process.exit(0);
+        }
         resolve();
         return;
       }
@@ -1180,7 +1197,9 @@ async function runTui() {
             [join(ROOT, "scripts/agent-focus.mjs"), "switch", String(heroId), "--respawn"],
             { cwd: ROOT, stdio: "inherit", env: process.env },
           );
-          // 10 = opened a seat chat (cockpit should not keep looping the menu)
+          // 10 = opened a seat chat (cockpit should not keep looping the menu).
+          // From the kanban pane, widen chat and collapse this pane to its bar.
+          if (r.status === 0 && leaveKanbanPane("leave-kanban-chat")) process.exit(0);
           process.exit(r.status === 0 ? 10 : r.status ?? 1);
         }
         enterCardAction(card, {

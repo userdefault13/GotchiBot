@@ -12,7 +12,7 @@ sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
 sess_name="${sess_name#=}"
 sess="$sess_name"
 min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-47}"
-# Desk canvas is 163 columns by 46 rows (was 147 by 40: +16 columns, +6 rows). 8 panes, 7 separators, content 156 at 163 (140 at 147). Avatar stays 44. Files bar stays 3. Collapsed label bars stay 3: one space, the glyph, one space (they are not shrunk to 1). Chrome = 3+15 = 18, so a focused chat/factory/dossier/inbox/meet pane is 140-18-44 = 78 at 147 and 156-18-44 = 94 at 163. The extra 16 columns land on that focused pane (78 at the old width, 94 at the new). Cockpit focus is the same chrome, so 78 at 147 and 94 at 163. Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra avatar column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
+# Desk canvas is 163 columns by 46 rows (was 147 by 40: +16 columns, +6 rows). 9 panes, 8 separators, content 155 at 163 (139 at 147). Avatar stays 44. Files bar stays 3. Collapsed label bars stay 3: one space, the glyph, one space (they are not shrunk to 1). Kanban is pane 8. Chrome = files 3 + six collapsed bars of 3 = 21, so a focused chat/factory/dossier/inbox/meet/cockpit/kanban pane is 139-21-44 = 74 at 147 and 155-21-44 = 90 at 163 (was 78 and 94 before the kanban bar and its separator). The extra 16 columns still land on that focused pane. Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra avatar column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
 min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-44}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
@@ -128,7 +128,7 @@ pane_has_chat() {
 # Screen order: files, avatar, cockpit, chat, factory, dossier, inbox, meeting.
 chat_pane_index() {
   local i cmd n
-  n="${DESK_PANE_COUNT:-8}"
+  n="${DESK_PANE_COUNT:-9}"
   for ((i = 0; i < n; i++)); do
     cmd="$(pane_start_cmd "$i")"
     if [[ "$cmd" == *chat-pane* || "$cmd" == *chat-bar-pane* ]]; then
@@ -193,7 +193,7 @@ layout_correct() {
   local c0 c1 c2
   c0="$(pane_start_cmd 0)"
   [[ "$c0" == *sidebar-pane* || "$c0" == *mc-pane* ]] || return 1
-  # files · avatar · cockpit · chat · factory · dossier · inbox · meeting
+  # files · avatar · cockpit · chat · factory · dossier · inbox · meeting · kanban
   # 7 still counts: ensure_app_panes grows an older desk to DESK_PANE_COUNT.
   if [ "$(pane_count)" -ge 7 ]; then
     pane_is_kind "$(pane_start_cmd 1)" avatar && pane_is_kind "$(pane_start_cmd 3)" chat
@@ -397,6 +397,10 @@ install_avatar_page_keys() {
   # Inbox pane from any pane: Ctrl+Space then Shift+I (again returns to chat).
   local rin="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-inbox"
   tmux bind-key -T prefix I if-shell -F "$sess_if" "run-shell -b \"$rin\"" 2>/dev/null || true
+  # Kanban pane from any pane: Ctrl+Space then Shift+B (again returns to the cockpit).
+  # prefix b (lowercase) stays chat-max. Shift+B is the kanban toggle.
+  local rkb="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-kanban"
+  tmux bind-key -T prefix B if-shell -F "$sess_if" "run-shell -b \"$rkb\"" 2>/dev/null || true
 }
 
 start_pane_commands() {
@@ -561,8 +565,9 @@ build_meet_gallery_tiles() {
   tmux set-option -p -t "$sess:work.1" -u @gotchibot-meet-channel 2>/dev/null || true
   tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Meet · room ' 2>/dev/null || true
   # Drop overflow tiles beyond room + channel.
-  while [ "$(pane_count)" -gt 8 ]; do
-    tmux kill-pane -t "$sess:work.8" 2>/dev/null || break
+  # Overflow past the desk row only. Pane 8 is kanban, not spare.
+  while [ "$(pane_count)" -gt "$DESK_PANE_COUNT" ]; do
+    tmux kill-pane -t "$sess:work.$(( $(pane_count) - 1 ))" 2>/dev/null || break
   done
   apply_meet_gallery_sizes
   printf '0\n' > "$ROOT/sessions/.meet-channel-scroll" 2>/dev/null || true
@@ -725,8 +730,9 @@ build_pstack_dossier_tiles() {
   tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
   mark_avatar_pane
 
-  while [ "$(pane_count)" -gt 8 ]; do
-    tmux kill-pane -t "$sess:work.8" 2>/dev/null || break
+  # Overflow past the desk row only. Pane 8 is kanban, not spare.
+  while [ "$(pane_count)" -gt "$DESK_PANE_COUNT" ]; do
+    tmux kill-pane -t "$sess:work.$(( $(pane_count) - 1 ))" 2>/dev/null || break
   done
   apply_pstack_dossier_sizes
   date -u +%Y-%m-%dT%H:%M:%SZ > "$ROOT/sessions/.pstack-dossier.stamp" 2>/dev/null || true
@@ -841,9 +847,10 @@ leave_pstack_orch() {
 }
 
 # On screen, left to right. Indexes match that order after arrange_visual_order.
-# files · avatar · cockpit · chat · factory · dossier · inbox · meeting
-# Avatar stays open. One of cockpit/chat/factory/dossier/inbox/meeting is the wide pane.
-DESK_PANE_COUNT=8
+# files · avatar · cockpit · chat · factory · dossier · inbox · meeting · kanban
+# Avatar stays open. One of cockpit/chat/factory/dossier/inbox/meeting/kanban is the wide pane.
+# Kanban is index 8 so factory(4) dossier(5) inbox(6) meet(7) stay put.
+DESK_PANE_COUNT=9
 
 focus_index() {
   case "$1" in
@@ -853,6 +860,7 @@ focus_index() {
     pstack) echo 5 ;;
     inbox) echo 6 ;;
     meet) echo 7 ;;
+    kanban) echo 8 ;;
     *) echo 3 ;;
   esac
 }
@@ -868,13 +876,14 @@ pane_is_kind() {
     dossier) [[ "$cmd" == *pstack-window* || "$cmd" == *"label-bar-pane.sh Dossier"* ]] ;;
     inbox) [[ "$cmd" == *inbox-pane* || "$cmd" == *"label-bar-pane.sh Inbox"* ]] ;;
     meet) [[ "$cmd" == *meet-room* || "$cmd" == *"label-bar-pane.sh Meeting"* ]] ;;
+    kanban) [[ "$cmd" == *kanban-pane* || "$cmd" == *"label-bar-pane.sh Kanban"* ]] ;;
     *) return 1 ;;
   esac
 }
 
 # tmux apply widths in pane-index order, so the indexes have to be the screen order.
 arrange_visual_order() {
-  local -a kinds=(files avatar cockpit chat factory dossier inbox meet)
+  local -a kinds=(files avatar cockpit chat factory dossier inbox meet kanban)
   local i j kind last
   last=$((DESK_PANE_COUNT - 1))
   for ((i = 0; i <= last; i++)); do
@@ -974,6 +983,7 @@ label_w_factory=3
 label_w_dossier=3
 label_w_inbox=3
 label_w_meet=3
+label_w_kanban=3
 
 place_focus_apps() {
   local focus="$1" view
@@ -1006,14 +1016,19 @@ place_focus_apps() {
   else
     respawn_unless 7 "label-bar-pane.sh Meeting" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Meeting"
   fi
+  if [ "$focus" = "kanban" ]; then
+    respawn_unless 8 kanban-pane "cd \"$ROOT\" && exec ./scripts/kanban-pane.sh"
+  else
+    respawn_unless 8 "label-bar-pane.sh Kanban" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Kanban"
+  fi
 }
 
 # Pure widths for one focus at a window width. No tmux.
-# Echoes: files avatar cockpit chat factory dossier inbox meet
+# Echoes: files avatar cockpit chat factory dossier inbox meet kanban
 focus_pane_widths() {
   local focus="$1" win="$2"
   local bar sep content
-  local w0 w1 w2 w3 w4 w5 w6 w7 used budget
+  local w0 w1 w2 w3 w4 w5 w6 w7 w8 used budget
   local name cur progressed guard
   bar="$chat_collapsed"
   sep=$((DESK_PANE_COUNT - 1))
@@ -1026,26 +1041,29 @@ focus_pane_widths() {
   w5="$label_w_dossier"
   w6="$label_w_inbox"
   w7="$label_w_meet"
+  w8="$label_w_kanban"
   case "$focus" in
     # Collapsed label bars stay at label_w (3): one space, the glyph, one space.
     # Do not shrink them to 1. Files stays 3. Avatar is not a donor.
     # The window's extra columns (163 vs 147) all go to the focused pane.
+    # Kanban's bar (3) plus its separator (1) come out of that focused pane.
     chat) w3=0 ;;
     factory) w4=0 ;;
     pstack|dossier) w5=0 ;;
     inbox) w6=0 ;;
     meet) w7=0 ;;
     cockpit) w2=0 ;;
+    kanban) w8=0 ;;
     *) w3=0 ;;
   esac
-  used=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7))
+  used=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8))
   budget=$((content - used))
   # Avatar stays open. If the terminal is tight, shrink the label panes first.
   guard=0
   while [ "$budget" -lt 36 ] && [ "$guard" -lt 40 ]; do
     guard=$((guard + 1))
     progressed=0
-    for name in w7 w6 w5 w4 w3 w2; do
+    for name in w8 w7 w6 w5 w4 w3 w2; do
       cur="${!name}"
       if [ "$cur" -gt "$bar" ]; then
         printf -v "$name" '%s' "$((cur - 1))"
@@ -1064,15 +1082,16 @@ focus_pane_widths() {
     pstack|dossier) w5="$budget" ;;
     inbox) w6="$budget" ;;
     meet) w7="$budget" ;;
+    kanban) w8="$budget" ;;
     *) w3="$budget" ;;
   esac
-  printf '%s %s %s %s %s %s %s %s\n' "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7"
+  printf '%s %s %s %s %s %s %s %s %s\n' "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8"
 }
 
 apply_focus_sizes() {
   local focus="$1"
   local win client_w
-  local w0 w1 w2 w3 w4 w5 w6 w7
+  local w0 w1 w2 w3 w4 w5 w6 w7 w8
   client_w="$(tmux display -p -t "$sess" '#{client_width}' 2>/dev/null || true)"
   client_w="${client_w:-0}"
   win="$(window_width)"
@@ -1082,10 +1101,10 @@ apply_focus_sizes() {
     win="$client_w"
   fi
   # shellcheck disable=SC2162
-  read -r w0 w1 w2 w3 w4 w5 w6 w7 <<EOF
+  read -r w0 w1 w2 w3 w4 w5 w6 w7 w8 <<EOF
 $(focus_pane_widths "$focus" "$win")
 EOF
-  apply_focus_layout "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" || true
+  apply_focus_layout "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8" || true
 }
 
 label_desk_panes() {
@@ -1104,6 +1123,7 @@ pane_kind_of() {
   if pane_is_kind "$cmd" dossier; then echo dossier; return; fi
   if pane_is_kind "$cmd" inbox; then echo inbox; return; fi
   if pane_is_kind "$cmd" meet; then echo meet; return; fi
+  if pane_is_kind "$cmd" kanban; then echo kanban; return; fi
   echo other
 }
 
@@ -1137,6 +1157,7 @@ pane_step() {
     dossier) focus_desk pstack ;;
     inbox) focus_desk inbox ;;
     meet) focus_desk meet ;;
+    kanban) focus_desk kanban ;;
   esac
 }
 
@@ -1436,7 +1457,7 @@ fit_max_keep_drag() {
 
 fit_quiet() {
   case "$(layout_mode)" in
-    cockpit|factory|pstack|meet|chat)
+    cockpit|factory|pstack|meet|chat|inbox|kanban)
       apply_focus_sizes "$(layout_mode)"
       return 0
       ;;
@@ -1701,12 +1722,12 @@ if [ "$cmd" = "sizes" ]; then
     ''|*[!0-9]*) echo "usage: orchestrator-layout.sh sizes <width> [focus]" >&2; exit 2 ;;
   esac
   # shellcheck disable=SC2162
-  read -r w0 w1 w2 w3 w4 w5 w6 w7 <<EOF
+  read -r w0 w1 w2 w3 w4 w5 w6 w7 w8 <<EOF
 $(focus_pane_widths "$focus" "$win")
 EOF
-  sum=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7))
-  printf 'files=%s avatar=%s cockpit=%s chat=%s factory=%s dossier=%s inbox=%s meet=%s sum=%s\n' \
-    "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$sum"
+  sum=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8))
+  printf 'files=%s avatar=%s cockpit=%s chat=%s factory=%s dossier=%s inbox=%s meet=%s kanban=%s sum=%s\n' \
+    "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8" "$sum"
   exit 0
 fi
 # Before any work.N lookup: the side-pane check below and paths that never reach
@@ -1847,6 +1868,22 @@ case "$cmd" in
   leave-inbox)
     focus_desk chat
     ;;
+  enter-kanban|kanban)
+    focus_desk kanban
+    ;;
+  toggle-kanban)
+    if [ "$(layout_mode)" = "kanban" ]; then
+      focus_desk cockpit
+    else
+      focus_desk kanban
+    fi
+    ;;
+  leave-kanban)
+    focus_desk cockpit
+    ;;
+  leave-kanban-chat)
+    focus_desk chat
+    ;;
   pane-left)
     pane_step left
     ;;
@@ -1881,7 +1918,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|enter-factory [tree|factory|hub|infra]|toggle-factory|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|enter-inbox|toggle-inbox|leave-inbox|require-three|fit|install-mouse|sizes <width> [focus]]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|enter-factory [tree|factory|hub|infra]|toggle-factory|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|enter-inbox|toggle-inbox|leave-inbox|enter-kanban|toggle-kanban|leave-kanban|leave-kanban-chat|require-three|fit|install-mouse|sizes <width> [focus]]" >&2
     exit 2
     ;;
 esac

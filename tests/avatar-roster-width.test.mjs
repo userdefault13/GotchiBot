@@ -1,7 +1,8 @@
 /**
  * Avatar pane is 44 at a 147-column desk and at 163 (147+16). One column is a left pad.
  * Collapsed label bars are 3: one space, the glyph, one space. They are not shrunk to 1.
- * Focused chat/factory/dossier/inbox/meet is 78 at 147 (was 88 when bars were 1) and 94 at 163.
+ * Focused chat/factory/dossier/inbox/meet/cockpit/kanban is 74 at 147 and 90 at 163.
+ * Kanban is pane 8: its collapsed bar (3) and separator (1) come out of the focused pane (was 78 and 94).
  * Desk rows recorded by the layout are 46 (was 40).
  *   node --test tests/avatar-roster-width.test.mjs
  * Does not start tmux.
@@ -31,10 +32,11 @@ describe("avatar roster width", () => {
   it("defaults min avatar to a width that fits three cells at a 147-col desk", () => {
     const avatar = defaultAvatarMin(read(layout));
     const windowW = 147;
-    const separators = 8 - 1;
+    const separators = 9 - 1;
     const filesBar = 3;
     // Collapsed label bars are pad + glyph + pad, not a 1-column glyph.
-    const labelBars = 5 * 3;
+    // Six bars: cockpit, factory, dossier, inbox, meet, kanban (chat is focused).
+    const labelBars = 6 * 3;
     const chrome = filesBar + labelBars;
     const content = windowW - separators;
     const pad = 1;
@@ -50,8 +52,8 @@ describe("avatar roster width", () => {
     assert.equal(row, 43);
     assert.equal(pad, 1);
     assert.ok(pad + row <= avatar, `pad+row ${pad + row} <= avatar ${avatar}`);
-    assert.equal(chat, 78);
-    assert.equal(chatWide, 94);
+    assert.equal(chat, 74);
+    assert.equal(chatWide, 90);
     assert.ok(chatWide > chat, "the extra 16 columns widen chat");
     assert.ok(chat > 57, `chat ${chat} still > 57`);
 
@@ -121,65 +123,72 @@ describe("avatar roster width", () => {
     return Object.fromEntries(out.split(/\s+/).map((part) => part.split("=")));
   }
 
-  it("pads collapsed labels and keeps chat at 78 on the previous 147-wide desk", () => {
+  const rowKeys = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet", "kanban"];
+
+  it("pads collapsed labels and keeps chat at 74 on the previous 147-wide desk", () => {
     const got = sizes(147, "chat");
     assert.equal(got.files, "3");
     assert.equal(got.avatar, "44");
     assert.equal(got.cockpit, "3");
-    assert.equal(got.chat, "78");
+    assert.equal(got.chat, "74");
     assert.equal(got.factory, "3");
     assert.equal(got.dossier, "3");
     assert.equal(got.inbox, "3");
     assert.equal(got.meet, "3");
-    assert.equal(got.sum, "140");
-    const widths = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet"].map((k) => Number(got[k]));
-    assert.equal(widths.reduce((n, w) => n + w, 0) + 7, 147);
+    assert.equal(got.kanban, "3");
+    assert.equal(got.sum, "139");
+    const widths = rowKeys.map((k) => Number(got[k]));
+    assert.equal(widths.reduce((n, w) => n + w, 0) + 8, 147);
 
     const cockpit = sizes(147, "cockpit");
     assert.equal(cockpit.avatar, "44");
     assert.equal(cockpit.chat, "3");
-    assert.equal(cockpit.cockpit, "78");
+    assert.equal(cockpit.cockpit, "74");
+    assert.equal(cockpit.kanban, "3");
     assert.equal(cockpit.factory, "3");
-    assert.equal(cockpit.sum, "140");
+    assert.equal(cockpit.sum, "139");
   });
 
-  it("gives the extra 16 columns to chat, factory, dossier, inbox, and meet at 163", () => {
+  it("gives the extra 16 columns to chat, factory, dossier, inbox, meet, and kanban at 163", () => {
     const chat = sizes(163, "chat");
     assert.equal(chat.files, "3");
     assert.equal(chat.avatar, "44");
     assert.equal(chat.cockpit, "3");
-    assert.equal(chat.chat, "94");
+    assert.equal(chat.chat, "90");
     assert.equal(chat.factory, "3");
     assert.equal(chat.dossier, "3");
     assert.equal(chat.inbox, "3");
     assert.equal(chat.meet, "3");
-    assert.equal(chat.sum, "156");
-    const widths = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet"].map((k) => Number(chat[k]));
-    assert.equal(widths.reduce((n, w) => n + w, 0) + 7, 163);
+    assert.equal(chat.kanban, "3");
+    assert.equal(chat.sum, "155");
+    const widths = rowKeys.map((k) => Number(chat[k]));
+    assert.equal(widths.reduce((n, w) => n + w, 0) + 8, 163);
 
-    const focused = { factory: "factory", dossier: "dossier", inbox: "inbox", meet: "meet" };
+    const focused = { factory: "factory", dossier: "dossier", inbox: "inbox", meet: "meet", kanban: "kanban" };
     for (const [pane, focus] of Object.entries(focused)) {
       const got = sizes(163, focus);
       assert.equal(got.files, "3", focus);
       assert.equal(got.avatar, "44", focus);
-      assert.equal(got[pane], "94", focus);
-      assert.equal(got.sum, "156", focus);
-      for (const other of ["cockpit", "chat", "factory", "dossier", "inbox", "meet"]) {
+      assert.equal(got[pane], "90", focus);
+      assert.equal(got.sum, "155", focus);
+      for (const other of ["cockpit", "chat", "factory", "dossier", "inbox", "meet", "kanban"]) {
         if (other === pane) continue;
         assert.equal(got[other], "3", `${focus} ${other}`);
       }
-      const row = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet"].map((k) => Number(got[k]));
-      assert.equal(row.reduce((n, w) => n + w, 0) + 7, 163, focus);
+      const row = rowKeys.map((k) => Number(got[k]));
+      assert.equal(row.reduce((n, w) => n + w, 0) + 8, 163, focus);
     }
     const at147 = sizes(147, "chat");
     assert.equal(Number(chat.chat) - Number(at147.chat), 16);
     const pstack = sizes(163, "pstack");
-    assert.equal(pstack.dossier, "94");
+    assert.equal(pstack.dossier, "90");
     assert.equal(pstack.chat, "3");
+    assert.equal(pstack.kanban, "3");
     assert.equal(pstack.avatar, "44");
     const cockpit = sizes(163, "cockpit");
-    assert.equal(cockpit.cockpit, "94");
+    assert.equal(cockpit.cockpit, "90");
     assert.equal(cockpit.chat, "3");
+    assert.equal(cockpit.kanban, "3");
     assert.equal(cockpit.avatar, "44");
   });
 

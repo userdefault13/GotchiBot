@@ -46,6 +46,11 @@ const ALLOWED = new Set([
   "inbox",
   "toggle-inbox",
   "leave-inbox",
+  "enter-kanban",
+  "kanban",
+  "toggle-kanban",
+  "leave-kanban",
+  "leave-kanban-chat",
   "require-three",
 ]);
 

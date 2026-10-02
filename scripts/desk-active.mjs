@@ -302,6 +302,7 @@ export function kindLabel(cmd, mode, sess) {
     return mode === "pstack-dossier" ? centerLabel(sess) : "Dossier";
   }
   if (c.includes("inbox-pane") || c.includes("label-bar-pane.sh Inbox")) return "Inbox";
+  if (c.includes("kanban-pane") || c.includes("label-bar-pane.sh Kanban")) return "Kanban";
   if (c.includes("meet-room")) return "Meet · room";
   if (c.includes("meet-channel") || c.includes("label-bar-pane.sh Meeting")) {
     return c.includes("meet-channel") ? "# meet" : "Meeting";

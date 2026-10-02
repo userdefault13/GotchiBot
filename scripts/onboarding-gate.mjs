@@ -92,6 +92,17 @@ function enterPstackDossierLayout() {
   console.log("    Leave with: ./scripts/orchestrator-layout.sh leave-pstack-dossier");
 }
 
+/** Kanban pane (work.8). Does not draw the TUI inside the cockpit pane. */
+function enterKanbanLayout() {
+  if (!tmuxSessionName()) return false;
+  // Detached on the files pane: focusing kanban respawns the cockpit pane to its bar.
+  const r = runLayout("enter-kanban", { background: true, target: "work.0" });
+  if (!r?.ok) return false;
+  console.log("\n  ✓ Kanban pane open (work.8). Cockpit stays in its own pane.");
+  console.log("    q returns to the cockpit · Ctrl+Space then Shift+B toggles.");
+  return true;
+}
+
 /** Factory pane in the dossier slot: project bots + workflows, Hub, desk infra. */
 function enterFactoryLayout() {
   if (!tmuxSessionName()) {
@@ -2777,6 +2788,11 @@ async function mainMenu(wallet, cartridgeId) {
     }
 
     if (pick.key === "kanban") {
+      if (enterKanbanLayout()) {
+        if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") return;
+        await pause();
+        continue;
+      }
       await viewKanban();
       continue;
     }
