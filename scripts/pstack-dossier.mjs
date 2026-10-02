@@ -18,6 +18,11 @@
  *   node scripts/pstack-dossier.mjs fields [--json]
  *   node scripts/pstack-dossier.mjs current [<slug>]        # get/set pane current
  *   node scripts/pstack-dossier.mjs milestone               # record fields.goal, then clear it
+ *   node scripts/pstack-dossier.mjs goal set <text…>
+ *   node scripts/pstack-dossier.mjs goal edit <text…>
+ *   node scripts/pstack-dossier.mjs goal complete
+ *   node scripts/pstack-dossier.mjs goal show
+ *   node scripts/pstack-dossier.mjs goal clear
  *
  * Policy: config/pstack-dossier-policy.json
  */
@@ -143,6 +148,38 @@ export function appendMilestone({ root, slug, milestone }) {
   store.milestones = [...store.milestones, milestone];
   writeJson(milestonesPath(slug, root), { project: slug, milestones: store.milestones });
   return { project: slug, milestones: store.milestones };
+}
+
+/**
+ * Replace dossier.fields.goal with trimmed text. Empty text writes nothing.
+ * Does not touch milestones.
+ */
+export function setDossierGoal({ root, slug, text } = {}) {
+  if (!root) throw new Error("root required");
+  const goal = String(text ?? "").trim();
+  if (!goal) return { ok: false, reason: "empty goal" };
+  const project = slug || pointerSlug(root);
+  if (!project || !slugOk(project)) {
+    const err = new Error("no current project");
+    err.code = "NOPROJECT";
+    throw err;
+  }
+  const dossier = loadDossier(project, root);
+  if (!dossier) {
+    const err = new Error(`no dossier: ${project}`);
+    err.code = "ENODOSSIER";
+    throw err;
+  }
+  if (!dossier.fields || typeof dossier.fields !== "object") dossier.fields = {};
+  dossier.fields.goal = goal;
+  saveDossier(dossier, root);
+  return { ok: true, goal, dossier };
+}
+
+/** `goal show` line. Missing or whitespace-only goals are exactly "goal is empty". */
+export function goalShowText(goal) {
+  const text = String(goal ?? "").trim();
+  return text || "goal is empty";
 }
 
 /** Clear dossier.fields.goal through the existing dossier save path. */
@@ -470,9 +507,14 @@ function cmdCurrent(slug, flags) {
   console.log(cur || "(none)");
 }
 
-function cmdMilestone() {
+function goalProjectSlug() {
   const slug = currentProjectSlug() || currentSlug();
   if (!slug) die("no current project");
+  return slug;
+}
+
+function cmdMilestone() {
+  const slug = goalProjectSlug();
   let result;
   try {
     result = recordMilestone({ root: ROOT, slug });
@@ -481,6 +523,53 @@ function cmdMilestone() {
   }
   if (!result.ok) die("empty goal");
   console.log(`milestone ${result.milestone.id} ${result.milestone.goal}`);
+}
+
+function cmdGoalWrite(text) {
+  const slug = goalProjectSlug();
+  let result;
+  try {
+    result = setDossierGoal({ root: ROOT, slug, text });
+  } catch (err) {
+    die(err.message || String(err));
+  }
+  if (!result.ok) die("empty goal");
+}
+
+function cmdGoalShow() {
+  const slug = goalProjectSlug();
+  const dossier = loadDossier(slug);
+  if (!dossier) die(`no dossier: ${slug}`);
+  console.log(goalShowText(dossier.fields?.goal));
+}
+
+function cmdGoalClear() {
+  const slug = goalProjectSlug();
+  try {
+    clearDossierGoal({ root: ROOT, slug });
+  } catch (err) {
+    die(err.message || String(err));
+  }
+}
+
+function cmdGoal(verb, rest) {
+  switch (verb) {
+    case "set":
+    case "edit":
+      cmdGoalWrite(rest.join(" "));
+      break;
+    case "complete":
+      cmdMilestone();
+      break;
+    case "show":
+      cmdGoalShow();
+      break;
+    case "clear":
+      cmdGoalClear();
+      break;
+    default:
+      die(verb ? `unknown command: goal ${verb}` : "goal requires set|edit|complete|show|clear");
+  }
 }
 
 function usage() {
@@ -496,6 +585,11 @@ function usage() {
   pstack-dossier fields [--json]
   pstack-dossier current [<slug>]
   pstack-dossier milestone
+  pstack-dossier goal set <text…>
+  pstack-dossier goal edit <text…>
+  pstack-dossier goal complete
+  pstack-dossier goal show
+  pstack-dossier goal clear
 
 SoT: sessions/pstack/<slug>/dossier.json
 Milestones: sessions/pstack/<slug>/milestones.json
@@ -544,6 +638,9 @@ function main() {
       break;
     case "milestone":
       cmdMilestone();
+      break;
+    case "goal":
+      cmdGoal(positional[0], positional.slice(1));
       break;
     default:
       die(`unknown command: ${cmd}`);
