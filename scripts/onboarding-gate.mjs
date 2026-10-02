@@ -2450,6 +2450,12 @@ async function mainMenu(wallet, cartridgeId) {
       console.log(`  roster      ${heroes.length} cAavegotchi(s)`);
     }
     console.log(`  orchestrator ${orch}`);
+    try {
+      const activeLine = readFileSync(`${ROOT}/sessions/.desk-active.line`, "utf8").trim();
+      if (activeLine) console.log(`  active      ${activeLine}`);
+    } catch {
+      /* snapshot not published yet */
+    }
     console.log(`  project     ${project || "(none — select local · Base)"}`);
     if (project) {
       const { loadRepo, formatRepo } = await import("./project-context.mjs");

@@ -1523,15 +1523,22 @@ function render({
 
   // a) HEADER
   let header;
+  let active = "";
+  try {
+    active = readFileSync(join(ROOT, "sessions/.desk-active.line"), "utf8").trim();
+  } catch {
+    active = "";
+  }
+  const activeBit = active ? `${c.dim} · ${active}${c.reset}` : "";
   if (empty) {
-    header = `${c.pink}${c.bold}CURRENT STATUS${c.reset}${c.dim} · ${slug || "no project"}${c.reset}`;
+    header = `${c.pink}${c.bold}CURRENT STATUS${c.reset}${c.dim} · ${slug || "no project"}${c.reset}${activeBit}`;
   } else {
     const title = dossier?.fields?.title || slug || "no project";
     const playbook = dossier?.fields?.playbook || "—";
     const status = dossier?.status || "—";
     header =
       `${c.pink}${c.bold}CURRENT STATUS${c.reset} ${c.bold}${title}${c.reset}` +
-      `${c.dim} · ${slug} · ${playbook} · ${status} · updated ${formatPt(dossier?.updatedAt)}${c.reset}`;
+      `${c.dim} · ${slug} · ${playbook} · ${status} · updated ${formatPt(dossier?.updatedAt)}${c.reset}${activeBit}`;
   }
   lines.push(pad(header, cols));
 
@@ -1780,6 +1787,9 @@ function buildState() {
 function fingerprint(state) {
   const slug = state.slug;
   let fp = `${slug}|${state.empty ? "empty" : "ok"}|${state.roster.length}|${state.at}`;
+  try {
+    fp += `|desk:${statSync(join(ROOT, "sessions/.desk-active.json")).mtimeMs}`;
+  } catch {}
   if (slug && !state.empty) {
     for (const f of ["dossier.json", "units.tsv", "ledger.tsv", "decisions.tsv", "roster.json"]) {
       try {
@@ -1795,11 +1805,6 @@ function markSelf() {
   spawnSync("tmux", ["set-option", "-p", "-t", process.env.TMUX_PANE, "@gotchibot-pstack-dossier", "1"], {
     stdio: "ignore",
   });
-  spawnSync(
-    "tmux",
-    ["set-option", "-p", "-t", process.env.TMUX_PANE, "pane-border-format", " pstack · dossier "],
-    { stdio: "ignore" },
-  );
   spawnSync("tmux", ["set-option", "-p", "-t", process.env.TMUX_PANE, "pane-scrollbars", "off"], {
     stdio: "ignore",
   });

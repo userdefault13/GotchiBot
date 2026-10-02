@@ -255,9 +255,14 @@ rebuild_panes() {
   mark_avatar_pane
 }
 
+refresh_desk_borders() {
+  node "$ROOT/scripts/desk-active.mjs" publish --force >/dev/null 2>&1 || true
+}
+
 save_layout() {
   layout_ready || return 0
   tmux list-windows -t "$sess:work" -F '#{window_layout}' 2>/dev/null | head -1 > "$LAYOUT_FILE"
+  refresh_desk_borders
 }
 
 # Every target here assumes work.0 | work.1 | work.2. A user tmux.conf (Omarchy's) may set
@@ -1079,13 +1084,7 @@ apply_focus_sizes() {
 }
 
 label_desk_panes() {
-  tmux set-option -p -t "$sess:work.0" pane-border-format ' #{?pane_active,●, }Files ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" pane-border-format ' #{?pane_active,●, }Avatar ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.2" pane-border-format ' #{?pane_active,●, }Cockpit ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.3" pane-border-format ' #{?pane_active,●, }Gotchi ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.4" pane-border-format ' #{?pane_active,●, }Factory ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.5" pane-border-format ' #{?pane_active,●, }Dossier ' 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.6" pane-border-format ' #{?pane_active,●, }Meeting ' 2>/dev/null || true
+  refresh_desk_borders
 }
 
 # Ctrl+Q / Ctrl+E walk the row. A tool pane opens; Files and Avatar only take the cursor.
@@ -1664,38 +1663,10 @@ install_truecolor_terminal() {
   done
 }
 
-# Mode-aware titles; active pane gets a ● so focus is obvious at a glance.
+# Mode-aware titles from sessions/.desk-active.line so every pane names the
+# same gotchi and workflow. Active pane gets a ●.
 apply_pane_border_labels() {
-  local mode label0 label1 label2
-  mode="$(layout_mode)"
-  label0=' Files '
-  label1=' Gotchi '
-  label2=' Avatar '
-  case "$mode" in
-    meet-gallery)
-      label1=' Meet · room '
-      label2=' # meet '
-      ;;
-    pstack-dossier)
-      label1=" $(center_label) "
-      ;;
-    files-max)
-      label0=' Files · full '
-      ;;
-    avatar-max)
-      label2=' Avatar · full '
-      ;;
-    chat-max)
-      label1=' Gotchi · full '
-      ;;
-    cockpit)
-      label2=' Cockpit '
-      ;;
-  esac
-  # #{?pane_active,…} is evaluated per pane by tmux.
-  tmux set-option -p -t "$sess:work.0" pane-border-format " #{?pane_active,●, }${label0}" 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.1" pane-border-format " #{?pane_active,●, }${label1}" 2>/dev/null || true
-  tmux set-option -p -t "$sess:work.2" pane-border-format " #{?pane_active,●, }${label2}" 2>/dev/null || true
+  refresh_desk_borders
 }
 
 install_resize_hook() {

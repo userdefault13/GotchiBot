@@ -19,7 +19,13 @@ mark_self() {
   local tgt="${TMUX_PANE:-}"
   [ -n "$tgt" ] || return 0
   tmux set-option -p -t "$tgt" @gotchibot-pstack-dossier 1 2>/dev/null || true
-  tmux set-option -p -t "$tgt" pane-border-format ' pstack · dossier ' 2>/dev/null || true
+  local line=""
+  [ -f "$ROOT/sessions/.desk-active.line" ] && line="$(tr -d '\n' < "$ROOT/sessions/.desk-active.line" 2>/dev/null || true)"
+  if [ -n "$line" ]; then
+    tmux set-option -p -t "$tgt" pane-border-format " #{?pane_active,●, }Dossier · ${line} " 2>/dev/null || true
+  else
+    tmux set-option -p -t "$tgt" pane-border-format ' #{?pane_active,●, }Dossier ' 2>/dev/null || true
+  fi
   tmux set-option -p -t "$tgt" history-limit 0 2>/dev/null || true
   tmux set-option -p -t "$tgt" pane-scrollbars off 2>/dev/null || true
 }
@@ -38,7 +44,10 @@ current_slug() {
 render() {
   local slug
   slug="$(current_slug)"
+  local active=""
+  [ -f "$ROOT/sessions/.desk-active.line" ] && active="$(tr -d '\n' < "$ROOT/sessions/.desk-active.line" 2>/dev/null || true)"
   printf '\033[2J\033[H'
+  [ -n "$active" ] && printf '%s\n\n' "$active"
   if [ -z "$slug" ]; then
     printf '%s\n' \
       "pstack · dossier wizard — no program yet" \
@@ -58,6 +67,9 @@ render() {
 fingerprint() {
   local slug
   slug="$(current_slug)"
+  if [ -f "$ROOT/sessions/.desk-active.line" ]; then
+    stat -f '%m' "$ROOT/sessions/.desk-active.line" 2>/dev/null || stat -c '%Y' "$ROOT/sessions/.desk-active.line" 2>/dev/null || echo 0
+  fi
   if [ -z "$slug" ]; then
     stat -f '%m' "$CURRENT" 2>/dev/null || echo 0
     return

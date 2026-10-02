@@ -388,7 +388,7 @@ const GLYPH = {
   idle: `${c.gray}·${c.reset}`,
 };
 
-function viewFactory(f, cols, tick) {
+function viewFactory(f, cols, tick, activeId = "") {
   if (!f.slug) {
     return [
       "",
@@ -420,8 +420,8 @@ function viewFactory(f, cols, tick) {
   const idle = f.bots.filter((b) => b.state === "idle");
   const colW = Math.floor((cols - 1) / 2);
   const cardW = colW >= 38 ? colW : cols;
-  out.push(...tiles(active.map((b) => botCard(b, cardW, tick)), cols, cardW));
-  if (idle.length) out.push(...benchPanel(idle, cols));
+  out.push(...tiles(active.map((b) => botCard(b, cardW, tick, b.id === activeId)), cols, cardW));
+  if (idle.length) out.push(...benchPanel(idle, cols, activeId));
 
   if (f.recent.length) {
     const rows = f.recent.map((k) => {
@@ -446,7 +446,7 @@ function nowLine(b) {
 }
 
 /** One bot as a card, framed in its collateral color while it has work in flight. */
-function botCard(b, w, tick) {
+function botCard(b, w, tick, active = false) {
   const tint = tintFor(b.id);
   const inner = w - 4;
   const flags = [
@@ -460,7 +460,8 @@ function botCard(b, w, tick) {
   const row1 = flags ? `${pad(who, Math.max(8, inner - visLen(flags) - 1))} ${flags}` : who;
   const lanes = laneStrip(b.lanes);
   const row2 = `${lanes}  ${belt(b, tick, Math.max(6, inner - visLen(lanes) - 2))}`;
-  return panel(`${GLYPH[b.state]} ${c.bold}${tint}${b.name || b.id}`, [row1, row2, nowLine(b)], w, {
+  const mark = active ? `${c.inverse} active ${c.reset}` : "";
+  return panel(`${GLYPH[b.state]} ${mark}${c.bold}${tint}${b.name || b.id}`, [row1, row2, nowLine(b)], w, {
     border: b.state !== "queued" && tint ? tint : c.rule,
     titleTint: "",
     note: `${STATE_TINT[b.state]}${STATE_LABEL[b.state]}`,
@@ -468,7 +469,7 @@ function botCard(b, w, tick) {
 }
 
 /** Idle bots share one box so the cards above stay about work. */
-function benchPanel(bots, cols) {
+function benchPanel(bots, cols, activeId = "") {
   const inner = cols - 4;
   const per = inner >= 90 ? 3 : inner >= 50 ? 2 : 1;
   const colW = Math.floor(inner / per);
@@ -477,7 +478,7 @@ function benchPanel(bots, cols) {
     rows.push(
       bots
         .slice(i, i + per)
-        .map((b) => `${pad(`${c.gray}·${c.reset} ${tintFor(b.id)}${b.name || b.id}${c.reset}${b.role ? ` ${c.dim}${b.role}${c.reset}` : ""}`, colW - 1)} `)
+        .map((b) => `${pad(`${b.id === activeId ? `${c.inverse}●${c.reset}` : `${c.gray}·${c.reset}`} ${tintFor(b.id)}${b.name || b.id}${c.reset}${b.role ? ` ${c.dim}${b.role}${c.reset}` : ""}`, colW - 1)} `)
         .join(""),
     );
   }
@@ -985,6 +986,22 @@ function viewTree(tLocal, f, cols) {
 
 let tabHits = [];
 
+function deskLine() {
+  try {
+    return readFileSync(join(ROOT, "sessions/.desk-active.line"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+function deskHero() {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, "sessions/.desk-active.json"), "utf8")).heroId || "";
+  } catch {
+    return "";
+  }
+}
+
 function header(view, cols, slug) {
   let x = 1;
   tabHits = [];
@@ -994,7 +1011,16 @@ function header(view, cols, slug) {
     x += label.length + 1;
     return v.key === view ? `${c.inverse}${c.bold}${label}${c.reset}` : `${c.dim}${label}${c.reset}`;
   }).join(" ");
-  const title = `${c.bold}FACTORY${c.reset}${slug ? `${c.dim} · ${slug}${c.reset}` : ""}`;
+  const active = deskLine();
+  const joinBits = (parts) => parts.filter(Boolean).join(`${c.dim} · ${c.reset}`);
+  let title = joinBits([
+    `${c.bold}FACTORY${c.reset}`,
+    slug ? `${c.dim}${slug}${c.reset}` : "",
+    active ? `${c.dim}${active}${c.reset}` : "",
+  ]);
+  if (active && visLen(title) > Math.max(8, cols - x - 2)) {
+    title = joinBits([`${c.bold}FACTORY${c.reset}`, `${c.dim}${active}${c.reset}`]);
+  }
   const gap = cols - 1 - x - visLen(title);
   return gap > 1 ? ` ${tabs}${" ".repeat(gap)}${title}` : ` ${tabs}`;
 }
@@ -1011,7 +1037,7 @@ function render(state) {
         ? viewHub(cols)
         : state.view === "infra"
           ? viewInfra(cols)
-          : viewFactory(state.factory, cols, state.tick);
+          : viewFactory(state.factory, cols, state.tick, deskHero());
   const bodyH = Math.max(1, rows - 3);
   const maxScroll = Math.max(0, body.length - bodyH);
   state.scroll = Math.max(0, Math.min(state.scroll, maxScroll));
@@ -1034,7 +1060,6 @@ function markSelf() {
   const set = (...kv) => spawnSync("tmux", ["set-option", "-p", "-t", process.env.TMUX_PANE, ...kv], { stdio: "ignore" });
   // Same marker as the dossier: tmux hands this pane its own keys and mouse.
   set("@gotchibot-pstack-dossier", "1");
-  set("pane-border-format", " #{?pane_active,●, }Factory ");
 }
 
 function leaveTo(target) {
@@ -1048,6 +1073,7 @@ function initialView() {
 }
 
 function refreshData(state) {
+  spawnSync(process.execPath, [join(ROOT, "scripts/desk-active.mjs"), "publish"], { stdio: "ignore" });
   state.factory = buildFactory();
   state.tree = buildTree();
   return state;

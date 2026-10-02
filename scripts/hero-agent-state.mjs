@@ -17,7 +17,7 @@
  *   node scripts/hero-agent-state.mjs get [heroId]
  */
 import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readJsonMap, writeJsonAtomic } from "./json-store.mjs";
@@ -258,7 +258,7 @@ function writeLocalCache(heroId, status, extra = {}) {
   // An unreadable read here used to become an empty map on the next write,
   // taking every other hero's status with it (see scripts/json-store.mjs).
   const { data: cache, ok: readable } = readJsonMap(CACHE);
-  if (!readable) return null;
+  if (!readable) return false;
   const prev = cache[heroId] || {};
   cache[heroId] = {
     ...prev,
@@ -282,9 +282,18 @@ function writeLocalCache(heroId, status, extra = {}) {
   const stable = (o) => JSON.stringify({ ...o, at: null });
   if (stable(prev) === stable(cache[heroId])) {
     if (prev.at) cache[heroId].at = prev.at;
-    if (existsSync(CACHE)) return;
+    if (existsSync(CACHE)) return false;
   }
   writeJsonAtomic(CACHE, cache);
+  return true;
+}
+
+function notifyDesk() {
+  const child = spawn("bash", [`${ROOT}/scripts/poke-avatar.sh`], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
 }
 
 export async function setHeroAgentStatus(heroId, status, extra = {}) {
@@ -292,8 +301,11 @@ export async function setHeroAgentStatus(heroId, status, extra = {}) {
   if (!STATUSES.includes(st)) {
     throw new Error(`invalid status "${status}" (want ${STATUSES.join("|")})`);
   }
-  writeLocalCache(heroId, st, extra);
-  return { ok: true, heroId, agentStatus: st };
+  const poke = extra.poke !== false;
+  const { poke: _poke, ...rest } = extra;
+  const wrote = writeLocalCache(heroId, st, rest);
+  if (wrote && poke) notifyDesk();
+  return { ok: true, heroId, agentStatus: st, wrote: !!wrote };
 }
 
 /** Derive status from local (+cached remote) sessions into the local cache. */
@@ -459,19 +471,23 @@ export async function syncHeroAgentStatuses() {
   } catch {}
 
   const results = [];
+  let dirty = false;
   for (const [heroId, info] of derived) {
     try {
-      await setHeroAgentStatus(heroId, info.status, {
+      const row = await setHeroAgentStatus(heroId, info.status, {
         sessionId: info.sessionId,
         task: info.task,
         model: info.model,
         host: info.host,
+        poke: false,
       });
+      if (row.wrote) dirty = true;
       results.push({ heroId, ...info, ok: true });
     } catch (e) {
       results.push({ heroId, ...info, ok: false, error: String(e.message || e) });
     }
   }
+  if (dirty) notifyDesk();
   return results;
 }
 

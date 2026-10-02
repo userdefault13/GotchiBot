@@ -14,7 +14,13 @@ mark_self() {
   local tgt="${TMUX_PANE:-}"
   [ -n "$tgt" ] || return 0
   tmux set-option -p -t "$tgt" @gotchibot-meet-channel 1 2>/dev/null || true
-  tmux set-option -p -t "$tgt" pane-border-format ' # meet ' 2>/dev/null || true
+  local line=""
+  [ -f "$ROOT/sessions/.desk-active.line" ] && line="$(tr -d '\n' < "$ROOT/sessions/.desk-active.line" 2>/dev/null || true)"
+  if [ -n "$line" ]; then
+    tmux set-option -p -t "$tgt" pane-border-format " #{?pane_active,●, }# meet · ${line} " 2>/dev/null || true
+  else
+    tmux set-option -p -t "$tgt" pane-border-format ' #{?pane_active,●, }# meet ' 2>/dev/null || true
+  fi
   tmux set-option -p -t "$tgt" history-limit 0 2>/dev/null || true
   tmux set-option -p -t "$tgt" pane-scrollbars off 2>/dev/null || true
 }

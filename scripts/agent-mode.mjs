@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { chatPaneTarget, sessionName } from "./tmux-pane.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE = `${ROOT}/sessions/.agent-mode.json`;
@@ -124,7 +125,8 @@ function pinnedSessionFor(agent) {
 }
 
 function restartChatPane(agent) {
-  const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
+  const sess = sessionName();
+  const chat = chatPaneTarget(sess);
   try {
     const mode = readFileSync(`${ROOT}/sessions/.layout-mode`, "utf8").trim();
     if (mode === "meet-gallery") {
@@ -139,7 +141,7 @@ function restartChatPane(agent) {
   rememberAgentSession(agent);
 
   const label = paneLabel(agent);
-  spawnSync("tmux", ["set-option", "-p", "-t", `${sess}:work.1`, "pane-border-format", label], {
+  spawnSync("tmux", ["set-option", "-p", "-t", chat, "pane-border-format", label], {
     stdio: "ignore",
   });
   const hasTmux = spawnSync("tmux", ["has-session", "-t", `=${sess}`], { stdio: "ignore" }).status === 0;
@@ -174,7 +176,7 @@ function restartChatPane(agent) {
     [
       "respawn-pane",
       "-t",
-      `${sess}:work.1`,
+      chat,
       "-k",
       `cd "${ROOT}" && ${envParts.join(" ")} exec ./scripts/chat-pane.sh`,
     ],

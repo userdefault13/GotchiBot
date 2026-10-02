@@ -152,6 +152,14 @@ function truncatePlain(s, cols) {
   return plain.slice(0, keep) + ell;
 }
 
+function deskActiveLine() {
+  try {
+    return readFileSync(join(ROOT, "sessions/.desk-active.line"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
 function renderRoomStripLine(cols, meeting) {
   const m = meeting || loadCurrentMeeting();
   const topic = m?.topic || "no meeting";
@@ -164,7 +172,9 @@ function renderRoomStripLine(cols, meeting) {
   });
   const body =
     parts.length > 0 ? `${topic} · ${parts.join(" · ")}` : String(topic);
-  return truncatePlain(body, cols);
+  const active = deskActiveLine();
+  const joined = active ? `${active} · ${body}` : body;
+  return truncatePlain(joined, cols);
 }
 
 /**
@@ -1224,6 +1234,10 @@ function drawBody() {
   // Home + clear-to-EOL per line (one write) instead of a full-screen clear:
   // no blank flash on /next, /prev, or a status tick.
   const galleryLines = String(gallery).split("\n");
+  const activeLine = deskActiveLine();
+  if (activeLine) {
+    galleryLines.unshift(`${T.muted}${truncatePlain(activeLine, cols)}${T.reset}`);
+  }
   lastPagerCols = cols;
   lastPagerRow = 0;
   for (let i = 0; i < galleryLines.length; i++) {
@@ -1515,7 +1529,11 @@ function markTmuxPane() {
   if (!tgt) return;
   spawnSync("tmux", ["set-option", "-p", "-t", tgt, "@gotchibot-meet-room", "1"], { stdio: "ignore" });
   spawnSync("tmux", ["set-option", "-p", "-t", tgt, "-u", "@gotchibot-chat"], { stdio: "ignore" });
-  spawnSync("tmux", ["set-option", "-p", "-t", tgt, "pane-border-format", " Meet · room "], {
+  const active = deskActiveLine();
+  const border = active
+    ? ` #{?pane_active,●, }Meet · room · ${active.replace(/[{}#]/g, "")} `
+    : " #{?pane_active,●, }Meet · room ";
+  spawnSync("tmux", ["set-option", "-p", "-t", tgt, "pane-border-format", border], {
     stdio: "ignore",
   });
 }
@@ -1550,6 +1568,7 @@ function inlineWatchPaths() {
   } catch {
     /* ok */
   }
+  paths.push(join(ROOT, "sessions/.desk-active.line"));
   return paths;
 }
 

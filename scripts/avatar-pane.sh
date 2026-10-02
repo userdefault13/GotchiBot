@@ -179,7 +179,8 @@ state_fingerprint() {
   local sig live
   sig="$(cat "$PIN" "$FOCUS" "$ROSTER_CACHE" \
     "$SESSIONS/.hero-agent-state.json" "$SESSIONS/.focus-list.json" \
-    "$SESSIONS/.onboarding.json" "$SESSIONS"/s*/state.env 2>/dev/null \
+    "$SESSIONS/.onboarding.json" "$SESSIONS/.desk-active.line" \
+    "$SESSIONS"/s*/state.env 2>/dev/null \
     | sed 's/"at": *"[^"]*"//g' | cksum | tr -d ' ')"
   # active_status also consults a live opencode TUI, which touches no file.
   if pgrep -f 'opencode.*--agent gotchi|opencode --agent gotchi' >/dev/null 2>&1; then
@@ -1159,17 +1160,24 @@ render_body() {
   [ "$pin_name" = "$(printf '%s' "$pin_id" | tr '[:lower:]' '[:upper:]')" ] && pin_name=""
   pin_show="$pin_id"
   [ -n "$pin_name" ] && pin_show="$pin_name · $pin_id"
-  # Same stack as a roster tile: status, name, role — one centered line each.
+  local active_line=""
+  if [ -f "$SESSIONS/.desk-active.line" ]; then
+    active_line="$(tr -d '\n' < "$SESSIONS/.desk-active.line" 2>/dev/null || true)"
+  fi
+  # Same stack as a roster tile: status, name, role — then the shared workflow line.
   local caption
   caption="$(printf '%b%s%b\n%b%s%b\n%b%s%b' \
     "$status_color" "$status" "$AV_RST" \
     "$AV_ROSTER" "${pin_name:-$pin_id}" "$AV_RST" \
     "$role_color" "$role" "$AV_RST")"
+  if [ -n "$active_line" ]; then
+    caption="${caption}"$'\n'"$(printf '%b%s%b' "$AV_MUTED" "$active_line" "$AV_RST")"
+  fi
 
   # Framed orch (art + caption) padded once per (art, caption, width); a page
   # flip or a repaint only replays the lines. Do not clip the face.
   local hdr
-  memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_show" \
+  memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_show|$active_line" \
     render_header_block "$main" "$caption" "$cols" "$main_budget"
   while IFS= read -r line || [ -n "$line" ]; do
     put_line "$row" "$line"

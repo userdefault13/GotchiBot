@@ -35,6 +35,7 @@ import { resolveThumbCollateral } from "./collateral-resolve.mjs";
 import { classifyFocusRoute } from "./focus-classify.mjs";
 import { loadAgentMap, gatewayUrl, loadOpenClawFocus, isOrchestratorId } from "./openclaw-fleet.mjs";
 import { runLayout } from "./tmux-layout.mjs";
+import { chatPaneTarget, sessionName } from "./tmux-pane.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -763,7 +764,7 @@ async function cmdSwitch(arg, { host, json, respawn = false } = {}) {
 
 function respawnChatPane(extraEnv = {}) {
   if (!process.env.TMUX) return;
-  const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
+  const sess = sessionName();
   const envParts = Object.entries(extraEnv).map(([k, v]) => `${k}=${JSON.stringify(String(v))}`);
   const prefix = envParts.length ? `${envParts.join(" ")} ` : "";
   spawnSync(
@@ -771,7 +772,7 @@ function respawnChatPane(extraEnv = {}) {
     [
       "respawn-pane",
       "-t",
-      `${sess}:work.1`,
+      chatPaneTarget(sess),
       "-k",
       `cd "${ROOT}" && ${prefix}exec ./scripts/chat-pane.sh`,
     ],
@@ -779,11 +780,11 @@ function respawnChatPane(extraEnv = {}) {
   );
 }
 
-/** True when this process runs inside the desk's chat pane (work.1) — not a Hub OpenCode server. */
+/** True when this process runs inside the desk's chat pane — not a Hub OpenCode server. */
 function inDeskChatPane() {
   if (!process.env.TMUX || !process.env.TMUX_PANE) return false;
-  const sess = process.env.GOTCHIBOT_TMUX_SESSION || "gotchibot";
-  const r = spawnSync("tmux", ["display", "-p", "-t", `${sess}:work.1`, "#{pane_id}"], { encoding: "utf8" });
+  const target = chatPaneTarget(sessionName());
+  const r = spawnSync("tmux", ["display", "-p", "-t", target, "#{pane_id}"], { encoding: "utf8" });
   return r.status === 0 && r.stdout.trim() === process.env.TMUX_PANE;
 }
 
@@ -853,7 +854,7 @@ async function cmdMeet() {
     [
       "respawn-pane",
       "-t",
-      `${sess}:work.1`,
+      chatPaneTarget(sess),
       "-k",
       `cd "${ROOT}" && ${envParts} exec ./scripts/chat-pane.sh`,
     ],

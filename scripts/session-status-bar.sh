@@ -53,10 +53,17 @@ imac_hub() {
 
 append_roster() {
   local base="$1"
-  local r im
+  local r im active=""
+  if [ -f "$SESSIONS/.desk-active.line" ]; then
+    active="$(tr -d '\n' < "$SESSIONS/.desk-active.line" 2>/dev/null || true)"
+  fi
   r="$(roster)"
   im="$(imac_hub)"
-  printf '%s  %s  %s' "$base" "$r" "$im"
+  if [ -n "$active" ]; then
+    printf '%s  %s  %s  %s' "$active" "$base" "$r" "$im"
+  else
+    printf '%s  %s  %s' "$base" "$r" "$im"
+  fi
 }
 
 pid_alive() {
@@ -78,6 +85,9 @@ reap_dead() {
     fi
   done
 }
+
+# Keep the shared active-gotchi line warm even when no label pane is running.
+node "$ROOT/scripts/desk-active.mjs" line >/dev/null 2>&1 || true
 
 reap_dead
 
