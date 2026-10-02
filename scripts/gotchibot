@@ -209,6 +209,30 @@ sync_openclaw_fleet() {
   fi
 }
 
+# One hub-status snapshot per desk load. Writes sessions/.imac-status-cache.json
+# (barLine + hubFetchedAt) so the next status-bar tick can say Hub: ok or Hub: bad.
+# The 30s tick only reads that cache (3 minutes). Do not SSH from the bar.
+# Skips when there is no SSH env and no abra — a blind run would pin Hub: ? for 3 min.
+snapshot_hub_on_load() {
+  command -v node >/dev/null 2>&1 || return 0
+  mkdir -p "$SESSIONS"
+  if [ -n "${SSH_PRIVATE_KEY:-}" ] && [ -n "${REMOTE_HOST:-}" ]; then
+    (
+      trap '' HUP
+      node "$ROOT/scripts/hub-status.mjs" --json >/dev/null
+    ) </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    return 0
+  fi
+  if command -v abra >/dev/null 2>&1; then
+    (
+      trap '' HUP
+      abra run gotchibot -- node "$ROOT/scripts/hub-status.mjs" --json >/dev/null
+    ) </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+  fi
+}
+
 
 cmd_chat() {
   local want="${1:-opencode}"
@@ -299,6 +323,8 @@ cmd_tmux() {
   ( trap '' HUP; sync_openclaw_fleet; boot_mark "fleet sync done (background)" ) \
     </dev/null >>"$SESSIONS/.fleet-sync.log" 2>&1 &
   disown 2>/dev/null || true
+  snapshot_hub_on_load
+  boot_mark "hub snapshot"
   local sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
   sess_name="${sess_name#=}"
   local sess="$sess_name"
