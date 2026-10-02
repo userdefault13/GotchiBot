@@ -1098,6 +1098,43 @@ render_now() {
   render "$st"
 }
 
+# Pane cols → ROSTER_PAD, ROSTER_CELL_W, ROSTER_ROW_W.
+# Pad is one column unless the pane cannot spare it (padded row would pass cols).
+# gap is 2, so the two gutters are 4. Cell clamps stay 10..36.
+roster_geometry() {
+  local cols="${1:-0}" gap=2 gaps pad avail
+  gaps=$((gap * 2))
+  ROSTER_PAD=0
+  ROSTER_CELL_W=10
+  ROSTER_ROW_W=$((ROSTER_CELL_W * 3 + gaps))
+  for pad in 1 0; do
+    [ "$cols" -lt 1 ] && pad=0
+    avail=$((cols - pad - gaps))
+    if [ "$avail" -lt 0 ]; then
+      ROSTER_CELL_W=0
+    else
+      ROSTER_CELL_W=$((avail / 3))
+    fi
+    [ "$ROSTER_CELL_W" -lt 10 ] && ROSTER_CELL_W=10
+    [ "$ROSTER_CELL_W" -gt 36 ] && ROSTER_CELL_W=36
+    ROSTER_ROW_W=$((ROSTER_CELL_W * 3 + gaps))
+    ROSTER_PAD=$pad
+    if [ "$pad" -eq 0 ] || [ $((ROSTER_PAD + ROSTER_ROW_W)) -le "$cols" ]; then
+      break
+    fi
+  done
+}
+
+# Prefix exactly ROSTER_PAD spaces. The cursor stays where put_line homes it.
+roster_pad_line() {
+  local text="${1:-}" pad="${ROSTER_PAD:-0}"
+  if [ "$pad" -le 0 ]; then
+    printf '%s' "$text"
+    return 0
+  fi
+  printf '%*s%s' "$pad" '' "$text"
+}
+
 render_body() {
   local status="$1"
   local cols pane_h row=0 line
@@ -1192,7 +1229,7 @@ render_body() {
   put_line "$row" ""
   row=$((row + 1))
 
-  put_line "$row" "$(printf '%broster%b' "$AV_ROSTER" "$AV_RST")"
+  put_line "$row" "$(roster_pad_line "$(printf '%broster%b' "$AV_ROSTER" "$AV_RST")")"
   row=$((row + 1))
 
   roster_raw="$(load_roster_json)"
@@ -1206,11 +1243,9 @@ render_body() {
     return
   fi
 
+  roster_geometry "$cols"
   local gap=2
-  local gaps=$((gap * 2))
-  local cell_w=$(( (cols - gaps) / 3 ))
-  [ "$cell_w" -lt 10 ] && cell_w=10
-  [ "$cell_w" -gt 36 ] && cell_w=36
+  local cell_w="$ROSTER_CELL_W"
   # Thumb ASCII is ~10 rows; keep cells compact unless pane is very wide.
   local cell_h=10
   [ "$cols" -ge 90 ] && cell_h=12
@@ -1282,7 +1317,7 @@ render_body() {
   memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
   while IFS= read -r line || [ -n "$line" ]; do
     [ -z "$line" ] && continue
-    put_line "$row" "$line"
+    put_line "$row" "$(roster_pad_line "$line")"
     row=$((row + 1))
     [ "$row" -ge "$pane_h" ] && break
   done < <(printf '%s\n' "$pair")
@@ -1434,6 +1469,31 @@ case "${1:-watch}" in
     esac
     sb_click_wake "${3:-}"
     ;;
+  roster-origin)
+    # Geometry probe. No tmux, no terminal read — roster_geometry + real join.
+    cols="${2:-44}"
+    case "$cols" in
+      ''|*[!0-9]*) cols=44 ;;
+    esac
+    roster_geometry "$cols"
+    cell="$(printf 'S%*s' "$((ROSTER_CELL_W - 1))" '')"
+    row_line="$(pair_blocks "$cell" "$cell" "$cell" 2)"
+    row_line="${row_line%%$'\n'*}"
+    padded="$(roster_pad_line "$row_line")"
+    label="$(roster_pad_line "roster")"
+    label_r_prefix="${label%%r*}"
+    label_col=${#label_r_prefix}
+    sprite_prefix="${padded%%S*}"
+    sprite_col=${#sprite_prefix}
+    printf 'cols=%s\n' "$cols"
+    printf 'pad=%s\n' "$ROSTER_PAD"
+    printf 'cell_w=%s\n' "$ROSTER_CELL_W"
+    printf 'row_w=%s\n' "$ROSTER_ROW_W"
+    printf 'label_col=%s\n' "$label_col"
+    printf 'sprite_col=%s\n' "$sprite_col"
+    printf 'line_w=%s\n' "${#padded}"
+    printf 'label_prefix=%s\n' "${label:0:1}"
+    ;;
   watch)
     trap 'watch_leave' EXIT
     trap on_usr1 USR1
@@ -1492,7 +1552,7 @@ case "${1:-watch}" in
     done
     ;;
   *)
-    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|sb-click <x> <y> [pid]|sb-wheel up|down [pid]]" >&2
+    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|roster-origin [cols]|sb-click <x> <y> [pid]|sb-wheel up|down [pid]]" >&2
     exit 2
     ;;
 esac
