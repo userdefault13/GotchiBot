@@ -2,8 +2,8 @@
 /**
  * pstack-window — JA2-style CURRENT STATUS / merc dossier pane (tmux work.1 center).
  *
- * Layout: HEADER · OPS|DOSSIER · TEAM · INBOX · AI-CRON · Gotchis · FOOTER
- * SoT: sessions/pstack/<slug>/{dossier.json,units.tsv,ledger.tsv,decisions.tsv,briefs/}
+ * Layout: HEADER · OPS|DOSSIER · TEAM · MILESTONES · INBOX · AI-CRON · FACTORY · Gotchis · FOOTER
+ * SoT: sessions/pstack/<slug>/{dossier.json,milestones.json,units.tsv,ledger.tsv,decisions.tsv,briefs/}
  * Slug: currentProjectSlug() — never silently fall back to another project's dossier.
  *
  * DOSSIER portrait slot: dossier.fields.coverImage (path relative to
@@ -20,6 +20,7 @@ import { dirname, join, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import readline from "node:readline";
+import { isMainModule } from "./is-main.mjs";
 import { resolveHeroColors } from "./collateral-resolve.mjs";
 import { renderKanbanAscii } from "./gotchi-art.mjs";
 import { loadRoster, currentProjectSlug } from "./project-context.mjs";
@@ -198,6 +199,12 @@ function loadPolicy() {
 function loadDossier(slug) {
   if (!slug) return null;
   return readJsonSafe(join(PSTACK_ROOT, slug, "dossier.json"), null);
+}
+
+function loadMilestones(slug) {
+  if (!slug) return [];
+  const data = readJsonSafe(join(PSTACK_ROOT, slug, "milestones.json"), null);
+  return Array.isArray(data?.milestones) ? data.milestones : [];
 }
 
 function parseTsv(text) {
@@ -863,6 +870,26 @@ function buildInboxRows(messages, rightW) {
   return rows;
 }
 
+/**
+ * MILESTONES body (TEAM → INBOX). Newest completedAt first.
+ * Empty state is exactly the dim text "no milestones".
+ */
+export function buildMilestonesPanelBody(milestones, cols) {
+  const innerW = Math.max(20, Number(cols) || 72);
+  const list = Array.isArray(milestones) ? milestones : [];
+  const sorted = [...list].sort((a, b) =>
+    String(b?.completedAt || "").localeCompare(String(a?.completedAt || "")),
+  );
+  if (!sorted.length) return [`  ${c.dim}no milestones${c.reset}`];
+  const rows = [];
+  for (const m of sorted) {
+    const when = tsShort(m?.completedAt);
+    const goal = trunc(m?.goal, Math.max(8, innerW - 16));
+    rows.push(`  ${goal} ${c.dim}${when}${c.reset}`);
+  }
+  return rows;
+}
+
 /** Full-width boxed panel between TEAM and Gotchis. */
 function packFullWidthPanel(title, bodyRows, cols, maxH) {
   const innerW = Math.max(8, cols - 2);
@@ -1485,6 +1512,7 @@ function render({
   roster,
   cronAgents = [],
   inboxMessages = [],
+  milestones = [],
 }) {
   const cols = Math.max(30, term.cols);
   const rowsN = Math.max(14, term.rows);
@@ -1618,10 +1646,10 @@ function render({
     lines.push(pad(teamLines[i] || "", cols));
   }
 
-  // e) INBOX then AI-CRON — full-width sections between TEAM and Gotchis
+  // e) MILESTONES, INBOX, then AI-CRON — full-width sections between TEAM and Gotchis
   const afterPanelsTeam = 1 + panelRows + teamBudget;
   const remainForMidGrid = Math.max(4, rowsN - footerH - afterPanelsTeam);
-  // Prefer ~half of mid band for inbox+cron, leave ≥3 rows for Gotchis header+art
+  // Prefer the mid band for milestones+inbox+cron, leave ≥3 rows for Gotchis header+art
   // e2) FACTORY is budgeted out of midBand up front so the Gotchis grid cannot starve it.
   const projectRows = slug ? loadRoster(slug).heroes : [];
   const projectRoles = Object.fromEntries(
@@ -1636,20 +1664,27 @@ function render({
       })
     : [`  ${c.dim}${factoryModelNow.reason || "no project selected"}${c.reset}`];
   const factoryH = Math.min(9, Math.max(4, factoryBody.length + 2));
-  const midBand = Math.max(6, remainForMidGrid - 3 - factoryH);
-  let inboxH = Math.min(12, Math.max(5, Math.floor(midBand * 0.5)));
-  let cronH = Math.min(12, Math.max(5, midBand - inboxH));
-  if (inboxH + cronH > midBand) {
-    cronH = Math.max(4, midBand - inboxH);
+  const midBand = Math.max(8, remainForMidGrid - 3 - factoryH);
+  let milestonesH = Math.min(7, Math.max(4, Math.floor(midBand * 0.28)));
+  let inboxH = Math.min(10, Math.max(4, Math.floor((midBand - milestonesH) * 0.5)));
+  let cronH = midBand - milestonesH - inboxH;
+  if (cronH < 3) {
+    const need = 3 - cronH;
+    if (inboxH - need >= 3) inboxH -= need;
+    else if (milestonesH - need >= 3) milestonesH -= need;
+    cronH = Math.max(1, midBand - milestonesH - inboxH);
   }
+  const milestonesBody = buildMilestonesPanelBody(milestones || [], cols);
   const inboxBody = empty
     ? [`  ${c.dim}(no project)${c.reset}`]
     : buildInboxPanelBody(inboxMessages || [], cols);
   const cronBody = empty
     ? [`  ${c.dim}(no project)${c.reset}`]
     : buildAiCronPanelBody(cronAgents || [], cols);
+  const milestonesLines = packFullWidthPanel("MILESTONES", milestonesBody, cols, milestonesH);
   const inboxLines = packFullWidthPanel("INBOX", inboxBody, cols, inboxH);
   const cronLines = packFullWidthPanel("AI-CRON", cronBody, cols, cronH);
+  for (const row of milestonesLines) lines.push(pad(row, cols));
   for (const row of inboxLines) lines.push(pad(row, cols));
   for (const row of cronLines) lines.push(pad(row, cols));
 
@@ -1657,7 +1692,12 @@ function render({
   for (const row of factoryLines) lines.push(pad(row, cols));
 
   // f) GOTCHIS grid — fill remaining body, never eat footer
-  const afterMid = afterPanelsTeam + inboxLines.length + cronLines.length + factoryLines.length;
+  const afterMid =
+    afterPanelsTeam +
+    milestonesLines.length +
+    inboxLines.length +
+    cronLines.length +
+    factoryLines.length;
   lastGridStartRow = afterMid;
   lastRows = rowsN;
   const gridBudget = Math.max(1, rowsN - footerH - afterMid);
@@ -1679,7 +1719,7 @@ function render({
   while (lines.length < rowsN - footerH) lines.push(pad("", cols));
   lines.push(
     pad(
-      `${c.dim}j/k select op · h/l page · PgUp/PgDn (b/f) scroll dossier · TEAM→INBOX→AI-CRON→Gotchis · [c][o][u] · wheel · q${c.reset}`,
+      `${c.dim}j/k select op · h/l page · PgUp/PgDn (b/f) scroll dossier · TEAM→MILESTONES→INBOX→AI-CRON→Gotchis · [c][o][u] · wheel · q${c.reset}`,
       cols,
     ),
   );
@@ -1777,6 +1817,7 @@ function buildState() {
     roster,
     cronAgents,
     inboxMessages,
+    milestones: loadMilestones(slug),
     gridHeroes: picked.heroes,
     gridLabel: picked.label,
     projectScope: picked.projectScope,
@@ -1791,7 +1832,7 @@ function fingerprint(state) {
     fp += `|desk:${statSync(join(ROOT, "sessions/.desk-active.json")).mtimeMs}`;
   } catch {}
   if (slug && !state.empty) {
-    for (const f of ["dossier.json", "units.tsv", "ledger.tsv", "decisions.tsv", "roster.json"]) {
+    for (const f of ["dossier.json", "milestones.json", "units.tsv", "ledger.tsv", "decisions.tsv", "roster.json"]) {
       try {
         fp += `|${statSync(join(PSTACK_ROOT, slug, f)).mtimeMs}`;
       } catch {}
@@ -2015,7 +2056,7 @@ function usage() {
   pstack-window once             # single render (debug / capture)
   pstack-window --interactive    # force interactive keys even if not obvious
 
-SoT: sessions/pstack/<slug>/{dossier.json,units.tsv,ledger.tsv,decisions.tsv,briefs/}
+SoT: sessions/pstack/<slug>/{dossier.json,milestones.json,units.tsv,ledger.tsv,decisions.tsv,briefs/}
 Slug: currentProjectSlug() — never falls back to another dossier
 `);
 }
@@ -2037,4 +2078,6 @@ function main() {
   process.exit(2);
 }
 
-main();
+if (isMainModule(import.meta.url)) {
+  main();
+}

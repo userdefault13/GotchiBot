@@ -126,7 +126,7 @@ gotchibot — GotchiBot orchestrator CLI
                                   defer desks keep their own schedule CLIs)
   gotchibot pstack init|status|list|roles|brief|unit|ledger|decision
                                   pstack chief program store (skill: pstack; never spawns)
-  gotchibot pstack dossier new|show|set|ready|list|fields|current
+  gotchibot pstack dossier new|show|set|ready|list|fields|current|milestone
                                   pstack dossier SoT per program slug (wizard pane: work.1 center)
   gotchibot ralph start|status|cancel|list|bump
                                   ralph-loop store (skill: ralph; never spawns; hooks drive iterations)
