@@ -148,6 +148,21 @@ const TUI_COMMAND_ROWS = [
     { scope: "gotchi" },
   ],
   [
+    "dossier",
+    "Dossier goal verbs (set, edit, complete, show, clear; milestone completes)",
+    [
+      "/dossier goal set <text>",
+      "/dossier goal edit <text>",
+      "/dossier goal complete",
+      "/dossier goal show",
+      "/dossier goal clear",
+      "/dossier milestone",
+      "/dossier goal milestone",
+    ],
+    undefined,
+    { scope: "gotchi" },
+  ],
+  [
     "openclaw",
     "Return to OpenClaw",
     "/openclaw [request]",

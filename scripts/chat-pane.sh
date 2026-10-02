@@ -412,7 +412,7 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
           set_chat_border " ${AGENT_ID} (sub) "
         fi
       fi
-      # GotchiBot slash commands: /orch /list /switch /cockpit (patched OpenClaw TUI via openclaw-gotchi.sh)
+      # GotchiBot slash commands: /orch /list /switch /cockpit /dossier goal … /dossier milestone (patched OpenClaw TUI via openclaw-gotchi.sh)
       OPENCLAW_BIN="$ROOT/scripts/openclaw-gotchi.sh"
       if [ ! -x "$OPENCLAW_BIN" ]; then
         OPENCLAW_BIN=openclaw

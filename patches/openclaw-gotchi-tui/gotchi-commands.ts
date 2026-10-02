@@ -92,6 +92,60 @@ export function runGotchiFocus(args: readonly string[]): GotchiFocusRunResult {
   return collectSpawnResult(result, root, timedOut);
 }
 
+const DOSSIER_GOAL_SLASH_TIMEOUT_MS = 15_000;
+
+/** Shell out to scripts/dossier-goal-slash.mjs. Does not respawn the chat pane. */
+export async function runDossierGoalSlashAsync(line: string): Promise<GotchiFocusRunResult> {
+  const root = resolveGotchiBotRoot();
+  if (!root) {
+    return {
+      ok: false,
+      stdout: "",
+      stderr: "GotchiBot workspace not found (set GOTCHIBOT_ROOT or run from repo root)",
+      status: 1,
+      root: null,
+    };
+  }
+  const script = join(root, "scripts/dossier-goal-slash.mjs");
+  const env = { ...process.env, GOTCHIBOT_ROOT: root };
+
+  return await new Promise((resolve) => {
+    const child = spawn(process.execPath, [script, line], {
+      cwd: root,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, DOSSIER_GOAL_SLASH_TIMEOUT_MS);
+    child.on("close", (status, signal) => {
+      clearTimeout(timer);
+      resolve(collectSpawnResult({ status, stdout, stderr, signal }, root, timedOut));
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolve({
+        ok: false,
+        stdout,
+        stderr: `${stderr}\n${err.message}`.trim(),
+        status: 1,
+        root,
+        timedOut,
+      });
+    });
+  });
+}
+
 export async function runGotchiFocusAsync(args: readonly string[]): Promise<GotchiFocusRunResult> {
   const root = resolveGotchiBotRoot();
   if (!root) {

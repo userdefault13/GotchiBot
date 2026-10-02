@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenClaw CLI with GotchiBot TUI slash commands (/orch /list /switch).
+# OpenClaw CLI with GotchiBot TUI slash commands (/orch /list /switch /cockpit /dossier goal … /dossier milestone).
 #
 # Prefers a local dev build at ~/Dev/openclaw when dist/ includes gotchi-commands.js.
 # Falls back to ~/.openclaw/bin/openclaw (stock install).

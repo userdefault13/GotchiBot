@@ -64,9 +64,9 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "$OPENCLAW_SRC/dist/.gotchi-patch-built"
 if [ -f "$OPENCLAW_SRC/dist/entry.js" ] \
   && rg -q 'formatGotchiOpencodeHeader|B650FF' "$OPENCLAW_SRC/dist/entry.js" "$OPENCLAW_SRC/dist"/tui-*.js 2>/dev/null; then
   echo ""
-  echo "GotchiBot TUI patch ready (purple/pink theme + /orch /list /switch /cockpit)."
+  echo "GotchiBot TUI patch ready (purple/pink theme + /orch /list /switch /cockpit /dossier goal … /dossier milestone)."
   echo "Chat pane will use: $ROOT/scripts/openclaw-gotchi.sh"
-  echo "Respawn tmux center pane, then try: /orch  /list  /switch  /cockpit"
+  echo "Respawn tmux center pane, then try: /orch  /list  /switch  /cockpit  /dossier goal …  /dossier milestone"
 else
   echo "Build finished but GotchiBot patch markers not found in dist — check build output" >&2
   exit 1

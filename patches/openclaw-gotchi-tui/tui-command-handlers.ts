@@ -49,6 +49,7 @@ import {
   gotchiFocusRespawnsChatPane,
   isGotchiBotEnabled,
   readGotchiOpenClawAgentId,
+  runDossierGoalSlashAsync,
   runGotchiFocusAsync,
 } from "./gotchi-commands.js";
 import {
@@ -681,6 +682,11 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     list: async () => await runGotchiSlash(["list"], false),
     switch: async (args) =>
       await runGotchiSlash(args.trim() ? ["switch", args.trim()] : ["switch"], Boolean(args.trim())),
+    dossier: async (args) => {
+      const result = await runDossierGoalSlashAsync(`/dossier ${args}`);
+      appendGotchiFocusLines(result);
+      tui.requestRender();
+    },
     context: async (args, raw) => {
       if (opts.local) {
         addUnsupportedLocalCommand("context");
