@@ -12,7 +12,7 @@
  *     dossier.json · roster.json (id + per-project role) · mail.json · meetings/ · passoff/ · notes/ · tickets/ · jobs/
  *
  *   node scripts/project-context.mjs current [--json]
- *   node scripts/project-context.mjs set <slug>
+ *   node scripts/project-context.mjs set <slug> [--pointer-only]
  *   node scripts/project-context.mjs root [<slug>]
  *   node scripts/project-context.mjs roster [<slug>] [--json]
  *   node scripts/project-context.mjs roster-add <hero> [<slug>]
@@ -36,6 +36,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
 import { projectRoomHasFiles } from "../services/gotchibot-api/projects.mjs";
+import { assertChatDeskAllowed, deskAuthHeaders, readHubPin } from "./infra-client.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** Sibling checkouts (~/Dev) — where bare repo names and URL checkouts are looked up. */
@@ -91,47 +92,181 @@ export function isSmokeProjectSlug(slug) {
   return /smoke/i.test(String(slug));
 }
 
-function dossierExists(slug) {
+function dossierExists(slug, pstackRoot = PSTACK_ROOT) {
   if (!slugOk(slug)) return false;
   try {
-    return existsSync(join(PSTACK_ROOT, slug));
+    return existsSync(join(pstackRoot, slug));
   } catch {
     return false;
   }
 }
 
+function sessionPaths(sessionsDir = null) {
+  const sessions = sessionsDir || SESSIONS;
+  return {
+    sessions,
+    pstack: join(sessions, "pstack"),
+    dossierCurrent: join(sessions, ".pstack-dossier-current"),
+    projectCurrent: join(sessions, ".project-current"),
+    checkpoint: join(sessions, ".checkpoint-local.json"),
+  };
+}
+
+function readPointerAt(paths) {
+  for (const path of [paths.dossierCurrent, paths.projectCurrent]) {
+    try {
+      const s = readFileSync(path, "utf8").trim();
+      if (s && slugOk(s)) return s;
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+/** True when sessions/.hub.json (or GOTCHIBOT_HUB_PIN) is a pin object. */
+export function deskHubPinPresent(env = process.env) {
+  try {
+    if (env !== process.env) {
+      const override = String(env.GOTCHIBOT_HUB_PIN || "").trim();
+      if (!override) return false;
+      const pin = JSON.parse(readFileSync(resolve(override), "utf8"));
+      return Boolean(pin && typeof pin === "object");
+    }
+    const pin = readHubPin();
+    return Boolean(pin && typeof pin === "object");
+  } catch {
+    return false;
+  }
+}
+
+/** Slugs from GET /api/gotchibot/projects (`{ projects: [{ slug }] }`). */
+export function slugsFromHubProjectsBody(body) {
+  const projects = Array.isArray(body) ? body : body?.projects;
+  if (!Array.isArray(projects)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const row of projects) {
+    const slug = typeof row === "string" ? row : row?.slug;
+    if (!slugOk(slug) || seen.has(slug)) continue;
+    seen.add(slug);
+    out.push(slug);
+  }
+  return out;
+}
+
+/** Local slugs first, then hub slugs not already listed. Invalid slugs dropped. */
+export function unionProjectSlugs(local = [], hub = []) {
+  return slugsFromHubProjectsBody([...(local || []), ...(hub || [])].map((s) => (typeof s === "string" ? s : s?.slug)));
+}
+
 /**
- * Desk project for cockpit: Sepolia cart/local checkpoint first, then local pointer.
- * Ignores smoke-test leftovers. Syncs pointers when Sepolia wins.
+ * Hub portfolio when this desk is paired. No pin, or a failed GET, yields [].
+ * Does not log the pin or the desk token.
  */
-export function resolveDeskProjectSlug({ preferSepolia = true } = {}) {
-  const localSlugs = new Set(listProjectSlugsOnDisk());
-  const accept = (slug) =>
-    Boolean(slug && slugOk(slug) && !isSmokeProjectSlug(slug) && (localSlugs.has(slug) || dossierExists(slug)));
+export async function listHubProjectSlugs({
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = 4000,
+} = {}) {
+  if (!deskHubPinPresent(env)) return [];
+  let base;
+  let headers;
+  try {
+    base = assertChatDeskAllowed(env).base;
+    headers = deskAuthHeaders(env);
+  } catch {
+    return [];
+  }
+  try {
+    const res = await fetchImpl(`${base}/api/gotchibot/projects`, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const text = await res.text();
+    if (!res.ok) return [];
+    let json;
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      return [];
+    }
+    return slugsFromHubProjectsBody(json);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Cockpit project rows. "Create new project…" stays an extra row, never the only one
+ * once `slugs` is non-empty.
+ */
+export function projectMenuOptions(slugs, current = null) {
+  const cur = current || null;
+  return [
+    ...slugs.map((slug) => ({
+      key: `proj:${slug}`,
+      label: slug === cur ? `${slug}  (current)` : slug,
+    })),
+    ...(cur ? [{ key: "repo", label: "Connect to GitHub repo…" }] : []),
+    { key: "new", label: "Create new project…" },
+    { key: "back", label: "Back to cockpit" },
+  ];
+}
+
+/**
+ * Desk project for cockpit: a paired hub pointer (no local room) wins so picking
+ * a hub project sticks. Otherwise Sepolia cart/local checkpoint, then a local
+ * pointer. Ignores smoke-test leftovers. Syncs pointers when Sepolia wins.
+ * `sessionsDir` / `paired` are for tests — production uses the desk sessions and pin.
+ */
+export function resolveDeskProjectSlug({ preferSepolia = true, sessionsDir = null, paired = null } = {}) {
+  const paths = sessionPaths(sessionsDir);
+  const localSlugs = new Set(listProjectSlugsOnDisk(paths.pstack));
+  const acceptLocal = (slug) =>
+    Boolean(slug && slugOk(slug) && !isSmokeProjectSlug(slug) && (localSlugs.has(slug) || dossierExists(slug, paths.pstack)));
+  const isPaired = paired == null ? deskHubPinPresent() : Boolean(paired);
+  const acceptRemote = (slug) => Boolean(isPaired && slug && slugOk(slug) && !isSmokeProjectSlug(slug));
 
   let sepoliaCurrent = null;
   if (preferSepolia) {
     try {
-      const snapPath = join(SESSIONS, ".checkpoint-local.json");
-      if (existsSync(snapPath)) {
-        const snap = JSON.parse(readFileSync(snapPath, "utf8"));
+      if (existsSync(paths.checkpoint)) {
+        const snap = JSON.parse(readFileSync(paths.checkpoint, "utf8"));
         const cur = snap?.gameState?.projects?.current;
-        if (accept(cur)) sepoliaCurrent = String(cur);
+        if (acceptLocal(cur)) sepoliaCurrent = String(cur);
       }
     } catch {
       /* no sepolia snapshot */
     }
   }
 
-  const pointer = currentProjectSlug();
+  const pointer = sessionsDir ? readPointerAt(paths) : currentProjectSlug();
   if (pointer && isSmokeProjectSlug(pointer)) {
-    clearCurrentProject();
+    if (sessionsDir) {
+      for (const path of [paths.dossierCurrent, paths.projectCurrent]) {
+        try {
+          if (existsSync(path)) writeFileSync(path, "", "utf8");
+        } catch {
+          /* ignore */
+        }
+      }
+    } else {
+      clearCurrentProject();
+    }
   }
 
-  const chosen = sepoliaCurrent || (accept(pointer) ? pointer : null);
-  if (chosen && chosen !== pointer) {
+  // Hub slug with no local room: keep the pointer. Do not sync Sepolia over it
+  // and do not create a blank room.
+  const pointerRemote = Boolean(pointer && acceptRemote(pointer) && !acceptLocal(pointer));
+  const chosen = pointerRemote ? pointer : sepoliaCurrent || (acceptLocal(pointer) ? pointer : null);
+  if (chosen && chosen !== pointer && !pointerRemote) {
     try {
-      setCurrentProject(chosen);
+      setCurrentProject(chosen, {
+        ensureDirs: !sessionsDir,
+        sessionsDir: sessionsDir || undefined,
+      });
     } catch {
       /* read-only ok */
     }
@@ -139,13 +274,21 @@ export function resolveDeskProjectSlug({ preferSepolia = true } = {}) {
   return chosen;
 }
 
-/** Keep both pointers identical so passoff / pstack / cockpit agree. */
-export function setCurrentProject(slug) {
+/**
+ * Keep both pointers identical so passoff / pstack / cockpit agree.
+ * `ensureDirs: false` writes the pointer only — used when picking a hub project
+ * that has no local room. Default still creates the sealed room.
+ */
+export function setCurrentProject(slug, { ensureDirs = true, sessionsDir = null } = {}) {
   if (!slugOk(slug)) throw new Error(`invalid project slug: ${slug}`);
-  mkdirSync(SESSIONS, { recursive: true });
-  writeFileSync(DOSSIER_CURRENT, `${slug}\n`, "utf8");
-  writeFileSync(PROJECT_CURRENT, `${slug}\n`, "utf8");
-  ensureProjectDirs(slug);
+  const paths = sessionPaths(sessionsDir);
+  mkdirSync(paths.sessions, { recursive: true });
+  writeFileSync(paths.dossierCurrent, `${slug}\n`, "utf8");
+  writeFileSync(paths.projectCurrent, `${slug}\n`, "utf8");
+  if (ensureDirs) {
+    if (sessionsDir) throw new Error("refusing to create a project room outside the desk sessions directory");
+    ensureProjectDirs(slug);
+  }
   return slug;
 }
 
@@ -781,7 +924,7 @@ export function resolveInboxRoot() {
 function usage() {
   console.error(`usage:
   project-context current [--json] [--resolve|--desk]
-  project-context set <slug>
+  project-context set <slug> [--pointer-only]
   project-context clear
   project-context root [<slug>]
   project-context storage [<slug>] [--json]
@@ -812,9 +955,10 @@ async function main() {
     return;
   }
   if (cmd === "set") {
-    const slug = args[0];
+    const pointerOnly = args.includes("--pointer-only");
+    const slug = args.find((a) => a !== "--pointer-only");
     if (!slug) usage();
-    setCurrentProject(slug);
+    setCurrentProject(slug, { ensureDirs: !pointerOnly });
     console.log(`project → ${slug}`);
     return;
   }

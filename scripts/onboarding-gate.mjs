@@ -113,7 +113,7 @@ function enterFactoryLayout() {
   console.log("\n  ✓ Factory pane open (work.1) · c returns to the cockpit.");
 }
 
-/** Current project slug — desk resolves local dossiers + Sepolia checkpoint (ignores smoke leftovers). */
+/** Current project slug — local room, Sepolia checkpoint, or a paired hub pointer (no blank room). */
 function currentProjectSlug() {
   const r = spawnSync(
     process.execPath,
@@ -131,7 +131,7 @@ function currentProjectSlug() {
   return slug || null;
 }
 
-function listProjectSlugs() {
+function listLocalProjectSlugs() {
   const r = spawnSync(process.execPath, [`${ROOT}/scripts/pstack-dossier.mjs`, "list", "--json"], {
     cwd: ROOT,
     encoding: "utf8",
@@ -160,8 +160,22 @@ function listProjectSlugs() {
     .filter(Boolean);
 }
 
-function setCurrentProject(slug) {
-  const r = spawnSync(process.execPath, [`${ROOT}/scripts/project-context.mjs`, "set", slug], {
+/**
+ * Local dossiers unioned with the paired hub portfolio.
+ * No sessions/.hub.json → local only. A failed hub GET does not hide local rows.
+ */
+async function listProjectSlugs() {
+  const local = listLocalProjectSlugs();
+  const { unionProjectSlugs, listHubProjectSlugs } = await import("./project-context.mjs");
+  const hub = await listHubProjectSlugs();
+  return unionProjectSlugs(local, hub);
+}
+
+function setCurrentProject(slug, { pointerOnly = false } = {}) {
+  const args = [`${ROOT}/scripts/project-context.mjs`, "set", slug];
+  // Hub pick: pointer files only. Never pstack-dossier new, never ensureProjectDirs.
+  if (pointerOnly) args.push("--pointer-only");
+  const r = spawnSync(process.execPath, args, {
     cwd: ROOT,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -289,21 +303,15 @@ async function selectProjectMenu({ freshInstall = false } = {}) {
     console.log(`  repo     ${formatRepo(loadRepo(current))}\n`);
   }
 
-  // Always list dossiers so a just-created project can be re-picked if the
-  // pointer was cleared. Fresh nest only changes the nudge copy — not the list.
-  const slugs = listProjectSlugs();
+  // Local dossiers plus the paired hub portfolio, so a desk with an empty
+  // pstack still lists hub projects. Fresh nest only changes the nudge copy.
+  const local = listLocalProjectSlugs();
+  const slugs = await listProjectSlugs();
   if (freshInstall) {
     console.log("  Fresh roster — create a new project or pick an existing one.\n");
   }
-  const options = [
-    ...slugs.map((slug) => ({
-      key: `proj:${slug}`,
-      label: slug === current ? `${slug}  (current)` : slug,
-    })),
-    ...(current ? [{ key: "repo", label: "Connect to GitHub repo…" }] : []),
-    { key: "new", label: "Create new project…" },
-    { key: "back", label: "Back to cockpit" },
-  ];
+  const { projectMenuOptions } = await import("./project-context.mjs");
+  const options = projectMenuOptions(slugs, current);
   const pick = await choose("Which project?", options);
   if (!pick || pick.key === "back") return;
 
@@ -344,7 +352,9 @@ async function selectProjectMenu({ freshInstall = false } = {}) {
 
   if (pick.key.startsWith("proj:")) {
     const slug = pick.key.slice("proj:".length);
-    if (setCurrentProject(slug) && currentProjectSlug() === slug) {
+    // A hub slug with no local dossier must not grow a blank room.
+    const pointerOnly = !local.includes(slug);
+    if (setCurrentProject(slug, { pointerOnly }) && currentProjectSlug() === slug) {
       console.log(`\n  ✓ project → ${slug}`);
     } else {
       console.log(`\n  ✗ could not select ${slug}`);
@@ -2995,7 +3005,19 @@ if (process.argv.includes("--print-cockpit-menu")) {
   printCockpitMenu();
   process.exit(0);
 }
-(meetOnly ? runMeet() : cockpitOnly ? runCockpit() : run()).catch((e) => {
-  console.error(`\n  ✗ ${e.message}`);
-  process.exit(1);
-});
+if (process.argv.includes("--print-project-slugs")) {
+  listProjectSlugs()
+    .then((slugs) => {
+      console.log(JSON.stringify(slugs));
+      process.exit(0);
+    })
+    .catch((e) => {
+      console.error(e.message || e);
+      process.exit(1);
+    });
+} else {
+  (meetOnly ? runMeet() : cockpitOnly ? runCockpit() : run()).catch((e) => {
+    console.error(`\n  ✗ ${e.message}`);
+    process.exit(1);
+  });
+}
