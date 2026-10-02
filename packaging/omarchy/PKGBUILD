@@ -1,0 +1,16 @@
+# Maintainer: UserDefault
+# Desk linker for an existing Omarchy checkout. No npm and no second hub.
+pkgname=gotchibot-omarchy-desk
+pkgver=0.2.2
+pkgrel=1
+pkgdesc="GotchiBot desk client linker for an existing Omarchy checkout (no second hub)"
+arch=('any')
+url="https://github.com/userdefault13/GotchiBot"
+license=('custom:PolyForm-Noncommercial-1.0.0')
+depends=('bash' 'nodejs' 'git')
+options=('!strip')
+
+package() {
+  install -Dm755 "${startdir}/../../scripts/omarchy-desk-install.sh" \
+    "${pkgdir}/usr/bin/gotchibot-omarchy-desk"
+}

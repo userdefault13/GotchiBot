@@ -58,6 +58,8 @@ cd GotchiBot
 ./scripts/gotchibot tmux
 ```
 
+Omarchy desk (existing checkout, no second hub): `cd ~/dev/GotchiBot && git pull --ff-only origin main && ./scripts/omarchy-desk-install.sh`
+
 ## Quick start
 
 ```bash
