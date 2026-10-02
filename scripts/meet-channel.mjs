@@ -20,7 +20,6 @@ import { isMainModule } from "./is-main.mjs";
 import { resolveMeetingsRoot } from "./project-context.mjs";
 import { isProfLinkCubeId } from "./gotchi-art.mjs";
 import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
-import { mouseEnabled } from "./lib/term-caps.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PENDING = `${ROOT}/sessions/.meet-pending.json`;
@@ -333,11 +332,7 @@ export function warmThumbs(ids, done) {
 function renderHeader(meeting, cols, interactive = false) {
   const topic = meeting.topic || "Untitled meeting";
   const agents = (meeting.participants || []).filter((p) => p.role !== "user").length;
-  const mouse = mouseEnabled();
-  const clickHint = interactive && mouse ? " · click [copy] · [edit]" : "";
-  const nav = mouse
-    ? `↑↓ wheel · j/k · PgUp/Dn · scrollbar${clickHint}`
-    : `j/k · PgUp/Dn`;
+  const nav = `j/k · ↑↓ · PgUp/Dn`;
   return [
     `${C.topic}# ${topic}${C.reset}`,
     `${C.dim}${agents} gotchi${agents === 1 ? "" : "s"} · ${nav}${C.reset}`,
@@ -651,14 +646,14 @@ function copyTurnText(text) {
 
 /**
  * Long-lived # meet pane: rebuild transcript only when content changes;
- * scroll only re-slices cached lines (smooth wheel).
+ * Keyboard j/k and arrows scroll. Mouse wheel is ignored.
  */
 export async function runMeetChannelLive() {
   mkdirSync(`${ROOT}/sessions`, { recursive: true });
   output.write("\x1b[?1049h\x1b[?7l\x1b[?25l");
   // Button events only — no 1002 motion flood. Skip when mouse is off (plain / linux).
-  const useMouse = mouseEnabled();
-  if (useMouse) output.write("\x1b[?1000h\x1b[?1006h");
+  // Mouse off: do not ask the terminal for SGR wheel (64/65).
+  const useMouse = false;
 
   let cachedLines = null;
   let cacheKey = "";
@@ -883,7 +878,7 @@ export async function runMeetChannelLive() {
     schedulePaint(true, 20);
   });
 
-  // Keyboard / SGR wheel when focused
+  // Keyboard scroll when focused. Wheel sequences are ignored.
   if (input.isTTY) {
     input.setRawMode(true);
     input.resume();
@@ -891,7 +886,7 @@ export async function runMeetChannelLive() {
     let esc = "";
     input.on("data", (chunk) => {
       const s = String(chunk);
-      // A trackpad delivers many wheel events per chunk — sum them, apply once.
+      // Keyboard deltas are summed once per chunk. Wheel is not applied.
       let delta = 0;
       const jump = (n) => {
         delta = 0;
@@ -904,13 +899,13 @@ export async function runMeetChannelLive() {
           if (esc.length > 1 && /[A-Za-z~Mm]$/.test(esc)) {
             const seq = esc;
             esc = "";
-            // SGR wheel
+            // SGR mouse. Wheel buttons are not handled.
             const m = seq.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
             if (m) {
               const btn = Number(m[1]);
-              if (btn === 64 || btn === 4) delta += SCROLL_STEP;
-              else if (btn === 65 || btn === 5) delta -= SCROLL_STEP;
-              else if (btn === 0 && m[4] === "M") handleClick(Number(m[2]), Number(m[3]));
+              // Wheel (SGR 64/65, legacy 4/5) is ignored — no scroll, no repaint.
+              if (btn === 64 || btn === 65 || btn === 4 || btn === 5) continue;
+              if (btn === 0 && m[4] === "M") handleClick(Number(m[2]), Number(m[3]));
               continue;
             }
             if (/\x1b\[A$|\x1bOA$/.test(seq) || seq.endsWith("5~")) delta += SCROLL_STEP * (seq.endsWith("5~") ? 3 : 1);

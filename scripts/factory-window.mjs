@@ -1209,7 +1209,7 @@ function runWatch() {
   });
   if (!isTty) return;
 
-  process.stdout.write(`${ESC}[?1000h${ESC}[?1006h`);
+  // Mouse tracking off. Wheel must not repaint this pane.
   readline.emitKeypressEvents(process.stdin);
   process.stdin.setRawMode(true);
   const scrollBy = (n) => {
@@ -1222,9 +1222,9 @@ function runWatch() {
     while ((m = re.exec(chunk.toString("binary")))) {
       const [btn, x, y] = [Number(m[1]), Number(m[2]) - 1, Number(m[3]) - 1];
       if (m[4] !== "M") continue;
-      if (btn === 64) scrollBy(-3);
-      else if (btn === 65) scrollBy(3);
-      else if (btn === 0 && y === 0) {
+      // Wheel (SGR 64/65) is ignored so a trackpad cannot repaint every tick.
+      if (btn === 64 || btn === 65) continue;
+      if (btn === 0 && y === 0) {
         const hit = tabHits.find((t) => x >= t.x0 && x < t.x1);
         if (hit) setView(hit.key);
       }

@@ -5,7 +5,7 @@
 # Ask/plan/build/sandbox/verse stay local OpenCode agents (no OpenClaw relay).
 # Legacy OpenClaw native TUI: GOTCHIBOT_OPENCLAW_TUI=1
 # Scroll past responses: replay on by default (GOTCHIBOT_OPENCODE_REPLAY=1).
-# Mouse wheel scrolls message history (OpenClaw: GOTCHIBOT_TUI_MOUSE=1; OpenCode: config/tui.json).
+# Mouse wheel is off (it flooded panes). Keyboard still scrolls history.
 # Tab/F2: OpenCode TUI cycles agents (tab). tmux does not steal Tab. Mini: GOTCHIBOT_OPENCODE_MINI=1
 # Fallback: `./scripts/gotchibot mode cycle --restart` | Ctrl+X A agent menu
 # Copy: /copy or Ctrl+Y (last assistant reply → clipboard). Shift+drag selects text in terminal.
@@ -101,9 +101,9 @@ REPLAY_LIMIT="${GOTCHIBOT_OPENCODE_REPLAY_LIMIT:-}"
 export OPENCODE_TUI_CONFIG="${GOTCHIBOT_TUI_CONFIG:-$ROOT/config/tui.json}"
 # Hex gotchi theme needs truecolor (OpenCode path — not only legacy OpenClaw).
 export COLORTERM="${COLORTERM:-truecolor}"
-if [ "${GOTCHIBOT_OPENCODE_MOUSE:-1}" = "0" ]; then
-  export OPENCODE_DISABLE_MOUSE=true
-fi
+# Wheel scroll re-rendered the chat pane on every tick. Keep mouse off.
+export GOTCHIBOT_OPENCODE_MOUSE=0
+export OPENCODE_DISABLE_MOUSE=true
 
 cd "$ROOT"
 # shellcheck source=scripts/progress-bar.sh
@@ -389,9 +389,9 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
       export OPENCLAW_THEME="${GOTCHIBOT_OPENCLAW_THEME:-opencode}"
       export GOTCHIBOT_TUI_STYLE="${GOTCHIBOT_TUI_STYLE:-opencode}"
       export GOTCHIBOT_TUI_TITLE="${GOTCHIBOT_TUI_TITLE:-Gotchi}"
-      # Scrollable chat history (mouse wheel + PageUp/PageDown); tmux mouse stays off.
+      # Scrollable chat history (PageUp/PageDown, j/k, arrows). Mouse stays off.
       export GOTCHIBOT_TUI_SCROLL="${GOTCHIBOT_TUI_SCROLL:-1}"
-      export GOTCHIBOT_TUI_MOUSE="${GOTCHIBOT_TUI_MOUSE:-1}"
+      export GOTCHIBOT_TUI_MOUSE=0
       export GOTCHIBOT_TUI_SCROLL_SPEED="${GOTCHIBOT_TUI_SCROLL_SPEED:-4}"
       export GOTCHIBOT_TUI_COLLAPSE_SYSTEM="${GOTCHIBOT_TUI_COLLAPSE_SYSTEM:-1}"
       export GOTCHIBOT_TUI_PROSE_TTS="${GOTCHIBOT_TUI_PROSE_TTS:-1}"

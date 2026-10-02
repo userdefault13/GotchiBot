@@ -1915,8 +1915,7 @@ function runWatch() {
   };
 
   if (isTty) {
-    // X10 + SGR mouse so wheel reaches the pane (tmux send-keys -M).
-    process.stdout.write(`${ESC}[?1000h${ESC}[?1006h`);
+    // Mouse tracking stays off. Wheel (SGR 64/65) used to repaint every tick.
     readline.emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
     const scrollDetail = (delta) => {
@@ -1941,18 +1940,6 @@ function runWatch() {
         return;
       }
     };
-    const handleWheel = (btn, _x, y) => {
-      // btn 64 = wheel up, 65 = wheel down (X10 / SGR)
-      if (btn !== 64 && btn !== 65) return;
-      const gridY =
-        lastGridStartRow >= 0 ? lastGridStartRow : Math.max(0, Math.floor(lastRows * 0.7));
-      if (y >= gridY) {
-        page = Math.max(0, page + (btn === 64 ? -1 : 1));
-        paint();
-      } else {
-        scrollDetail(btn === 64 ? -3 : 3);
-      }
-    };
     process.stdin.on("data", (chunk) => {
       const s = chunk.toString("binary");
       // SGR: CSI < btn ; x ; y M/m  (x/y 1-based → 0-based)
@@ -1964,7 +1951,6 @@ function runWatch() {
         const my = Number(m[3]) - 1;
         if (m[4] === "M") {
           if (btn === 0 || btn === 32) handleCockpitClick(mx, my);
-          else handleWheel(btn, mx, my);
         }
       }
       // X10: ESC [ M btn x y  (each +32; x/y already 0-based)
@@ -1974,7 +1960,6 @@ function runWatch() {
         const mx = s.charCodeAt(i + 4) - 32;
         const my = s.charCodeAt(i + 5) - 32;
         if (btn === 0 || btn === 32) handleCockpitClick(mx, my);
-        else handleWheel(btn, mx, my);
       }
     });
     process.stdin.on("keypress", (str, key) => {
@@ -2052,7 +2037,7 @@ function runOnce() {
 
 function usage() {
   console.log(`usage:
-  pstack-window watch            # interactive when stdin is a tty (j/k select · h/l page · u/d scroll · c Cockpit · wheel · q quit); --interactive forces it
+  pstack-window watch            # interactive when stdin is a tty (j/k select · h/l page · u/d scroll · c Cockpit · q quit); --interactive forces it
   pstack-window once             # single render (debug / capture)
   pstack-window --interactive    # force interactive keys even if not obvious
 

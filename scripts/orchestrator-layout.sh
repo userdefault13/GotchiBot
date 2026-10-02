@@ -307,40 +307,21 @@ mark_avatar_pane() {
   tmux set-option -p -t "$sess:work.2" pane-scrollbars off 2>/dev/null || true
 }
 
-# Mouse on for prev/next clicks. Wheel on the avatar pane is ignored.
-# Meet gallery: wheel on # meet scrolls transcript.
+# Mouse off. Wheel must not be forwarded into pane scripts: SGR 64/65
+# re-rendered on every tick, lagged, and sometimes crashed a pane.
+# Keyboard j/k and arrows still scroll. Avatar roster paging stays on prefix P/N.
 install_meet_gallery_mouse() {
-  local ch_if='#{==:#{@gotchibot-meet-channel},1}'
   local av_if='#{==:#{@gotchibot-avatar},1}'
-  local scroll_up="cd '$ROOT' && GOTCHIBOT_TMUX_SESSION='$sess_name' '$ROOT/scripts/meet-channel-scroll.sh' up"
-  local scroll_down="cd '$ROOT' && GOTCHIBOT_TMUX_SESSION='$sess_name' '$ROOT/scripts/meet-channel-scroll.sh' down"
   local def_drag='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
 
-  if [ "${TUI_MOUSE}" = "on" ]; then
-    tmux set-option -g mouse on 2>/dev/null || true
-    tmux set-option -t "$sess" mouse on 2>/dev/null || true
-  fi
+  tmux set-option -g mouse off 2>/dev/null || true
+  tmux set-option -t "$sess" mouse off 2>/dev/null || true
 
   tmux unbind-key -n WheelUpPane 2>/dev/null || true
   tmux unbind-key -n WheelDownPane 2>/dev/null || true
   tmux unbind-key -n MouseDown1Pane 2>/dev/null || true
   tmux unbind-key -n MouseDrag1Pane 2>/dev/null || true
 
-  # Wheel over # meet: the live pane (meet-channel.mjs --live) reads SGR wheel
-  # itself, so pass the event straight through — no run-shell, no node spawn
-  # per tick (that was ~90ms each and the source of the scroll lag). The
-  # run-shell scroll script is only the fallback when the live process is gone.
-  # Avatar wheel stays a no-op; other panes keep the tmux default.
-  local pass_if='#{&&:#{!=:#{@gotchibot-avatar},1},#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}}'
-  local plain_if='#{&&:#{!=:#{@gotchibot-avatar},1},#{!=:#{@gotchibot-meet-channel},1}}'
-  local plain_wheel="if-shell -F \"$plain_if\" \"copy-mode -e\""
-  local plain_wheel_q="${plain_wheel//\"/\\\"}"
-  tmux bind-key -n WheelUpPane \
-    if-shell -F "$pass_if" "send-keys -M" \
-    "if-shell -F \"$ch_if\" \"run-shell '$scroll_up'\" \"$plain_wheel_q\"" 2>/dev/null || true
-  tmux bind-key -n WheelDownPane \
-    if-shell -F "$pass_if" "send-keys -M" \
-    "if-shell -F \"$ch_if\" \"run-shell '$scroll_down'\" \"$plain_wheel_q\"" 2>/dev/null || true
   tmux bind-key -n MouseDown1Pane \
     if-shell -F "$av_if" "run-shell '$ROOT/scripts/avatar-pane.sh sb-click #{mouse_x} #{mouse_y} #{pane_pid}'" \
     'select-pane -t = ; send-keys -M' 2>/dev/null || true
@@ -352,24 +333,21 @@ install_meet_gallery_mouse() {
   install_avatar_page_keys
 }
 
-# Chat/files/cockpit/pstack keep default (OpenCode / app mouse / send-keys -M).
+# Chat/files/cockpit/pstack do not get a wheel bind (mouse is off).
 # NEVER send-keys -t #{pane_id} — that format is empty and errors in the status bar.
 # Match avatar ONLY via @gotchibot-avatar=1 (never pane_index).
 install_avatar_mouse() {
-  # Avatar: wheel / ← / → page gotchi roster. Else OpenCode / pstack get native keys.
+  # Avatar: ← / → page the gotchi roster. Wheel is not bound.
   # Keep commands free of nested single-quotes — tmux if-shell "run-shell '…'" breaks them.
   local ru="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel up #{pane_pid}"
   local rd="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel down #{pane_pid}"
   local rc="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-click #{mouse_x} #{mouse_y} #{pane_pid}"
-  local def_wheel='if-shell -F "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"'
   local def_drag='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
   local av_if='#{==:#{@gotchibot-avatar},1}'
   local focus_hook="$ROOT/scripts/tmux-chat-focus-hook.sh"
 
-  if [ "${TUI_MOUSE}" = "on" ]; then
-    tmux set-option -g mouse on 2>/dev/null || true
-    tmux set-option -t "$sess" mouse on 2>/dev/null || true
-  fi
+  tmux set-option -g mouse off 2>/dev/null || true
+  tmux set-option -t "$sess" mouse off 2>/dev/null || true
   mark_avatar_pane
 
   tmux unbind-key -n WheelUpPane 2>/dev/null || true
@@ -383,12 +361,6 @@ install_avatar_mouse() {
   tmux unbind-key -T gotchi-avatar Left 2>/dev/null || true
   tmux unbind-key -T gotchi-avatar Right 2>/dev/null || true
 
-  tmux bind-key -n WheelUpPane \
-    if-shell -F "$av_if" "run-shell \"$ru\"" \
-    "$def_wheel" 2>/dev/null || true
-  tmux bind-key -n WheelDownPane \
-    if-shell -F "$av_if" "run-shell \"$rd\"" \
-    "$def_wheel" 2>/dev/null || true
 
   # Click: focus avatar, switch key-table, then page hitbox. ←/→ only work while
   # the gotchi-avatar table is active (other panes keep native arrows).
@@ -1606,7 +1578,7 @@ install_agent_keys() {
   install_layout_keys gotchi-files
   install_layout_keys gotchi-avatar
   install_pane_step_keys
-  # Pagination clicks on avatar; wheel unbound there (orch face stays pinned).
+  # Mouse off. Keyboard still pages the avatar roster.
   if [ "$(layout_mode)" = "meet-gallery" ]; then
     install_meet_gallery_mouse 2>/dev/null || true
   elif [ "$(layout_mode)" = "pstack-dossier" ]; then
@@ -1658,13 +1630,10 @@ install_agent_keys() {
 }
 
 install_ui_theme() {
-  # Mouse ON so prev/next on the unfocused avatar pane are clickable.
-  # Wheel over avatar pages roster; chat/files keep default (OpenCode / send-keys -M).
-  # Plain / linux (TUI_MOUSE=off): leave the user's tmux mouse setting alone.
-  if [ "${TUI_MOUSE}" = "on" ]; then
-    tmux set-option -g mouse on 2>/dev/null || true
-    tmux set-option -t "$sess" mouse on 2>/dev/null || true
-  fi
+  # Mouse off for the desk. Wheel scroll flooded pane scripts and crashed panes.
+  # Keyboard j/k and arrows still scroll. This file turns tmux mouse off.
+  tmux set-option -g mouse off 2>/dev/null || true
+  tmux set-option -t "$sess" mouse off 2>/dev/null || true
   tmux set-option -t "$sess" set-clipboard on 2>/dev/null || true
   # Let OSC 52 from OpenClaw TUI (/copy) reach Terminal/iTerm pasteboard.
   tmux set-option -g allow-passthrough on 2>/dev/null || true

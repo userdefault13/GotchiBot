@@ -37,11 +37,7 @@ install_user_menu() {
   rm -f "$block_file" "${block_file}.part"
 }
 
-# Mouse needed for click-to-select; enable for this mc session's tmux client.
-enable_tmux_mouse() {
-  local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
-  tmux set-option -t "$sess" mouse on 2>/dev/null || true
-}
+# Desk mouse stays off. Do not turn the session mouse back on for mc.
 
 disable_tmux_mouse() {
   local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
@@ -63,11 +59,11 @@ debounced_winch() {
 
 chmod +x "$ROOT/scripts/mc-add-to-chat.sh" 2>/dev/null || true
 install_user_menu
-enable_tmux_mouse
+disable_tmux_mouse
 trap 'disable_tmux_mouse' EXIT
 trap debounced_winch WINCH
 
 # Hint on first paint (mc clears screen after).
 export GOTCHIBOT_MC=1
-# Mouse on (default); do not pass --nomouse.
-exec mc .
+# No mouse. Keyboard still drives mc.
+exec mc --nomouse .

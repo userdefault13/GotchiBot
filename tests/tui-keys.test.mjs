@@ -83,10 +83,18 @@ describe("orchestrator-layout.sh — avatar page keys", () => {
     assert.match(fn[0], /send-keys M-\./);
   });
 
-  it("gates mouse on behind TUI_MOUSE", () => {
+  it("turns tmux mouse off and does not bind the wheel", () => {
     const src = read(layout);
-    assert.match(src, /if \[ "\$\{TUI_MOUSE\}" = "on" \]/);
     assert.match(src, /gotchibot_term_caps/);
+    assert.match(src, /tmux set-option -t "\$sess" mouse off/);
+    assert.doesNotMatch(src, /mouse on/);
+    assert.doesNotMatch(src, /tmux bind-key -n WheelUpPane/);
+    assert.doesNotMatch(src, /tmux bind-key -n WheelDownPane/);
+    assert.match(src, /unbind-key -n WheelUpPane/);
+    assert.match(src, /unbind-key -n WheelDownPane/);
+    // Keyboard roster paging stays.
+    assert.match(src, /bind-key -T prefix P/);
+    assert.match(src, /bind-key -T prefix N/);
   });
 });
 
@@ -100,20 +108,33 @@ describe("bash -n syntax", () => {
   });
 });
 
-describe("mouseEnabled gates SGR mouse enable", () => {
-  it("meet-channel.mjs", () => {
+describe("pane scripts ignore wheel", () => {
+  it("meet-channel.mjs does not enable mouse and ignores SGR 64/65", () => {
     const src = read(meetChannel);
-    assert.match(src, /import \{ mouseEnabled \} from "\.\/lib\/term-caps\.mjs"/);
-    assert.match(src, /if \(useMouse\) output\.write\("\\x1b\[\?1000h\\x1b\[\?1006h"\)/);
-    assert.match(src, /const useMouse = mouseEnabled\(\)/);
+    assert.match(src, /const useMouse = false/);
+    assert.doesNotMatch(src, /\?1000h/);
+    assert.match(src, /btn === 64 \|\| btn === 65/);
+    assert.match(src, /key === "j"|ch === "j"/);
+    assert.match(src, /ch === "k"/);
   });
 
-  it("meet-room-prompter.mjs", () => {
+  it("meet-room-prompter.mjs does not enable mouse", () => {
     const src = read(meetPrompter);
-    assert.match(src, /import \{ mouseEnabled \} from "\.\/lib\/term-caps\.mjs"/);
-    assert.match(
-      src,
-      /if \(mouseEnabled\(\)\) stdout\.write\("\\x1b\[\?1000h\\x1b\[\?1006h"\)/,
-    );
+    assert.doesNotMatch(src, /\?1000h/);
+    assert.match(src, /btn === 64 \|\| btn === 65/);
+    assert.match(src, /chunk === "h"/);
+  });
+
+  it("factory and dossier panes do not repaint on wheel", () => {
+    const factory = read(path.join(root, "scripts/factory-window.mjs"));
+    const dossier = read(path.join(root, "scripts/pstack-window.mjs"));
+    assert.doesNotMatch(factory, /\?1000h/);
+    assert.doesNotMatch(dossier, /\?1000h/);
+    assert.doesNotMatch(dossier, /handleWheel/);
+    assert.match(factory, /btn === 64 \|\| btn === 65\) continue/);
+    assert.match(factory, /key\.name === "j"/);
+    assert.match(factory, /key\.name === "k"/);
+    assert.match(dossier, /key\.name === "j"/);
+    assert.match(dossier, /key\.name === "up"/);
   });
 });

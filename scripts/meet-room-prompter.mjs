@@ -1337,9 +1337,9 @@ function setup() {
     );
     process.exit(1);
   }
-  // Alt screen, no wrap; mouse click (SGR + X10) for pager prev/next when mouse on.
+  // Alt screen, no wrap. Mouse tracking stays off so wheel cannot flood the pane.
+  // Keyboard , [ h and . ] l still page when the prompt is empty.
   stdout.write("\x1b[?1049h\x1b[?7l\x1b[?25h");
-  if (mouseEnabled()) stdout.write("\x1b[?1000h\x1b[?1006h");
   try {
     stdin.setRawMode(true);
   } catch (e) {
@@ -1379,6 +1379,7 @@ function handleKey(chunk) {
         const x = Number(m[2]);
         const y = Number(m[3]);
         const release = m[4] === "m";
+        if (btn === 64 || btn === 65 || btn === 4 || btn === 5) return "noop";
         if (!release && (btn === 0 || btn === 32)) {
           if (applyPagerClick(x, y)) return "redraw";
         }
@@ -1393,6 +1394,7 @@ function handleKey(chunk) {
       const x = escBuf.charCodeAt(4) - 32;
       const y = escBuf.charCodeAt(5) - 32;
       escBuf = "";
+      if (b === 64 || b === 65) return "noop";
       if ((b & 3) === 0 && applyPagerClick(x, y)) return "redraw";
       return "noop";
     }
