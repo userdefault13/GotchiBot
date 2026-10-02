@@ -59,7 +59,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot project-kanban …            sealed project + desk mini task boards
   gotchibot project-tickets …           agent request/claim/submit tickets (PKM owns lifecycle)
   gotchibot project-mailbox …           per-desk local mailboxes (inbox+sent) under project AgentMail
-  gotchibot inbox send|list|read|archive|digest|unread|tui   internal bot mail (not AgentMail)
+  gotchibot inbox send|list|read|archive|housekeep|digest|unread|tui   internal bot mail (not AgentMail)
   gotchibot graph …                 graph-state init|get|set|next|stop|list (sessions/graph)
   gotchibot jev ask|smoke|models    TypeSafe Jev System One decisions (not chat)
   gotchibot meet start|open|room [--inline]|invite|status|say|morning|colabo|end   persistent room (/meet); --inline = single terminal (no tmux)

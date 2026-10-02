@@ -20,6 +20,7 @@ Internal async mail. **Not** AgentMail. **Not** passoff. **Not** meet.
 ./scripts/gotchibot inbox list --to userdefault --unread
 ./scripts/gotchibot inbox read <id>
 ./scripts/gotchibot inbox archive <id>
+./scripts/gotchibot inbox housekeep          # archive read mail + stale sub/pkm notices
 ./scripts/gotchibot inbox digest
 ```
 

@@ -18,6 +18,7 @@
  *   node scripts/bot-inbox.mjs list [--to userdefault] [--unread] [--kind alert] [--json]
  *   node scripts/bot-inbox.mjs read <id>
  *   node scripts/bot-inbox.mjs archive <id>
+ *   node scripts/bot-inbox.mjs housekeep [--json]
  *   node scripts/bot-inbox.mjs digest [--json]   # unread counts by to + kind
  *   node scripts/bot-inbox.mjs unread [--to userdefault]
  */
@@ -25,6 +26,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -37,10 +39,13 @@ import {
   requireProjectSlug,
 } from "./project-context.mjs";
 import { orchestratorId } from "./openclaw-fleet.mjs";
+import { writeJsonAtomic } from "./json-store.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const INBOX_KINDS = ["fyi", "report", "ask", "alert"];
+/** Unread fyi/report notices older than this may be archived when the subject matches. */
+export const HOUSEKEEP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const USER_ALIASES = new Set([
   "userdefault",
   "user",
@@ -272,6 +277,149 @@ export function archiveMessage(id) {
   return found.msg;
 }
 
+function isUserDefaultAddress(to) {
+  const low = String(to || "")
+    .trim()
+    .replace(/^@/, "")
+    .toLowerCase();
+  return USER_ALIASES.has(low);
+}
+
+/** sub <id> finished|failed, or a pkm:delegated note. */
+export function isHousekeepSubject(subject) {
+  const s = String(subject || "").trim();
+  return (
+    /^sub\s+\S+\s+(?:finished|failed)\b/i.test(s) || /^pkm:delegated\b/i.test(s)
+  );
+}
+
+/**
+ * Already-read mail is archived, except anything addressed to userdefault.
+ * Unread ask and alert stay unread. Other unread mail is archived only when
+ * it is an fyi or report older than 7 days and the subject is a sub-finished /
+ * sub-failed report or a pkm:delegated note.
+ */
+export function shouldHousekeep(msg, now = Date.now(), maxAgeMs = HOUSEKEEP_MAX_AGE_MS) {
+  if (!msg || typeof msg !== "object") return false;
+  if (isUserDefaultAddress(msg.to)) return false;
+  if (msg.readAt) return true;
+  const kind = String(msg.kind || "").toLowerCase();
+  if (kind === "ask" || kind === "alert") return false;
+  if (kind !== "fyi" && kind !== "report") return false;
+  if (!isHousekeepSubject(msg.subject)) return false;
+  const ts = Date.parse(msg.ts || "");
+  if (!Number.isFinite(ts)) return false;
+  return now - ts > maxAgeMs;
+}
+
+/**
+ * Decide what leaves the inbox. Does not touch disk. Copies moved messages
+ * so the caller's objects stay as they were.
+ */
+export function housekeepMessages(inboxMessages, archiveMessages = [], {
+  now = Date.now(),
+  maxAgeMs = HOUSEKEEP_MAX_AGE_MS,
+} = {}) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
+  if (!Number.isFinite(nowMs)) throw new Error("housekeep now must be a time");
+  const stay = [];
+  const move = [];
+  for (const msg of inboxMessages || []) {
+    if (shouldHousekeep(msg, nowMs, maxAgeMs)) move.push(msg);
+    else stay.push(msg);
+  }
+  const stamp = new Date(nowMs).toISOString();
+  const archiveNext = [...(archiveMessages || [])];
+  const archivedIds = new Set(archiveNext.map((m) => m && m.id).filter(Boolean));
+  for (const msg of move) {
+    const copy = { ...msg, archivedAt: stamp };
+    if (!copy.readAt) copy.readAt = stamp;
+    if (copy.id && archivedIds.has(copy.id)) continue;
+    archiveNext.push(copy);
+    if (copy.id) archivedIds.add(copy.id);
+  }
+  return {
+    inbox: stay,
+    archive: archiveNext,
+    archived: move.length,
+    kept: stay.length,
+    stillUnread: stay.filter((m) => !m.readAt).length,
+    stamp,
+  };
+}
+
+function readBoxFile(path, kind) {
+  if (!existsSync(path)) {
+    return { box: emptyBox({ project: null, kind }), missing: true, ok: true };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray(parsed.messages)) {
+      return { box: null, missing: false, ok: false };
+    }
+    return { box: parsed, missing: false, ok: true };
+  } catch {
+    return { box: null, missing: false, ok: false };
+  }
+}
+
+/**
+ * Move housekeeping candidates from `<root>/inbox.json` into `<root>/archive.json`.
+ * `root` is required — this never resolves the live project inbox on its own.
+ * Unreadable files are left untouched.
+ */
+export function housekeepInbox(root, opts = {}) {
+  if (!root) throw new Error("housekeep root required");
+  const dir = resolve(String(root));
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+    throw new Error("housekeep root must be an existing directory");
+  }
+  const inboxPath = join(dir, "inbox.json");
+  const archivePath = join(dir, "archive.json");
+  const inboxRead = readBoxFile(inboxPath, "inbox");
+  if (inboxRead.missing) {
+    return { archived: 0, kept: 0, stillUnread: 0 };
+  }
+  if (!inboxRead.ok) {
+    throw new Error("housekeep: inbox.json is unreadable — not touching it");
+  }
+  const archiveRead = readBoxFile(archivePath, "archive");
+  if (!archiveRead.ok) {
+    throw new Error("housekeep: archive.json is unreadable — not touching it");
+  }
+
+  const result = housekeepMessages(inboxRead.box.messages, archiveRead.box.messages, opts);
+  if (result.archived === 0) {
+    return { archived: 0, kept: result.kept, stillUnread: result.stillUnread };
+  }
+
+  const nextInbox = {
+    ...inboxRead.box,
+    kind: "inbox",
+    messages: result.inbox,
+    updatedAt: result.stamp,
+  };
+  const nextArchive = {
+    ...archiveRead.box,
+    kind: "archive",
+    project: archiveRead.box.project || inboxRead.box.project || null,
+    messages: result.archive,
+    updatedAt: result.stamp,
+  };
+  const archiveGrew = result.archive.length !== (archiveRead.box.messages || []).length;
+  if (archiveGrew && !writeJsonAtomic(archivePath, nextArchive)) {
+    throw new Error("housekeep: could not write archive.json — inbox left as it was");
+  }
+  if (!writeJsonAtomic(inboxPath, nextInbox)) {
+    throw new Error("housekeep: could not write inbox.json — re-run housekeep");
+  }
+  return { archived: result.archived, kept: result.kept, stillUnread: result.stillUnread };
+}
+
+export function formatHousekeep(result) {
+  return `archived ${result.archived}  kept ${result.kept}  still unread ${result.stillUnread}`;
+}
+
 export function digest() {
   const msgs = loadBox("inbox").messages || [];
   const byTo = {};
@@ -312,6 +460,7 @@ function usage() {
   bot-inbox.mjs list [--to <addr>] [--unread] [--kind <k>] [--json]
   bot-inbox.mjs read <id>
   bot-inbox.mjs archive <id>
+  bot-inbox.mjs housekeep [--json]
   bot-inbox.mjs digest [--json]
   bot-inbox.mjs unread [--to userdefault]
   bot-inbox.mjs tui                  # iMessage layout: agents | thread (cockpit / tty)
@@ -388,6 +537,13 @@ async function main() {
     const msg = archiveMessage(id);
     if (json) console.log(JSON.stringify(msg, null, 2));
     else console.log(`archived ${msg.id}`);
+    return;
+  }
+
+  if (cmd === "housekeep") {
+    const result = housekeepInbox(inboxPaths().root);
+    if (json) console.log(JSON.stringify(result, null, 2));
+    else console.log(formatHousekeep(result));
     return;
   }
 
