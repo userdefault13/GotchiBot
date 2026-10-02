@@ -10,22 +10,28 @@ desk_label_mtime() {
   fi
 }
 
+# One column of pad on each side of the glyph. The collapsed bar is 3 wide.
+desk_label_glyph() {
+  local color="$1" ch="$2"
+  printf '\033[38;5;%sm %s \033[0m\n' "$color" "$ch"
+}
+
 desk_label_render() {
   local word="$1" line="$2" i ch
   clear 2>/dev/null || printf '\033[2J\033[H'
-  printf '\033[38;5;245m›\033[0m\n'
+  desk_label_glyph 245 "›"
   for ((i = 0; i < ${#word}; i++)); do
     ch="${word:i:1}"
-    printf '\033[38;5;39m%s\033[0m\n' "$ch"
+    desk_label_glyph 39 "$ch"
   done
   [ -n "$line" ] || return 0
-  printf '\033[38;5;240m·\033[0m\n'
+  desk_label_glyph 240 "·"
   line="${line:0:28}"
   for ((i = 0; i < ${#line}; i++)); do
     ch="${line:i:1}"
     case "$ch" in
-      " ") printf '\n' ;;
-      *) printf '\033[38;5;245m%s\033[0m\n' "$ch" ;;
+      " ") printf '   \n' ;;
+      *) desk_label_glyph 245 "$ch" ;;
     esac
   done
 }

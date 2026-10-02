@@ -12,14 +12,14 @@ sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
 sess_name="${sess_name#=}"
 sess="$sess_name"
 min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-47}"
-# 44 at a 147-col desk (8 panes, 7 separators, content 140). Files bar stays 3. When chat, factory, dossier, inbox, or meet is focused the five label bars drop from 3 to 1 (one column draws the glyph; the other two were slack), so chrome = 3+5 = 8 and the focused pane = 140-8-44 = 88. Cockpit keeps the older 3-column labels (78). Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
+# Desk canvas is 163 columns by 46 rows (was 147 by 40: +16 columns, +6 rows). 8 panes, 7 separators, content 156 at 163 (140 at 147). Avatar stays 44. Files bar stays 3. Collapsed label bars stay 3: one space, the glyph, one space (they are not shrunk to 1). Chrome = 3+15 = 18, so a focused chat/factory/dossier/inbox/meet pane is 140-18-44 = 78 at 147 and 156-18-44 = 94 at 163. The extra 16 columns land on that focused pane (78 at the old width, 94 at the new). Cockpit focus is the same chrome, so 78 at 147 and 94 at 163. Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra avatar column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
 min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-44}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
 chat_collapsed="${GOTCHIBOT_CHAT_COLLAPSED:-3}"
 min_center="${GOTCHIBOT_TMUX_CENTER_WIDTH:-50}"
-win_w_default="${GOTCHIBOT_WINDOW_WIDTH:-131}"
-win_h_default="${GOTCHIBOT_WINDOW_HEIGHT:-40}"
+win_w_default="${GOTCHIBOT_WINDOW_WIDTH:-163}"
+win_h_default="${GOTCHIBOT_WINDOW_HEIGHT:-46}"
 resize_hook="$ROOT/scripts/orchestrator-resize.sh"
 status_bar="$ROOT/scripts/session-status-bar.sh"
 LAYOUT_FILE="$ROOT/sessions/.tmux-layout"
@@ -1027,49 +1027,14 @@ focus_pane_widths() {
   w6="$label_w_inbox"
   w7="$label_w_meet"
   case "$focus" in
-    chat)
-      w3=0
-      # Each of these bars draws one glyph. The other two columns were slack.
-      # 5*2=10, all of it goes to the focused pane. Files stays 3. Avatar is not a donor.
-      w2=1
-      w4=1
-      w5=1
-      w6=1
-      w7=1
-      ;;
-    # Same width as chat: the other five labels are 1-column glyph bars.
-    factory)
-      w4=0
-      w2=1
-      w3=1
-      w5=1
-      w6=1
-      w7=1
-      ;;
-    pstack|dossier)
-      w5=0
-      w2=1
-      w3=1
-      w4=1
-      w6=1
-      w7=1
-      ;;
-    inbox)
-      w6=0
-      w2=1
-      w3=1
-      w4=1
-      w5=1
-      w7=1
-      ;;
-    meet)
-      w7=0
-      w2=1
-      w3=1
-      w4=1
-      w5=1
-      w6=1
-      ;;
+    # Collapsed label bars stay at label_w (3): one space, the glyph, one space.
+    # Do not shrink them to 1. Files stays 3. Avatar is not a donor.
+    # The window's extra columns (163 vs 147) all go to the focused pane.
+    chat) w3=0 ;;
+    factory) w4=0 ;;
+    pstack|dossier) w5=0 ;;
+    inbox) w6=0 ;;
+    meet) w7=0 ;;
     cockpit) w2=0 ;;
     *) w3=0 ;;
   esac
@@ -1111,7 +1076,7 @@ apply_focus_sizes() {
   client_w="$(tmux display -p -t "$sess" '#{client_width}' 2>/dev/null || true)"
   client_w="${client_w:-0}"
   win="$(window_width)"
-  # Use the whole terminal. The old 131-column window clipped the new labels.
+  # Use the whole terminal. The desk canvas is 163 columns; a narrower client clips the row.
   if [ "$client_w" -gt "$win" ]; then
     tmux resize-window -t "$sess:work" -x "$client_w" 2>/dev/null || true
     win="$client_w"

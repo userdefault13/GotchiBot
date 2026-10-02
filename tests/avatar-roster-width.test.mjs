@@ -1,6 +1,8 @@
 /**
- * Avatar pane is 44 at a 147-column desk. One column is a left pad.
- * Chat focus is 88: five label bars shrink 3 → 1. Sprites stay 12 columns; names may clip.
+ * Avatar pane is 44 at a 147-column desk and at 163 (147+16). One column is a left pad.
+ * Collapsed label bars are 3: one space, the glyph, one space. They are not shrunk to 1.
+ * Focused chat/factory/dossier/inbox/meet is 78 at 147 (was 88 when bars were 1) and 94 at 163.
+ * Desk rows recorded by the layout are 46 (was 40).
  *   node --test tests/avatar-roster-width.test.mjs
  * Does not start tmux.
  */
@@ -31,14 +33,16 @@ describe("avatar roster width", () => {
     const windowW = 147;
     const separators = 8 - 1;
     const filesBar = 3;
-    // Chat focus: five label bars give up 2 columns of glyph slack each (3 → 1).
-    const labelBars = 5 * 1;
+    // Collapsed label bars are pad + glyph + pad, not a 1-column glyph.
+    const labelBars = 5 * 3;
     const chrome = filesBar + labelBars;
     const content = windowW - separators;
     const pad = 1;
     const cellW = Math.floor((avatar - pad - 4) / 3);
     const row = cellW * 3 + 4;
     const chat = content - chrome - avatar;
+    const wide = 163;
+    const chatWide = (wide - separators) - chrome - avatar;
 
     assert.equal(avatar, 44);
     assert.equal(cellW, 13);
@@ -46,7 +50,9 @@ describe("avatar roster width", () => {
     assert.equal(row, 43);
     assert.equal(pad, 1);
     assert.ok(pad + row <= avatar, `pad+row ${pad + row} <= avatar ${avatar}`);
-    assert.equal(chat, 88);
+    assert.equal(chat, 78);
+    assert.equal(chatWide, 94);
+    assert.ok(chatWide > chat, "the extra 16 columns widen chat");
     assert.ok(chat > 57, `chat ${chat} still > 57`);
 
     const labels = [
@@ -106,66 +112,103 @@ describe("avatar roster width", () => {
     assert.notEqual(spriteCol, 0);
   });
 
-  it("gives chat 10 columns from the five label bars at 147", () => {
-    const out = execFileSync("bash", ["scripts/orchestrator-layout.sh", "sizes", "147", "chat"], {
+  function sizes(width, focus) {
+    const out = execFileSync("bash", ["scripts/orchestrator-layout.sh", "sizes", String(width), focus], {
       cwd: root,
       encoding: "utf8",
       env: { ...process.env, TMUX: "", TMUX_PANE: "", TERM: "xterm-256color" },
     }).trim();
-    const got = Object.fromEntries(out.split(/\s+/).map((part) => part.split("=")));
+    return Object.fromEntries(out.split(/\s+/).map((part) => part.split("=")));
+  }
+
+  it("pads collapsed labels and keeps chat at 78 on the previous 147-wide desk", () => {
+    const got = sizes(147, "chat");
     assert.equal(got.files, "3");
     assert.equal(got.avatar, "44");
-    assert.equal(got.cockpit, "1");
-    assert.equal(got.chat, "88");
-    assert.equal(got.factory, "1");
-    assert.equal(got.dossier, "1");
-    assert.equal(got.inbox, "1");
-    assert.equal(got.meet, "1");
+    assert.equal(got.cockpit, "3");
+    assert.equal(got.chat, "78");
+    assert.equal(got.factory, "3");
+    assert.equal(got.dossier, "3");
+    assert.equal(got.inbox, "3");
+    assert.equal(got.meet, "3");
     assert.equal(got.sum, "140");
     const widths = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet"].map((k) => Number(got[k]));
     assert.equal(widths.reduce((n, w) => n + w, 0) + 7, 147);
 
-    const cockpit = execFileSync("bash", ["scripts/orchestrator-layout.sh", "sizes", "147", "cockpit"], {
-      cwd: root,
-      encoding: "utf8",
-      env: { ...process.env, TMUX: "", TMUX_PANE: "", TERM: "xterm-256color" },
-    }).trim();
-    const other = Object.fromEntries(cockpit.split(/\s+/).map((part) => part.split("=")));
-    assert.equal(other.avatar, "44");
-    assert.equal(other.chat, "3");
-    assert.equal(other.cockpit, "78");
-    assert.equal(other.factory, "3");
-    assert.equal(other.sum, "140");
+    const cockpit = sizes(147, "cockpit");
+    assert.equal(cockpit.avatar, "44");
+    assert.equal(cockpit.chat, "3");
+    assert.equal(cockpit.cockpit, "78");
+    assert.equal(cockpit.factory, "3");
+    assert.equal(cockpit.sum, "140");
   });
 
-  it("gives factory, dossier, inbox, and meet the chat width at 147", () => {
-    const env = { ...process.env, TMUX: "", TMUX_PANE: "", TERM: "xterm-256color" };
-    function sizes(focus) {
-      const out = execFileSync("bash", ["scripts/orchestrator-layout.sh", "sizes", "147", focus], {
-        cwd: root,
-        encoding: "utf8",
-        env,
-      }).trim();
-      return Object.fromEntries(out.split(/\s+/).map((part) => part.split("=")));
-    }
+  it("gives the extra 16 columns to chat, factory, dossier, inbox, and meet at 163", () => {
+    const chat = sizes(163, "chat");
+    assert.equal(chat.files, "3");
+    assert.equal(chat.avatar, "44");
+    assert.equal(chat.cockpit, "3");
+    assert.equal(chat.chat, "94");
+    assert.equal(chat.factory, "3");
+    assert.equal(chat.dossier, "3");
+    assert.equal(chat.inbox, "3");
+    assert.equal(chat.meet, "3");
+    assert.equal(chat.sum, "156");
+    const widths = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet"].map((k) => Number(chat[k]));
+    assert.equal(widths.reduce((n, w) => n + w, 0) + 7, 163);
+
     const focused = { factory: "factory", dossier: "dossier", inbox: "inbox", meet: "meet" };
     for (const [pane, focus] of Object.entries(focused)) {
-      const got = sizes(focus);
+      const got = sizes(163, focus);
       assert.equal(got.files, "3", focus);
       assert.equal(got.avatar, "44", focus);
-      assert.equal(got[pane], "88", focus);
-      assert.equal(got.sum, "140", focus);
+      assert.equal(got[pane], "94", focus);
+      assert.equal(got.sum, "156", focus);
       for (const other of ["cockpit", "chat", "factory", "dossier", "inbox", "meet"]) {
         if (other === pane) continue;
-        assert.equal(got[other], "1", `${focus} ${other}`);
+        assert.equal(got[other], "3", `${focus} ${other}`);
       }
-      const widths = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet"].map((k) => Number(got[k]));
-      assert.equal(widths.reduce((n, w) => n + w, 0) + 7, 147, focus);
+      const row = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet"].map((k) => Number(got[k]));
+      assert.equal(row.reduce((n, w) => n + w, 0) + 7, 163, focus);
     }
-    // pstack is the layout name for the dossier pane.
-    const pstack = sizes("pstack");
-    assert.equal(pstack.dossier, "88");
-    assert.equal(pstack.chat, "1");
+    const at147 = sizes(147, "chat");
+    assert.equal(Number(chat.chat) - Number(at147.chat), 16);
+    const pstack = sizes(163, "pstack");
+    assert.equal(pstack.dossier, "94");
+    assert.equal(pstack.chat, "3");
     assert.equal(pstack.avatar, "44");
+    const cockpit = sizes(163, "cockpit");
+    assert.equal(cockpit.cockpit, "94");
+    assert.equal(cockpit.chat, "3");
+    assert.equal(cockpit.avatar, "44");
+  });
+
+  it("draws collapsed label text with one space on each side", () => {
+    const src = read(path.join(root, "scripts/lib/desk-label.sh"));
+    assert.match(src, /desk_label_glyph\(\)/);
+    assert.match(src, /printf '\\033\[38;5;%sm %s \\033\[0m\\n'/);
+    const out = execFileSync(
+      "bash",
+      [
+        "-c",
+        "source scripts/lib/desk-label.sh; clear() { :; }; desk_label_render Ab ''",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    const visible = out
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => line.replace(/\u001b\[[0-9;]*m/g, ""));
+    assert.deepEqual(visible, [" › ", " A ", " b "]);
+  });
+
+  it("records a desk canvas of 163 columns and 46 rows", () => {
+    const src = read(layout);
+    assert.match(src, /GOTCHIBOT_WINDOW_WIDTH:-163/);
+    assert.match(src, /GOTCHIBOT_WINDOW_HEIGHT:-46/);
+    const boot = read(path.join(root, "scripts/gotchibot"));
+    assert.match(boot, /GOTCHIBOT_WINDOW_WIDTH:-163/);
+    assert.match(boot, /GOTCHIBOT_WINDOW_HEIGHT:-46/);
+    assert.doesNotMatch(src, /mouse on/);
   });
 });

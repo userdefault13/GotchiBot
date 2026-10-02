@@ -283,7 +283,7 @@ maybe_update_check() {
 fit_terminal_window() {
   [ "${GOTCHIBOT_RESIZE_WINDOW:-1}" = 0 ] && return 0
   [ -n "${SSH_CONNECTION:-}${TMUX:-}" ] && return 0
-  local want_c="${GOTCHIBOT_WINDOW_WIDTH:-131}" want_r="${GOTCHIBOT_WINDOW_HEIGHT:-40}"
+  local want_c="${GOTCHIBOT_WINDOW_WIDTH:-163}" want_r="${GOTCHIBOT_WINDOW_HEIGHT:-46}"
   local cols rows
   cols="$(tput cols 2>/dev/null || echo 0)"
   rows="$(tput lines 2>/dev/null || echo 0)"
