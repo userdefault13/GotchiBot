@@ -73,7 +73,7 @@ layout_safe_reexec() {
 
 require_three_panes() {
   tmux resize-pane -Z -t "$sess:work" 2>/dev/null || true
-  # Extra panes (cockpit, factory, pstack, meet) are permanent. Rebuilding
+  # Extra panes (cockpit, factory, pstack, inbox, meet) are permanent. Rebuilding
   # here used to kill them whenever the count was not exactly 3.
   if [ "$(pane_count)" -ge 3 ] && [[ "$(pane_start_cmd 0)" == *sidebar-pane* || "$(pane_start_cmd 0)" == *mc-pane* ]]; then
     return 0
@@ -124,10 +124,11 @@ pane_has_chat() {
     }'
 }
 
-# Screen order: files, avatar, cockpit, chat, factory, dossier, meeting.
+# Screen order: files, avatar, cockpit, chat, factory, dossier, inbox, meeting.
 chat_pane_index() {
-  local i cmd
-  for i in 0 1 2 3 4 5 6; do
+  local i cmd n
+  n="${DESK_PANE_COUNT:-8}"
+  for ((i = 0; i < n; i++)); do
     cmd="$(pane_start_cmd "$i")"
     if [[ "$cmd" == *chat-pane* || "$cmd" == *chat-bar-pane* ]]; then
       echo "$i"
@@ -191,7 +192,8 @@ layout_correct() {
   local c0 c1 c2
   c0="$(pane_start_cmd 0)"
   [[ "$c0" == *sidebar-pane* || "$c0" == *mc-pane* ]] || return 1
-  # files · avatar · cockpit · chat · factory · dossier · meeting
+  # files · avatar · cockpit · chat · factory · dossier · inbox · meeting
+  # 7 still counts: ensure_app_panes grows an older desk to DESK_PANE_COUNT.
   if [ "$(pane_count)" -ge 7 ]; then
     pane_is_kind "$(pane_start_cmd 1)" avatar && pane_is_kind "$(pane_start_cmd 3)" chat
     return
@@ -419,6 +421,9 @@ install_avatar_page_keys() {
   # Factory pane from any pane: Ctrl+Space then Shift+F (again to go back to the cockpit).
   local rfa="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-factory"
   tmux bind-key -T prefix F if-shell -F "$sess_if" "run-shell -b \"$rfa\"" 2>/dev/null || true
+  # Inbox pane from any pane: Ctrl+Space then Shift+I (again returns to chat).
+  local rin="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-inbox"
+  tmux bind-key -T prefix I if-shell -F "$sess_if" "run-shell -b \"$rin\"" 2>/dev/null || true
 }
 
 start_pane_commands() {
@@ -501,7 +506,7 @@ pane_count() {
 }
 
 # Drop only overflow tiles past the reserved desk panes.
-# 0 files, 1 chat, 2 avatar, 3 cockpit, 4 factory, 5 pstack, 6 meet, 7 # meet.
+# 0 files, 1 avatar, 2 cockpit, 3 chat, 4 factory, 5 dossier, 6 inbox, 7 meet.
 collapse_to_three_panes() {
   local count
   count="$(pane_count)"
@@ -863,9 +868,9 @@ leave_pstack_orch() {
 }
 
 # On screen, left to right. Indexes match that order after arrange_visual_order.
-# files · avatar · cockpit · chat · factory · dossier · meeting
-# Avatar stays open. One of cockpit/chat/factory/dossier/meeting is the wide pane.
-DESK_PANE_COUNT=7
+# files · avatar · cockpit · chat · factory · dossier · inbox · meeting
+# Avatar stays open. One of cockpit/chat/factory/dossier/inbox/meeting is the wide pane.
+DESK_PANE_COUNT=8
 
 focus_index() {
   case "$1" in
@@ -873,7 +878,8 @@ focus_index() {
     cockpit) echo 2 ;;
     factory) echo 4 ;;
     pstack) echo 5 ;;
-    meet) echo 6 ;;
+    inbox) echo 6 ;;
+    meet) echo 7 ;;
     *) echo 3 ;;
   esac
 }
@@ -887,6 +893,7 @@ pane_is_kind() {
     chat) [[ "$cmd" == *chat-pane* || "$cmd" == *chat-bar-pane* ]] ;;
     factory) [[ "$cmd" == *factory-window* || "$cmd" == *"label-bar-pane.sh Factory"* ]] ;;
     dossier) [[ "$cmd" == *pstack-window* || "$cmd" == *"label-bar-pane.sh Dossier"* ]] ;;
+    inbox) [[ "$cmd" == *inbox-pane* || "$cmd" == *"label-bar-pane.sh Inbox"* ]] ;;
     meet) [[ "$cmd" == *meet-room* || "$cmd" == *"label-bar-pane.sh Meeting"* ]] ;;
     *) return 1 ;;
   esac
@@ -894,13 +901,13 @@ pane_is_kind() {
 
 # tmux apply widths in pane-index order, so the indexes have to be the screen order.
 arrange_visual_order() {
-  local -a kinds=(files avatar cockpit chat factory dossier meet)
-  local i j kind
-  for i in 0 1 2 3 4 5 6; do
+  local -a kinds=(files avatar cockpit chat factory dossier inbox meet)
+  local i j kind last
+  last=$((DESK_PANE_COUNT - 1))
+  for ((i = 0; i <= last; i++)); do
     kind="${kinds[$i]}"
     pane_is_kind "$(pane_start_cmd "$i")" "$kind" && continue
-    for j in 1 2 3 4 5 6; do
-      [ "$j" -le "$i" ] && continue
+    for ((j = i + 1; j <= last; j++)); do
       if pane_is_kind "$(pane_start_cmd "$j")" "$kind"; then
         tmux swap-pane -d -s "$sess:work.$i" -t "$sess:work.$j" 2>/dev/null || true
         break
@@ -992,6 +999,7 @@ apply_focus_layout() {
 label_w_cockpit=3
 label_w_factory=3
 label_w_dossier=3
+label_w_inbox=3
 label_w_meet=3
 
 place_focus_apps() {
@@ -1015,17 +1023,22 @@ place_focus_apps() {
   else
     respawn_unless 5 "label-bar-pane.sh Dossier" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Dossier"
   fi
-  if [ "$focus" = "meet" ]; then
-    respawn_unless 6 meet-room-pane "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh"
+  if [ "$focus" = "inbox" ]; then
+    respawn_unless 6 inbox-pane "cd \"$ROOT\" && exec ./scripts/inbox-pane.sh"
   else
-    respawn_unless 6 "label-bar-pane.sh Meeting" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Meeting"
+    respawn_unless 6 "label-bar-pane.sh Inbox" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Inbox"
+  fi
+  if [ "$focus" = "meet" ]; then
+    respawn_unless 7 meet-room-pane "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh"
+  else
+    respawn_unless 7 "label-bar-pane.sh Meeting" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Meeting"
   fi
 }
 
 apply_focus_sizes() {
   local focus="$1"
   local win bar sep content client_w
-  local w0 w1 w2 w3 w4 w5 w6 used budget
+  local w0 w1 w2 w3 w4 w5 w6 w7 used budget
   local name cur progressed guard
   client_w="$(tmux display -p -t "$sess" '#{client_width}' 2>/dev/null || true)"
   client_w="${client_w:-0}"
@@ -1044,23 +1057,25 @@ apply_focus_sizes() {
   w3="$bar"
   w4="$label_w_factory"
   w5="$label_w_dossier"
-  w6="$label_w_meet"
+  w6="$label_w_inbox"
+  w7="$label_w_meet"
   case "$focus" in
     chat) w3=0 ;;
     cockpit) w2=0 ;;
     factory) w4=0 ;;
     pstack) w5=0 ;;
-    meet) w6=0 ;;
+    inbox) w6=0 ;;
+    meet) w7=0 ;;
     *) w3=0 ;;
   esac
-  used=$((w0 + w1 + w2 + w3 + w4 + w5 + w6))
+  used=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7))
   budget=$((content - used))
   # Avatar stays open. If the terminal is tight, shrink the label panes first.
   guard=0
   while [ "$budget" -lt 36 ] && [ "$guard" -lt 40 ]; do
     guard=$((guard + 1))
     progressed=0
-    for name in w6 w5 w4 w3 w2; do
+    for name in w7 w6 w5 w4 w3 w2; do
       cur="${!name}"
       if [ "$cur" -gt "$bar" ]; then
         printf -v "$name" '%s' "$((cur - 1))"
@@ -1077,10 +1092,11 @@ apply_focus_sizes() {
     cockpit) w2="$budget" ;;
     factory) w4="$budget" ;;
     pstack) w5="$budget" ;;
-    meet) w6="$budget" ;;
+    inbox) w6="$budget" ;;
+    meet) w7="$budget" ;;
     *) w3="$budget" ;;
   esac
-  apply_focus_layout "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" || true
+  apply_focus_layout "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" || true
 }
 
 label_desk_panes() {
@@ -1097,6 +1113,7 @@ pane_kind_of() {
   if pane_is_kind "$cmd" chat; then echo chat; return; fi
   if pane_is_kind "$cmd" factory; then echo factory; return; fi
   if pane_is_kind "$cmd" dossier; then echo dossier; return; fi
+  if pane_is_kind "$cmd" inbox; then echo inbox; return; fi
   if pane_is_kind "$cmd" meet; then echo meet; return; fi
   echo other
 }
@@ -1129,6 +1146,7 @@ pane_step() {
     chat) focus_desk chat ;;
     factory) focus_desk factory ;;
     dossier) focus_desk pstack ;;
+    inbox) focus_desk inbox ;;
     meet) focus_desk meet ;;
   esac
 }
@@ -1814,6 +1832,19 @@ case "$cmd" in
   enter-cockpit|boot-cockpit)
     boot_cockpit_desk
     ;;
+  enter-inbox|inbox)
+    focus_desk inbox
+    ;;
+  toggle-inbox)
+    if [ "$(layout_mode)" = "inbox" ]; then
+      focus_desk chat
+    else
+      focus_desk inbox
+    fi
+    ;;
+  leave-inbox)
+    focus_desk chat
+    ;;
   pane-left)
     pane_step left
     ;;
@@ -1848,7 +1879,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|enter-factory [tree|factory|hub|infra]|toggle-factory|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|require-three|fit|install-mouse]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|enter-factory [tree|factory|hub|infra]|toggle-factory|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|enter-inbox|toggle-inbox|leave-inbox|require-three|fit|install-mouse]" >&2
     exit 2
     ;;
 esac

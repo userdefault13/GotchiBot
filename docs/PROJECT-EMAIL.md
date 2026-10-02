@@ -48,3 +48,13 @@ AgentMail inbox. Desks read their own files; they never send directly.
 
 Append is idempotent: a repeated `--agent-mail-id` in the same box is skipped.
 `project-kanban desk ensure` also ensures the mailbox for that hero.
+
+## Desk pane
+
+Read this project's `mail.json` messages from the terminal desk (same file as the binding; no second store):
+
+```bash
+./scripts/orchestrator-layout.sh enter-inbox
+```
+
+Ctrl+Space then Shift+I toggles the pane (again returns to chat). The collapsed bar is `label-bar-pane.sh Inbox`, which follows `sessions/.desk-active.line`. `j/k` selects a message, Enter opens it.

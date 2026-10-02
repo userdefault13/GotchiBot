@@ -1,0 +1,475 @@
+#!/usr/bin/env node
+/**
+ * Inbox pane — read project mail on the terminal desk.
+ *
+ * Store: sessions/pstack/<slug>/mail.json (the project mail binding).
+ * Messages are that file's `messages` array. Shape matches the dossier INBOX
+ * box: id, from, to, kind, subject, body, ts, readAt. No second mail file.
+ *
+ *   node scripts/inbox-pane.mjs watch
+ *   node scripts/inbox-pane.mjs once
+ *
+ * Keys: j/k select · enter read · esc back · q leave
+ * Open from the desk: orchestrator-layout.sh enter-inbox
+ * Collapsed: label-bar-pane.sh Inbox (desk-active line).
+ */
+import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import readline from "node:readline";
+import { stdin as input, stdout as output } from "node:process";
+import { isMainModule } from "./is-main.mjs";
+import { currentProjectSlug, mailPath } from "./project-context.mjs";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const ESC = "\x1b";
+const c = {
+  reset: `${ESC}[0m`,
+  dim: `${ESC}[38;5;245m`,
+  bold: `${ESC}[1m`,
+  yellow: `${ESC}[33m`,
+  cyan: `${ESC}[36m`,
+  orange: `${ESC}[38;5;208m`,
+  gold: `${ESC}[38;5;220m`,
+  pink: `${ESC}[38;5;213m`,
+};
+
+const SECRET_KEYS = new Set([
+  "apiKey",
+  "api_key",
+  "AGENT_MAIL_API_KEY",
+  "AGENTMAIL_API_KEY",
+  "token",
+  "secret",
+]);
+
+export function mailTsShort(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mi = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${mm}-${dd} ${hh}:${mi}`;
+}
+
+function trunc(s, n) {
+  const t = String(s || "").replace(/\s+/g, " ").trim();
+  if (!t) return "—";
+  return t.length > n ? `${t.slice(0, Math.max(0, n - 1))}…` : t;
+}
+
+function pkmKind(msg) {
+  const sub = String(msg?.subject || "");
+  const body = String(msg?.body || "");
+  const m1 = sub.match(/pkm:(delegated|submitted|reviewed)\b/i);
+  if (m1) return m1[1].toLowerCase();
+  const m2 = body.match(/\bevent:\s*(delegated|submitted|reviewed)\b/i);
+  if (m2) return m2[1].toLowerCase();
+  return null;
+}
+
+function kindColor(kind, pkm) {
+  if (pkm) return c.orange;
+  const k = String(kind || "").toLowerCase();
+  if (k === "alert") return c.orange;
+  if (k === "ask") return c.yellow;
+  if (k === "report") return c.cyan;
+  return c.dim;
+}
+
+export function normalizeMailMessage(raw, index = 0) {
+  const body = String(raw?.body ?? raw?.snippet ?? "").replace(/\r\n/g, "\n");
+  const subjectRaw = String(raw?.subject || "").trim();
+  const subject = subjectRaw || (body.trim() ? trunc(body, 80) : "(no subject)");
+  return {
+    id: String(raw?.id || `mail-${index}`),
+    from: String(raw?.from || "?"),
+    to: raw?.to ? String(raw.to) : "",
+    kind: String(raw?.kind || "fyi").toLowerCase(),
+    subject,
+    body: body.trim(),
+    ts: String(raw?.ts || raw?.createdAt || ""),
+    readAt: raw?.readAt || null,
+  };
+}
+
+/** Newest first. Does not reorder the file. */
+export function listMailMessages(doc) {
+  const raw = Array.isArray(doc?.messages) ? doc.messages : [];
+  return raw
+    .map((m, i) => normalizeMailMessage(m, i))
+    .sort((a, b) => String(b.ts || "").localeCompare(String(a.ts || "")));
+}
+
+/**
+ * Mark one message read on a copy of the mail document.
+ * Other binding fields (address, inboxId, …) stay put.
+ */
+export function markMailRead(doc, id, now = new Date().toISOString()) {
+  if (!doc || typeof doc !== "object" || !Array.isArray(doc.messages)) return null;
+  const needle = String(id || "");
+  if (!needle) return null;
+  let message = null;
+  let changed = false;
+  const messages = doc.messages.map((raw, index) => {
+    const norm = normalizeMailMessage(raw, index);
+    if (norm.id !== needle || message) return raw;
+    const readAt = raw.readAt || now;
+    message = { ...norm, readAt };
+    if (raw.readAt) return raw;
+    changed = true;
+    return { ...raw, id: norm.id, readAt: now };
+  });
+  if (!message) return null;
+  return { mail: { ...doc, messages }, message, changed };
+}
+
+export function readMailDocument(file) {
+  if (!file) return null;
+  let text;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    const j = JSON.parse(text);
+    if (!j || typeof j !== "object" || Array.isArray(j)) return { messages: [] };
+    return j;
+  } catch {
+    return { messages: [] };
+  }
+}
+
+export function writeMailDocument(file, doc) {
+  const safe = { ...doc };
+  for (const key of SECRET_KEYS) delete safe[key];
+  writeFileSync(file, `${JSON.stringify(safe, null, 2)}\n`, "utf8");
+  return safe;
+}
+
+/** Load, mark read, write back. Returns the opened message, or null. */
+export function openMailMessage(file, id, now = new Date().toISOString()) {
+  const doc = readMailDocument(file);
+  if (!doc) return null;
+  const marked = markMailRead(doc, id, now);
+  if (!marked) return null;
+  if (marked.changed) writeMailDocument(file, marked.mail);
+  return marked.message;
+}
+
+function wrapText(text, width) {
+  const w = Math.max(8, width);
+  const out = [];
+  for (const para of String(text || "").split("\n")) {
+    const words = para.split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      out.push("");
+      continue;
+    }
+    let line = "";
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (next.length > w && line) {
+        out.push(line);
+        line = word.length > w ? trunc(word, w) : word;
+      } else {
+        line = next.length > w ? trunc(next, w) : next;
+      }
+    }
+    if (line) out.push(line);
+  }
+  return out.length ? out : [""];
+}
+
+function listRow(m, cols, selected) {
+  const pkm = pkmKind(m);
+  const color = kindColor(m.kind, pkm);
+  const kindLabel = (pkm ? `pkm:${pkm}` : String(m.kind || "?")).slice(0, 12);
+  const mark = m.readAt ? " " : `${c.yellow}•${c.reset}`;
+  const caret = selected ? `${c.pink}›${c.reset}` : " ";
+  const from = trunc(m.from || "?", 12);
+  const to = m.to ? trunc(m.to, 10) : "";
+  const rawSubj = String(m.subject || "(no subject)").replace(
+    /^pkm:(delegated|submitted|reviewed)\s*[—\-]\s*/i,
+    "",
+  );
+  const when = mailTsShort(m.ts);
+  const subjW = Math.max(10, cols - 42);
+  const head =
+    `${caret}${mark}${color}${kindLabel.padEnd(12)}${c.reset} ` +
+    `${c.dim}${from}${c.reset}${to ? `${c.dim}→${to}${c.reset}` : ""} ` +
+    `${trunc(rawSubj, subjW)} ${c.dim}${when}${c.reset}`;
+  const rows = [head];
+  const preview = String(m.body || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^pkm:(delegated|submitted|reviewed)\s*[—\-]\s*/i, "");
+  if (preview) {
+    rows.push(`    ${c.dim}scope${c.reset} ${trunc(preview, Math.max(12, cols - 12))}`);
+  }
+  return rows;
+}
+
+/**
+ * Paint the list or one open message.
+ * `view` is "list" or "read".
+ */
+export function renderInboxView({
+  view = "list",
+  messages = [],
+  selected = 0,
+  message = null,
+  activeLine = "",
+  address = "",
+  cols = 72,
+  rows = 0,
+  scroll = 0,
+} = {}) {
+  const lines = [];
+  if (activeLine) lines.push(`${c.dim}${activeLine}${c.reset}`);
+  const msgs = Array.isArray(messages) ? messages : [];
+  const unread = msgs.filter((m) => !m.readAt).length;
+  lines.push(
+    `${c.bold}INBOX${c.reset}  ${c.gold}${msgs.length}${c.reset} msg${msgs.length === 1 ? "" : "s"}` +
+      (unread ? ` · ${c.yellow}${unread} unread${c.reset}` : ` · ${c.dim}all read${c.reset}`),
+  );
+  if (view === "read" && message) {
+    const pkm = pkmKind(message);
+    const color = kindColor(message.kind, pkm);
+    const kindLabel = pkm ? `pkm:${pkm}` : String(message.kind || "fyi");
+    const who = `${message.from || "?"}${message.to ? ` → ${message.to}` : ""}`;
+    lines.push(`${color}${kindLabel}${c.reset}  ${c.dim}${who}${c.reset}  ${c.dim}${mailTsShort(message.ts)}${c.reset}`);
+    lines.push(`${c.bold}${message.subject || "(no subject)"}${c.reset}`);
+    lines.push("");
+    const body = wrapText(message.body || "(no body)", Math.max(8, cols - 2));
+    const start = Math.max(0, scroll);
+    lines.push(...body.slice(start));
+    lines.push("");
+    lines.push(`${c.dim}esc back · q chat${c.reset}`);
+  } else if (!msgs.length) {
+    lines.push(`  ${c.dim}(inbox empty)${c.reset}`);
+    lines.push(
+      `  ${c.dim}scope${c.reset} project mail${address ? ` · ${address}` : ""}`,
+    );
+    lines.push(`${c.dim}j/k select · enter read · q chat${c.reset}`);
+  } else {
+    lines.push(`  ${c.dim}scope${c.reset} project mail · kind, from, subject`);
+    const sel = Math.max(0, Math.min(selected, msgs.length - 1));
+    for (let i = 0; i < msgs.length; i++) {
+      lines.push(...listRow(msgs[i], cols, i === sel));
+    }
+    lines.push("");
+    lines.push(`${c.dim}j/k select · enter read · q chat${c.reset}`);
+  }
+  if (rows > 0 && lines.length > rows) return lines.slice(0, rows).join("\n");
+  return lines.join("\n");
+}
+
+function resolveMailFile() {
+  const slug = currentProjectSlug();
+  return slug ? mailPath(slug) : null;
+}
+
+function readActiveLine() {
+  try {
+    return readFileSync(join(ROOT, "sessions/.desk-active.line"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+function termSize() {
+  return {
+    cols: output.columns || Number(process.env.COLUMNS) || 72,
+    rows: output.rows || Number(process.env.LINES) || 24,
+  };
+}
+
+function leaveToChat() {
+  spawnSync("bash", [join(ROOT, "scripts/orchestrator-layout.sh"), "leave-inbox"], {
+    cwd: ROOT,
+    stdio: "ignore",
+    env: process.env,
+  });
+}
+
+function runOnce() {
+  const file = resolveMailFile();
+  const doc = file ? readMailDocument(file) : null;
+  const messages = listMailMessages(doc);
+  const text = renderInboxView({
+    messages,
+    address: doc?.address || "",
+    activeLine: readActiveLine(),
+    ...termSize(),
+  });
+  output.write(`${text}\n`);
+}
+
+function runWatch() {
+  readline.emitKeypressEvents(input);
+  if (input.isTTY) input.setRawMode(true);
+  output.write(`${ESC}[?25l`);
+
+  let view = "list";
+  let selected = 0;
+  let scroll = 0;
+  let doc = null;
+  let messages = [];
+  let open = null;
+
+  const load = () => {
+    const file = resolveMailFile();
+    doc = file ? readMailDocument(file) : null;
+    messages = listMailMessages(doc);
+    if (selected >= messages.length) selected = Math.max(0, messages.length - 1);
+    if (view === "read" && open) {
+      open = messages.find((m) => m.id === open.id) || open;
+    }
+  };
+
+  const paint = () => {
+    const term = termSize();
+    const text = renderInboxView({
+      view,
+      messages,
+      selected,
+      message: open,
+      activeLine: readActiveLine(),
+      address: doc?.address || "",
+      cols: term.cols,
+      rows: Math.max(1, term.rows - 1),
+      scroll,
+    });
+    output.write(`${ESC}[2J${ESC}[H${text}`);
+  };
+
+  const cleanup = () => {
+    if (input.isTTY) input.setRawMode(false);
+    output.write(`${ESC}[?25h${ESC}[0m`);
+  };
+
+  const signature = () => {
+    const file = resolveMailFile() || "";
+    let mt = "0";
+    try {
+      mt = String(statSync(file).mtimeMs);
+    } catch {
+      mt = "0";
+    }
+    return `${file}|${mt}|${readActiveLine()}`;
+  };
+
+  let stamp = signature();
+  load();
+  paint();
+
+  const onUsr = () => {
+    stamp = signature();
+    load();
+    paint();
+  };
+  process.on("SIGUSR1", onUsr);
+  output.on("resize", paint);
+  const timer = setInterval(() => {
+    const next = signature();
+    if (next === stamp) return;
+    stamp = next;
+    load();
+    paint();
+  }, 1000);
+  timer.unref?.();
+
+  const stop = (code = 0) => {
+    clearInterval(timer);
+    cleanup();
+    process.exit(code);
+  };
+
+  process.on("SIGINT", () => stop(0));
+  process.on("SIGTERM", () => stop(0));
+
+  input.on("keypress", (_str, key) => {
+    if (!key) return;
+    if (key.ctrl && key.name === "c") {
+      stop(0);
+      return;
+    }
+    if (key.name === "q") {
+      cleanup();
+      leaveToChat();
+      process.exit(0);
+    }
+    if (view === "read") {
+      if (key.name === "escape" || key.name === "backspace") {
+        view = "list";
+        scroll = 0;
+        load();
+        paint();
+        return;
+      }
+      if (key.name === "j" || key.name === "down") {
+        scroll += 1;
+        paint();
+        return;
+      }
+      if (key.name === "k" || key.name === "up") {
+        scroll = Math.max(0, scroll - 1);
+        paint();
+        return;
+      }
+      return;
+    }
+    if (key.name === "j" || key.name === "down") {
+      if (messages.length) selected = Math.min(messages.length - 1, selected + 1);
+      paint();
+      return;
+    }
+    if (key.name === "k" || key.name === "up") {
+      selected = Math.max(0, selected - 1);
+      paint();
+      return;
+    }
+    if (key.name === "return" || key.name === "enter") {
+      const msg = messages[selected];
+      if (!msg) return;
+      const file = resolveMailFile();
+      const opened = file ? openMailMessage(file, msg.id) : msg;
+      open = opened || msg;
+      view = "read";
+      scroll = 0;
+      load();
+      if (open) {
+        const fresh = messages.find((m) => m.id === open.id);
+        if (fresh) open = fresh;
+      }
+      paint();
+    }
+  });
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  if (args.includes("-h") || args.includes("--help")) {
+    output.write(`usage:
+  inbox-pane.mjs watch     # desk pane (j/k select · enter read · q chat)
+  inbox-pane.mjs once      # print the list
+
+Project mail: sessions/pstack/<slug>/mail.json
+Desk: ./scripts/orchestrator-layout.sh enter-inbox
+      Ctrl+Space then Shift+I
+`);
+    return;
+  }
+  const wantOnce = args.includes("once") || args.includes("--once");
+  if (wantOnce || !input.isTTY) {
+    runOnce();
+    return;
+  }
+  runWatch();
+}
+
+if (isMainModule(import.meta.url)) main();

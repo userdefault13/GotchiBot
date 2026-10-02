@@ -42,6 +42,10 @@ const ALLOWED = new Set([
   "enter-cockpit",
   "boot-cockpit",
   "leave-cockpit",
+  "enter-inbox",
+  "inbox",
+  "toggle-inbox",
+  "leave-inbox",
   "require-three",
 ]);
 

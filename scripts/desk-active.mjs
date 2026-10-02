@@ -39,6 +39,7 @@ const WATCHERS = [
   "factory-window.mjs",
   "pstack-window.mjs",
   "label-bar-pane.sh",
+  "inbox-pane.sh",
   "chat-bar-pane.sh",
   "sidebar-pane.sh",
   "meet-room-prompter.mjs",
@@ -286,7 +287,7 @@ function centerLabel(sess) {
   return String(r.stdout || "").trim() === "factory" ? "Factory" : "pstack · dossier";
 }
 
-function kindLabel(cmd, mode, sess) {
+export function kindLabel(cmd, mode, sess) {
   const c = String(cmd || "");
   if (c.includes("sidebar-pane") || c.includes("mc-pane")) {
     return mode === "files-max" ? "Files · full" : "Files";
@@ -300,6 +301,7 @@ function kindLabel(cmd, mode, sess) {
   if (c.includes("pstack-window") || c.includes("pstack-pane") || c.includes("label-bar-pane.sh Dossier")) {
     return mode === "pstack-dossier" ? centerLabel(sess) : "Dossier";
   }
+  if (c.includes("inbox-pane") || c.includes("label-bar-pane.sh Inbox")) return "Inbox";
   if (c.includes("meet-room")) return "Meet · room";
   if (c.includes("meet-channel") || c.includes("label-bar-pane.sh Meeting")) {
     return c.includes("meet-channel") ? "# meet" : "Meeting";
