@@ -44,7 +44,7 @@ import {
   statSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadMeta } from "./identity.mjs";
@@ -1033,6 +1033,158 @@ export async function gatewayReachable() {
     return r.ok;
   } catch {
     return false;
+  }
+}
+
+const HUB_SSH_TARGET_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/;
+
+/** First DNS label. imacOmarchy and imacomarchy.tail….ts.net are the same machine. */
+export function shortHostName(host) {
+  const s = String(host || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .replace(/\.local$/, "");
+  return s ? s.split(".")[0] : "";
+}
+
+/** Loopback port the gateway actually binds. Never a Tailscale address. */
+export function gatewayListenPort(url = gatewayUrl()) {
+  try {
+    const u = new URL(url);
+    if (u.port && /^\d+$/.test(u.port)) return u.port;
+  } catch {
+    /* fall through */
+  }
+  const env = String(
+    process.env.OPENCLAW_GATEWAY_PORT || process.env.GOTCHIBOT_OPENCLAW_PORT || "18789",
+  );
+  return /^\d+$/.test(env) ? env : "18789";
+}
+
+function hubDeskSshTarget() {
+  const fromEnv = String(process.env.GOTCHIBOT_HUB_SSH || "").trim();
+  if (HUB_SSH_TARGET_RE.test(fromEnv)) return fromEnv;
+  try {
+    const prefs = JSON.parse(readFileSync(`${SESSIONS}/.hub-desk.json`, "utf8"));
+    const ssh = String(prefs?.ssh || "").trim();
+    if (HUB_SSH_TARGET_RE.test(ssh)) return ssh;
+  } catch {
+    /* no desk ssh target */
+  }
+  return "";
+}
+
+/** How a status probe reaches the hub. Host comes from remote config or the desk ssh target. */
+export function hubHealthRoute(cfg) {
+  if (cfg?.host && cfg?.user && cfg?.key) {
+    return { kind: "remote-lib", host: String(cfg.host), cfg };
+  }
+  const desk = hubDeskSshTarget();
+  if (desk) {
+    return { kind: "ssh", host: desk.slice(desk.lastIndexOf("@") + 1), target: desk };
+  }
+  if (cfg?.host && cfg?.user && HUB_SSH_TARGET_RE.test(`${cfg.user}@${cfg.host}`)) {
+    return { kind: "ssh", host: String(cfg.host), target: `${cfg.user}@${cfg.host}` };
+  }
+  return { kind: "none", host: cfg?.host ? String(cfg.host) : "", target: "" };
+}
+
+function remoteHealthScript(port) {
+  return (
+    `code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 ` +
+    `http://127.0.0.1:${port}/healthz 2>/dev/null || true); printf 'OC_HEALTHZ:%s\\n' "$code"`
+  );
+}
+
+/** true / false from an OC_HEALTHZ marker, or null when the marker never arrived. */
+export function parseHubHealthMarker(stdout) {
+  const text = String(stdout || "");
+  const m = text.match(/OC_HEALTHZ:([0-9]{3})/);
+  if (m) return /^2\d\d$/.test(m[1]);
+  if (/OC_HEALTHZ:\s*$/m.test(text)) return false;
+  return null;
+}
+
+async function probeLoopbackHealth(url) {
+  try {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 2500);
+    const r = await fetch(url, { signal: ac.signal });
+    clearTimeout(t);
+    return r.ok ? true : false;
+  } catch {
+    return null;
+  }
+}
+
+async function execHubHealth(port) {
+  const { remoteConfig, materializeKey, runSsh } = await import("./remote-lib.mjs");
+  const route = hubHealthRoute(remoteConfig());
+  if (route.kind === "none") {
+    const err = new Error("no-hub-ssh-target");
+    err.code = "NO_HUB_SSH";
+    throw err;
+  }
+  const script = remoteHealthScript(port);
+  if (route.kind === "remote-lib") {
+    const key = materializeKey(route.cfg.key);
+    try {
+      const r = runSsh(route.cfg, key.path, script, { stdio: "pipe", timeout: 12_000 });
+      if (r.error) throw r.error;
+      return String(r.stdout || "");
+    } finally {
+      key.dispose();
+    }
+  }
+  const r = spawnSync(
+    "ssh",
+    [
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "ConnectTimeout=5",
+      "-o",
+      "StrictHostKeyChecking=accept-new",
+      route.target,
+      script,
+    ],
+    { encoding: "utf8", timeout: 12_000 },
+  );
+  if (r.error) throw r.error;
+  return String(r.stdout || "");
+}
+
+/**
+ * Status-bar gateway probe. Chat keeps gatewayReachable().
+ * Local /healthz when this machine is the gateway. Otherwise SSH to the hub
+ * target the desk already has and curl 127.0.0.1 there (the gateway is not
+ * bound on Tailscale). null means the remote check could not be made.
+ */
+export async function statusGatewayReachable(opts = {}) {
+  const port = opts.port != null ? String(opts.port) : gatewayListenPort();
+  if (!/^\d+$/.test(port)) return null;
+
+  const probeLocal = opts.probeLocal || probeLoopbackHealth;
+  const local = await probeLocal(`http://127.0.0.1:${port}/healthz`);
+  if (local === true || local === false) return local;
+
+  let hubHost;
+  if (Object.prototype.hasOwnProperty.call(opts, "hubHost")) {
+    hubHost = String(opts.hubHost ?? "");
+  } else {
+    const { remoteConfig } = await import("./remote-lib.mjs");
+    hubHost = hubHealthRoute(remoteConfig()).host || "";
+  }
+  const name = opts.hostname != null ? opts.hostname : hostname();
+  if (hubHost && shortHostName(name) === shortHostName(hubHost)) return false;
+  if (!hubHost) return null;
+
+  const execRemote = opts.execRemote || execHubHealth;
+  try {
+    return parseHubHealthMarker(await execRemote(port));
+  } catch {
+    return null;
   }
 }
 

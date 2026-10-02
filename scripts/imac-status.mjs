@@ -192,8 +192,9 @@ export function formatStatus(
 
 async function probeOpenClawGateway() {
   try {
-    const { gatewayReachable } = await import("./openclaw-fleet.mjs");
-    return await gatewayReachable();
+    // Desk localhost (or a saved Tailscale URL) is not the gateway. Null → OC?.
+    const { statusGatewayReachable } = await import("./openclaw-fleet.mjs");
+    return await statusGatewayReachable();
   } catch {
     return null;
   }

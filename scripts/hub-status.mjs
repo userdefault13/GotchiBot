@@ -178,10 +178,10 @@ function runInfraRemote() {
 
 async function probeOpenClaw() {
   try {
-    const { gatewayReachable, gatewayUrl, loadAgentMap, loadOpenClawFocus } = await import(
+    const { statusGatewayReachable, gatewayUrl, loadAgentMap, loadOpenClawFocus } = await import(
       "./openclaw-fleet.mjs"
     );
-    const reachable = await gatewayReachable();
+    const reachable = await statusGatewayReachable();
     const map = loadAgentMap();
     const focus = loadOpenClawFocus();
     const agentCount = map?.agents ? Object.keys(map.agents).length : map?.count ?? 0;
