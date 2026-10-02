@@ -137,4 +137,35 @@ describe("avatar roster width", () => {
     assert.equal(other.factory, "3");
     assert.equal(other.sum, "140");
   });
+
+  it("gives factory, dossier, inbox, and meet the chat width at 147", () => {
+    const env = { ...process.env, TMUX: "", TMUX_PANE: "", TERM: "xterm-256color" };
+    function sizes(focus) {
+      const out = execFileSync("bash", ["scripts/orchestrator-layout.sh", "sizes", "147", focus], {
+        cwd: root,
+        encoding: "utf8",
+        env,
+      }).trim();
+      return Object.fromEntries(out.split(/\s+/).map((part) => part.split("=")));
+    }
+    const focused = { factory: "factory", dossier: "dossier", inbox: "inbox", meet: "meet" };
+    for (const [pane, focus] of Object.entries(focused)) {
+      const got = sizes(focus);
+      assert.equal(got.files, "3", focus);
+      assert.equal(got.avatar, "44", focus);
+      assert.equal(got[pane], "88", focus);
+      assert.equal(got.sum, "140", focus);
+      for (const other of ["cockpit", "chat", "factory", "dossier", "inbox", "meet"]) {
+        if (other === pane) continue;
+        assert.equal(got[other], "1", `${focus} ${other}`);
+      }
+      const widths = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet"].map((k) => Number(got[k]));
+      assert.equal(widths.reduce((n, w) => n + w, 0) + 7, 147, focus);
+    }
+    // pstack is the layout name for the dossier pane.
+    const pstack = sizes("pstack");
+    assert.equal(pstack.dossier, "88");
+    assert.equal(pstack.chat, "1");
+    assert.equal(pstack.avatar, "44");
+  });
 });

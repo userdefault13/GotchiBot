@@ -12,7 +12,7 @@ sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
 sess_name="${sess_name#=}"
 sess="$sess_name"
 min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-47}"
-# 44 at a 147-col desk (8 panes, 7 separators, content 140). Files bar stays 3. When chat is focused the five label bars drop from 3 to 1 (one column draws the glyph; the other two were slack), so chrome = 3+5 = 8 and chat = 140-8-44 = 88 (was 78 while those bars stayed 3). Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
+# 44 at a 147-col desk (8 panes, 7 separators, content 140). Files bar stays 3. When chat, factory, dossier, inbox, or meet is focused the five label bars drop from 3 to 1 (one column draws the glyph; the other two were slack), so chrome = 3+5 = 8 and the focused pane = 140-8-44 = 88. Cockpit keeps the older 3-column labels (78). Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
 min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-44}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
@@ -1058,18 +1058,47 @@ focus_pane_widths() {
     chat)
       w3=0
       # Each of these bars draws one glyph. The other two columns were slack.
-      # 5*2=10, all of it goes to chat. Files stays 3. Avatar is not a donor.
+      # 5*2=10, all of it goes to the focused pane. Files stays 3. Avatar is not a donor.
       w2=1
       w4=1
       w5=1
       w6=1
       w7=1
       ;;
+    # Same width as chat: the other five labels are 1-column glyph bars.
+    factory)
+      w4=0
+      w2=1
+      w3=1
+      w5=1
+      w6=1
+      w7=1
+      ;;
+    pstack|dossier)
+      w5=0
+      w2=1
+      w3=1
+      w4=1
+      w6=1
+      w7=1
+      ;;
+    inbox)
+      w6=0
+      w2=1
+      w3=1
+      w4=1
+      w5=1
+      w7=1
+      ;;
+    meet)
+      w7=0
+      w2=1
+      w3=1
+      w4=1
+      w5=1
+      w6=1
+      ;;
     cockpit) w2=0 ;;
-    factory) w4=0 ;;
-    pstack) w5=0 ;;
-    inbox) w6=0 ;;
-    meet) w7=0 ;;
     *) w3=0 ;;
   esac
   used=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7))
@@ -1095,7 +1124,7 @@ focus_pane_widths() {
     chat) w3="$budget" ;;
     cockpit) w2="$budget" ;;
     factory) w4="$budget" ;;
-    pstack) w5="$budget" ;;
+    pstack|dossier) w5="$budget" ;;
     inbox) w6="$budget" ;;
     meet) w7="$budget" ;;
     *) w3="$budget" ;;
