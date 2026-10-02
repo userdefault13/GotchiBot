@@ -2,7 +2,12 @@
 # Compact status for tmux — live chat model + real running sessions (pid must be alive).
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Tests point this at a temp tree. The live desk leaves it unset.
+if [ -n "${GOTCHIBOT_STATUS_ROOT:-}" ]; then
+  ROOT="$GOTCHIBOT_STATUS_ROOT"
+fi
 SESSIONS="$ROOT/sessions"
 PIN="$SESSIONS/.pin"
 CHAT_MODEL_FILE="$SESSIONS/.chat-model"
@@ -22,6 +27,16 @@ short_model() {
 }
 
 chat_model() {
+  # Live OpenCode session the chat pane is attached to (Hub desk or local).
+  # Falls through to the pin files only when that session has no model.
+  if command -v node >/dev/null; then
+    local live
+    live="$(node "$SCRIPT_DIR/live-chat-model.mjs" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [ -n "$live" ]; then
+      short_model "$live"
+      return
+    fi
+  fi
   if [ -n "${GOTCHIBOT_OPENCODE_MODEL:-}" ]; then
     short_model "$GOTCHIBOT_OPENCODE_MODEL"
     return
@@ -85,6 +100,12 @@ reap_dead() {
     fi
   done
 }
+
+if [ "${1:-}" = "--print-chat-model" ]; then
+  chat_model
+  printf '\n'
+  exit 0
+fi
 
 # Keep the shared active-gotchi line warm even when no label pane is running.
 node "$ROOT/scripts/desk-active.mjs" line >/dev/null 2>&1 || true
