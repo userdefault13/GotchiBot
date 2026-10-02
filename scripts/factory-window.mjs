@@ -14,8 +14,9 @@
  *   Desk infra  this desk: doctor checks, tmux panes, local dispatch sessions,
  *               public subgraph tunnel
  *
- * Reads project-room files (sessions/pstack/<slug>/) and the existing status
- * scripts (hub-status, hub-roster, doctor, mesh-status, tunnel-health). Slow
+ * Reads project-room files (sessions/pstack/<slug>/). A unit with a session id
+ * uses that session's state.env status, not the stale units.tsv state. Also reads
+ * the existing status scripts (hub-status, hub-roster, doctor, mesh-status, tunnel-health). Slow
  * probes run in the background and repaint when they land. Never writes files,
  * never spawns agents.
  *
@@ -190,7 +191,29 @@ function loadUnits(slug) {
   const [head, ...rows] = text.split("\n").filter((l) => l.trim());
   if (!head) return [];
   const keys = head.split("\t");
-  return rows.map((r) => Object.fromEntries(r.split("\t").map((v, i) => [keys[i], v])));
+  return rows
+    .map((r) => Object.fromEntries(r.split("\t").map((v, i) => [keys[i], v])))
+    .map((u) => {
+      const state = mapUnitState(u.state, u.session, liveSessionStatus(u.session));
+      return state === (u.state || "") ? u : { ...u, state };
+    });
+}
+
+/**
+ * units.tsv keeps the state it had when the row was written. Once a row names a
+ * session, the pane shows sessions/<id>/state.env status= instead, so a failed
+ * or done session is not still "running". No session id, or no live status,
+ * keeps the tsv value. Idle and queued kanban cards are not touched here.
+ */
+export function mapUnitState(tsvState, sessionId, liveStatus) {
+  const live = String(liveStatus ?? "").trim();
+  if (sessionId && live) return live;
+  return tsvState || "";
+}
+
+function liveSessionStatus(sessionId) {
+  if (!sessionId) return "";
+  return readEnvFile(join(ROOT, "sessions", sessionId, "state.env"))?.status || "";
 }
 
 /** Project board + every desk board, merged by card id (newest update wins). */
