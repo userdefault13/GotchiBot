@@ -17,9 +17,11 @@
  *   node scripts/pstack-dossier.mjs list [--json]
  *   node scripts/pstack-dossier.mjs fields [--json]
  *   node scripts/pstack-dossier.mjs current [<slug>]        # get/set pane current
+ *   node scripts/pstack-dossier.mjs milestone               # record fields.goal, then clear it
  *
  * Policy: config/pstack-dossier-policy.json
  */
+import { randomBytes } from "node:crypto";
 import {
   readFileSync,
   writeFileSync,
@@ -31,7 +33,7 @@ import {
 import { dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
-import { setCurrentProject as syncProjectPointers, ensureProjectDirs } from "./project-context.mjs";
+import { setCurrentProject as syncProjectPointers, ensureProjectDirs, currentProjectSlug } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const POLICY_PATH = join(ROOT, "config", "pstack-dossier-policy.json");
@@ -67,8 +69,12 @@ function writeJson(path, obj) {
   writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`, "utf8");
 }
 
-function dossierPath(slug) {
-  return join(PSTACK_ROOT, slug, "dossier.json");
+function dossierPath(slug, root = ROOT) {
+  return join(root, "sessions", "pstack", slug, "dossier.json");
+}
+
+function milestonesPath(slug, root = ROOT) {
+  return join(root, "sessions", "pstack", slug, "milestones.json");
 }
 
 function emptyDossier(slug, policy) {
@@ -86,17 +92,103 @@ function emptyDossier(slug, policy) {
   };
 }
 
-function loadDossier(slug) {
-  const p = dossierPath(slug);
+function loadDossier(slug, root = ROOT) {
+  const p = dossierPath(slug, root);
   if (!existsSync(p)) return null;
   return readJson(p);
 }
 
-function saveDossier(dossier) {
+function saveDossier(dossier, root = ROOT) {
   dossier.updatedAt = new Date().toISOString();
-  const p = dossierPath(dossier.slug);
+  const p = dossierPath(dossier.slug, root);
   writeJson(p, dossier);
   return p;
+}
+
+function pointerSlug(root) {
+  for (const name of [".pstack-dossier-current", ".project-current"]) {
+    try {
+      const s = readFileSync(join(root, "sessions", name), "utf8").trim();
+      if (slugOk(s)) return s;
+    } catch {
+      /* try the next pointer */
+    }
+  }
+  return null;
+}
+
+function loadMilestoneStore(root, slug) {
+  const path = milestonesPath(slug, root);
+  if (!existsSync(path)) return { project: slug, milestones: [] };
+  const data = readJson(path, null);
+  return {
+    project: slug,
+    milestones: Array.isArray(data?.milestones) ? data.milestones : [],
+  };
+}
+
+function uniqueMilestoneId(existing) {
+  const ids = new Set((existing || []).map((m) => m && m.id).filter(Boolean));
+  let id = randomBytes(4).toString("hex");
+  while (ids.has(id)) id = randomBytes(4).toString("hex");
+  return id;
+}
+
+/** Append one milestone. Creates {project, milestones:[]} when the file is missing. */
+export function appendMilestone({ root, slug, milestone }) {
+  if (!root) throw new Error("root required");
+  if (!slugOk(slug)) throw new Error(`invalid slug: ${slug}`);
+  if (!milestone || typeof milestone !== "object") throw new Error("milestone required");
+  const store = loadMilestoneStore(root, slug);
+  store.milestones = [...store.milestones, milestone];
+  writeJson(milestonesPath(slug, root), { project: slug, milestones: store.milestones });
+  return { project: slug, milestones: store.milestones };
+}
+
+/** Clear dossier.fields.goal through the existing dossier save path. */
+export function clearDossierGoal({ root, slug }) {
+  if (!root) throw new Error("root required");
+  const dossier = loadDossier(slug, root);
+  if (!dossier) {
+    const err = new Error(`no dossier: ${slug}`);
+    err.code = "ENODOSSIER";
+    throw err;
+  }
+  if (!dossier.fields || typeof dossier.fields !== "object") dossier.fields = {};
+  dossier.fields.goal = "";
+  saveDossier(dossier, root);
+  return dossier;
+}
+
+/**
+ * Record the current dossier fields.goal as a milestone, then clear it.
+ * Blank or whitespace goals return {ok:false} and write nothing.
+ */
+export function recordMilestone({ root, slug, id, completedAt } = {}) {
+  if (!root) throw new Error("root required");
+  const project = slug || pointerSlug(root);
+  if (!project || !slugOk(project)) {
+    const err = new Error("no current project");
+    err.code = "NOPROJECT";
+    throw err;
+  }
+  const dossier = loadDossier(project, root);
+  if (!dossier) {
+    const err = new Error(`no dossier: ${project}`);
+    err.code = "ENODOSSIER";
+    throw err;
+  }
+  const goal = String(dossier.fields?.goal ?? "").trim();
+  if (!goal) return { ok: false, reason: "empty goal" };
+  const existing = loadMilestoneStore(root, project).milestones;
+  const milestone = {
+    id: id || uniqueMilestoneId(existing),
+    goal,
+    completedAt: completedAt || new Date().toISOString(),
+  };
+  const store = appendMilestone({ root, slug: project, milestone });
+  const saved = clearDossierGoal({ root, slug: project });
+  return { ok: true, project, milestone, store, dossier: saved };
 }
 
 export function missingFields(dossier, policy = loadPolicy()) {
@@ -378,6 +470,19 @@ function cmdCurrent(slug, flags) {
   console.log(cur || "(none)");
 }
 
+function cmdMilestone() {
+  const slug = currentProjectSlug() || currentSlug();
+  if (!slug) die("no current project");
+  let result;
+  try {
+    result = recordMilestone({ root: ROOT, slug });
+  } catch (err) {
+    die(err.message || String(err));
+  }
+  if (!result.ok) die("empty goal");
+  console.log(`milestone ${result.milestone.id} ${result.milestone.goal}`);
+}
+
 function usage() {
   console.log(`usage:
   pstack-dossier new <slug> [--title "…"] [--goal "…"] [--playbook <label>] [--scope "…"]
@@ -390,8 +495,10 @@ function usage() {
   pstack-dossier list [--json]
   pstack-dossier fields [--json]
   pstack-dossier current [<slug>]
+  pstack-dossier milestone
 
 SoT: sessions/pstack/<slug>/dossier.json
+Milestones: sessions/pstack/<slug>/milestones.json
 Policy: config/pstack-dossier-policy.json
 Window: scripts/pstack-window.mjs (tmux work.2 while mode=pstack-dossier)
 `);
@@ -434,6 +541,9 @@ function main() {
       break;
     case "current":
       cmdCurrent(positional[0], flags);
+      break;
+    case "milestone":
+      cmdMilestone();
       break;
     default:
       die(`unknown command: ${cmd}`);
