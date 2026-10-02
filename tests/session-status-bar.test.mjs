@@ -134,4 +134,13 @@ describe("session-status-bar.sh --print-chat-model", () => {
     writeFileSync(join(dir, "sessions/.chat-model"), "vendor/stale-pin\n");
     assert.equal(printModel(dir), "stale-pin");
   });
+
+  it("prefers .chat-model over a stale tmux-server GOTCHIBOT_OPENCODE_MODEL", () => {
+    const dir = tree();
+    writeFileSync(join(dir, "sessions/.chat-model"), "openrouter/dots-studio/widget-preview:free\n");
+    const out = printModel(dir, {
+      GOTCHIBOT_OPENCODE_MODEL: "openrouter/stealth/space-bunny-alpha",
+    });
+    assert.equal(out, "widget-preview:free");
+  });
 });

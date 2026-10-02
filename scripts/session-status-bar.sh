@@ -37,12 +37,15 @@ chat_model() {
       return
     fi
   fi
-  if [ -n "${GOTCHIBOT_OPENCODE_MODEL:-}" ]; then
-    short_model "$GOTCHIBOT_OPENCODE_MODEL"
-    return
-  fi
+  # sessions/.chat-model beats GOTCHIBOT_OPENCODE_MODEL. Reload writes the file
+  # (and the chat pane's own shell). The status command is a child of the tmux
+  # server, so it still sees the model from when the server started.
   if [ -f "$CHAT_MODEL_FILE" ]; then
     short_model "$(tr -d '[:space:]' < "$CHAT_MODEL_FILE")"
+    return
+  fi
+  if [ -n "${GOTCHIBOT_OPENCODE_MODEL:-}" ]; then
+    short_model "$GOTCHIBOT_OPENCODE_MODEL"
     return
   fi
   if [ -f "$SESSIONS/.model-auto.json" ] && command -v node >/dev/null; then
