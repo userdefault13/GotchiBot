@@ -23,6 +23,7 @@
         "send": "./scripts/gotchibot inbox send --to <userdefault|orch|hero|role> --from <hero> --subject \"\u2026\" --body \"\u2026\" [--kind fyi|report|ask|alert]",
         "list": "./scripts/gotchibot inbox list --to <addr> [--unread]",
         "read": "./scripts/gotchibot inbox read <id>",
+        "housekeep": "./scripts/gotchibot inbox housekeep",
         "digest": "./scripts/gotchibot inbox digest"
       },
       "store": "sessions/pstack/<slug>/inbox/inbox.json (project) or sessions/inbox/",
