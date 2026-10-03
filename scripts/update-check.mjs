@@ -136,8 +136,39 @@ function gitRemoteBranch() {
   return `origin/${branch}`;
 }
 
+const GIT_NETWORK_TIMEOUT_MS = (() => {
+  const n = Number(process.env.GOTCHIBOT_GIT_TIMEOUT_MS);
+  return Number.isFinite(n) && n >= 500 ? n : 8000;
+})();
+const GIT_ASKPASS_BIN = ["/usr/bin/true", "/bin/true"].find((bin) => existsSync(bin)) || "true";
+
+/** Fetch/pull must not block the desk: no terminal prompt, credential UI cannot wait, spawn dies at the timeout. */
+function gitNetworkEnv() {
+  return {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: "0",
+    GCM_INTERACTIVE: "never",
+    GIT_ASKPASS: GIT_ASKPASS_BIN,
+  };
+}
+
+function runGitNetwork(args, { inherit = false } = {}) {
+  return spawnSync("git", args, {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: inherit ? "inherit" : "pipe",
+    timeout: GIT_NETWORK_TIMEOUT_MS,
+    killSignal: "SIGTERM",
+    env: gitNetworkEnv(),
+  });
+}
+
 function gitFetchQuiet() {
-  return spawnSync("git", ["fetch", "--quiet", "origin"], { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).status === 0;
+  try {
+    return runGitNetwork(["fetch", "--quiet", "origin"]).status === 0;
+  } catch {
+    return false;
+  }
 }
 
 function gitBehindCount() {
@@ -207,9 +238,19 @@ function prompt(question) {
 function applyGitPull() {
   const upstream = gitRemoteBranch();
   console.log(`→ git pull --ff-only (${upstream})`);
-  const r = spawnSync("git", ["pull", "--ff-only"], { cwd: ROOT, stdio: "inherit", encoding: "utf8" });
-  if (r.status !== 0) {
+  let r;
+  try {
+    r = runGitNetwork(["pull", "--ff-only"], { inherit: true });
+  } catch {
     console.error("✗ git pull failed — resolve locally, then retry");
+    return false;
+  }
+  if (r.status !== 0) {
+    if (r.error?.code === "ETIMEDOUT" || r.signal) {
+      console.error("✗ git pull timed out — GitHub did not answer");
+    } else {
+      console.error("✗ git pull failed — resolve locally, then retry");
+    }
     return false;
   }
   return true;
@@ -293,6 +334,8 @@ async function main() {
 }
 
 main().catch((e) => {
+  // A failed launch check must not stop `gotchibot tmux` (hung fetch already returns).
+  if (process.argv.includes("--launch")) process.exit(0);
   console.error(e?.message || e);
   process.exit(1);
 });
