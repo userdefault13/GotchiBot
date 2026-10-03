@@ -52,6 +52,7 @@ import {
 import { runLayout } from "./tmux-layout.mjs";
 import { resolveMeetingsRoot } from "./project-context.mjs";
 import { isMainModule } from "./is-main.mjs";
+import { startHubProjectMirror } from "./hub-project-sync.mjs";
 import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
 import { mouseEnabled } from "./lib/term-caps.mjs";
 
@@ -1643,6 +1644,16 @@ function main() {
   markTmuxPane();
   setup();
   draw();
+  startHubProjectMirror({
+    root: ROOT,
+    onChange() {
+      try {
+        draw();
+      } catch {
+        /* keep the room up */
+      }
+    },
+  });
   if (!INLINE) {
     // Pre-render every member's thumb to disk in the background so the first
     // visit to each room page is a file read, not a gotchi-art spawn per tile.

@@ -29,6 +29,7 @@ import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./
 import { isProfLinkCubeId, PROF_LINK_CUBE_ID } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
 import { resolveMeetingsRoot } from "./project-context.mjs";
+import { publishProjectWrite } from "./hub-project-sync.mjs";
 import {
   ROOT,
   SESSIONS,
@@ -119,6 +120,7 @@ function readJson(path, fallback = null) {
 function writeJson(path, obj) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
+  publishProjectWrite(path, { root: ROOT });
 }
 
 /** Thin load of role id + playbook (duplicated in openclaw-fleet — avoid circular imports). */
@@ -533,7 +535,9 @@ function saveMeeting(meeting) {
 
 function setCurrent(id) {
   ensureMeetings();
-  writeFileSync(currentMeetingPointer(), `${id}\n`);
+  const path = currentMeetingPointer();
+  writeFileSync(path, `${id}\n`);
+  publishProjectWrite(path, { root: ROOT });
 }
 
 function clearCurrent() {
@@ -570,7 +574,9 @@ function appendTranscript(id, rec) {
     text: String(rec.text ?? ""),
     ...(rec.kind ? { kind: rec.kind } : {}),
   };
-  appendFileSync(transcriptPath(id), `${JSON.stringify(row)}\n`);
+  const path = transcriptPath(id);
+  appendFileSync(path, `${JSON.stringify(row)}\n`);
+  publishProjectWrite(path, { root: ROOT });
   return row;
 }
 
@@ -608,7 +614,9 @@ function editTranscriptTurn(meetingId, turnKey, newText) {
   }
   turn.text = text;
   turn.editedAt = new Date().toISOString();
-  writeFileSync(transcriptPath(meetingId), `${turns.map((t) => JSON.stringify(t)).join("\n")}\n`);
+  const edited = transcriptPath(meetingId);
+  writeFileSync(edited, `${turns.map((t) => JSON.stringify(t)).join("\n")}\n`);
+  publishProjectWrite(edited, { root: ROOT });
   pokeMeetChannel();
   return { ok: true, turn };
 }
@@ -2065,8 +2073,10 @@ function writeMinutes(meeting) {
     "",
   ].join("\n");
 
-  writeFileSync(`${meetingDir(meeting.id)}/minutes.md`, md);
-  return { path: `${meetingDir(meeting.id)}/minutes.md`, endedAt, md };
+  const minutesPath = `${meetingDir(meeting.id)}/minutes.md`;
+  writeFileSync(minutesPath, md);
+  publishProjectWrite(minutesPath, { root: ROOT });
+  return { path: minutesPath, endedAt, md };
 }
 
 function writeHandoff(meeting, minutesPath) {

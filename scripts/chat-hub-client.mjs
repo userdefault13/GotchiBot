@@ -20,7 +20,7 @@ const PAIRING_HINT =
  * JSON request to the pinned Hub desk API.
  * @throws {Error} with .status / .body; 401 appends pairing hint
  */
-export async function hubRequest(method, path, { query, body, env = process.env } = {}) {
+export async function hubRequest(method, path, { query, body, env = process.env, signal } = {}) {
   const { base } = assertChatDeskAllowed(env);
   const url = new URL(`${base}${path}`);
   if (query) {
@@ -34,6 +34,7 @@ export async function hubRequest(method, path, { query, body, env = process.env 
     method,
     headers,
     body: body != null ? JSON.stringify(body) : undefined,
+    signal,
   });
   const text = await res.text();
   let json;

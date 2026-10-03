@@ -9,9 +9,14 @@
  * Those files live on the desk, not the Hub, so the desk pushes the same
  * whitelisted files (collectProjectSnapshot → POST /projects/push) and the Hub
  * renders them through this module unchanged.
+ *
+ * Desk writes of the open project's dossier, kanban (including factory cards),
+ * meet, and inbox also merge onto the Hub (POST /projects/files). The Hub
+ * stores that copy and writes it into this repo tree. Desks pull it back
+ * (GET /projects/:slug/files) before a pane paints.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 const HERO_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -138,14 +143,104 @@ const SNAPSHOT_MAX_FILES = 2000;
 const SNAPSHOT_MAX_FILE_BYTES = 256 * 1024;
 const SNAPSHOT_MAX_NAME = 64;
 
-/** Repo-relative paths a desk may push — exactly what the project source reads. */
+const MEET_FILE = /^(meeting\.json|transcript\.jsonl|minutes\.md)$/;
+const MEET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
+
+/**
+ * Repo-relative paths a desk write mirrors for one project room.
+ * Dossier set, factory/kanban cards, bot inbox, project mail, and the open meet.
+ */
+export function projectSyncPathOk(path) {
+  const p = String(path || "");
+  let m = p.match(/^sessions\/pstack\/([^/]+)\/([^/]+)$/);
+  if (m) return projectSlugOk(m[1]) && (PROJECT_FILES.includes(m[2]) || m[2] === "mail.json");
+  m = p.match(/^sessions\/pstack\/([^/]+)\/inbox\/inbox\.json$/);
+  if (m) return projectSlugOk(m[1]);
+  m = p.match(/^sessions\/pstack\/([^/]+)\/desks\/([^/]+)\/kanban\.json$/);
+  if (m) return projectSlugOk(m[1]) && heroIdOk(m[2]);
+  m = p.match(/^sessions\/pstack\/([^/]+)\/meetings\/\.current$/);
+  if (m) return projectSlugOk(m[1]);
+  m = p.match(/^sessions\/pstack\/([^/]+)\/meetings\/([^/]+)\/([^/]+)$/);
+  return Boolean(m && projectSlugOk(m[1]) && MEET_ID_RE.test(m[2]) && MEET_FILE.test(m[3]));
+}
+
+/** Repo-relative paths a desk may push — project room plus the hero caches the phone reads. */
 export function snapshotPathOk(path) {
   const p = String(path || "");
+  if (projectSyncPathOk(p)) return true;
   if (CURRENT_FILES.includes(p) || p === HERO_STATE_FILE || p === ROLES_FILE) return true;
-  let m = p.match(/^sessions\/pstack\/([^/]+)\/([^/]+)$/);
-  if (m) return projectSlugOk(m[1]) && PROJECT_FILES.includes(m[2]);
-  m = p.match(/^sessions\/\.avatars\/([^/]+)\.svg$/);
+  const m = p.match(/^sessions\/\.avatars\/([^/]+)\.svg$/);
   return Boolean(m && heroIdOk(m[1]));
+}
+
+/** Merge incoming snapshot files over an existing desk doc. Same path, incoming wins. */
+export function mergeSnapshotFiles(existing, incoming) {
+  const map = new Map();
+  for (const f of Array.isArray(existing) ? existing : []) {
+    if (f?.path) map.set(f.path, f);
+  }
+  for (const f of Array.isArray(incoming) ? incoming : []) {
+    if (f?.path) map.set(f.path, f);
+  }
+  return [...map.values()];
+}
+
+/** Sync paths that exist on disk for one project room. */
+export function listProjectSyncRels(root, slug) {
+  if (!projectSlugOk(slug)) return [];
+  const dir = join(root, "sessions/pstack", slug);
+  const rels = [];
+  const add = (rel) => {
+    if (projectSyncPathOk(rel) && existsSync(join(root, rel))) rels.push(rel);
+  };
+  for (const name of [...PROJECT_FILES, "mail.json"]) add(`sessions/pstack/${slug}/${name}`);
+  add(`sessions/pstack/${slug}/inbox/inbox.json`);
+  add(`sessions/pstack/${slug}/meetings/.current`);
+  try {
+    for (const id of readdirSync(join(dir, "meetings"))) {
+      if (!MEET_ID_RE.test(id)) continue;
+      for (const name of ["meeting.json", "transcript.jsonl", "minutes.md"]) {
+        add(`sessions/pstack/${slug}/meetings/${id}/${name}`);
+      }
+    }
+  } catch {
+    /* no meetings */
+  }
+  try {
+    for (const hero of readdirSync(join(dir, "desks"))) {
+      add(`sessions/pstack/${slug}/desks/${hero}/kanban.json`);
+    }
+  } catch {
+    /* no desk boards */
+  }
+  return rels;
+}
+
+/**
+ * Write hub-owned project files into the repo tree. Refuses anything outside root
+ * or off the sync whitelist. Returns how many files were written.
+ */
+export function materializeSnapshotFiles(root, files) {
+  const base = resolve(root);
+  let wrote = 0;
+  for (const f of files || []) {
+    if (!projectSyncPathOk(f?.path) || typeof f.text !== "string") continue;
+    const abs = resolve(base, f.path);
+    if (abs !== base && !abs.startsWith(base + sep)) continue;
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, f.text);
+    const t = Date.parse(f.mtime || "");
+    if (Number.isFinite(t)) {
+      const d = new Date(t);
+      try {
+        utimesSync(abs, d, d);
+      } catch {
+        /* mtime is advisory */
+      }
+    }
+    wrote += 1;
+  }
+  return wrote;
 }
 
 function snapshotError(message) {
@@ -203,6 +298,15 @@ export function collectProjectSnapshot({ root, heroName } = {}) {
   const heroes = new Set();
   for (const slug of src.listSlugs()) {
     for (const f of PROJECT_FILES) add(`sessions/pstack/${slug}/${f}`);
+    for (const rel of listProjectSyncRels(root, slug)) {
+      const parts = rel.split("/");
+      if (parts.length === 4 && PROJECT_FILES.includes(parts[3])) continue;
+      const abs = join(root, rel);
+      const text = readText(abs);
+      if (text == null) continue;
+      if (Buffer.byteLength(text, "utf8") > SNAPSHOT_MAX_FILE_BYTES) continue;
+      files.push({ path: rel, text, mtime: mtimeIso(abs) });
+    }
     const roster = readJson(join(root, "sessions/pstack", slug, "roster.json"), {}) || {};
     for (const h of Array.isArray(roster.heroes) ? roster.heroes : []) {
       const id = typeof h === "string" ? h : h?.id;
@@ -461,5 +565,22 @@ export function createProjectSource({ root, heroName, snapshot } = {}) {
     return normalizeAvatarSvg(fileText(`sessions/.avatars/${heroId}.svg`));
   }
 
-  return { listProjects, getProject, listSlugs, avatarPath, readAvatarSvg, currentSlug };
+  function listSyncFiles(slug) {
+    if (!projectSlugOk(slug)) return [];
+    const prefix = `sessions/pstack/${slug}/`;
+    const paths = new Set(listProjectSyncRels(root, slug));
+    for (const rel of snap()?.files.keys() || []) {
+      if (rel.startsWith(prefix) && projectSyncPathOk(rel)) paths.add(rel);
+    }
+    return [...paths]
+      .sort()
+      .map((rel) => {
+        const text = fileText(rel);
+        if (text == null) return null;
+        return { path: rel, text, mtime: fileMtime(rel) };
+      })
+      .filter(Boolean);
+  }
+
+  return { listProjects, getProject, listSlugs, listSyncFiles, avatarPath, readAvatarSvg, currentSlug };
 }

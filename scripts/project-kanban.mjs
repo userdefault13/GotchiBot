@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { publishProjectWrite } from "./hub-project-sync.mjs";
 import {
   currentProjectSlug,
   ensureProjectDirs,
@@ -85,6 +86,7 @@ export function saveBoard(path, board) {
   mkdirSync(dirname(path), { recursive: true });
   const body = { ...board, updatedAt: nowIso() };
   writeFileSync(path, `${JSON.stringify(body, null, 2)}\n`, "utf8");
+  publishProjectWrite(path, { root: ROOT });
   return body;
 }
 

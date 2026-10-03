@@ -40,6 +40,7 @@ import {
 } from "./project-context.mjs";
 import { orchestratorId } from "./openclaw-fleet.mjs";
 import { writeJsonAtomic } from "./json-store.mjs";
+import { publishProjectWrite } from "./hub-project-sync.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -112,7 +113,9 @@ function saveBox(box, which = "inbox") {
   box.updatedAt = nowIso();
   box.kind = which;
   box.project = paths.project;
-  writeJson(which === "archive" ? paths.archive : paths.inbox, box);
+  const file = which === "archive" ? paths.archive : paths.inbox;
+  writeJson(file, box);
+  if (which === "inbox") publishProjectWrite(file, { root: ROOT });
   return box;
 }
 
@@ -413,6 +416,7 @@ export function housekeepInbox(root, opts = {}) {
   if (!writeJsonAtomic(inboxPath, nextInbox)) {
     throw new Error("housekeep: could not write inbox.json — re-run housekeep");
   }
+  publishProjectWrite(inboxPath, { root: ROOT });
   return { archived: result.archived, kept: result.kept, stillUnread: result.stillUnread };
 }
 

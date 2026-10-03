@@ -28,6 +28,7 @@ import readline from "node:readline";
 import { resolveHeroColors } from "./collateral-resolve.mjs";
 import { renderKanbanAscii } from "./gotchi-art.mjs";
 import { orchestratorId } from "./openclaw-fleet.mjs";
+import { pullOpenProject, startHubProjectMirror } from "./hub-project-sync.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = join(ROOT, "sessions");
@@ -1091,6 +1092,7 @@ async function runTui() {
   }, WATCH_MS);
 
   const cleanup = () => {
+    stopMirror();
     clearInterval(timer);
     process.stdout.write(`${ESC}[?25h${ESC}[0m\n`);
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
@@ -1099,6 +1101,17 @@ async function runTui() {
   };
 
   redraw();
+  let stopMirror = () => {};
+  stopMirror = startHubProjectMirror({
+    root: ROOT,
+    onChange() {
+      try {
+        redraw();
+      } catch {
+        /* keep UI up */
+      }
+    },
+  });
 
   await new Promise((resolve) => {
     process.stdin.on("keypress", (str, key) => {

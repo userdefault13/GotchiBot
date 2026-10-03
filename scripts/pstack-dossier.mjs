@@ -38,6 +38,7 @@ import {
 import { dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { publishProjectWrite } from "./hub-project-sync.mjs";
 import { setCurrentProject as syncProjectPointers, ensureProjectDirs, currentProjectSlug } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -107,6 +108,7 @@ function saveDossier(dossier, root = ROOT) {
   dossier.updatedAt = new Date().toISOString();
   const p = dossierPath(dossier.slug, root);
   writeJson(p, dossier);
+  publishProjectWrite(p, { root });
   return p;
 }
 

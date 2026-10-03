@@ -36,6 +36,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
 import { projectRoomHasFiles } from "../services/gotchibot-api/projects.mjs";
+import { publishProjectWrite } from "./hub-project-sync.mjs";
 import { assertChatDeskAllowed, deskAuthHeaders, readHubPin } from "./infra-client.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -401,6 +402,7 @@ export function saveMail(patch = {}, slug = currentProjectSlug()) {
   delete next.AGENT_MAIL_API_KEY;
   delete next.AGENTMAIL_API_KEY;
   writeFileSync(mailPath(slug), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  publishProjectWrite(mailPath(slug), { root: ROOT });
   return next;
 }
 
@@ -814,6 +816,7 @@ export function saveRoster(roster, slug = currentProjectSlug()) {
     note: roster.note || ROSTER_NOTE,
   };
   writeFileSync(rp, `${JSON.stringify(body, null, 2)}\n`, "utf8");
+  publishProjectWrite(rp, { root: ROOT });
   return body;
 }
 
@@ -836,6 +839,7 @@ export function seedProjectRoster(slug = currentProjectSlug()) {
     note: current.note || ROSTER_NOTE,
   };
   writeFileSync(join(dir, "roster.json"), `${JSON.stringify(body, null, 2)}\n`, "utf8");
+  publishProjectWrite(join(dir, "roster.json"), { root: ROOT });
   return body;
 }
 

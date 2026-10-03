@@ -17,8 +17,9 @@
  * Reads project-room files (sessions/pstack/<slug>/). A unit with a session id
  * uses that session's state.env status, not the stale units.tsv state. Also reads
  * the existing status scripts (hub-status, hub-roster, doctor, mesh-status, tunnel-health). Slow
- * probes run in the background and repaint when they land. Never writes files,
- * never spawns agents.
+ * probes run in the background and repaint when they land. Never spawns agents.
+ * A paired desk pulls the Hub copy of this project's kanban (and the other
+ * mirrored room files) before paint so every desk shows the same cards.
  *
  *   node scripts/factory-window.mjs [watch] [--view factory|hub|infra]
  *   node scripts/factory-window.mjs once [--view …]      single render (capture)
@@ -33,6 +34,7 @@ import { factoryModel } from "./gotchi-factory.mjs";
 import { resolveHeroColors } from "./collateral-resolve.mjs";
 import { isMainModule } from "./is-main.mjs";
 import { hubRequest } from "./chat-hub-client.mjs";
+import { pullOpenProject, startHubProjectMirror } from "./hub-project-sync.mjs";
 import { mergeTrees, treeSnapshotFrom } from "../services/gotchibot-api/tree.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1137,6 +1139,11 @@ async function syncTree(state) {
 }
 
 async function runOnce() {
+  try {
+    await pullOpenProject({ root: ROOT });
+  } catch {
+    /* local copy */
+  }
   const state = refreshData({ view: initialView(), scroll: 0, tick: 0 });
   for (const p of VIEW_PROBES[state.view]) runProbe(p, { sync: true });
   if (state.view === "tree") await syncTree(state);
@@ -1176,6 +1183,15 @@ function runWatch() {
   due();
   paint();
 
+  const stopMirror = startHubProjectMirror({
+    root: ROOT,
+    onChange() {
+      try {
+        refreshData(state);
+      } catch {}
+      paint();
+    },
+  });
   const dataTimer = setInterval(() => {
     try {
       refreshData(state);
@@ -1198,6 +1214,7 @@ function runWatch() {
   });
 
   const cleanup = () => {
+    stopMirror();
     clearInterval(dataTimer);
     clearInterval(syncTimer);
     clearInterval(tickTimer);

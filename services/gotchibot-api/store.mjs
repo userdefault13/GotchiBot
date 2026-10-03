@@ -11,6 +11,7 @@ import {
   newVerifyCode,
   normalizePairingCode,
 } from "./auth.mjs";
+import { mergeSnapshotFiles } from "./projects.mjs";
 
 const PAIRING_TTL_MS = 15 * 60 * 1000;
 const VERIFY_CODE_TTL_MS = 15 * 60 * 1000;
@@ -1063,6 +1064,24 @@ export async function connectStore({ mongoUri, dbName }) {
     return { pushedAt: pushedAt.toISOString() };
   }
 
+  /**
+   * Upsert paths into this desk's snapshot. Other paths this desk already sent stay.
+   * A full portfolio push still replaces the doc (putProjectSnapshot).
+   */
+  async function mergeProjectSnapshot({ deskId, files, heroNames }) {
+    const id = String(deskId || "current");
+    const prev = await projectSnapshot.findOne({ _id: id });
+    const merged = mergeSnapshotFiles(prev?.files, files);
+    const names = { ...(prev?.heroNames || {}), ...(heroNames || {}) };
+    const pushedAt = new Date();
+    await projectSnapshot.replaceOne(
+      { _id: id },
+      { _id: id, deskId: id, pushedAt, files: merged, heroNames: names },
+      { upsert: true },
+    );
+    return { pushedAt: pushedAt.toISOString(), files: merged.length };
+  }
+
   async function getProjectSnapshot() {
     const docs = await projectSnapshot.find({}).toArray();
     if (!docs.length) return null;
@@ -1721,6 +1740,7 @@ export async function connectStore({ mongoUri, dbName }) {
     writeRunnerHeartbeat,
     getRunnerStatus,
     putProjectSnapshot,
+    mergeProjectSnapshot,
     getProjectSnapshot,
     putCockpitSnapshot,
     getCockpitSnapshot,

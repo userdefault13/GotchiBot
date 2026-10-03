@@ -30,6 +30,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, resolve, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { publishProjectWrite } from "./hub-project-sync.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PSTACK_ROOT = join(ROOT, "sessions", "pstack");
@@ -113,6 +114,7 @@ function readText(path, fallback = "") {
 function writeText(path, body) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, body, "utf8");
+  publishProjectWrite(path, { root: ROOT });
 }
 
 function slugOk(slug) {

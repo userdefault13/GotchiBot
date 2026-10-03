@@ -41,6 +41,10 @@ current_slug() {
   printf '%s' "$slug"
 }
 
+pull_hub() {
+  node "$ROOT/scripts/hub-project-sync.mjs" pull >/dev/null 2>&1 || true
+}
+
 render() {
   local slug
   slug="$(current_slug)"
@@ -80,14 +84,17 @@ fingerprint() {
 case "${1:-watch}" in
   once)
     mark_self
+    pull_hub
     render
     ;;
   watch)
     mark_self
+    pull_hub
     render
     LAST_FP="$(fingerprint)"
     while true; do
       sleep "$INTERVAL"
+      pull_hub
       FP="$(fingerprint)"
       if [ "$FP" != "$LAST_FP" ]; then
         render

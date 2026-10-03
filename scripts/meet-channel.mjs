@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { stdin as input, stdout as output } from "node:process";
 import { isMainModule } from "./is-main.mjs";
 import { resolveMeetingsRoot } from "./project-context.mjs";
+import { startHubProjectMirror } from "./hub-project-sync.mjs";
 import { isProfLinkCubeId } from "./gotchi-art.mjs";
 import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
 
@@ -667,10 +668,12 @@ export async function runMeetChannelLive() {
   let view = { start: 0, hasOlder: false };
   let copied = { key: null, state: null };
   let copyFlashTimer = null;
+  let stopMirror = () => {};
 
   const teardown = () => {
     if (destroyed) return;
     destroyed = true;
+    stopMirror();
     if (paintTimer) clearTimeout(paintTimer);
     try {
       if (useMouse) output.write("\x1b[?1006l\x1b[?1000l");
@@ -683,6 +686,12 @@ export async function runMeetChannelLive() {
   process.on("SIGINT", teardown);
   process.on("SIGTERM", teardown);
   process.on("SIGUSR1", () => schedulePaint(true));
+  stopMirror = startHubProjectMirror({
+    root: ROOT,
+    onChange() {
+      schedulePaint(true, 0);
+    },
+  });
 
   function contentKey(cols) {
     const meeting = loadCurrentMeeting();

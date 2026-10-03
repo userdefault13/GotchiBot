@@ -21,6 +21,7 @@ import readline from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import { isMainModule } from "./is-main.mjs";
 import { currentProjectSlug, mailPath } from "./project-context.mjs";
+import { publishProjectWrite, pullOpenProject, startHubProjectMirror } from "./hub-project-sync.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ESC = "\x1b";
@@ -147,7 +148,20 @@ export function writeMailDocument(file, doc) {
   const safe = { ...doc };
   for (const key of SECRET_KEYS) delete safe[key];
   writeFileSync(file, `${JSON.stringify(safe, null, 2)}\n`, "utf8");
+  publishProjectWrite(file, { root: ROOT });
   return safe;
+}
+
+/**
+ * Project mail (mail.json) wins when it has messages. Otherwise the pane shows
+ * the bot inbox (inbox/inbox.json), which is what the Hub keeps for the room.
+ */
+export function chooseInboxDocument(mailDoc, botDoc) {
+  const mail = listMailMessages(mailDoc);
+  const bot = listMailMessages(botDoc);
+  if (mail.length) return { which: "mail", doc: mailDoc, messages: mail };
+  if (bot.length) return { which: "bot", doc: botDoc, messages: bot };
+  return { which: "mail", doc: mailDoc || { messages: [] }, messages: [] };
 }
 
 /** Load, mark read, write back. Returns the opened message, or null. */
@@ -268,9 +282,22 @@ export function renderInboxView({
   return lines.join("\n");
 }
 
-function resolveMailFile() {
+function inboxFiles() {
   const slug = currentProjectSlug();
-  return slug ? mailPath(slug) : null;
+  if (!slug) return { mail: null, bot: null };
+  return {
+    mail: mailPath(slug),
+    bot: join(ROOT, "sessions", "pstack", slug, "inbox", "inbox.json"),
+  };
+}
+
+function loadInbox() {
+  const files = inboxFiles();
+  const mailDoc = files.mail ? readMailDocument(files.mail) : null;
+  const botDoc = files.bot ? readMailDocument(files.bot) : null;
+  const choice = chooseInboxDocument(mailDoc, botDoc);
+  const file = choice.which === "bot" ? files.bot : files.mail;
+  return { file, doc: choice.doc, messages: choice.messages };
 }
 
 function readActiveLine() {
@@ -296,10 +323,15 @@ function leaveToChat() {
   });
 }
 
-function runOnce() {
-  const file = resolveMailFile();
-  const doc = file ? readMailDocument(file) : null;
-  const messages = listMailMessages(doc);
+async function runOnce() {
+  try {
+    await pullOpenProject({ root: ROOT });
+  } catch {
+    /* local copy */
+  }
+  const loaded = loadInbox();
+  const doc = loaded.doc;
+  const messages = loaded.messages;
   const text = renderInboxView({
     messages,
     address: doc?.address || "",
@@ -322,9 +354,9 @@ function runWatch() {
   let open = null;
 
   const load = () => {
-    const file = resolveMailFile();
-    doc = file ? readMailDocument(file) : null;
-    messages = listMailMessages(doc);
+    const loaded = loadInbox();
+    doc = loaded.doc;
+    messages = loaded.messages;
     if (selected >= messages.length) selected = Math.max(0, messages.length - 1);
     if (view === "read" && open) {
       open = messages.find((m) => m.id === open.id) || open;
@@ -348,24 +380,34 @@ function runWatch() {
   };
 
   const cleanup = () => {
+    stopMirror();
     if (input.isTTY) input.setRawMode(false);
     output.write(`${ESC}[?25h${ESC}[0m`);
   };
 
   const signature = () => {
-    const file = resolveMailFile() || "";
-    let mt = "0";
-    try {
-      mt = String(statSync(file).mtimeMs);
-    } catch {
-      mt = "0";
-    }
-    return `${file}|${mt}|${readActiveLine()}`;
+    const files = inboxFiles();
+    const mt = (file) => {
+      try {
+        return String(statSync(file).mtimeMs);
+      } catch {
+        return "0";
+      }
+    };
+    return `${files.mail}|${mt(files.mail)}|${files.bot}|${mt(files.bot)}|${readActiveLine()}`;
   };
 
   let stamp = signature();
   load();
   paint();
+  const stopMirror = startHubProjectMirror({
+    root: ROOT,
+    onChange() {
+      stamp = signature();
+      load();
+      paint();
+    },
+  });
 
   const onUsr = () => {
     stamp = signature();
@@ -436,7 +478,7 @@ function runWatch() {
     if (key.name === "return" || key.name === "enter") {
       const msg = messages[selected];
       if (!msg) return;
-      const file = resolveMailFile();
+      const file = loadInbox().file;
       const opened = file ? openMailMessage(file, msg.id) : msg;
       open = opened || msg;
       view = "read";
@@ -451,7 +493,7 @@ function runWatch() {
   });
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   if (args.includes("-h") || args.includes("--help")) {
     output.write(`usage:
@@ -459,6 +501,8 @@ function main() {
   inbox-pane.mjs once      # print the list
 
 Project mail: sessions/pstack/<slug>/mail.json
+Bot inbox (shown when mail is empty): sessions/pstack/<slug>/inbox/inbox.json
+Hub copy is pulled before paint when this desk is paired.
 Desk: ./scripts/orchestrator-layout.sh enter-inbox
       Ctrl+Space then Shift+I
 `);
@@ -466,10 +510,15 @@ Desk: ./scripts/orchestrator-layout.sh enter-inbox
   }
   const wantOnce = args.includes("once") || args.includes("--once");
   if (wantOnce || !input.isTTY) {
-    runOnce();
+    await runOnce();
     return;
   }
   runWatch();
 }
 
-if (isMainModule(import.meta.url)) main();
+if (isMainModule(import.meta.url)) {
+  main().catch((err) => {
+    output.write(`${err?.message || err}\n`);
+    process.exit(1);
+  });
+}

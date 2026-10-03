@@ -13,7 +13,7 @@ import { isUlid } from "../../scripts/chat-canonical.mjs";
 import { resolveApiConfig } from "./config.mjs";
 import { checkOrigin, forwardedTailscaleIp, taggedPeerAllowed } from "./auth.mjs";
 import { connectStore } from "./store.mjs";
-import { createProjectSource, validateProjectSnapshot } from "./projects.mjs";
+import { createProjectSource, materializeSnapshotFiles, projectSlugOk, projectSyncPathOk, validateProjectSnapshot } from "./projects.mjs";
 import { validateCockpitSnapshot } from "./cockpit.mjs";
 import { validateTreeSnapshot } from "./tree.mjs";
 import {
@@ -651,6 +651,45 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
             files: snapshot.files.length,
             projects: projectSource.listSlugs().length,
           });
+        }
+
+        // Desk write of dossier / kanban / meet / inbox. Merges into this desk's
+        // snapshot (does not drop the rest) and lands on the Hub repo tree.
+        if (req.method === "POST" && path === "/api/gotchibot/projects/files") {
+          if (deskKind === "phone") {
+            return json(res, 403, { ok: false, error: "not allowed for phone desks" });
+          }
+          const snapshot = validateProjectSnapshot(await readBody(req));
+          if (!snapshot.files.length || snapshot.files.some((f) => !projectSyncPathOk(f.path))) {
+            return json(res, 400, { ok: false, error: "project file path not allowed" });
+          }
+          if (typeof store.mergeProjectSnapshot !== "function") {
+            return json(res, 501, { ok: false, error: "hub cannot store project files" });
+          }
+          const { pushedAt } = await store.mergeProjectSnapshot({
+            deskId: desk.deskId,
+            files: snapshot.files,
+            heroNames: snapshot.heroNames,
+          });
+          materializeSnapshotFiles(config.projectsRoot || ROOT, snapshot.files);
+          projectSnapshotLoaded = false;
+          await loadProjectSnapshot();
+          return json(res, 200, { ok: true, pushedAt, files: snapshot.files.length });
+        }
+
+        const projectFilesMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)\/files$/);
+        if (req.method === "GET" && projectFilesMatch) {
+          await loadProjectSnapshot();
+          let slug;
+          try {
+            slug = decodeURIComponent(projectFilesMatch[1]);
+          } catch {
+            slug = "";
+          }
+          if (!projectSlugOk(slug)) {
+            return json(res, 400, { ok: false, error: "invalid project" });
+          }
+          return json(res, 200, { ok: true, slug, files: projectSource.listSyncFiles(slug) });
         }
 
         if (req.method === "POST" && path === "/api/gotchibot/cockpit/push") {
