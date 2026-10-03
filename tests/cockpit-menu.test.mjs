@@ -57,6 +57,7 @@ const LEAVES_DOWN = [
   "mint-collateral",
   "settings",
   "avatar",
+  "roster-order",
 ];
 
 describe("cockpit menu nesting", () => {
@@ -65,8 +66,8 @@ describe("cockpit menu nesting", () => {
     const up = parse(printed(["--ssh-hub", "--tree"]));
     assert.equal(down.top, 8);
     assert.equal(up.top, 8);
-    assert.equal(down.flat, 18);
-    assert.equal(up.flat, 19);
+    assert.equal(down.flat, 19);
+    assert.equal(up.flat, 20);
     assert.ok(down.top < down.flat);
     assert.deepEqual(down.labels, [
       "Open desk",
@@ -84,7 +85,7 @@ describe("cockpit menu nesting", () => {
     assert.deepEqual(down.groups["group:desk"], ["kanban", "inbox", "pstack", "factory"]);
     assert.deepEqual(down.groups["group:view"], ["roster", "export-roster", "import", "marketplace"]);
     assert.deepEqual(down.groups["group:mint"], ["mint", "mint-collateral"]);
-    assert.deepEqual(down.groups["group:settings"], ["settings", "avatar"]);
+    assert.deepEqual(down.groups["group:settings"], ["settings", "avatar", "roster-order"]);
     const leaves = [
       "launch",
       "meet",

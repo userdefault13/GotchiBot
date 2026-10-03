@@ -9,7 +9,7 @@
  *   sessions/.pstack-dossier-current  — pane/dossier pointer (canonical slug)
  *   sessions/.project-current         — alias kept in sync (passoff / intake)
  *   sessions/pstack/<slug>/
- *     dossier.json · roster.json (id + per-project role) · mail.json · meetings/ · passoff/ · notes/ · tickets/ · jobs/
+ *     dossier.json · roster.json (id + per-project role; array order is the avatar roster display order) · mail.json · meetings/ · passoff/ · notes/ · tickets/ · jobs/
  *
  *   node scripts/project-context.mjs current [--json]
  *   node scripts/project-context.mjs set <slug> [--pointer-only]
@@ -748,6 +748,50 @@ export function normalizeRosterHero(entry) {
 
 export function rosterHeroId(entry) {
   return normalizeRosterHero(entry)?.id || null;
+}
+
+/**
+ * Stable display order. Ids listed in roster.json come first, in that sequence.
+ * Anything not stored keeps its incoming order after those.
+ */
+export function orderByRosterIds(items, rosterIds, idOf = (item) => item?.id) {
+  const list = Array.isArray(items) ? items : [];
+  const rank = new Map();
+  for (const id of rosterIds || []) {
+    if (id == null || id === "") continue;
+    const key = String(id);
+    if (!rank.has(key)) rank.set(key, rank.size);
+  }
+  if (!rank.size) return list.slice();
+  return list
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const ka = String(idOf(a.item) ?? "");
+      const kb = String(idOf(b.item) ?? "");
+      const ra = rank.has(ka) ? rank.get(ka) : Number.MAX_SAFE_INTEGER;
+      const rb = rank.has(kb) ? rank.get(kb) : Number.MAX_SAFE_INTEGER;
+      if (ra !== rb) return ra - rb;
+      return a.index - b.index;
+    })
+    .map((row) => row.item);
+}
+
+/** Move one roster row by delta (-1 up, +1 down). No-op at the ends or if the id is missing. Roles stay on the row. */
+export function moveRosterHero(heroes, id, delta) {
+  const list = [];
+  for (const entry of heroes || []) {
+    const hero = normalizeRosterHero(entry);
+    if (hero?.id) list.push(hero);
+  }
+  const step = Number(delta);
+  if (!Number.isInteger(step) || step === 0) return list;
+  const from = list.findIndex((h) => h.id === String(id));
+  if (from < 0) return list;
+  const to = from + step;
+  if (to < 0 || to >= list.length) return list;
+  const [row] = list.splice(from, 1);
+  list.splice(to, 0, row);
+  return list;
 }
 
 /** Ids of the user's cAavegotchis. This is the main roster a project copies. */

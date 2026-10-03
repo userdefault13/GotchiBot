@@ -1706,6 +1706,89 @@ async function githubMenu() {
   }
 }
 
+async function reorderRosterMenu() {
+  const {
+    currentProjectSlug,
+    loadRoster,
+    saveRoster,
+    moveRosterHero,
+    mergeRosterHeroes,
+    mainRosterIds,
+  } = await import("./project-context.mjs");
+  const { heroDisplayName } = await import("./openclaw-fleet.mjs");
+  const slug = currentProjectSlug();
+  if (!slug) {
+    clear();
+    title("Roster display order");
+    console.log("  No project selected — pick one first.");
+    await pause();
+    return;
+  }
+  const roster = loadRoster(slug);
+  let heroes = rosterHeroesForMenu(roster.heroes, mainRosterIds, mergeRosterHeroes);
+  if (!heroes.length) {
+    clear();
+    title("Roster display order");
+    console.log(`  project     ${slug}`);
+    console.log("  No gotchis on this roster yet.");
+    await pause();
+    return;
+  }
+  let note = "Pick a gotchi, then move it up or down. Esc returns.";
+  for (;;) {
+    clear();
+    title("Roster display order");
+    console.log(`  project     ${slug}`);
+    console.log("  This is the order the avatar roster shows. Saved on this project.");
+    console.log(`  ${note}\n`);
+    const options = heroes.map((h) => {
+      let name = h.id;
+      try {
+        name = heroDisplayName(h.id) || h.id;
+      } catch {
+        name = h.id;
+      }
+      const role = h.role ? ` · ${h.role}` : "";
+      return { key: h.id, label: `${name}${role}  (${h.id})`, id: h.id };
+    });
+    const pick = await choose("Which gotchi?", options, { back: true });
+    if (!pick || pick.key === "back") return;
+    const dir = await choose(pick.label, [
+      { key: "up", label: "Move up" },
+      { key: "down", label: "Move down" },
+    ], { back: true });
+    if (!dir || dir.key === "back") {
+      note = "Not moved.";
+      continue;
+    }
+    const delta = dir.key === "up" ? -1 : 1;
+    const next = moveRosterHero(heroes, pick.id, delta);
+    const changed = next.some((h, i) => h.id !== heroes[i]?.id);
+    if (!changed) {
+      note = delta < 0 ? "Already at the top." : "Already at the bottom.";
+      continue;
+    }
+    const saved = saveRoster({ ...roster, heroes: next }, slug);
+    heroes = saved.heroes;
+    note = delta < 0 ? `Moved up — saved.` : `Moved down — saved.`;
+  }
+}
+
+function rosterHeroesForMenu(stored, mainIds, merge) {
+  const cacheIds = [];
+  try {
+    const j = JSON.parse(readFileSync(`${ROOT}/sessions/.avatar-roster.json`, "utf8"));
+    if (j.pinned) cacheIds.push(String(j.pinned));
+    for (const o of j.others || []) if (o?.id) cacheIds.push(String(o.id));
+  } catch {
+    /* pane cache absent — stored project order is enough */
+  }
+  const base = (stored || []).length
+    ? stored
+    : cacheIds.map((id) => ({ id, role: null }));
+  return merge(base, [...cacheIds, ...(mainIds() || [])]);
+}
+
 async function settingsMenu() {
   for (;;) {
     const tts = loadTtsSettings();
@@ -2464,7 +2547,7 @@ function cockpitMenuLeafCount(rows) {
  * Cockpit "What next?" rows. Related actions sit under a parent; Enter on that
  * row opens the group, Esc returns here. Leaf labels and relative order match
  * the old flat list, so 1..n inside a group still picks those siblings.
- * Top-level is 8 rows. Leaves are 18 (Hub down) or 19 (Hub SSH up).
+ * Top-level is 8 rows. Leaves are 19 (Hub down) or 20 (Hub SSH up).
  */
 function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
   const item = (key, label) => ({ key, label });
@@ -2512,6 +2595,7 @@ function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
     group("group:settings", "Settings…", [
       item("settings", "Settings (voice, read speed, mouse, replay, IPFS, GitHub)"),
       item("avatar", "Change orchestrator avatar"),
+      item("roster-order", "Rearrange roster display order"),
     ]),
   ];
 }
@@ -2905,6 +2989,11 @@ async function mainMenu(wallet, cartridgeId) {
       await setOrchestratorHero(heroId, wallet, cartridgeId);
       console.log(`\n  ✓ orchestrator avatar → ${heroId}`);
       await pause();
+    }
+
+    if (pick.key === "roster-order") {
+      await reorderRosterMenu();
+      continue;
     }
   }
 }

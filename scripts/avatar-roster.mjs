@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 import { loadMeta } from "./identity.mjs";
 import { resolveThumbCollateral, persistHeroCollateral } from "./collateral-resolve.mjs";
 import { builtinHeroes, heroDisplayName } from "./openclaw-fleet.mjs";
+import { isMainModule } from "./is-main.mjs";
+import { orderByRosterIds } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -180,6 +182,8 @@ async function build() {
     if (list.some((h) => h.id === b.id)) continue;
     list.push({ id: b.id, name: b.name, collateral: null, hauntId: null, bindType: b.bindType, agentStatus: "available" });
   }
+  // Project roster.json array order is the display order. Ids not stored stay after, in this order.
+  list = orderByRosterIds(list, await projectRosterIds());
   // --refresh runs in the pane's background refresh (under abra, so the subgraph token is
   // set): pull each gotchi's collateral address for resolveThumbCollateral below. The
   // plain-node fast path only reads what this cached.
@@ -252,14 +256,34 @@ async function build() {
   return payload;
 }
 
-const json = process.argv.includes("--json");
-const payload = await build();
-if (json) {
-  console.log(JSON.stringify(payload));
-} else {
-  console.log(`role:   ${payload.role}`);
-  console.log(`pinned: ${payload.pinned || "—"}`);
-  for (const o of payload.others) {
-    console.log(`  ${o.id}  ${o.name || ""}  ${o.status}`);
+async function projectRosterIds() {
+  try {
+    const { currentProjectSlug, loadRoster } = await import("./project-context.mjs");
+    const slug = currentProjectSlug();
+    if (!slug) return [];
+    return loadRoster(slug).heroes.map((h) => h.id).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** Ids the avatar roster strip shows, in saved project order (pinned orchestrator omitted). */
+export function othersInDisplayOrder(list, pinned, rosterIds) {
+  return orderByRosterIds(list || [], rosterIds || [])
+    .filter((h) => h?.id && h.id !== pinned)
+    .map((h) => h.id);
+}
+
+if (isMainModule(import.meta.url)) {
+  const json = process.argv.includes("--json");
+  const payload = await build();
+  if (json) {
+    console.log(JSON.stringify(payload));
+  } else {
+    console.log(`role:   ${payload.role}`);
+    console.log(`pinned: ${payload.pinned || "—"}`);
+    for (const o of payload.others) {
+      console.log(`  ${o.id}  ${o.name || ""}  ${o.status}`);
+    }
   }
 }
