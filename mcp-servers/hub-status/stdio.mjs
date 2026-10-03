@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 /**
- * Read-only stdio MCP server for GotchiBot hub status.
+ * Stdio MCP server for GotchiBot hub status and desk chat.
  *
  * Start (cwd = GotchiBot checkout that holds sessions/):
  *   node mcp-servers/hub-status/stdio.mjs
  *
- * No writes. No SSH. No network.
+ * hub_status and openclaw_gateway_check_would_run stay local: no SSH, no probe.
+ * gotchibot_chat and gotchibot_handoff call the pinned Hub desk API
+ * (X-GotchiBot-Desk-Token). They do not start a runner, bridge, or receiver,
+ * and they do not touch chain, signing, or treasury routes.
  */
 import { readHubSnapshot, gatewayCheckWouldRun } from "./hub-status-lib.mjs";
+import { redactSecrets, talkToHub } from "./chat-lib.mjs";
 
-const SERVER = { name: "gotchibot-hub-status", version: "0.1.0" };
+const SERVER = { name: "gotchibot-hub-status", version: "0.2.0" };
 
 const TOOLS = [
   {
@@ -24,6 +28,42 @@ const TOOLS = [
       "Whether the OpenClaw gateway check would be run, using hubHealthRoute and statusGatewayReachable's guards. Does not probe, SSH, or open a connection. wouldRun is null when the answer is unknown.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
+  {
+    name: "gotchibot_chat",
+    description:
+      "Send a chat message to the GotchiBot hub (POST /api/gotchibot/chats/send) and return the assistant reply if the hub wrote one. Prove liveness with text ping. The hub has no separate ping RPC; the expected reply is the single word pong only when a phone-reply runner writes it. This tool does not invent pong and does not start the runner, bridge, or receiver. A desk-kind token is acknowledged with reply.status none and is not queued.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "Message text. Use ping for the liveness check." },
+        threadId: { type: "string", description: "Existing thread id. Omit to let the hub create one." },
+        waitMs: {
+          type: "number",
+          description: "How long to wait for a queued phone reply (0-20000). Default 8000. Ignored when the hub does not queue a reply.",
+        },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "gotchibot_handoff",
+    description:
+      "Hand a task to the GotchiBot hub on the same chats/send route, titled handoff, and return the hub acknowledgement plus an assistant reply if one was actually written. Does not start a worker. Acceptance alone is success when the runner is down.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "Task text to hand off." },
+        threadId: { type: "string", description: "Existing thread id. Omit to let the hub create one." },
+        waitMs: {
+          type: "number",
+          description: "How long to wait for a queued reply (0-20000). Default 0: return the hub ack without waiting.",
+        },
+      },
+      required: ["task"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 function send(msg) {
@@ -34,16 +74,26 @@ function toolText(data) {
   return { content: [{ type: "text", text: JSON.stringify(data) }], isError: false };
 }
 
-function callTool(name) {
+async function callTool(name, args = {}) {
   if (name === "hub_status") return toolText(readHubSnapshot());
   if (name === "openclaw_gateway_check_would_run") return toolText(gatewayCheckWouldRun());
+  if (name === "gotchibot_chat" || name === "gotchibot_handoff") {
+    const input = args && typeof args === "object" ? args : {};
+    const data = await talkToHub({
+      mode: name === "gotchibot_handoff" ? "handoff" : "chat",
+      text: name === "gotchibot_handoff" ? input.task : input.text,
+      threadId: input.threadId,
+      waitMs: input.waitMs,
+    });
+    return toolText(data);
+  }
   return {
     content: [{ type: "text", text: JSON.stringify({ error: "unknown tool" }) }],
     isError: true,
   };
 }
 
-function handle(msg) {
+async function handle(msg) {
   if (!msg || msg.jsonrpc !== "2.0" || msg.id === undefined || msg.id === null) return;
   const { id, method, params } = msg;
   if (method === "initialize") {
@@ -63,7 +113,19 @@ function handle(msg) {
     return;
   }
   if (method === "tools/call") {
-    send({ jsonrpc: "2.0", id, result: callTool(params?.name) });
+    try {
+      const result = await callTool(params?.name, params?.arguments || {});
+      send({ jsonrpc: "2.0", id, result });
+    } catch (e) {
+      send({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [{ type: "text", text: JSON.stringify({ ok: false, error: redactSecrets(e?.message || e) }) }],
+          isError: true,
+        },
+      });
+    }
     return;
   }
   if (method === "ping") {
@@ -126,4 +188,7 @@ function drain() {
 process.stdin.on("data", (chunk) => {
   buf = Buffer.concat([buf, chunk]);
   drain();
+});
+process.stdin.on("end", () => {
+  setTimeout(() => process.exit(0), 30);
 });
