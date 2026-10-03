@@ -7,7 +7,11 @@
  * is "unavailable", never a made-up count. Does not start QEMU, the hub API,
  * Docker, or a receiver.
  *
+ * Full dashboard is hub-only (sessions/.hub-api.json — this computer is the Hub).
+ * Any other desk gets --lite: pairing and remote desk names, nothing else.
+ *
  *   node scripts/hub-dashboard.mjs [--once]
+ *   node scripts/hub-dashboard.mjs --lite [--once]
  *   q back · r refresh
  */
 import { spawnSync } from "node:child_process";
@@ -17,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import readline from "node:readline";
 import { isMainModule } from "./is-main.mjs";
 import { readHubPin, readMongoPin, deskApiBase, isArcadeSharedChatBase } from "./infra-client.mjs";
+import { hubNetworkSummary } from "./hub-network.mjs";
 import { checkReceiverHealth, DESK_RECEIVER_PORT } from "./desk-receiver-ensure.mjs";
 import { healthCheck } from "./gotchibot-api.mjs";
 import { resolveApiConfig } from "../services/gotchibot-api/config.mjs";
@@ -47,6 +52,12 @@ export const HUB_DASHBOARD_SECTIONS = [
   "LOGS",
   "VM PREVIEW",
 ];
+
+/** Shown when a non-hub desk tries to open the full dashboard. */
+export const HUB_DASHBOARD_DESK_REASON = "this desk is not the hub";
+
+/** Smaller read-only page. No logs, database, or VM. */
+export const HUB_LITE_SECTIONS = ["THIS DESK", "REMOTE DESKS"];
 
 function visLen(s) {
   return String(s ?? "").replace(/\x1b\[[0-9;]*m/g, "").length;
@@ -167,6 +178,21 @@ function redact(line) {
     .replace(/((?:token|bearer|password|secret|api[_-]?key)[=:]\s*)\S+/gi, "$1***");
 }
 
+function remoteDeskRows(remote) {
+  const rows = [];
+  if (remote.state === "unavailable") {
+    rows.push(unavailable(remote.reason || "remote desk list could not be read"));
+  } else if (!remote.desks?.length) {
+    rows.push(`${c.dim}none — no other desk answered GotchiBot ports${c.reset}`);
+  } else {
+    for (const d of remote.desks) {
+      const dot = d.connected ? `${c.green}●${c.reset}` : `${c.gray}○${c.reset}`;
+      rows.push(`${dot} ${d.label || "?"}  ${c.dim}${d.detail || ""}${c.reset}`);
+    }
+  }
+  return rows;
+}
+
 /**
  * Turn already-collected facts into the six sections. No I/O.
  * state: "up" | "down" | "empty" | "unavailable"
@@ -189,17 +215,7 @@ export function assembleHubDashboard(facts = {}) {
   }
   if (local.pair) localRows.push(`${c.dim}${local.pair}${c.reset}`);
 
-  const remoteRows = [];
-  if (remote.state === "unavailable") {
-    remoteRows.push(unavailable(remote.reason || "remote desk list could not be read"));
-  } else if (!remote.desks?.length) {
-    remoteRows.push(`${c.dim}none — no other desk answered GotchiBot ports${c.reset}`);
-  } else {
-    for (const d of remote.desks) {
-      const dot = d.connected ? `${c.green}●${c.reset}` : `${c.gray}○${c.reset}`;
-      remoteRows.push(`${dot} ${d.label || "?"}  ${c.dim}${d.detail || ""}${c.reset}`);
-    }
-  }
+  const remoteRows = remoteDeskRows(remote);
 
   const dbRows = [];
   if (db.state === "unavailable") {
@@ -276,6 +292,47 @@ export function renderHubDashboard(model, cols = 80) {
   return lines.join("\n");
 }
 
+/**
+ * Desk-sized page. Facts only: this desk paired or not, and remote desk
+ * names from a hub-roster read. No database, logs, or VM.
+ */
+export function assembleHubLite(facts = {}) {
+  const local = facts.local || {};
+  const remote = facts.remote || {};
+  const localRows = [];
+  if (local.state === "unavailable") {
+    localRows.push(unavailable(local.reason || "this desk's hub pin could not be read"));
+  } else if (local.paired) {
+    localRows.push(`${mark(true)} paired  ${c.dim}${local.detail || ""}${c.reset}`);
+  } else {
+    localRows.push(`${mark(false)} not paired  ${c.dim}${local.detail || "no hub pin on this desk"}${c.reset}`);
+  }
+  return {
+    at: facts.at || null,
+    lite: true,
+    sections: [
+      { title: "THIS DESK", note: local.source || "sessions/.hub.json", rows: localRows },
+      { title: "REMOTE DESKS", note: remote.source || "hub-roster", rows: remoteDeskRows(remote) },
+    ],
+  };
+}
+
+export function renderHubLite(model, cols = 80) {
+  const width = Math.max(40, Math.min(cols || 80, 160));
+  const lines = [
+    `${c.pink}${c.bold}HUB LITE${c.reset}  ${c.dim}lite view · not the hub dashboard${c.reset}`,
+    `${c.dim}read-only · this desk's pairing and remote desk names${c.reset}`,
+    `${c.dim}logs, database, and VM stay on the hub dashboard${c.reset}`,
+  ];
+  if (model.at) lines.push(`${c.dim}${model.at}${c.reset}`);
+  lines.push("");
+  for (const section of model.sections || []) {
+    lines.push(...panel(section.title, section.rows, width, { note: section.note || "" }));
+  }
+  lines.push(`${c.dim}r refresh · q back to Hub…${c.reset}`);
+  return lines.join("\n");
+}
+
 function tailFile(path, maxLines) {
   if (!existsSync(path)) return null;
   const st = statSync(path);
@@ -319,6 +376,60 @@ function withTimeout(promise, ms, label) {
   ]);
 }
 
+function remoteFactsFromRoster(rosterSettled) {
+  if (!rosterSettled.ok) {
+    return {
+      state: "unavailable",
+      reason: rosterSettled.error?.message || "hub roster failed",
+      source: "hub-roster",
+    };
+  }
+  if (!rosterSettled.value?.tailnet?.ok) {
+    return {
+      state: "unavailable",
+      reason: "tailscale status unavailable",
+      source: "hub-roster",
+    };
+  }
+  const desks = (rosterSettled.value.desks || [])
+    .filter((d) => !d.self)
+    .map((d) => ({
+      label: d.host || d.label || "?",
+      connected: Boolean(d.online),
+      detail: d.why || (d.online ? "online" : "offline"),
+    }));
+  return { state: "up", desks, source: "hub-roster" };
+}
+
+function loadRoster() {
+  return withTimeout(buildRoster({ live: false }), 12000, "hub roster").then(
+    (value) => ({ ok: true, value }),
+    (error) => ({ ok: false, error }),
+  );
+}
+
+/** Pairing this desk already stored. Never includes the desk token. */
+function liteLocalFromPin(pin) {
+  const paired = Boolean(pin?.deskToken && pin?.deskApiBase);
+  if (!paired) {
+    return {
+      state: "down",
+      paired: false,
+      detail: pin ? "hub pin has no desk pairing" : "no hub pin (sessions/.hub.json)",
+      source: "sessions/.hub.json",
+    };
+  }
+  const name = pin.deskName || pin.name || pin.deskId || "this desk";
+  const host = String(pin.tailscaleHost || "").trim();
+  const base = String(pin.deskApiBase || "").replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  return {
+    state: "up",
+    paired: true,
+    detail: [name, host || base].filter(Boolean).join(" · "),
+    source: "sessions/.hub.json",
+  };
+}
+
 function pairLine(pin) {
   if (!pin) return "no hub pin (sessions/.hub.json)";
   const name = pin.name || pin.deskName || pin.deskId || "paired";
@@ -342,10 +453,7 @@ export async function collectHubDashboard({ root = ROOT, env = process.env } = {
       () => ({ checked: false, up: false }),
     ),
     Promise.resolve().then(() => tmuxDesk(session)),
-    withTimeout(buildRoster({ live: false }), 12000, "hub roster").then(
-      (value) => ({ ok: true, value }),
-      (error) => ({ ok: false, error }),
-    ),
+    loadRoster(),
   ]);
 
   let local;
@@ -368,29 +476,7 @@ export async function collectHubDashboard({ root = ROOT, env = process.env } = {
   }
   local.pair = pairLine(readHubPin(root));
 
-  let remote;
-  if (!rosterSettled.ok) {
-    remote = {
-      state: "unavailable",
-      reason: rosterSettled.error?.message || "hub roster failed",
-      source: "hub-roster",
-    };
-  } else if (!rosterSettled.value?.tailnet?.ok) {
-    remote = {
-      state: "unavailable",
-      reason: "tailscale status unavailable",
-      source: "hub-roster",
-    };
-  } else {
-    const desks = (rosterSettled.value.desks || [])
-      .filter((d) => !d.self)
-      .map((d) => ({
-        label: d.host || d.label || "?",
-        connected: Boolean(d.online),
-        detail: d.why || (d.online ? "online" : "offline"),
-      }));
-    remote = { state: "up", desks, source: "hub-roster" };
-  }
+  const remote = remoteFactsFromRoster(rosterSettled);
 
   let db = { state: "unavailable", reason: "no health endpoint answered", source: "GET /health" };
   const tried = [];
@@ -495,6 +581,21 @@ export async function collectHubDashboard({ root = ROOT, env = process.env } = {
   });
 }
 
+/**
+ * Read-only snapshot for a desk that is not the hub.
+ * Uses the hub pin and hub-roster (live: false). Does not read logs,
+ * ping the database, or open the VM serial log.
+ * Pass `roster` to skip the tailnet read (tests).
+ */
+export async function collectHubLite({ root = ROOT, roster } = {}) {
+  const rosterSettled = roster ? { ok: true, value: roster } : await loadRoster();
+  return assembleHubLite({
+    at: new Date().toISOString(),
+    local: liteLocalFromPin(readHubPin(root)),
+    remote: remoteFactsFromRoster(rosterSettled),
+  });
+}
+
 function paint(text) {
   const cols = process.stdout.columns || 80;
   const rows = process.stdout.rows || 24;
@@ -504,10 +605,16 @@ function paint(text) {
 }
 
 async function main() {
+  const lite = process.argv.includes("--lite");
+  if (!lite && !hubNetworkSummary().hubInstalled) {
+    console.log(HUB_DASHBOARD_DESK_REASON);
+    process.exit(1);
+  }
   const once = process.argv.includes("--once") || !process.stdout.isTTY || !process.stdin.isTTY;
   const draw = async () => {
-    const model = await collectHubDashboard();
-    const text = renderHubDashboard(model, process.stdout.columns || 80);
+    const text = lite
+      ? renderHubLite(await collectHubLite(), process.stdout.columns || 80)
+      : renderHubDashboard(await collectHubDashboard(), process.stdout.columns || 80);
     if (once) process.stdout.write(`${text}\n`);
     else paint(text);
   };

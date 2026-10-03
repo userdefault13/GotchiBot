@@ -32,6 +32,7 @@ import {
 import { runLayout, tmuxSessionName as layoutSession } from "./tmux-layout.mjs";
 import { withStatusBar, Progress } from "./progress-bar.mjs";
 import { bootMark } from "./boot-trace.mjs";
+import { hubNetworkSummary } from "./hub-network.mjs";
 
 const CONCIERGE_MINT_URL = "https://www.aarcadeghst.com/concierge/terminal";
 const MARKETPLACE_URL = "https://aarcadeghst.com/gotchibot-templates";
@@ -2183,6 +2184,13 @@ async function implementGotchiHubNetwork() {
 }
 
 async function viewHubDashboard() {
+  if (!hubNetworkSummary().hubInstalled) {
+    clear();
+    title("Hub dashboard");
+    console.log("  this desk is not the hub");
+    await pause();
+    return;
+  }
   clear();
   title("Hub dashboard");
   console.log("  Desks, database, projects, logs, VM serial. q returns here.\n");
@@ -2205,6 +2213,33 @@ async function viewHubDashboard() {
     clear();
     title("Hub dashboard");
     console.log(`  ✗ dashboard exited ${r.status}`);
+    await pause();
+  }
+}
+
+async function viewHubLite() {
+  clear();
+  title("Hub lite");
+  console.log("  Lite view — not the hub dashboard. Read-only. q returns here.\n");
+  try {
+    rl.pause();
+  } catch {}
+  let r;
+  try {
+    r = spawnSync(process.execPath, [`${ROOT}/scripts/hub-dashboard.mjs`, "--lite"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: process.env,
+    });
+  } finally {
+    try {
+      rl.resume();
+    } catch {}
+  }
+  if (r?.status !== 0 && r?.status != null) {
+    clear();
+    title("Hub lite");
+    console.log(`  ✗ lite view exited ${r.status}`);
     await pause();
   }
 }
@@ -2603,7 +2638,9 @@ function cockpitMenuLeafCount(rows) {
  * Cockpit "What next?" rows. Related actions sit under a parent; Enter on that
  * row opens the group, Esc returns here. Leaf labels and relative order match
  * the old flat list, so 1..n inside a group still picks those siblings.
- * Top-level is 8 rows. Leaves are 20 (Hub down) or 21 (Hub SSH up).
+ * Top-level is 8 rows. Leaves are 20 (Hub SSH down) or 21 (Hub SSH up).
+ * The second Hub… row is the full dashboard only when this computer is the
+ * Hub (sessions/.hub-api.json). Every other desk gets the lite view instead.
  */
 function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
   const item = (key, label) => ({ key, label });
@@ -2617,7 +2654,9 @@ function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
           ? "Hub network (this computer is the Hub)"
           : "Set up Hub network (Tailscale)",
     ),
-    item("hub-dashboard", "Hub dashboard (desks · db · projects · logs · VM)"),
+    net.hubInstalled
+      ? item("hub-dashboard", "Hub dashboard (desks · db · projects · logs · VM)")
+      : item("hub-lite", "Hub lite view (not the hub dashboard)"),
     ...(sshHubUp
       ? [
           item("hub", "Hub status (iMac OpenClaw · tunnel · Docker)"),
@@ -2659,7 +2698,7 @@ function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
 
 function printCockpitMenu() {
   const sshHubUp = process.argv.includes("--ssh-hub");
-  const rows = cockpitMenuRows({ sshHubUp });
+  const rows = cockpitMenuRows({ sshHubUp, net: hubNetworkSummary() });
   console.log(`top ${rows.length}`);
   for (const row of rows) console.log(row.label);
   console.log(`flat ${cockpitMenuLeafCount(rows)}`);
@@ -2760,7 +2799,7 @@ async function mainMenu(wallet, cartridgeId) {
       }
       continue;
     }
-    const net = (await import("./hub-network.mjs")).hubNetworkSummary();
+    const net = hubNetworkSummary();
     if (!ob.hubNetworkAsked && !net.deskPaired && !net.hubInstalled) {
       console.log(`  next        set up your Hub (one computer, or Desk + Hub over Tailscale)`);
       hr();
@@ -2935,6 +2974,11 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "hub-dashboard") {
       await viewHubDashboard();
+      continue;
+    }
+
+    if (pick.key === "hub-lite") {
+      await viewHubLite();
       continue;
     }
 
