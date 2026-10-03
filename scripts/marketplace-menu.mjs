@@ -24,6 +24,7 @@ import {
   filterPacksByScope,
   isSuitePack,
   suiteMembers,
+  scopeLabel,
 } from "./template-pack.mjs";
 import { mintCollaterals, unassignedHeroes } from "./template-seat.mjs";
 
@@ -31,9 +32,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACK_CLI = join(ROOT, "scripts", "template-pack.mjs");
 
 const SCOPE_LABEL = {
-  starter: "starter templates",
-  aarcade: "AarcadeGh-t / desk",
-  all: "all scopes",
+  starter: scopeLabel("starter"),
+  aarcade: scopeLabel("aarcade"),
+  all: scopeLabel("all"),
 };
 
 function title(t) {
@@ -238,7 +239,7 @@ async function browsePacks(rl, catalog, scope) {
     }
     const opts = packs.map((p) => ({
       key: p.id,
-      label: `${p.title || p.id}  (v${p.version || "?"} · ${resolvePackScope(p)}${isSuitePack(p) ? " · suite" : ""})`,
+      label: `${p.title || p.id}  (v${p.version || "?"} · ${scopeLabel(resolvePackScope(p))}${isSuitePack(p) ? " · suite" : ""})`,
       pack: p,
     }));
     const pick = await choose(rl, "Open pack?", opts);
@@ -271,7 +272,7 @@ async function searchPacks(rl, catalog, scope) {
   }
   const opts = hits.map((p) => ({
     key: p.id,
-    label: `${p.title || p.id}  (v${p.version || "?"} · ${resolvePackScope(p)})`,
+    label: `${p.title || p.id}  (v${p.version || "?"} · ${scopeLabel(resolvePackScope(p))})`,
     pack: p,
   }));
   const pick = await choose(rl, "Open pack?", opts);
@@ -306,7 +307,7 @@ export async function runMarketplaceMenu() {
         console.log(`  · Fix: ./scripts/gotchibot templates cdn deploy --yes`);
       }
       console.log(
-        `  scopes   ${counts.starter} starter · ${counts.aarcade} AarcadeGh-t/desk · filter=${scope}`,
+        `  scopes   ${counts.starter} ${scopeLabel("starter")} · ${counts.aarcade} ${scopeLabel("aarcade")} · filter=${scopeLabel(scope)}`,
       );
       console.log(`  install base  ${catalog.baseUrl || BASE_URL}`);
     };
@@ -327,7 +328,7 @@ export async function runMarketplaceMenu() {
               ? "Show AarcadeGh-t / desk packs"
               : scope === "aarcade"
                 ? "Show all packs"
-                : "Show starter templates only",
+                : "Show Base set only",
         },
         {
           key: "toggle",

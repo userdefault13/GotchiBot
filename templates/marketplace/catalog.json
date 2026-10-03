@@ -139,7 +139,7 @@
         "pstack"
       ],
       "skillsExternal": [],
-      "scope": "aarcade"
+      "scope": "starter"
     },
     {
       "id": "bend-chief",
@@ -175,7 +175,6 @@
       "version": "1.0.0",
       "path": "packs/bend-crew",
       "tags": [
-        "starter",
         "bend",
         "suite",
         "laws",
@@ -289,7 +288,7 @@
         "gotchibot-bridge"
       ],
       "skillsExternal": [],
-      "scope": "aarcade"
+      "scope": "starter"
     },
     {
       "id": "cron-manager",
@@ -374,7 +373,7 @@
     {
       "id": "fe-marketing",
       "roleId": "fe-marketing",
-      "title": "FE Marketing",
+      "title": "UI/UX",
       "summary": "Landing pages, conversion UX, brand web polish and campaign microsites — FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.",
       "version": "1.0.0",
       "path": "packs/fe-marketing",
@@ -386,7 +385,7 @@
         "browser-tool"
       ],
       "skillsExternal": [],
-      "scope": "aarcade"
+      "scope": "starter"
     },
     {
       "id": "financial-analyst",
@@ -566,7 +565,6 @@
       "version": "1.0.0",
       "path": "packs/jev",
       "tags": [
-        "starter",
         "typesafe",
         "jev",
         "system-one",
@@ -640,7 +638,7 @@
         "browser-tool"
       ],
       "skillsExternal": [],
-      "scope": "aarcade"
+      "scope": "starter"
     },
     {
       "id": "market-research",
@@ -660,7 +658,7 @@
         "market-news-feed"
       ],
       "skillsExternal": [],
-      "scope": "aarcade"
+      "scope": "starter"
     },
     {
       "id": "marketing-agency",
@@ -862,7 +860,7 @@
         "abra-vault"
       ],
       "skillsExternal": [],
-      "scope": "aarcade"
+      "scope": "starter"
     },
     {
       "id": "skill-maker",
@@ -964,7 +962,7 @@
         "pstack"
       ],
       "skillsExternal": [],
-      "scope": "aarcade"
+      "scope": "starter"
     }
   ],
   "updatedAt": "2026-09-23T20:15:33.845Z"

@@ -106,28 +106,46 @@ const TAG_MAP = {
   "bend-chief": ["bend", "crew", "routing"],
   "bend-laws": ["bend", "laws", "LAWS"],
   "bend-proofs": ["bend", "proofs", "PROOF"],
-  "bend-crew": ["starter", "bend", "suite", "laws", "proofs"],
-  "jev": ["starter", "typesafe", "jev", "system-one", "routing", "decisions"],
+  "bend-crew": ["bend", "suite", "laws", "proofs"],
+  "jev": ["typesafe", "jev", "system-one", "routing", "decisions"],
 };
 
 /**
  * Marketplace scope:
- *   starter  — portable starter templates (default browse / public offer)
+ *   starter  — Base set (portable public templates). Machine id stays "starter";
+ *              user-facing label is scopeLabel() → "Base set".
  *   aarcade  — AarcadeGh-t / GotchiBot home-desk packs (opt-in)
  */
+export const BASE_SET_LABEL = "Base set";
+
+/** User-facing name. Scope id "starter" is the Base set. */
+export function scopeLabel(scope) {
+  if (scope === "starter" || scope === "base") return BASE_SET_LABEL;
+  if (scope === "aarcade") return "AarcadeGh-t / desk";
+  if (scope === "all") return "all scopes";
+  return scope || "";
+}
+
 const STARTER_PACK_IDS = new Set([
   "accountant",
   "architect",
+  "auditor",
   "bend-crew",
   "brand-design",
+  "chief-of-staff",
   "customer-support",
+  "fe-marketing",
   "game-art-director",
   "jev",
   "kanban-manager",
   "mail-courier",
+  "market-news",
+  "market-research",
   "marketing-agency",
   "product-manager",
+  "security-engineer",
   "social-media-manager",
+  "worker",
 ]);
 
 /** Suite packs: one catalog entry that installs/applies member role packs. */
@@ -535,7 +553,7 @@ function cmdList(json) {
   console.log("");
   for (const p of catalog.packs) {
     const scope = resolvePackScope(p);
-    console.log(`  ${p.id.padEnd(28)} v${String(p.version).padEnd(7)} [${scope}] ${p.title}`);
+    console.log(`  ${p.id.padEnd(28)} v${String(p.version).padEnd(7)} [${scopeLabel(scope)}] ${p.title}`);
     console.log(`    ${p.summary}`);
     console.log(`    tags: ${(p.tags || []).join(", ") || "-"}   skills: ${(p.skills || []).join(", ") || "-"}${p.skillsExternal?.length ? `   external: ${p.skillsExternal.join(", ")}` : ""}`);
     console.log(`    install: gotchibot templates install ${p.id}`);
@@ -558,7 +576,7 @@ async function cmdListRemote(json) {
   console.log("");
   for (const p of catalog.packs) {
     const scope = resolvePackScope(p);
-    console.log(`  ${p.id.padEnd(28)} v${String(p.version).padEnd(7)} [${scope}] ${p.title}`);
+    console.log(`  ${p.id.padEnd(28)} v${String(p.version).padEnd(7)} [${scopeLabel(scope)}] ${p.title}`);
     console.log(`    ${p.summary}`);
     console.log(`    tags: ${(p.tags || []).join(", ") || "-"}`);
     console.log(`    remote: ${remotePackUrl(catalog, p.id)}`);
@@ -597,7 +615,7 @@ function cmdStampScopes() {
   } catch {
     /* web page absent — fine */
   }
-  console.log(`stamped scope on ${catalog.packs.length} packs → ${nStarter} starter, ${nAarcade} aarcade`);
+  console.log(`stamped scope on ${catalog.packs.length} packs → ${nStarter} ${BASE_SET_LABEL}, ${nAarcade} aarcade`);
 }
 
 function cmdShow(id) {
@@ -904,7 +922,7 @@ async function main() {
   template-pack.mjs pack <roleId>            build/overwrite packs/<roleId> from live config
   template-pack.mjs list [--remote] [--json] print the catalog (CDN first with --remote)
   template-pack.mjs show <id>                print pack.json + file tree
-  template-pack.mjs stamp-scopes             set scope=starter|aarcade on packs + catalog
+  template-pack.mjs stamp-scopes             set Base set (scope=starter) vs aarcade on packs + catalog
   template-pack.mjs install <id|path|url> [--yes]   merge playbook + AGENTS + skills (+ standing duties with --yes)
   template-pack.mjs apply <id> --hero <unassigned> [--yes] [--standing-duty <key>] [--reassign]
   template-pack.mjs apply <id> --mint <collateral> [--yes]   mint a new cAavegotchi ($5) and seat it
