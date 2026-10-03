@@ -215,9 +215,60 @@ describe("avatar roster width", () => {
     const src = read(layout);
     assert.match(src, /GOTCHIBOT_WINDOW_WIDTH:-163/);
     assert.match(src, /GOTCHIBOT_WINDOW_HEIGHT:-46/);
+    assert.match(src, /GOTCHIBOT_WINDOW_HEIGHT_DESKTOP:-70/);
     const boot = read(path.join(root, "scripts/gotchibot"));
     assert.match(boot, /GOTCHIBOT_WINDOW_WIDTH:-163/);
     assert.match(boot, /GOTCHIBOT_WINDOW_HEIGHT:-46/);
     assert.doesNotMatch(src, /mouse on/);
+  });
+
+  function canvasHeight(client) {
+    return execFileSync("bash", ["scripts/orchestrator-layout.sh", "canvas-height", String(client)], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, TMUX: "", TMUX_PANE: "", TERM: "xterm-256color" },
+    }).trim();
+  }
+
+  function rosterRows(paneH) {
+    const out = execFileSync("bash", ["scripts/avatar-pane.sh", "roster-rows", String(paneH)], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    return Object.fromEntries(
+      out.trim().split("\n").map((line) => line.split("=")),
+    );
+  }
+
+  it("keeps a 46-row canvas on short terminals and grows only when 3 rows fit", () => {
+    assert.equal(canvasHeight(24), "46");
+    assert.equal(canvasHeight(46), "46");
+    assert.equal(canvasHeight(50), "46");
+    // 70 client lines leave 69 of content — one short of the 3-row pane.
+    assert.equal(canvasHeight(70), "46");
+    assert.equal(canvasHeight(71), "70");
+    assert.equal(canvasHeight(120), "119");
+  });
+
+  it("shows one roster row below 70 pane rows and three at 70", () => {
+    const laptop = rosterRows(46);
+    assert.equal(laptop.rows, "1");
+    assert.equal(laptop.page, "3");
+    assert.equal(laptop.grid, "19");
+    const almost = rosterRows(69);
+    assert.equal(almost.rows, "1");
+    assert.equal(almost.grid, "19");
+    const desk = rosterRows(70);
+    assert.equal(desk.rows, "3");
+    assert.equal(desk.page, "9");
+    assert.equal(desk.grid, "43");
+    const tall = rosterRows(119);
+    assert.equal(tall.rows, "3");
+    assert.equal(tall.grid, "43");
+    // Short pane budgets are unchanged.
+    assert.equal(rosterRows(27).grid, "11");
+    assert.equal(rosterRows(27).rows, "1");
+    assert.equal(rosterRows(40).grid, "15");
+    assert.equal(rosterRows(40).rows, "1");
   });
 });

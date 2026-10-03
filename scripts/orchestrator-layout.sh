@@ -12,7 +12,7 @@ sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
 sess_name="${sess_name#=}"
 sess="$sess_name"
 min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-47}"
-# Desk canvas is 163 columns by 46 rows (was 147 by 40: +16 columns, +6 rows). 9 panes, 8 separators, content 155 at 163 (139 at 147). Avatar stays 44. Files bar stays 3. Collapsed label bars stay 3: one space, the glyph, one space (they are not shrunk to 1). Kanban is pane 8. Chrome = files 3 + six collapsed bars of 3 = 21, so a focused chat/factory/dossier/inbox/meet/cockpit/kanban pane is 139-21-44 = 74 at 147 and 155-21-44 = 90 at 163 (was 78 and 94 before the kanban bar and its separator). The extra 16 columns still land on that focused pane. Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra avatar column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
+# Desk canvas is 163 columns by 46 rows on a laptop (was 147 by 40: +16 columns, +6 rows). A client whose content area is at least 70 rows grows the window to that height so the avatar can show 3 roster rows; shorter clients stay at 46. 9 panes, 8 separators, content 155 at 163 (139 at 147). Avatar stays 44. Files bar stays 3. Collapsed label bars stay 3: one space, the glyph, one space (they are not shrunk to 1). Kanban is pane 8. Chrome = files 3 + six collapsed bars of 3 = 21, so a focused chat/factory/dossier/inbox/meet/cockpit/kanban pane is 139-21-44 = 74 at 147 and 155-21-44 = 90 at 163 (was 78 and 94 before the kanban bar and its separator). The extra 16 columns still land on that focused pane. Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra avatar column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
 min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-44}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
@@ -20,7 +20,51 @@ chat_collapsed="${GOTCHIBOT_CHAT_COLLAPSED:-3}"
 min_center="${GOTCHIBOT_TMUX_CENTER_WIDTH:-50}"
 win_w_default="${GOTCHIBOT_WINDOW_WIDTH:-163}"
 win_h_default="${GOTCHIBOT_WINDOW_HEIGHT:-46}"
+# Three roster rows need a 70-row pane (portrait budget stays 20). See canvas_height_for_client.
+win_h_desktop="${GOTCHIBOT_WINDOW_HEIGHT_DESKTOP:-70}"
 resize_hook="$ROOT/scripts/orchestrator-resize.sh"
+
+# Client lines → tmux window rows. The status line is not part of the window.
+# Laptop floor is win_h_default (46): one roster row. A desktop is tall enough
+# when the content area is at least win_h_desktop (70), which keeps the laptop
+# portrait budget (20) and fits 3 roster rows of 12 lines. Shorter clients do
+# not get a squeezed 3-row canvas — they stay at 46.
+canvas_height_for_client() {
+  local client="${1:-0}" avail
+  case "$client" in
+    ''|*[!0-9]*) client=0 ;;
+  esac
+  if [ "$client" -gt 1 ]; then
+    avail=$((client - 1))
+  else
+    avail=0
+  fi
+  if [ "$avail" -ge "$win_h_desktop" ]; then
+    printf '%s\n' "$avail"
+  else
+    printf '%s\n' "$win_h_default"
+  fi
+}
+
+# Attached client → window rows. No client: leave the caller to skip the resize.
+desk_window_height() {
+  local client
+  client="$(tmux display -p -t "$sess" '#{client_height}' 2>/dev/null || echo 0)"
+  case "$client" in
+    ''|0|*[!0-9]*) return 1 ;;
+  esac
+  canvas_height_for_client "$client"
+}
+
+apply_window_height() {
+  local want cur
+  want="$(desk_window_height)" || return 0
+  cur="$(tmux display -p -t "$sess:work" '#{window_height}' 2>/dev/null || echo 0)"
+  case "$cur" in ''|*[!0-9]*) cur=0 ;; esac
+  [ "$want" = "$cur" ] && return 0
+  tmux resize-window -t "$sess:work" -y "$want" 2>/dev/null || true
+}
+
 status_bar="$ROOT/scripts/session-status-bar.sh"
 LAYOUT_FILE="$ROOT/sessions/.tmux-layout"
 LAYOUT_MODE="$ROOT/sessions/.layout-mode"
@@ -243,7 +287,8 @@ pstack_dossier_correct() {
 
 rebuild_panes() {
   local need=$((sidebar_collapsed + min_center + min_right + 2))
-  tmux resize-window -t "$sess:work" -x "$win_w_default" -y "$win_h_default" 2>/dev/null || true
+  apply_window_height
+  tmux resize-window -t "$sess:work" -x "$win_w_default" -y "$(desk_window_height || echo "$win_h_default")" 2>/dev/null || true
   tmux select-pane -t "$sess:work.0" 2>/dev/null || true
   tmux kill-pane -a -t "$sess:work.0" 2>/dev/null || true
   # work.0 = chat (center) → split avatar right, then sidebar left
@@ -397,6 +442,13 @@ install_avatar_page_keys() {
   # Inbox pane from any pane: Ctrl+Space then Shift+I (again returns to chat).
   local rin="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-inbox"
   tmux bind-key -T prefix I if-shell -F "$sess_if" "run-shell -b \"$rin\"" 2>/dev/null || true
+  # Dossier pane from any pane: Ctrl+Space then Shift+D (again returns to chat).
+  local rdo="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-dossier"
+  tmux bind-key -T prefix D if-shell -F "$sess_if" "run-shell -b \"$rdo\"" 2>/dev/null || true
+  # Meet pane from any pane: Ctrl+Space then Shift+M (again returns to chat).
+  # prefix m (lowercase) stays the meet-gallery opener. Shift+M focuses the desk pane.
+  local rme="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-meet"
+  tmux bind-key -T prefix M if-shell -F "$sess_if" "run-shell -b \"$rme\"" 2>/dev/null || true
   # Kanban pane from any pane: Ctrl+Space then Shift+B (again returns to the cockpit).
   # prefix b (lowercase) stays chat-max. Shift+B is the kanban toggle.
   local rkb="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-kanban"
@@ -1091,6 +1143,7 @@ focus_pane_widths() {
 apply_focus_sizes() {
   local focus="$1"
   local win client_w
+  apply_window_height
   local w0 w1 w2 w3 w4 w5 w6 w7 w8
   client_w="$(tmux display -p -t "$sess" '#{client_width}' 2>/dev/null || true)"
   client_w="${client_w:-0}"
@@ -1495,7 +1548,8 @@ fit_quiet() {
 }
 
 fit_window() {
-  tmux resize-window -t "$sess" -x "$win_w_default" -y "$win_h_default" 2>/dev/null || true
+  apply_window_height
+  tmux resize-window -t "$sess" -x "$win_w_default" -y "$(desk_window_height || echo "$win_h_default")" 2>/dev/null || true
   fit_quiet
   if should_signal_avatar; then signal_panes; fi
 }
@@ -1527,11 +1581,15 @@ should_signal_avatar() {
 
 install_layout_keys() {
   local table="$1"
+  # Ctrl+A / Ctrl+B / Ctrl+W used to enter avatar-max, chat-max, and the factory
+  # toggle. Those resize the old 3-pane layout and break the 9-pane desk.
+  # Leave them unbound so the focused pane receives them. Prefix stays Ctrl+Space.
+  # Alt+A/B/W and prefix a/b still reach the old maximizers.
+  tmux unbind-key -T "$table" C-a 2>/dev/null || true
+  tmux unbind-key -T "$table" C-b 2>/dev/null || true
+  tmux unbind-key -T "$table" C-w 2>/dev/null || true
   tmux bind-key -T "$table" C-f run-shell "$layout_run enter-files-max" 2>/dev/null || true
-  tmux bind-key -T "$table" C-a run-shell "$layout_run enter-avatar-max" 2>/dev/null || true
   tmux bind-key -T "$table" C-g run-shell "$layout_run show-avatar" 2>/dev/null || true
-  tmux bind-key -T "$table" C-b run-shell "$layout_run enter-chat-max" 2>/dev/null || true
-  tmux bind-key -T "$table" C-w run-shell -b "$layout_run toggle-factory" 2>/dev/null || true
   tmux bind-key -T "$table" M-w run-shell -b "$layout_run toggle-factory" 2>/dev/null || true
   tmux bind-key -T "$table" M-f run-shell "$layout_run enter-files-max" 2>/dev/null || true
   tmux bind-key -T "$table" M-a run-shell "$layout_run enter-avatar-max" 2>/dev/null || true
@@ -1544,8 +1602,10 @@ install_agent_keys() {
   local layout="$ROOT/scripts/orchestrator-layout.sh"
   local layout_run="cd \"$ROOT\" && GOTCHIBOT_TMUX_SESSION='$sess_name' '$layout'"
   chmod +x "$hook" "$layout" "$ROOT/scripts/chat-bar-pane.sh" 2>/dev/null || true
-  # Free Ctrl+b for chat-max in mc/files/avatar panes; tmux prefix → Ctrl+Space in this session.
+  # Prefix is Ctrl+Space, not Ctrl+B. No second prefix, so a tmux.conf prefix2 of
+  # Ctrl+A cannot eat Ctrl+A. Ctrl+A/B/W are unbound in install_layout_keys.
   tmux set-option -t "$sess" prefix C-Space 2>/dev/null || true
+  tmux set-option -t "$sess" -u prefix2 2>/dev/null || true
   tmux bind-key -T prefix C-Space send-prefix 2>/dev/null || true
   # tui-policy (config/tui-policy.json): Tab stays in OpenCode. Never bind -n Tab.
   node "$ROOT/scripts/tui-policy.mjs" apply >/dev/null 2>&1 || true
@@ -1556,8 +1616,9 @@ install_agent_keys() {
   tmux unbind-key -T gotchi-chat S-Tab 2>/dev/null || true
   local cycle="$ROOT/scripts/agent-mode.mjs cycle --restart"
   tmux bind-key -T gotchi-chat F2 run-shell "cd $ROOT && node $cycle >/dev/null" 2>/dev/null || true
-  # Layout — Ctrl+F files · Ctrl+A avatar-max · Ctrl+G show avatar · Ctrl+B chat
-  # Fallback: Alt+F/A/G/B · F6 show avatar · F7 avatar-max · prefix: Ctrl+Space then f/a/b
+  # Layout — Ctrl+F files · Ctrl+G show avatar. Ctrl+A/B/W are not bound (they
+  # broke the 9-pane row). Fallback: Alt+F/A/G/B/W · F6 show avatar · F7 avatar-max
+  # · prefix Ctrl+Space then f/a/b. Dossier/inbox/meet: Ctrl+Space then Shift+D/I/M.
   # Avatar roster page (any pane): Ctrl+Space then P/N · Alt+, / Alt+.
   install_layout_keys root
   install_layout_keys gotchi-chat
@@ -1730,6 +1791,15 @@ EOF
     "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8" "$sum"
   exit 0
 fi
+# Client lines → window rows. No tmux.
+if [ "$cmd" = "canvas-height" ]; then
+  client="${2:-}"
+  case "$client" in
+    ''|*[!0-9]*) echo "usage: orchestrator-layout.sh canvas-height <client-lines>" >&2; exit 2 ;;
+  esac
+  canvas_height_for_client "$client"
+  exit 0
+fi
 # Before any work.N lookup: the side-pane check below and paths that never reach
 # apply_window_policy (refresh-soft, sidebar, enter-*-max, fit, …) all resolve indices.
 own_pane_numbering
@@ -1865,6 +1935,20 @@ case "$cmd" in
       focus_desk inbox
     fi
     ;;
+  toggle-dossier)
+    if [ "$(layout_mode)" = "pstack" ]; then
+      focus_desk chat
+    else
+      focus_desk pstack
+    fi
+    ;;
+  toggle-meet)
+    if [ "$(layout_mode)" = "meet" ]; then
+      focus_desk chat
+    else
+      focus_desk meet
+    fi
+    ;;
   leave-inbox)
     focus_desk chat
     ;;
@@ -1918,7 +2002,7 @@ case "$cmd" in
     fi
     ;;
   *)
-    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|enter-factory [tree|factory|hub|infra]|toggle-factory|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|enter-inbox|toggle-inbox|leave-inbox|enter-kanban|toggle-kanban|leave-kanban|leave-kanban-chat|require-three|fit|install-mouse|sizes <width> [focus]]" >&2
+    echo "usage: orchestrator-layout.sh [ensure|refresh|refresh-soft|fit-quiet|sidebar|files-max|enter-files-max|show-avatar|avatar-max|enter-avatar-max|chat-max|enter-chat-max|enter-meet-gallery|refresh-meet-gallery|leave-meet-gallery|leave-meet-cockpit|enter-pstack-dossier|enter-factory [tree|factory|hub|infra]|toggle-factory|refresh-pstack-dossier|leave-pstack-dossier|leave-pstack-cockpit|leave-pstack-user|leave-pstack-orch|enter-cockpit|boot-cockpit|enter-inbox|toggle-inbox|leave-inbox|toggle-dossier|toggle-meet|enter-kanban|toggle-kanban|leave-kanban|leave-kanban-chat|require-three|fit|install-mouse|sizes <width> [focus]]" >&2
     exit 2
     ;;
 esac

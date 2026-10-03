@@ -46,6 +46,8 @@ const ALLOWED = new Set([
   "inbox",
   "toggle-inbox",
   "leave-inbox",
+  "toggle-dossier",
+  "toggle-meet",
   "enter-kanban",
   "kanban",
   "toggle-kanban",

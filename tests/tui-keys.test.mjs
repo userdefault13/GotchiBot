@@ -138,3 +138,40 @@ describe("pane scripts ignore wheel", () => {
     assert.match(dossier, /key\.name === "up"/);
   });
 });
+
+describe("orchestrator-layout.sh — desk hotkeys", () => {
+  it("does not bind Ctrl-A, Ctrl-B, or Ctrl-W on the pane key tables", () => {
+    const src = read(layout);
+    const fn = src.match(/install_layout_keys\(\) \{[\s\S]*?\n\}/);
+    assert.ok(fn, "install_layout_keys present");
+    assert.match(fn[0], /unbind-key -T "\$table" C-a/);
+    assert.match(fn[0], /unbind-key -T "\$table" C-b/);
+    assert.match(fn[0], /unbind-key -T "\$table" C-w/);
+    assert.doesNotMatch(fn[0], /\btmux bind-key -T "\$table" C-a/);
+    assert.doesNotMatch(fn[0], /\btmux bind-key -T "\$table" C-b/);
+    assert.doesNotMatch(fn[0], /\btmux bind-key -T "\$table" C-w/);
+    // Other layout chords stay.
+    assert.match(fn[0], /bind-key -T "\$table" C-f/);
+    assert.match(fn[0], /bind-key -T "\$table" C-g/);
+    assert.match(fn[0], /bind-key -T "\$table" M-a/);
+    assert.match(fn[0], /bind-key -T "\$table" M-b/);
+    assert.match(fn[0], /bind-key -T "\$table" M-w/);
+  });
+
+  it("keeps prefix Ctrl+Space and focuses dossier, inbox, and meet from it", () => {
+    const src = read(layout);
+    assert.match(src, /set-option -t "\$sess" prefix C-Space/);
+    assert.match(src, /set-option -t "\$sess" -u prefix2/);
+    assert.match(src, /bind-key -T prefix D if-shell/);
+    assert.match(src, /bind-key -T prefix I if-shell/);
+    assert.match(src, /bind-key -T prefix M if-shell/);
+    assert.match(src, /toggle-dossier/);
+    assert.match(src, /toggle-inbox/);
+    assert.match(src, /toggle-meet/);
+    assert.match(src, /focus_desk pstack/);
+    assert.match(src, /focus_desk inbox/);
+    assert.match(src, /focus_desk meet/);
+    // lowercase prefix m still opens the gallery; Shift+M is the desk pane.
+    assert.match(src, /bind-key -T prefix m run-shell/);
+  });
+});

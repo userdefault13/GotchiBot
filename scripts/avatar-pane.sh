@@ -1165,6 +1165,34 @@ render_now() {
   render "$st"
 }
 
+
+# Roster rows from pane height. One row is 12 lines: 9-line thumb + status, name, role.
+# Laptop panes stay on one row. grid reserves that strip so the portrait does not cover it:
+#   pane < 28 → 11, pane <= 40 → 15, else 19.
+# Three rows need grid 19+24 = 43. The 46-row portrait budget is 46-19-7 = 20, so a pane
+# of 20+43+7 = 70 is the shortest that fits 3 rows without squeezing the portrait.
+# Sets ROSTER_ROWS, ROSTER_PAGE (3 columns × rows), ROSTER_GRID.
+roster_budget() {
+  local pane_h="${1:-0}"
+  case "$pane_h" in
+    ''|*[!0-9]*) pane_h=0 ;;
+  esac
+  ROSTER_ROWS=1
+  ROSTER_PAGE=3
+  if [ "$pane_h" -lt 28 ]; then
+    ROSTER_GRID=11
+  elif [ "$pane_h" -le 40 ]; then
+    ROSTER_GRID=15
+  else
+    ROSTER_GRID=19
+  fi
+  if [ "$pane_h" -ge 70 ]; then
+    ROSTER_ROWS=3
+    ROSTER_PAGE=9
+    ROSTER_GRID=43
+  fi
+}
+
 # Pane cols → ROSTER_PAD, ROSTER_CELL_W, ROSTER_ROW_W.
 # Pad is one column unless the pane cannot spare it (padded row would pass cols).
 # gap is 2, so the two gutters are 4. Cell clamps stay 10..36.
@@ -1224,9 +1252,9 @@ render_body() {
   local gallery=0
   [ -n "$(gallery_hero)" ] && gallery=1
 
-  local grid_budget=15
-  [ "$pane_h" -lt 28 ] && grid_budget=11
-  [ "$pane_h" -gt 40 ] && grid_budget=19
+  roster_budget "$pane_h"
+  local grid_budget="$ROSTER_GRID"
+  local roster_rows="$ROSTER_ROWS"
   # -7: the 3-line caption (status · name · role) plus room for the roster's prev/next row.
   local main_budget=$((pane_h - grid_budget - 7))
   [ "$main_budget" -lt 10 ] && main_budget=10
@@ -1340,7 +1368,8 @@ render_body() {
 
   load_page
   local n_ids="${#ID_ARR[@]}"
-  local page_size=3
+  local page_size="$ROSTER_PAGE"
+  [ -n "$page_size" ] || page_size=3
   NPAGES=$(( (n_ids + page_size - 1) / page_size ))
   [ "$NPAGES" -lt 1 ] && NPAGES=1
   clamp_page
@@ -1359,38 +1388,51 @@ render_body() {
   W_ROLE=("${ROLE_ARR[@]}")
   W_LOAD=("${LOAD_ARR[@]}")
 
-  local i left mid right pair k1="" k2="" k3=""
-  i=$((PAGE * page_size))
-  left=""
-  mid=""
-  right=""
+  local i base left mid right pair k1 k2 k3 r vi end
+  base=$((PAGE * page_size))
   LOADING_VISIBLE=0
-  if [ -n "${LOAD_ARR[i]:-}${LOAD_ARR[i+1]:-}${LOAD_ARR[i+2]:-}" ]; then
-    LOADING_VISIBLE=1
-  fi
-  if [ "$i" -lt "$n_ids" ]; then
-    # r| = roster traits on large thumb; bump if roster tile art format changes
-    k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
-    memo_call left "$k1" \
-      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}"
-  fi
-  if [ $((i + 1)) -lt "$n_ids" ]; then
-    k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|${ROLE_ARR[i+1]}|${LOAD_ARR[i+1]}|$cell_w|$cell_h"
-    memo_call mid "$k2" \
-      cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}" "${ROLE_ARR[i+1]}" "${LOAD_ARR[i+1]}"
-  fi
-  if [ $((i + 2)) -lt "$n_ids" ]; then
-    k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|${ROLE_ARR[i+2]}|${LOAD_ARR[i+2]}|$cell_w|$cell_h"
-    memo_call right "$k3" \
-      cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}" "${ROLE_ARR[i+2]}" "${LOAD_ARR[i+2]}"
-  fi
-  memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
-  while IFS= read -r line || [ -n "$line" ]; do
-    [ -z "$line" ] && continue
-    put_line "$row" "$(roster_pad_line "$line")"
-    row=$((row + 1))
+  end=$((base + page_size))
+  [ "$end" -gt "$n_ids" ] && end="$n_ids"
+  for ((vi = base; vi < end; vi++)); do
+    if [ -n "${LOAD_ARR[vi]:-}" ]; then
+      LOADING_VISIBLE=1
+      break
+    fi
+  done
+  for ((r = 0; r < roster_rows; r++)); do
+    i=$((base + r * 3))
+    [ "$i" -ge "$n_ids" ] && break
     [ "$row" -ge "$pane_h" ] && break
-  done < <(printf '%s\n' "$pair")
+    left=""
+    mid=""
+    right=""
+    k1=""
+    k2=""
+    k3=""
+    if [ "$i" -lt "$n_ids" ]; then
+      # r| = roster traits on large thumb; bump if roster tile art format changes
+      k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
+      memo_call left "$k1" \
+        cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}"
+    fi
+    if [ $((i + 1)) -lt "$n_ids" ]; then
+      k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|${ROLE_ARR[i+1]}|${LOAD_ARR[i+1]}|$cell_w|$cell_h"
+      memo_call mid "$k2" \
+        cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}" "${ROLE_ARR[i+1]}" "${LOAD_ARR[i+1]}"
+    fi
+    if [ $((i + 2)) -lt "$n_ids" ]; then
+      k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|${ROLE_ARR[i+2]}|${LOAD_ARR[i+2]}|$cell_w|$cell_h"
+      memo_call right "$k3" \
+        cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}" "${ROLE_ARR[i+2]}" "${LOAD_ARR[i+2]}"
+    fi
+    memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -z "$line" ] && continue
+      put_line "$row" "$(roster_pad_line "$line")"
+      row=$((row + 1))
+      [ "$row" -ge "$pane_h" ] && break
+    done < <(printf '%s\n' "$pair")
+  done
 
   # Button row under the 3-col row: [ ← ]  n / N  [ → ]
   if [ "$row" -lt "$pane_h" ]; then
@@ -1551,6 +1593,18 @@ case "${1:-watch}" in
       printf 'keep\n'
     fi
     ;;
+  roster-rows)
+    # usage: avatar-pane.sh roster-rows <pane-height>
+    # Pure: how many roster rows and how much grid a pane of that height gets.
+    h="${2:-}"
+    case "$h" in
+      ''|*[!0-9]*) echo "usage: avatar-pane.sh roster-rows <pane-height>" >&2; exit 2 ;;
+    esac
+    roster_budget "$h"
+    printf 'rows=%s\n' "$ROSTER_ROWS"
+    printf 'page=%s\n' "$ROSTER_PAGE"
+    printf 'grid=%s\n' "$ROSTER_GRID"
+    ;;
   roster-origin)
     # Geometry probe. No tmux, no terminal read — roster_geometry + real join.
     cols="${2:-44}"
@@ -1645,7 +1699,7 @@ case "${1:-watch}" in
     done
     ;;
   *)
-    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|roster-origin [cols]|sb-click <x> <y> [pid]|sb-wheel up|down [pid]]" >&2
+    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|roster-origin [cols]|roster-rows <pane-height>|sb-click <x> <y> [pid]|sb-wheel up|down [pid]]" >&2
     exit 2
     ;;
 esac
