@@ -226,6 +226,15 @@ node scripts/gotchibot-vm.mjs exec demo -- uname -a
 node scripts/gotchibot-vm.mjs rm demo
 ```
 
+One shared guest, not a pool: id `shared`, name `gbvm-shared`, still 2 vCPU / 2 GiB / 20G, 2020 iMac only.
+A finished sandbox job detaches (files come back, qemu stays up). The next bot attaches to that same guest instead of booting another.
+Attach command: `node scripts/gotchibot-vm.mjs up <sessionId>` then `exec <sessionId>`. `up` boots only when the guest is not already running.
+Operator stop is still `rm`, on the shared id:
+
+```bash
+node scripts/gotchibot-vm.mjs rm shared
+```
+
 ## 5. RAM budget
 
 | Item | GiB |

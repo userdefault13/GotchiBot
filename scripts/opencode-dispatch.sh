@@ -23,11 +23,12 @@ teardown_sandbox() {
   # The session's own recorded backend wins: teardown can run in a different shell than the
   # spawn, and tearing a VM down with sandbox.mjs (or the reverse) silently does nothing.
   # A missing field is a pre-backend session: docker.
+  # vm detaches: files come back, the one shared guest (gbvm-shared) stays up.
+  # docker still removes its container. Operator stop: gotchibot-vm.mjs rm shared.
   case "$(field sandboxBackend "$dir")" in
-    vm) cli="$ROOT/scripts/gotchibot-vm.mjs" ;;
-    *) cli="$ROOT/scripts/sandbox.mjs" ;;
+    vm) cli="$ROOT/scripts/gotchibot-vm.mjs"; node "$cli" detach "$id" >/dev/null 2>&1 || true ;;
+    *) cli="$ROOT/scripts/sandbox.mjs"; node "$cli" rm "$id" >/dev/null 2>&1 || true ;;
   esac
-  node "$cli" rm "$id" >/dev/null 2>&1 || true
 }
 
 standing_status() {
@@ -73,7 +74,9 @@ usage:
   opencode-dispatch.sh requests   show pending skill requests
 
 Sandbox (GOTCHIBOT_SANDBOX=1 or --sandbox): Docker box; cwd /work; abra only in-box via ABRA_KEY.
-Sandbox backend: GOTCHIBOT_SANDBOX_BACKEND=vm runs the job in a QEMU VM (2020 iMac only). Default: docker.
+Sandbox backend: GOTCHIBOT_SANDBOX_BACKEND=vm runs the job in one shared QEMU guest (2020 iMac only).
+The guest stays up between jobs. A bot attaches with: node scripts/gotchibot-vm.mjs up <sessionId>
+Operator stop: node scripts/gotchibot-vm.mjs rm shared. Default backend: docker.
 EOF
   exit 2
 }
@@ -105,10 +108,10 @@ sandbox_model_for() {
   esac
 }
 
-# What state.env calls this sandbox: a container name, or a VM name.
+# What state.env calls this sandbox: a container name, or the one shared VM.
 sandbox_name() {
   case "$GOTCHIBOT_SANDBOX_BACKEND" in
-    vm) printf 'gbvm-%s\n' "$1" ;;
+    vm) printf 'gbvm-shared\n' ;;
     *) printf 'gotchibot-sandbox-%s\n' "$1" ;;
   esac
 }
@@ -290,7 +293,7 @@ EOF
         echo "sandbox spawn blocked: $WANT_MODEL is not served inside the sandbox." >&2
         node "$SANDBOX_CLI" models "$id" 2>/dev/null | sed 's/^/  available: /' >&2
         echo "  fix: set GOTCHIBOT_SANDBOX_MODEL to one of the above" >&2
-        node "$SANDBOX_CLI" rm "$id" >/dev/null 2>&1 || true
+        teardown_sandbox "$dir" "$id"
         set_field "$dir" status failed
         exit 78
       fi

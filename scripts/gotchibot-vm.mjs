@@ -5,10 +5,17 @@
  *   node scripts/gotchibot-vm.mjs ensure-image [--rebuild]
  *   node scripts/gotchibot-vm.mjs up <id> [--json]
  *   node scripts/gotchibot-vm.mjs exec <id> -- <cmd...>
+ *   node scripts/gotchibot-vm.mjs detach <id>
  *   node scripts/gotchibot-vm.mjs status [id]
  *   node scripts/gotchibot-vm.mjs models <id> [--check <model>] [--json]
  *   node scripts/gotchibot-vm.mjs promote <id> <destDir>
  *   node scripts/gotchibot-vm.mjs rm <id> [--purge]
+ *
+ * One shared guest (id "shared", name gbvm-shared): 2 vCPU / 2 GiB / 20G, 2020
+ * iMac only. `up <sessionId>` boots it only when it is not already running;
+ * otherwise the session attaches to that same qemu. A finished job `detach`es
+ * (files come back, qemu stays up) so the next bot can `up` without a fresh boot.
+ * There is no pool. `rm shared` is the operator stop and still powers the guest off.
  *
  * Image: ensure-image downloads + SHA512-verifies the Debian 12 base, then builds a
  * prepared image (node 22 + opencode) ONCE into ~/.cache/gotchibot-vm, reused by every
@@ -211,10 +218,12 @@ function usage() {
   gotchibot-vm.mjs ensure-image [--rebuild]
   gotchibot-vm.mjs up <id> [--json]
   gotchibot-vm.mjs exec <id> -- <cmd...>
+  gotchibot-vm.mjs detach <id>
   gotchibot-vm.mjs status [id]
   gotchibot-vm.mjs models <id> [--check <model>] [--json]
   gotchibot-vm.mjs promote <id> <destDir>
-  gotchibot-vm.mjs rm <id> [--purge]`);
+  gotchibot-vm.mjs rm <id> [--purge]
+    operator stop for the shared guest: rm shared`);
   process.exit(2);
 }
 
@@ -239,6 +248,51 @@ const metaPath = (id) => `${stateDir(id)}/meta.json`;
 const pidPath = (id) => `${stateDir(id)}/qemu.pid`;
 const sessionDir = (id) => `${ROOT}/sessions/${safeId(id)}`;
 const here = () => hostname().replace(/\.local$/, "");
+
+/** One long-lived job guest. Every sandbox job attaches here. Not a pool. */
+export const SHARED_GUEST_ID = "shared";
+
+/**
+ * What `up` should do. No QEMU and no host check — safe to unit test.
+ * selfRunning: this session id still has its own legacy qemu.
+ * sharedRunning: gbvm-shared's qemu is alive.
+ */
+export function planGuestUp({ sessionId, sharedRunning, selfRunning, holder = null, holderAlive = false }) {
+  if (sessionId !== SHARED_GUEST_ID && selfRunning) return { action: "reuse" };
+  if (sharedRunning) {
+    if (sessionId === SHARED_GUEST_ID) return { action: "reuse" };
+    if (holder && holder !== sessionId && holderAlive) return { action: "busy", holder };
+    return { action: "attach" };
+  }
+  return { action: "boot" };
+}
+
+/**
+ * Holder stays live while its supervisor process is alive, or while spawn has
+ * marked the session running but has not written sessions/<id>/pid yet.
+ * A dead pid is stale even if status is still "running", so the next bot can attach.
+ */
+export function holderIsLive({ status, pidAlive, pidKnown, startedAt, now = Date.now(), graceMs = 10 * 60_000 } = {}) {
+  if (pidKnown) return !!pidAlive;
+  if (status !== "running") return false;
+  const t = Date.parse(startedAt || "");
+  if (!Number.isFinite(t)) return true;
+  return now - t < graceMs;
+}
+
+/** Job end: Docker still removes its container. The VM guest stays up. */
+export function jobEndAction(backend) {
+  return backend === "vm" ? "detach" : "rm";
+}
+
+/**
+ * `rm` is the operator stop. It powers off a qemu this id owns (the shared
+ * guest, or a legacy per-session guest). A session that only attached does not.
+ */
+export function rmStopsGuest({ id, ownsQemu, attachedToShared }) {
+  if (id !== SHARED_GUEST_ID && !ownsQemu && attachedToShared) return false;
+  return true;
+}
 
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -445,8 +499,7 @@ function rsyncSsh(id, port) {
   return ["ssh", ...sshOpts(id, port)].map(shq).join(" ");
 }
 
-function pushWork(id, port) {
-  const work = workDir(id);
+function pushWork(id, port, work = workDir(id)) {
   if (useRsync(id, port)) {
     console.error(`[vm] syncing ${work} → ${GUEST_WORK} (rsync)`);
     const r = spawnSync("rsync", ["-a", "--delete", "-e", rsyncSsh(id, port), `${work}/`, `${GUEST}:${GUEST_WORK}/`], {
@@ -506,14 +559,14 @@ function pullGuest(id, port, remote, dest, what, { replace = false } = {}) {
   rmSync(tmp, { recursive: true, force: true });
 }
 
-function pullWork(id, port) {
-  pullGuest(id, port, GUEST_WORK, workDir(id), "work", { replace: true });
+function pullWork(id, port, dest = workDir(id)) {
+  pullGuest(id, port, GUEST_WORK, dest, "work", { replace: true });
 }
 
 // Never --delete or replace here: sessions/<id>/ holds prompt.txt, state.env,
 // runner.sh, output.log — host files the guest knows nothing about.
-function pullSession(id, port) {
-  pullGuest(id, port, GUEST_SESSION, sessionDir(id), "session");
+function pullSession(id, port, dest = sessionDir(id)) {
+  pullGuest(id, port, GUEST_SESSION, dest, "session");
 }
 
 /** Write a guest file from stdin as root. Content never touches argv. */
@@ -822,81 +875,87 @@ function printUp(meta, json) {
   }
 }
 
-async function cmdUp(id, { json = false } = {}) {
-  requireKvm();
-  const sid = safeId(id);
-  const name = vmName(sid);
-  const dir = stateDir(sid);
-
-  const other = runningOther(sid);
-  if (other) {
-    console.error(
-      `[vm] refusing: ${vmName(other.id)} is already running (pid ${other.pid}) — only one VM fits in the 2020 iMac's RAM. ` +
-        `Stop it first: node scripts/gotchibot-vm.mjs rm ${other.id}`,
-    );
-    process.exit(4);
+function readStateEnv(id) {
+  try {
+    const out = {};
+    for (const line of readFileSync(`${sessionDir(id)}/state.env`, "utf8").split("\n")) {
+      const i = line.indexOf("=");
+      if (i > 0) out[line.slice(0, i)] = line.slice(i + 1);
+    }
+    return out;
+  } catch {
+    return {};
   }
-  // A build guest is a 2 GiB VM too. Two guests make the host swap.
-  if (vmRunning(BUILD_ID)) {
-    console.error(`[vm] refusing: an image build guest (${vmName(BUILD_ID)}) is running — wait for ensure-image to finish`);
-    process.exit(4);
+}
+
+function readSessionPid(id) {
+  try {
+    const n = Number(readFileSync(`${sessionDir(id)}/pid`, "utf8").trim());
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
   }
-  if (vmRunning(sid)) {
-    printUp({ ...readMeta(sid), id: sid, name, status: "running" }, json);
-    return;
+}
+
+function processAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
   }
+}
 
-  // A spawn must fail fast; the build takes minutes and belongs to ensure-image.
-  if (!preparedReady()) {
-    console.error("no prepared image — run: node scripts/gotchibot-vm.mjs ensure-image");
-    process.exit(3);
-  }
+function holderLiveness(holder) {
+  if (!holder) return false;
+  const env = readStateEnv(holder);
+  const pid = readSessionPid(holder);
+  return holderIsLive({
+    status: env.status || "",
+    pidAlive: pid ? processAlive(pid) : false,
+    pidKnown: pid != null,
+    startedAt: env.started || "",
+  });
+}
 
-  const work = workDir(sid);
-  const sess = sessionDir(sid);
-  mkdirSync(work, { recursive: true });
-  mkdirSync(sess, { recursive: true });
+/** The qemu a command should SSH to: this id's own guest, or the shared one it attached to. */
+function runtimeGuest(sid) {
+  if (vmRunning(sid)) return sid;
+  const guestId = readMeta(sid).guestId;
+  if (guestId && vmRunning(guestId)) return guestId;
+  if (vmRunning(SHARED_GUEST_ID) && readMeta(SHARED_GUEST_ID).holder === sid) return SHARED_GUEST_ID;
+  return guestId || sid;
+}
 
-  const disk = createOverlay(sid, PREPARED);
-  const seed = writeSeed(sid);
-
-  const port = await pickPort(readMeta(sid).port);
-  rmSync(pidPath(sid), { force: true });
-  const r = bootQemu(sid, port);
-  if (r.status !== 0) {
-    console.error(r.stderr || r.stdout || "qemu-system-x86_64 failed");
-    process.exit(r.status ?? 1);
-  }
-  console.error(`[vm] booted ${name} (pid ${readPid(sid)})`);
-
-  if (!waitForSsh(sid, port)) {
-    console.error(`[vm] SSH not ready after 180s; see ${dir}/serial.log`);
-    process.exit(1);
-  }
-
-  mustSsh(
-    sid,
-    port,
-    [
-      `sudo mkdir -p ${GUEST_WORK} ${GUEST_SESSION} /rules ${dirname(SANDBOX_ENV)} && ` +
-        `sudo chown ${GUEST_USER}:${GUEST_USER} ${GUEST_WORK} ${GUEST_SESSION}`,
-    ],
-    "guest setup",
+function refuseSecondQemu(other) {
+  console.error(
+    `[vm] refusing: ${vmName(other.id)} is already running (pid ${other.pid}) — only one VM fits in the 2020 iMac's RAM. ` +
+      `Stop it first: node scripts/gotchibot-vm.mjs rm ${other.id}`,
   );
-  pushWork(sid, port);
+  process.exit(4);
+}
 
-  // Rules are copied, not mounted: root-owned 0444 so the job can read, not edit.
+/**
+ * Copy this session's /work in and refresh rules + the 0600 env file.
+ * SSH state (known_hosts) belongs to the guest, not the session.
+ * Secret values go over SSH stdin only; the returned list is names.
+ */
+function syncJobIntoGuest(guest, sid, port) {
+  const work = workDir(sid);
+  mkdirSync(work, { recursive: true });
+  mkdirSync(sessionDir(sid), { recursive: true });
+  mkdirSync(stateDir(sid), { recursive: true });
+  pushWork(guest, port, work);
+
   const rules = [
     [`${ROOT}/AGENTS.md`, "/rules/AGENTS.md"],
     [`${ROOT}/skills/registry.json`, "/rules/skills-registry.json"],
   ];
   for (const [src, dst] of rules) {
-    if (existsSync(src)) guestWrite(sid, port, dst, readFileSync(src), { owner: "root:root", mode: "0444" });
+    if (existsSync(src)) guestWrite(guest, port, dst, readFileSync(src), { owner: "root:root", mode: "0444" });
   }
 
-  // Secrets travel over SSH stdin into a 0600 file — never argv, meta.json,
-  // logs or stdout. Only the NAMES are recorded, so a job that fails for lack
-  // of a key is still distinguishable from a provider outage.
   const abraKey = process.env.ABRA_KEY || process.env.GOTCHIBOT_SANDBOX_ABRA_KEY || "";
   let env = "GOTCHIBOT_SANDBOX=1\nGOTCHIBOT_SKIP_ABRA=1\nABRA_HOST=10.0.2.2\nGIT_TERMINAL_PROMPT=0\n";
   const forwarded = [];
@@ -909,15 +968,50 @@ async function cmdUp(id, { json = false } = {}) {
     env += envLine(k, process.env[k]);
     forwarded.push(k);
   }
-  guestWrite(sid, port, SANDBOX_ENV, env, { owner: `${GUEST_USER}:${GUEST_USER}`, mode: "600", umask: "077" });
-  guestWrite(sid, port, GIT_CREDENTIAL_HELPER, GIT_CREDENTIAL_SCRIPT, { owner: "root:root", mode: "0755" });
-  guestWrite(sid, port, "/etc/gitconfig", gitSystemConfig(), { owner: "root:root", mode: "0644" });
+  guestWrite(guest, port, SANDBOX_ENV, env, { owner: `${GUEST_USER}:${GUEST_USER}`, mode: "600", umask: "077" });
+  guestWrite(guest, port, GIT_CREDENTIAL_HELPER, GIT_CREDENTIAL_SCRIPT, { owner: "root:root", mode: "0755" });
+  guestWrite(guest, port, "/etc/gitconfig", gitSystemConfig(), { owner: "root:root", mode: "0644" });
   console.error(
     forwarded.length
       ? `[vm] forwarded credentials: ${forwarded.join(", ")}`
       : "[vm] WARNING: no credentials forwarded — model calls from this box will fail",
   );
+  return forwarded;
+}
 
+/** Boot gbvm-shared. Does not claim it for a session. */
+async function bootShared() {
+  const sid = SHARED_GUEST_ID;
+  const name = vmName(sid);
+  const dir = stateDir(sid);
+  if (!preparedReady()) {
+    console.error("no prepared image — run: node scripts/gotchibot-vm.mjs ensure-image");
+    process.exit(3);
+  }
+  mkdirSync(workDir(sid), { recursive: true });
+  const disk = createOverlay(sid, PREPARED);
+  const seed = writeSeed(sid);
+  const port = await pickPort(readMeta(sid).port);
+  rmSync(pidPath(sid), { force: true });
+  const r = bootQemu(sid, port);
+  if (r.status !== 0) {
+    console.error(r.stderr || r.stdout || "qemu-system-x86_64 failed");
+    process.exit(r.status ?? 1);
+  }
+  console.error(`[vm] booted ${name} (pid ${readPid(sid)})`);
+  if (!waitForSsh(sid, port)) {
+    console.error(`[vm] SSH not ready after 180s; see ${dir}/serial.log`);
+    process.exit(1);
+  }
+  mustSsh(
+    sid,
+    port,
+    [
+      `sudo mkdir -p ${GUEST_WORK} ${GUEST_SESSION} /rules ${dirname(SANDBOX_ENV)} && ` +
+        `sudo chown ${GUEST_USER}:${GUEST_USER} ${GUEST_WORK} ${GUEST_SESSION}`,
+    ],
+    "guest setup",
+  );
   const meta = {
     id: sid,
     sessionId: sid,
@@ -925,27 +1019,170 @@ async function cmdUp(id, { json = false } = {}) {
     port,
     disk,
     seed,
-    work,
-    session: sess,
+    work: workDir(sid),
     cpus: VM_CPUS,
     memoryMb: VM_MEMORY_MB,
     image: PREPARED,
     baseImage: BASE,
     startedAt: new Date().toISOString(),
     status: "running",
-    forwardedEnv: forwarded,
+    holder: null,
+    forwardedEnv: [],
   };
   writeMeta(sid, meta);
-  printUp(meta, json);
+  return meta;
+}
+
+/** Point a session at the already-running shared guest and sync its job in. */
+function claimShared(sid, { json, staleHolder }) {
+  const guest = SHARED_GUEST_ID;
+  const meta = readMeta(guest);
+  const port = meta.port;
+  if (!vmRunning(guest) || !port) {
+    console.error(`vm not running: ${vmName(guest)} — run: node scripts/gotchibot-vm.mjs up ${sid}`);
+    process.exit(1);
+  }
+  if (staleHolder) {
+    try {
+      pullWork(guest, port, workDir(staleHolder));
+      pullSession(guest, port, sessionDir(staleHolder));
+      console.error(`[vm] recovered work from stale holder ${staleHolder}`);
+    } catch (e) {
+      console.error(`[vm] stale holder ${staleHolder} left no recoverable work: ${e.message}`);
+    }
+  }
+  const forwarded = syncJobIntoGuest(guest, sid, port);
+  const sessionMeta = {
+    id: sid,
+    sessionId: sid,
+    guestId: guest,
+    attached: true,
+    name: vmName(guest),
+    port,
+    work: workDir(sid),
+    session: sessionDir(sid),
+    cpus: meta.cpus || VM_CPUS,
+    memoryMb: meta.memoryMb || VM_MEMORY_MB,
+    image: meta.image || PREPARED,
+    status: "attached",
+    attachedAt: new Date().toISOString(),
+    forwardedEnv: forwarded,
+  };
+  writeMeta(guest, {
+    ...readMeta(guest),
+    holder: sid,
+    holderSince: new Date().toISOString(),
+    status: "running",
+    forwardedEnv: forwarded,
+  });
+  writeMeta(sid, sessionMeta);
+  if (json) console.log(JSON.stringify({ ok: true, reused: true, ...sessionMeta }, null, 2));
+  else {
+    console.log(sessionMeta.name);
+    console.error(`[vm] attached ${sid} to ${sessionMeta.name} port=${port} work=${sessionMeta.work} (guest stays up)`);
+  }
+}
+
+async function cmdUp(id, { json = false } = {}) {
+  requireKvm();
+  const sid = safeId(id);
+  const holder = readMeta(SHARED_GUEST_ID).holder || null;
+  const plan = planGuestUp({
+    sessionId: sid,
+    sharedRunning: vmRunning(SHARED_GUEST_ID),
+    selfRunning: sid !== SHARED_GUEST_ID && vmRunning(sid),
+    holder,
+    holderAlive: holderLiveness(holder),
+  });
+
+  if (plan.action === "reuse" && sid !== SHARED_GUEST_ID) {
+    // Legacy per-session qemu. Do not boot a second guest beside it.
+    printUp({ ...readMeta(sid), id: sid, name: vmName(sid), status: "running" }, json);
+    return;
+  }
+  if (plan.action === "reuse") {
+    printUp({ ...readMeta(sid), id: sid, name: vmName(sid), status: "running", reused: true }, json);
+    return;
+  }
+  if (plan.action === "busy") {
+    console.error(
+      `[vm] refusing: the shared guest ${vmName(SHARED_GUEST_ID)} is in use by ${plan.holder}. ` +
+        `One guest is shared by every job; wait for it to finish. ` +
+        `Stop it on purpose with: node scripts/gotchibot-vm.mjs rm ${SHARED_GUEST_ID}`,
+    );
+    process.exit(4);
+  }
+  if (plan.action === "attach") {
+    const stale = holder && holder !== sid && !holderLiveness(holder) ? holder : null;
+    claimShared(sid, { json, staleHolder: stale });
+    return;
+  }
+
+  // boot — still one qemu. A legacy guest or the image build already holds the RAM.
+  const other = runningOther(SHARED_GUEST_ID);
+  if (other) refuseSecondQemu(other);
+  if (vmRunning(BUILD_ID)) {
+    console.error(`[vm] refusing: an image build guest (${vmName(BUILD_ID)}) is running — wait for ensure-image to finish`);
+    process.exit(4);
+  }
+  await bootShared();
+  if (sid === SHARED_GUEST_ID) {
+    printUp(readMeta(SHARED_GUEST_ID), json);
+    return;
+  }
+  claimShared(sid, { json, staleHolder: null });
+}
+
+/**
+ * Job finished. Copy /work and /session back to this session and clear the
+ * holder. The shared qemu keeps running for the next bot.
+ */
+function cmdDetach(id) {
+  const sid = safeId(id);
+  const guest = runtimeGuest(sid);
+  const port = readMeta(guest).port;
+  const usingShared = guest === SHARED_GUEST_ID || readMeta(sid).guestId === SHARED_GUEST_ID;
+  if (vmRunning(guest) && port && (guest === sid || readMeta(guest).holder === sid || readMeta(sid).guestId === guest)) {
+    try {
+      pullWork(guest, port, workDir(sid));
+      pullSession(guest, port, sessionDir(sid));
+    } catch (e) {
+      throw new Error(
+        `${e.message} — ${vmName(guest)} left running so its files are not lost ` +
+          `(node scripts/gotchibot-vm.mjs rm ${SHARED_GUEST_ID} stops the guest)`,
+      );
+    }
+  }
+  if (usingShared && existsSync(metaPath(SHARED_GUEST_ID))) {
+    const meta = readMeta(SHARED_GUEST_ID);
+    if (!meta.holder || meta.holder === sid) {
+      writeMeta(SHARED_GUEST_ID, {
+        ...meta,
+        holder: null,
+        holderSince: null,
+        status: vmRunning(SHARED_GUEST_ID) ? "running" : meta.status || "stopped",
+      });
+    }
+  }
+  if (sid !== SHARED_GUEST_ID && existsSync(metaPath(sid))) {
+    writeMeta(sid, { ...readMeta(sid), status: "detached", detachedAt: new Date().toISOString() });
+  }
+  const liveId = vmRunning(SHARED_GUEST_ID) ? SHARED_GUEST_ID : vmRunning(guest) ? guest : null;
+  console.error(
+    liveId
+      ? `[vm] detached ${sid} — ${vmName(liveId)} still running`
+      : `[vm] detached ${sid} — no guest was running`,
+  );
 }
 
 function requireRunning(sid) {
-  const port = readMeta(sid).port;
-  if (!vmRunning(sid) || !port) {
-    console.error(`vm not running: ${vmName(sid)} — run: node scripts/gotchibot-vm.mjs up ${sid}`);
+  const guest = runtimeGuest(sid);
+  const port = readMeta(guest).port || readMeta(sid).port;
+  if (!vmRunning(guest) || !port) {
+    console.error(`vm not running: ${vmName(guest)} — run: node scripts/gotchibot-vm.mjs up ${sid}`);
     process.exit(1);
   }
-  return port;
+  return { guest, port };
 }
 
 /** The job sees the forwarded env and starts in /work, like `docker exec -w /work`. */
@@ -955,12 +1192,32 @@ function guestCommand(args) {
 
 function cmdExec(id, cmdArgs) {
   const sid = safeId(id);
-  const port = requireRunning(sid);
+  const { guest, port } = requireRunning(sid);
   if (!cmdArgs.length) usage();
   // One ssh argv element: the guest shell sees each user arg single-quoted,
   // so spaces, globs and `;` stay literal.
-  const r = vmSsh(sid, port, [guestCommand(cmdArgs)], { stdio: "inherit" });
+  const r = vmSsh(guest, port, [guestCommand(cmdArgs)], { stdio: "inherit" });
   process.exit(r.status ?? 1);
+}
+
+function describeVm(sid) {
+  const meta = readMeta(sid);
+  const guest = meta.guestId && vmRunning(meta.guestId) ? meta.guestId : vmRunning(sid) ? sid : meta.guestId || sid;
+  const gmeta = readMeta(guest);
+  const guestUp = vmRunning(guest);
+  // A detached session keeps guestId for the record but is not "running".
+  // The shared guest itself is running whenever its qemu is.
+  const holds = guestUp && meta.status === "attached" && gmeta.holder === sid;
+  const running = sid === guest ? guestUp : holds;
+  return {
+    id: sid,
+    name: meta.name || vmName(guest),
+    running,
+    guestId: guest,
+    holder: gmeta.holder ?? null,
+    port: running ? (gmeta.port ?? meta.port ?? null) : null,
+    work: workDir(sid),
+  };
 }
 
 function cmdStatus(id) {
@@ -969,24 +1226,20 @@ function cmdStatus(id) {
     if (existsSync(VMS)) {
       for (const ent of readdirSync(VMS, { withFileTypes: true })) {
         if (!ent.isDirectory()) continue;
-        const sid = ent.name;
-        const running = vmRunning(sid);
-        rows.push({ id: sid, name: vmName(sid), running, port: running ? readMeta(sid).port ?? null : null, work: workDir(sid) });
+        rows.push(describeVm(ent.name));
       }
     }
     console.log(JSON.stringify({ ok: true, vms: rows }, null, 2));
     return;
   }
   const sid = safeId(id);
-  console.log(
-    JSON.stringify({ ok: true, id: sid, name: vmName(sid), running: vmRunning(sid), work: workDir(sid), ...readMeta(sid) }, null, 2),
-  );
+  console.log(JSON.stringify({ ok: true, ...describeVm(sid), ...readMeta(sid) }, null, 2));
 }
 
 function cmdModels(id, { json = false, check = null } = {}) {
   const sid = safeId(id);
-  const port = requireRunning(sid);
-  const r = vmSsh(sid, port, [guestCommand(["opencode", "models"])], { timeout: 60_000 });
+  const { guest, port } = requireRunning(sid);
+  const r = vmSsh(guest, port, [guestCommand(["opencode", "models"])], { timeout: 60_000 });
   const models = String(r.stdout || "")
     .split("\n")
     .map((l) => l.trim())
@@ -1012,11 +1265,12 @@ function cmdPromote(id, dest) {
     console.error("promote requires destDir (e.g. ~/Dev/my-new-app)");
     process.exit(2);
   }
-  const port = readMeta(sid).port;
-  if (vmRunning(sid) && port) {
-    pullWork(sid, port);
-    pullSession(sid, port);
-  } else if (existsSync(work)) console.error(`[vm] ${vmName(sid)} not running — promoting the last copy in ${work}`);
+  const guest = runtimeGuest(sid);
+  const port = readMeta(guest).port;
+  if (vmRunning(guest) && port) {
+    pullWork(guest, port, work);
+    pullSession(guest, port, sessionDir(sid));
+  } else if (existsSync(work)) console.error(`[vm] ${vmName(guest)} not running — promoting the last copy in ${work}`);
   if (!existsSync(work)) {
     console.error(`no work dir: ${work}`);
     process.exit(1);
@@ -1066,17 +1320,33 @@ function stopVm(sid) {
 
 function cmdRm(id, { purge = false } = {}) {
   const sid = safeId(id);
+  const attachedToShared = readMeta(sid).guestId === SHARED_GUEST_ID;
+  if (!rmStopsGuest({ id: sid, ownsQemu: vmRunning(sid), attachedToShared })) {
+    console.error(
+      `[vm] ${sid} is attached to ${vmName(SHARED_GUEST_ID)}; not stopping it. ` +
+        `Operator stop: node scripts/gotchibot-vm.mjs rm ${SHARED_GUEST_ID}`,
+    );
+    cmdDetach(sid);
+    return;
+  }
   const dir = vmDir(sid);
   // Pull before stopping so the job's output survives the VM the way it
   // survives the Docker bind mount. --purge is throwing the work away anyway.
   const port = readMeta(sid).port;
+  const holder = sid === SHARED_GUEST_ID ? readMeta(sid).holder : null;
   if (!purge && port && vmRunning(sid)) {
-    for (const [pull, remote] of [
-      [pullWork, GUEST_WORK],
-      [pullSession, GUEST_SESSION],
-    ]) {
+    const pulls = holder
+      ? [
+          [() => pullWork(sid, port, workDir(holder)), GUEST_WORK],
+          [() => pullSession(sid, port, sessionDir(holder)), GUEST_SESSION],
+        ]
+      : [
+          [() => pullWork(sid, port), GUEST_WORK],
+          [() => pullSession(sid, port), GUEST_SESSION],
+        ];
+    for (const [pull, remote] of pulls) {
       try {
-        pull(sid, port);
+        pull();
       } catch (e) {
         throw new Error(`${e.message} — ${vmName(sid)} left running so its ${remote} is not lost (rm --purge discards it)`);
       }
@@ -1097,7 +1367,7 @@ function cmdRm(id, { purge = false } = {}) {
   }
   if (existsSync(metaPath(sid))) {
     const { port, ...meta } = readMeta(sid);
-    writeMeta(sid, { ...meta, status: "stopped", stoppedAt: new Date().toISOString() });
+    writeMeta(sid, { ...meta, holder: null, status: "stopped", stoppedAt: new Date().toISOString() });
   }
   console.error(`[vm] kept ${workDir(sid)} (use --purge to delete)`);
 }
@@ -1128,6 +1398,11 @@ async function main() {
     cmdExec(id, cmdArgs);
     return;
   }
+  if (cmd === "detach") {
+    if (!rest[0]) usage();
+    cmdDetach(rest[0]);
+    return;
+  }
   if (cmd === "status") {
     cmdStatus(rest[0] || null);
     return;
@@ -1152,7 +1427,19 @@ async function main() {
   usage();
 }
 
-main().catch((e) => {
-  console.error(`[vm] ${e?.message || e}`);
-  process.exit(1);
-});
+function invokedAsCli() {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  try {
+    return resolve(argv1) === resolve(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsCli()) {
+  main().catch((e) => {
+    console.error(`[vm] ${e?.message || e}`);
+    process.exit(1);
+  });
+}
