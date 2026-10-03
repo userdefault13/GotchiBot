@@ -8,7 +8,10 @@
     "id": 263,
     "name": "Signal Headset",
     "view": "front",
-    "ascii": " █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n▄█                 █▄\n██                 ██\n██                 ██\n██                 ██\n██                 ██\n▀█                 █▀\n ▀                 ▀ "
+    "ascii": " █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n▄█                 █▄\n██                 ██\n██                 ██\n██                 ██\n██                 ██\n▀█                 █▀\n ▀                 ▀ ",
+    "gotchiId": "owned-7298",
+    "primary": "0000b9",
+    "secondary": "d4def8"
   },
   "skills": [
     "browser-tool"

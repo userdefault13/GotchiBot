@@ -1,0 +1,13 @@
+{
+  "accountant": { "gotchiId": "owned-8532", "collateral": "link", "hauntId": 1 },
+  "architect": { "gotchiId": "owned-954", "collateral": "uni", "hauntId": 1 },
+  "chief-of-staff": { "gotchiId": "owned-23965", "collateral": "weth", "hauntId": 2 },
+  "customer-support": { "gotchiId": "owned-5402", "collateral": "aave", "hauntId": 1 },
+  "fe-marketing": { "gotchiId": "owned-5041", "collateral": "link", "hauntId": 1 },
+  "kanban-manager": { "gotchiId": "owned-14338", "collateral": "weth", "hauntId": 2 },
+  "mail-courier": { "gotchiId": "owned-8461", "collateral": "tusd", "hauntId": 1 },
+  "market-news": { "gotchiId": "owned-12302", "collateral": "usdc", "hauntId": 2 },
+  "market-research": { "gotchiId": "owned-14314", "collateral": "wbtc", "hauntId": 2 },
+  "marketing-agency": { "gotchiId": "owned-6701", "collateral": "link", "hauntId": 1 },
+  "social-media-manager": { "gotchiId": "owned-7298", "collateral": "link", "hauntId": 1 }
+}

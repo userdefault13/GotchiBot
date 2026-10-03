@@ -11,6 +11,8 @@ import {
   scopeLabel,
   STARTER_PACK_IDS,
 } from "../scripts/template-pack.mjs";
+import { findCollateralColors } from "../scripts/collateral-resolve.mjs";
+import { PRIMARY_CHARS, SECONDARY_CHARS, wearableMarkup } from "../scripts/wearable-color.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 
@@ -84,5 +86,89 @@ describe("marketplace Base set", () => {
     assert.ok(html.includes('pre.className = "wearable"'));
     assert.equal(html.includes("assets/templates/"), false);
     assert.ok(html.includes("Trezor Wallet"));
+  });
+});
+
+describe("marketplace wearable collateral colors", () => {
+  const LINK_CUBE = [
+    "  ▄▄  ",
+    " ▄█░▄ ",
+    "▄██░░▄",
+    "▓▒█░▒▓",
+    "▓▓▒▒▓▓",
+    "▀▓▒▒▓▀",
+    " ▀░░▀ ",
+    "  ▀▀  ",
+  ].join("\n");
+
+  function pageWearableMarkup() {
+    const html = readFileSync(join(root, "templates/marketplace/web/index.html"), "utf8");
+    const start = html.indexOf("/* wearable-markup */");
+    const end = html.indexOf("/* /wearable-markup */");
+    assert.ok(start >= 0 && end > start);
+    const src = html.slice(start, end);
+    const fnStart = src.indexOf("function wearableMarkup");
+    return new Function(`${src.slice(fnStart)}\nreturn wearableMarkup;`)();
+  }
+
+  it("colors Link Cube shades with the bound gotchi primary and secondary", () => {
+    const link = findCollateralColors("link", 1);
+    const page = pageWearableMarkup();
+    const wearable = { gotchiId: "owned-5041", primary: link.primary, secondary: link.secondary };
+    const html = wearableMarkup(LINK_CUBE, wearable);
+    assert.equal(html, page(LINK_CUBE, wearable));
+    assert.match(html, new RegExp(`<span style="color:#${link.primary}">█</span>`));
+    assert.match(html, new RegExp(`<span style="color:#${link.secondary}">░</span>`));
+    assert.match(html, new RegExp(`<span style="color:#${link.secondary}">▒</span>`));
+    assert.match(html, new RegExp(`<span style="color:#${link.primary}">▓</span>`));
+    assert.equal(wearableMarkup(LINK_CUBE, { primary: link.primary, secondary: link.secondary }), null);
+    assert.equal(wearableMarkup(LINK_CUBE, { gotchiId: "owned-5041" }), null);
+    const pageSrc = readFileSync(join(root, "templates/marketplace/web/index.html"), "utf8");
+    assert.match(pageSrc, /pre\.dataset\.primary/);
+    assert.match(pageSrc, /pre\.dataset\.secondary/);
+    assert.match(pageSrc, /colored == null/);
+  });
+
+  it("puts those two colors on Base set wearables that have a bound gotchi", () => {
+    const catalog = loadCatalog();
+    const roles = JSON.parse(readFileSync(join(root, "config/agent-roles.json"), "utf8"));
+    const bound = JSON.parse(readFileSync(join(root, "templates/marketplace/bound-gotchis.json"), "utf8"));
+    const fe = catalog.packs.find((p) => p.id === "fe-marketing");
+    assert.equal(fe.title, "UI/UX");
+    const link = findCollateralColors("link", 1);
+    assert.equal(fe.wearable.primary, link.primary);
+    assert.equal(fe.wearable.secondary, link.secondary);
+    assert.equal(roles[fe.wearable.gotchiId], "fe-marketing");
+    for (const [roleId, row] of Object.entries(bound)) {
+      assert.equal(roles[row.gotchiId], roleId, roleId);
+      const colors = findCollateralColors(row.collateral, row.hauntId);
+      const pack = catalog.packs.find((p) => p.id === roleId);
+      assert.equal(pack.wearable.primary, colors.primary, roleId);
+      assert.equal(pack.wearable.secondary, colors.secondary, roleId);
+      const markup = wearableMarkup(pack.wearable.ascii, pack.wearable);
+      const glyphs = [...pack.wearable.ascii];
+      if (glyphs.some((ch) => PRIMARY_CHARS.includes(ch))) {
+        assert.match(markup, new RegExp(`#${colors.primary}`), roleId);
+      }
+      if (glyphs.some((ch) => SECONDARY_CHARS.includes(ch))) {
+        assert.match(markup, new RegExp(`#${colors.secondary}`), roleId);
+      }
+      const onDisk = JSON.parse(readFileSync(join(root, "templates/marketplace/packs", roleId, "pack.json"), "utf8"));
+      assert.equal(onDisk.wearable.primary, colors.primary, roleId);
+      assert.equal(onDisk.wearable.secondary, colors.secondary, roleId);
+    }
+    const architect = catalog.packs.find((p) => p.id === "architect");
+    const arch = wearableMarkup(architect.wearable.ascii, architect.wearable);
+    assert.match(arch, new RegExp(`#${architect.wearable.primary}`));
+    assert.match(arch, new RegExp(`#${architect.wearable.secondary}`));
+    for (const id of ["worker", "product-manager", "auditor", "brand-design", "game-art-director", "jev", "security-engineer"]) {
+      const pack = catalog.packs.find((p) => p.id === id);
+      assert.equal(pack.wearable.gotchiId, undefined, id);
+      assert.equal(pack.wearable.primary, undefined, id);
+      assert.equal(wearableMarkup(pack.wearable.ascii, pack.wearable), null, id);
+    }
+    assert.equal(catalog.packs.find((p) => p.id === "bend-crew").wearable, undefined);
+    assert.equal(bound["bend-crew"], undefined);
+    assert.equal(bound["prof-link-cube"], undefined);
   });
 });
