@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Project Kanban Manager",
   "summary": "Own the sealed project's main task kanban and every desk's mini headless board: show/add/move cards, sync desk minis into the main board, pull assigned cards onto desks. Owns the project ticket lifecycle (accept/rework/close/digest) for agent request/claim/submit work.",
+  "wearable": {
+    "id": 212,
+    "name": "1337 Laptop",
+    "view": "front",
+    "ascii": " ██████ \n▐██████▌\n▐██████▌\n▐██████▌\n▐██████▌\n ██████ \n████████"
+  },
   "skills": [
     "project-kanban",
     "project-tickets"

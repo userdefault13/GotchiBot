@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Social Media Manager",
   "summary": "Calendar, voice, channel strategy and drafts for web + social — channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.",
+  "wearable": {
+    "id": 263,
+    "name": "Signal Headset",
+    "view": "front",
+    "ascii": " █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n▄█                 █▄\n██                 ██\n██                 ██\n██                 ██\n██                 ██\n▀█                 █▀\n ▀                 ▀ "
+  },
   "skills": [
     "browser-tool"
   ],

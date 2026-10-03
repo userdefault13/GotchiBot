@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Market News",
   "summary": "Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only — not the trader monitor.",
+  "wearable": {
+    "id": 75,
+    "name": "OKex Sign",
+    "view": "front",
+    "ascii": "▄█████ \n█░████▌\n██░░▒░▌\n▀█████ \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   "
+  },
   "skills": [
     "market-news-feed",
     "browser-tool"

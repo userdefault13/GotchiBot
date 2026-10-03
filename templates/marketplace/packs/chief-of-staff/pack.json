@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Chief of Staff",
   "summary": "Owns the goal and the truth of the fleet: turns UserDefault's intent into a plan, staffs the desks that execute it (orchestrator for seated heroes, Prof. Link-Cube for new seats), chairs the morning recap, keeps the roster honest, and reports what merged, what is blocked, and what needs a decision. Plans, staffs and reports — never does the work. Not Prof; not the orchestrator.",
+  "wearable": {
+    "id": 84,
+    "name": "Gentleman Hat",
+    "view": "front",
+    "ascii": "   ▄███████████████▄   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n███████████████████████"
+  },
   "skills": [
     "morning-recap",
     "synergy",

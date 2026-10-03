@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Customer Support",
   "summary": "Own the client-facing support desk: manage a web chat bot that clients use to get help — configure/monitor the bot, triage conversations, draft replies, escalate blockers, keep a support ledger. On GotchiBot/AarcadeGh-t installs, also owns the project messaging system (AgentMail + desk mailboxes + tickets until a web widget is wired). Never posts marketing; never spends.",
+  "wearable": {
+    "id": 55,
+    "name": "Aagent Headset",
+    "view": "front",
+    "ascii": "█ \n▀ \n  \n  "
+  },
   "skills": [
     "browser-tool",
     "project-mailbox"

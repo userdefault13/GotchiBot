@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Bend proofs",
   "summary": "Owns PROOF.bend and bend PROOF.bend green. Does not rewrite laws — hands law gaps to bend-laws.",
+  "wearable": {
+    "id": 355,
+    "name": "Safety Glasses",
+    "view": "front",
+    "ascii": "█████████████████\n ▀█████████████▀ \n  █████████████  \n  ▀███████████▀  \n   ▀███▀ ▀███▀   "
+  },
   "scope": "aarcade",
   "skills": [
     "bend-2",

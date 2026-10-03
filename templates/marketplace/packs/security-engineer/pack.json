@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Security Engineer",
   "summary": "Find and fix real vulns in the current GotchiBot/Aarcade tree: threat notes, hardening, secret hygiene, approve-gate checks. Implements fixes; auditor attests.",
+  "wearable": {
+    "id": 213,
+    "name": "H4xx0r Shirt",
+    "view": "front",
+    "ascii": "█▄             ▄█\n██▄           ▄██\n███▄         ▄███\n█████▄▄▄▄▄▄▄█████\n█████████████████\n█████████████████\n█████████████████\n█████████████████\n█████████████████\n██▒▒█████████▒▒██"
+  },
   "skills": [
     "browser-tool",
     "pstack",

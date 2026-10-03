@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Auditor",
   "summary": "Independent audit/attestation for the current GotchiBot/Aarcade tree: evidence-backed findings, control checks, fix reviews. Does not implement production fixes.",
+  "wearable": {
+    "id": 53,
+    "name": "All Seeing Eyes",
+    "view": "front",
+    "ascii": " ▄██▄    ▄██▄ \n▄▒██▒▄  ▄▒██▒▄\n██████  ██████\n██████  ██████\n▀▒██▒▀  ▀▒██▒▀\n ▀██▀    ▀██▀ "
+  },
   "skills": [
     "browser-tool",
     "pymupdf",

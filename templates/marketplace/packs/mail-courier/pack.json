@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Mail Courier",
   "summary": "Own one AgentMail inbox per GotchiBot project: accept outbound from agents, send via AgentMail (abra AGENT_MAIL_API_KEY), monitor inbox/outbox, relay replies, track owed agent responses, remind after 24h, keep the orchestrator informed.",
+  "wearable": {
+    "id": 9,
+    "name": "Walkie Talkie",
+    "view": "front",
+    "ascii": "  ▐ \n  ▐ \n▐██▌\n███▌\n▐██▌\n▐██▌\n▐██▌\n ▀▀ "
+  },
   "skills": [
     "agentmail",
     "abra-vault",

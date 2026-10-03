@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "UI/UX",
   "summary": "Landing pages, conversion UX, brand web polish and campaign microsites — FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.",
+  "wearable": {
+    "id": 202,
+    "name": "VR Headset",
+    "view": "front",
+    "ascii": "       ▐██▌       \n       ▐██▌       \n       ▐██▌       \n       ▐██▌       \n  ▄▄▄▄▄▄██▄▄▄▄▄▄  \n ▄██████████████▄ \n▄████████████████▄\n██████████████████\n██████████████████\n██████████████████\n▐████████████████▌\n ▐██████████████▌ \n  ▐████▌  ▐████▌  "
+  },
   "skills": [
     "browser-tool"
   ],

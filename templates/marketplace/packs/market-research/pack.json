@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Market Research",
   "summary": "Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only — not the trader monitor.",
+  "wearable": {
+    "id": 52,
+    "name": "Galaxy Brain",
+    "view": "front",
+    "ascii": "  ▄██████▄ ▄██████▄  \n █████▓█▓▓█▓▓██▓██▓█ \n▄▓████▓██▓█████▓██▓▓▄\n█▓▓▓▓█▓██▓████▓▓▓████\n██████▓█▓█▓█▓▓▓▓██▓▓█\n█▓▓█▓▓▓██▒▓▓███▓▓█▓▓█\n██▓▓▓█▓▓█▓███▓██▓████\n████████▓███▓▓█▓▓████\n▀▓█▓▓▓▓▓▓▓█▓▓▓▓▓▓▓█▓▀\n █▓▓▀▀▀▀▀▓█▓▀▀▀▀▀▓██ \n  █▀     ▀█▀     ▀█  "
+  },
   "skills": [
     "browser-tool",
     "pymupdf",

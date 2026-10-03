@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Marketing Agency",
   "summary": "Research & analyze market trends, then staff web, social, merch and brand-design children — Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.",
+  "wearable": {
+    "id": 32,
+    "name": "Aave Flag",
+    "view": "front",
+    "ascii": "▄▄▄▄▄▄\n██████\n██░███\n█░████\n██████\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n      "
+  },
   "skills": [
     "browser-tool",
     "market-news-feed",

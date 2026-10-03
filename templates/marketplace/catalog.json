@@ -45,6 +45,12 @@
       "roleId": "accountant",
       "title": "Accountant",
       "summary": "Own the merch ops ledger: vendor quotes, POs, AP/AR, invoices — sourced amounts, aging clarity. Tracks and reconciles; never spends or invents balances.",
+      "wearable": {
+        "id": 41,
+        "name": "Trezor Wallet",
+        "view": "front",
+        "ascii": "████▌\n████▌\n████▌\n████▌\n████▌\n▀███ \n ▀█  "
+      },
       "version": "1.0.0",
       "path": "packs/accountant",
       "tags": [
@@ -82,6 +88,12 @@
       "roleId": "architect",
       "title": "Architect",
       "summary": "Exhaust design space; ranked best + alternatives; hand off build. Does not implement.",
+      "wearable": {
+        "id": 369,
+        "name": "Staff of Creation",
+        "view": "front",
+        "ascii": "  ▄▓▄  \n ▓▒▒▒▓ \n▓░▒▒▒▒▓\n▓▒▒▒██▓\n▓▒███▒█\n █▒▒▒█ \n  ▀█▀  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ███  \n  ███  "
+      },
       "version": "1.0.0",
       "path": "packs/architect",
       "tags": [
@@ -124,6 +136,12 @@
       "roleId": "auditor",
       "title": "Auditor",
       "summary": "Independent audit/attestation for the current GotchiBot/Aarcade tree: evidence-backed findings, control checks, fix reviews. Does not implement production fixes.",
+      "wearable": {
+        "id": 53,
+        "name": "All Seeing Eyes",
+        "view": "front",
+        "ascii": " ▄██▄    ▄██▄ \n▄▒██▒▄  ▄▒██▒▄\n██████  ██████\n██████  ██████\n▀▒██▒▀  ▀▒██▒▀\n ▀██▀    ▀██▀ "
+      },
       "version": "1.0.0",
       "path": "packs/auditor",
       "tags": [
@@ -146,6 +164,12 @@
       "roleId": "bend-chief",
       "title": "Bend chief",
       "summary": "Routes and merges Bend crew work: intake → bend-laws (LAWS.bend) / bend-proofs (PROOF.bend). Does not author laws or proofs by default.",
+      "wearable": {
+        "id": 149,
+        "name": "Royal Crown",
+        "view": "front",
+        "ascii": "▒     ██▒██     ▒\n▒▒  ███▒▒▒███  ▒▒\n▒▒▒███▒▒█▒▒███▒▒▒\n▒▒▒▒█▒▒▒█▒▒▒█▒▒▒▒\n▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒\n▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓"
+      },
       "scope": "aarcade",
       "version": "1.0.0",
       "path": "packs/bend-chief",
@@ -191,6 +215,12 @@
       "roleId": "bend-laws",
       "title": "Bend laws",
       "summary": "Owns LAWS.bend authorship. Does not write proofs — hands proof work to bend-proofs.",
+      "wearable": {
+        "id": 65,
+        "name": "Legendary Wizard Staff",
+        "view": "front",
+        "ascii": "  ▄  \n ▄█  \n▄▒██ \n ██▀ \n ▐█  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n     "
+      },
       "scope": "aarcade",
       "version": "1.0.0",
       "path": "packs/bend-laws",
@@ -210,6 +240,12 @@
       "roleId": "bend-proofs",
       "title": "Bend proofs",
       "summary": "Owns PROOF.bend and bend PROOF.bend green. Does not rewrite laws — hands law gaps to bend-laws.",
+      "wearable": {
+        "id": 355,
+        "name": "Safety Glasses",
+        "view": "front",
+        "ascii": "█████████████████\n ▀█████████████▀ \n  █████████████  \n  ▀███████████▀  \n   ▀███▀ ▀███▀   "
+      },
       "scope": "aarcade",
       "version": "1.0.0",
       "path": "packs/bend-proofs",
@@ -229,6 +265,12 @@
       "roleId": "brand-design",
       "title": "Brand Design",
       "summary": "Own brand kits / design-system deliverables for clients and partners: logo lockups, color/type tokens, social templates, pitch decks, one-sheets, leave-behinds, merch art-ready exports.",
+      "wearable": {
+        "id": 365,
+        "name": "Paint Palette",
+        "view": "front",
+        "ascii": "  ▄▒▒▄ \n ▄▒▒▒▒▌\n ▒▒▒▒▒▌\n▄▒▒▀▀▀ \n▒▒▒ ▒  \n▒▒▒ ▒  \n▀▒█▄▄▄ \n ▒█▒▒▒▌\n ▀▒▒█▒▌\n  ▀▒▒▀ "
+      },
       "version": "1.0.0",
       "path": "packs/brand-design",
       "tags": [
@@ -271,6 +313,12 @@
       "roleId": "chief-of-staff",
       "title": "Chief of Staff",
       "summary": "Owns the goal and the truth of the fleet: turns UserDefault's intent into a plan, staffs the desks that execute it (orchestrator for seated heroes, Prof. Link-Cube for new seats), chairs the morning recap, keeps the roster honest, and reports what merged, what is blocked, and what needs a decision. Plans, staffs and reports — never does the work. Not Prof; not the orchestrator.",
+      "wearable": {
+        "id": 84,
+        "name": "Gentleman Hat",
+        "view": "front",
+        "ascii": "   ▄███████████████▄   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n███████████████████████"
+      },
       "version": "1.0.0",
       "path": "packs/chief-of-staff",
       "tags": [
@@ -315,6 +363,12 @@
       "roleId": "customer-support",
       "title": "Customer Support",
       "summary": "Own the client-facing support desk: manage a web chat bot that clients use to get help — configure/monitor the bot, triage conversations, draft replies, escalate blockers, keep a support ledger. On GotchiBot/AarcadeGh-t installs, also owns the project messaging system (AgentMail + desk mailboxes + tickets until a web widget is wired). Never posts marketing; never spends.",
+      "wearable": {
+        "id": 55,
+        "name": "Aagent Headset",
+        "view": "front",
+        "ascii": "█ \n▀ \n  \n  "
+      },
       "version": "1.0.0",
       "path": "packs/customer-support",
       "tags": [
@@ -375,6 +429,12 @@
       "roleId": "fe-marketing",
       "title": "UI/UX",
       "summary": "Landing pages, conversion UX, brand web polish and campaign microsites — FE marketing, not generic FE engineering. Brand first, one composition, no AI-slop.",
+      "wearable": {
+        "id": 202,
+        "name": "VR Headset",
+        "view": "front",
+        "ascii": "       ▐██▌       \n       ▐██▌       \n       ▐██▌       \n       ▐██▌       \n  ▄▄▄▄▄▄██▄▄▄▄▄▄  \n ▄██████████████▄ \n▄████████████████▄\n██████████████████\n██████████████████\n██████████████████\n▐████████████████▌\n ▐██████████████▌ \n  ▐████▌  ▐████▌  "
+      },
       "version": "1.0.0",
       "path": "packs/fe-marketing",
       "tags": [
@@ -412,6 +472,12 @@
       "roleId": "game-art-director",
       "title": "Game Art Director",
       "summary": "Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels — the user owns image gen.",
+      "wearable": {
+        "id": 364,
+        "name": "Paint Brush",
+        "view": "front",
+        "ascii": "▀ \n▐█\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n ▀"
+      },
       "version": "1.0.0",
       "path": "packs/game-art-director",
       "tags": [
@@ -561,6 +627,12 @@
       "roleId": "jev",
       "title": "Jev (TypeSafe System One)",
       "summary": "Structured decisions via TypeSafe Jev — Choice, Score, Noul with confidence. Not chat; not a work tool for edits.",
+      "wearable": {
+        "id": 137,
+        "name": "Vote Sign",
+        "view": "front",
+        "ascii": "▄███████ \n████████▌\n████████▌\n████████▌\n ▀▀▀▀▀▀▀ \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n         "
+      },
       "scope": "starter",
       "version": "1.0.0",
       "path": "packs/jev",
@@ -584,6 +656,12 @@
       "roleId": "kanban-manager",
       "title": "Project Kanban Manager",
       "summary": "Own the sealed project's main task kanban and every desk's mini headless board: show/add/move cards, sync desk minis into the main board, pull assigned cards onto desks. Owns the project ticket lifecycle (accept/rework/close/digest) for agent request/claim/submit work.",
+      "wearable": {
+        "id": 212,
+        "name": "1337 Laptop",
+        "view": "front",
+        "ascii": " ██████ \n▐██████▌\n▐██████▌\n▐██████▌\n▐██████▌\n ██████ \n████████"
+      },
       "version": "1.0.0",
       "path": "packs/kanban-manager",
       "tags": [
@@ -604,6 +682,12 @@
       "roleId": "mail-courier",
       "title": "Mail Courier",
       "summary": "Own one AgentMail inbox per GotchiBot project: accept outbound from agents, send via AgentMail (abra AGENT_MAIL_API_KEY), monitor inbox/outbox, relay replies, track owed agent responses, remind after 24h, keep the orchestrator informed.",
+      "wearable": {
+        "id": 9,
+        "name": "Walkie Talkie",
+        "view": "front",
+        "ascii": "  ▐ \n  ▐ \n▐██▌\n███▌\n▐██▌\n▐██▌\n▐██▌\n ▀▀ "
+      },
       "version": "1.0.0",
       "path": "packs/mail-courier",
       "tags": [
@@ -626,6 +710,12 @@
       "roleId": "market-news",
       "title": "Market News",
       "summary": "Own market news intake for the trade desk: regime headlines, digests, dead-feed as unknown. Briefs only — not the trader monitor.",
+      "wearable": {
+        "id": 75,
+        "name": "OKex Sign",
+        "view": "front",
+        "ascii": "▄█████ \n█░████▌\n██░░▒░▌\n▀█████ \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   "
+      },
       "version": "1.0.0",
       "path": "packs/market-news",
       "tags": [
@@ -645,6 +735,12 @@
       "roleId": "market-research",
       "title": "Market Research",
       "summary": "Own deeper market research for the trade desk: themes, relative value, filings/decks, short IC memos. Analysis only — not the trader monitor.",
+      "wearable": {
+        "id": 52,
+        "name": "Galaxy Brain",
+        "view": "front",
+        "ascii": "  ▄██████▄ ▄██████▄  \n █████▓█▓▓█▓▓██▓██▓█ \n▄▓████▓██▓█████▓██▓▓▄\n█▓▓▓▓█▓██▓████▓▓▓████\n██████▓█▓█▓█▓▓▓▓██▓▓█\n█▓▓█▓▓▓██▒▓▓███▓▓█▓▓█\n██▓▓▓█▓▓█▓███▓██▓████\n████████▓███▓▓█▓▓████\n▀▓█▓▓▓▓▓▓▓█▓▓▓▓▓▓▓█▓▀\n █▓▓▀▀▀▀▀▓█▓▀▀▀▀▀▓██ \n  █▀     ▀█▀     ▀█  "
+      },
       "version": "1.0.0",
       "path": "packs/market-research",
       "tags": [
@@ -665,6 +761,12 @@
       "roleId": "marketing-agency",
       "title": "Marketing Agency",
       "summary": "Research & analyze market trends, then staff web, social, merch and brand-design children — Instrument/Huge-grade craft, Buffer/Later-style ops, Clearbit/Segment-grade research. Briefs and routes; never posts publicly itself.",
+      "wearable": {
+        "id": 32,
+        "name": "Aave Flag",
+        "view": "front",
+        "ascii": "▄▄▄▄▄▄\n██████\n██░███\n█░████\n██████\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n      "
+      },
       "version": "1.0.0",
       "path": "packs/marketing-agency",
       "tags": [
@@ -784,6 +886,12 @@
       "roleId": "product-manager",
       "title": "Product Manager",
       "summary": "Sole product desk: discovery → roadmap → specs → ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers — including one arcade-game-monitor per Aarcade game. Not Prof; not chief.",
+      "wearable": {
+        "id": 139,
+        "name": "Snapshot Cap",
+        "view": "front",
+        "ascii": "         ▄▄▄▓▄▄▄     \n       ███████████   \n      █████████████  \n     ███████████████ \n    ████████▓████████\n    ████████▓████████\n    █████████████████\n▄▄▄▄█████████████████\n▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀"
+      },
       "version": "1.0.0",
       "path": "packs/product-manager",
       "tags": [
@@ -845,6 +953,12 @@
       "roleId": "security-engineer",
       "title": "Security Engineer",
       "summary": "Find and fix real vulns in the current GotchiBot/Aarcade tree: threat notes, hardening, secret hygiene, approve-gate checks. Implements fixes; auditor attests.",
+      "wearable": {
+        "id": 213,
+        "name": "H4xx0r Shirt",
+        "view": "front",
+        "ascii": "█▄             ▄█\n██▄           ▄██\n███▄         ▄███\n█████▄▄▄▄▄▄▄█████\n█████████████████\n█████████████████\n█████████████████\n█████████████████\n█████████████████\n██▒▒█████████▒▒██"
+      },
       "version": "1.0.0",
       "path": "packs/security-engineer",
       "tags": [
@@ -887,6 +1001,12 @@
       "roleId": "social-media-manager",
       "title": "Social Media Manager",
       "summary": "Calendar, voice, channel strategy and drafts for web + social — channel-native craft, approve-gated publishing. Never holds X keys; never invents metrics.",
+      "wearable": {
+        "id": 263,
+        "name": "Signal Headset",
+        "view": "front",
+        "ascii": " █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n▄█                 █▄\n██                 ██\n██                 ██\n██                 ██\n██                 ██\n▀█                 █▀\n ▀                 ▀ "
+      },
       "version": "1.0.0",
       "path": "packs/social-media-manager",
       "tags": [
@@ -945,6 +1065,12 @@
       "roleId": "worker",
       "title": "Worker",
       "summary": "Prof-seated worker desks request. Deep lanes: dispatch I/O (sessions/<id>), skill-requests.jsonl helper, ephemeral desk-terminals use/close.",
+      "wearable": {
+        "id": 239,
+        "name": "Wagie Cap",
+        "view": "front",
+        "ascii": "     ▄▄▄█▄▄▄     \n   ███████████   \n  █████████████  \n ███████████████ \n██████▒█▒█▒██████\n██████▒█▒█▒██████\n██████▓█▓█▓██████\n███████▓█▓███████\n▀▀█████████████▀▀\n  ▀▀▀▀▀▀▀▀▀▀▀▀▀  "
+      },
       "version": "1.0.0",
       "path": "packs/worker",
       "tags": [
@@ -965,5 +1091,5 @@
       "scope": "starter"
     }
   ],
-  "updatedAt": "2026-09-23T20:15:33.845Z"
+  "updatedAt": "2026-10-03T08:46:20.786Z"
 }

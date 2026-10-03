@@ -36,6 +36,7 @@ const ROOT = resolve(__dirname, "..");
 const MARKET = join(ROOT, "templates", "marketplace");
 const PACKS = join(MARKET, "packs");
 const CATALOG = join(MARKET, "catalog.json");
+const WEARABLES_FILE = join(MARKET, "wearables.json");
 const WEB = join(MARKET, "web", "index.html");
 const PLAYBOOKS_FILE = join(ROOT, "config", "agent-role-playbooks.json");
 const ROLES_FILE = join(ROOT, "config", "agent-roles.json");
@@ -280,6 +281,20 @@ function readJson(file, fallback) {
   }
 }
 
+/** ASCII wearable for a hero template. Suites (bend-crew) and prof-link-cube get none. */
+function wearableForRole(roleId) {
+  if (!roleId || roleId === "prof-link-cube" || SUITE_PACK_MEMBERS[roleId]) return null;
+  const all = readJson(WEARABLES_FILE, null);
+  const row = all && typeof all === "object" ? all[roleId] : null;
+  if (!row || typeof row.ascii !== "string" || !row.ascii) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    ...(row.view ? { view: row.view } : {}),
+    ascii: row.ascii,
+  };
+}
+
 function writeJson(file, obj) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(obj, null, 2)}\n`);
@@ -475,6 +490,7 @@ function buildPack(roleId) {
   // pack.json
   const prev = readJson(join(packDir, "pack.json"), null);
   const version = prev?.version || VERSION;
+  const wearable = wearableForRole(roleId);
   const packJson = {
     id: roleId,
     roleId,
@@ -497,6 +513,7 @@ function buildPack(roleId) {
     tags: TAG_MAP[roleId] || ["marketplace"],
     downloadPath: `packs/${roleId}`,
     files: listFiles(packDir),
+    ...(wearable ? { wearable } : {}),
   };
   writeJson(join(packDir, "pack.json"), packJson);
 
@@ -515,6 +532,7 @@ function buildPack(roleId) {
     tags: packJson.tags,
     skills: packJson.skills,
     ...(external.length ? { skillsExternal: external } : {}),
+    ...(packJson.wearable ? { wearable: packJson.wearable } : {}),
   };
   catalog.packs = catalog.packs.filter((p) => p.id !== roleId);
   catalog.packs.push(entry);

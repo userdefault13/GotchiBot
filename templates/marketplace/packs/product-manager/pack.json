@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Product Manager",
   "summary": "Sole product desk: discovery → roadmap → specs → ship coordination. Asks Prof. Link-Cube (NPC) to seat helpers — including one arcade-game-monitor per Aarcade game. Not Prof; not chief.",
+  "wearable": {
+    "id": 139,
+    "name": "Snapshot Cap",
+    "view": "front",
+    "ascii": "         ▄▄▄▓▄▄▄     \n       ███████████   \n      █████████████  \n     ███████████████ \n    ████████▓████████\n    ████████▓████████\n    █████████████████\n▄▄▄▄█████████████████\n▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀"
+  },
   "skills": [
     "browser-tool",
     "pymupdf",

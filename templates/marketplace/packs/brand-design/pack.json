@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Brand Design",
   "summary": "Own brand kits / design-system deliverables for clients and partners: logo lockups, color/type tokens, social templates, pitch decks, one-sheets, leave-behinds, merch art-ready exports.",
+  "wearable": {
+    "id": 365,
+    "name": "Paint Palette",
+    "view": "front",
+    "ascii": "  ▄▒▒▄ \n ▄▒▒▒▒▌\n ▒▒▒▒▒▌\n▄▒▒▀▀▀ \n▒▒▒ ▒  \n▒▒▒ ▒  \n▀▒█▄▄▄ \n ▒█▒▒▒▌\n ▀▒▒█▒▌\n  ▀▒▒▀ "
+  },
   "skills": [
     "browser-tool",
     "aseprite-tool"

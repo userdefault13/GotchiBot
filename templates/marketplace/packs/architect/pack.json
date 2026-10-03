@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Architect",
   "summary": "Design only. On a job at design, return a short design note and advance design→plan. Does not staff, assign, or build.",
+  "wearable": {
+    "id": 369,
+    "name": "Staff of Creation",
+    "view": "front",
+    "ascii": "  ▄▓▄  \n ▓▒▒▒▓ \n▓░▒▒▒▒▓\n▓▒▒▒██▓\n▓▒███▒█\n █▒▒▒█ \n  ▀█▀  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ███  \n  ███  "
+  },
   "skills": [
     "architect",
     "browser-tool"

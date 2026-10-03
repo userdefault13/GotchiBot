@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Worker",
   "summary": "Prof-seated worker desks request. Deep lanes: dispatch I/O (sessions/<id>), skill-requests.jsonl helper, ephemeral desk-terminals use/close.",
+  "wearable": {
+    "id": 239,
+    "name": "Wagie Cap",
+    "view": "front",
+    "ascii": "     ▄▄▄█▄▄▄     \n   ███████████   \n  █████████████  \n ███████████████ \n██████▒█▒█▒██████\n██████▒█▒█▒██████\n██████▓█▓█▓██████\n███████▓█▓███████\n▀▀█████████████▀▀\n  ▀▀▀▀▀▀▀▀▀▀▀▀▀  "
+  },
   "skills": [
     "cursor-cli",
     "codex-cli",

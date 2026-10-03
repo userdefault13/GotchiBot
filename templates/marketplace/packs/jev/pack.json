@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Jev (TypeSafe System One)",
   "summary": "Structured decisions via TypeSafe Jev — Choice, Score, Noul with confidence. Not chat; not a work tool for edits.",
+  "wearable": {
+    "id": 137,
+    "name": "Vote Sign",
+    "view": "front",
+    "ascii": "▄███████ \n████████▌\n████████▌\n████████▌\n ▀▀▀▀▀▀▀ \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n         "
+  },
   "scope": "starter",
   "skills": [
     "jev",

@@ -4,6 +4,12 @@
   "version": "1.0.0",
   "title": "Game Art Director",
   "summary": "Art direction for one game: style guide, locked palette, prompt sheets for the user's image tool, sprite/tile specs, shot list, sheet slice/pack, and audits against the guide. Does not generate finished pixels — the user owns image gen.",
+  "wearable": {
+    "id": 364,
+    "name": "Paint Brush",
+    "view": "front",
+    "ascii": "▀ \n▐█\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n ▀"
+  },
   "skills": [
     "browser-tool",
     "aseprite-tool"
