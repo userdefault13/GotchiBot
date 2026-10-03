@@ -9,9 +9,7 @@
     "name": "Trezor Wallet",
     "view": "front",
     "ascii": "████▌\n████▌\n████▌\n████▌\n████▌\n▀███ \n ▀█  ",
-    "gotchiId": "owned-8532",
-    "primary": "0000b9",
-    "secondary": "d4def8"
+    "markup": "<span style=\"color:#000000\">████▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#00ff00\">███</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#00ff00\">███</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#00ff00\">███</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#323232\">███</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#000000\">▀███</span> \n <span style=\"color:#000000\">▀█</span>  "
   },
   "skills": [
     "browser-tool",

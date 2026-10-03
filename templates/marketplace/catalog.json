@@ -50,9 +50,7 @@
         "name": "Trezor Wallet",
         "view": "front",
         "ascii": "████▌\n████▌\n████▌\n████▌\n████▌\n▀███ \n ▀█  ",
-        "gotchiId": "owned-8532",
-        "primary": "0000b9",
-        "secondary": "d4def8"
+        "markup": "<span style=\"color:#000000\">████▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#00ff00\">███</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#00ff00\">███</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#00ff00\">███</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#323232\">███</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#000000\">▀███</span> \n <span style=\"color:#000000\">▀█</span>  "
       },
       "version": "1.0.0",
       "path": "packs/accountant",
@@ -96,9 +94,7 @@
         "name": "Staff of Creation",
         "view": "front",
         "ascii": "  ▄▓▄  \n ▓▒▒▒▓ \n▓░▒▒▒▒▓\n▓▒▒▒██▓\n▓▒███▒█\n █▒▒▒█ \n  ▀█▀  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ▐█▌  \n  ███  \n  ███  ",
-        "gotchiId": "owned-954",
-        "primary": "ff2a7a",
-        "secondary": "ffc3df"
+        "markup": "  <span style=\"color:#23a3cf\">▄▓▄</span>  \n <span style=\"color:#3bccff\">▓▒▒</span><span style=\"color:#bfffd2\">▒▓</span> \n<span style=\"color:#23a3cf\">▓</span><span style=\"color:#bfffd2\">░▒</span><span style=\"color:#3bccff\">▒▒</span><span style=\"color:#bfffd2\">▒</span><span style=\"color:#23a3cf\">▓</span>\n<span style=\"color:#23a3cf\">▓</span><span style=\"color:#bfffd2\">▒</span><span style=\"color:#3bccff\">▒</span><span style=\"color:#bfffd2\">▒█</span><span style=\"color:#176dad\">█</span><span style=\"color:#23a3cf\">▓</span>\n<span style=\"color:#23a3cf\">▓</span><span style=\"color:#3bccff\">▒</span><span style=\"color:#176dad\">███</span><span style=\"color:#bfdcff\">▒</span><span style=\"color:#176dad\">█</span>\n <span style=\"color:#176dad\">█</span><span style=\"color:#f5fdff\">▒▒</span><span style=\"color:#bfdcff\">▒█</span> \n  <span style=\"color:#176dad\">▀█▀</span>  \n  <span style=\"color:#581693\">▐</span><span style=\"color:#7a15ad\">█</span><span style=\"color:#581693\">▌</span>  \n  <span style=\"color:#581693\">▐</span><span style=\"color:#7a15ad\">█</span><span style=\"color:#581693\">▌</span>  \n  <span style=\"color:#581693\">▐</span><span style=\"color:#7a15ad\">█</span><span style=\"color:#581693\">▌</span>  \n  <span style=\"color:#581693\">▐</span><span style=\"color:#ac14f8\">█</span><span style=\"color:#581693\">▌</span>  \n  <span style=\"color:#581693\">▐</span><span style=\"color:#ac14f8\">█</span><span style=\"color:#581693\">▌</span>  \n  <span style=\"color:#581693\">▐</span><span style=\"color:#ac14f8\">█</span><span style=\"color:#581693\">▌</span>  \n  <span style=\"color:#581693\">▐</span><span style=\"color:#ac14f8\">█</span><span style=\"color:#581693\">▌</span>  \n  <span style=\"color:#581693\">▐</span><span style=\"color:#ac14f8\">█</span><span style=\"color:#581693\">▌</span>  \n  <span style=\"color:#581693\">▐</span><span style=\"color:#7a15ad\">█</span><span style=\"color:#581693\">▌</span>  \n  <span style=\"color:#581693\">▐█▌</span>  \n  <span style=\"color:#ac14f8\">█</span><span style=\"color:#7a15ad\">██</span>  \n  <span style=\"color:#7a15ad\">███</span>  "
       },
       "version": "1.0.0",
       "path": "packs/architect",
@@ -146,7 +142,8 @@
         "id": 53,
         "name": "All Seeing Eyes",
         "view": "front",
-        "ascii": " ▄██▄    ▄██▄ \n▄▒██▒▄  ▄▒██▒▄\n██████  ██████\n██████  ██████\n▀▒██▒▀  ▀▒██▒▀\n ▀██▀    ▀██▀ "
+        "ascii": " ▄██▄    ▄██▄ \n▄▒██▒▄  ▄▒██▒▄\n██████  ██████\n██████  ██████\n▀▒██▒▀  ▀▒██▒▀\n ▀██▀    ▀██▀ ",
+        "markup": " <span style=\"color:#00ff00\">▄██▄</span>    <span style=\"color:#00ff00\">▄██▄</span> \n<span style=\"color:#00ff00\">▄▒</span><span style=\"color:#ffff00\">██</span><span style=\"color:#00ff00\">▒▄</span>  <span style=\"color:#00ff00\">▄▒</span><span style=\"color:#ffff00\">██</span><span style=\"color:#00ff00\">▒▄</span>\n<span style=\"color:#00ff00\">█</span><span style=\"color:#ffff00\">█</span><span style=\"color:#7d00ff\">██</span><span style=\"color:#ff00ff\">█</span><span style=\"color:#00ff00\">█</span>  <span style=\"color:#00ff00\">█</span><span style=\"color:#ffff00\">█</span><span style=\"color:#7d00ff\">██</span><span style=\"color:#ff00ff\">█</span><span style=\"color:#00ff00\">█</span>\n<span style=\"color:#00ff00\">█</span><span style=\"color:#ffff00\">█</span><span style=\"color:#7d00ff\">██</span><span style=\"color:#ff00ff\">█</span><span style=\"color:#00ff00\">█</span>  <span style=\"color:#00ff00\">█</span><span style=\"color:#ffff00\">█</span><span style=\"color:#7d00ff\">██</span><span style=\"color:#ff00ff\">█</span><span style=\"color:#00ff00\">█</span>\n<span style=\"color:#00ff00\">▀▒</span><span style=\"color:#ff00ff\">██</span><span style=\"color:#00ff00\">▒▀</span>  <span style=\"color:#00ff00\">▀▒</span><span style=\"color:#ff00ff\">██</span><span style=\"color:#00ff00\">▒▀</span>\n <span style=\"color:#00ff00\">▀██▀</span>    <span style=\"color:#00ff00\">▀██▀</span> "
       },
       "version": "1.0.0",
       "path": "packs/auditor",
@@ -174,7 +171,8 @@
         "id": 149,
         "name": "Royal Crown",
         "view": "front",
-        "ascii": "▒     ██▒██     ▒\n▒▒  ███▒▒▒███  ▒▒\n▒▒▒███▒▒█▒▒███▒▒▒\n▒▒▒▒█▒▒▒█▒▒▒█▒▒▒▒\n▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒\n▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓"
+        "ascii": "▒     ██▒██     ▒\n▒▒  ███▒▒▒███  ▒▒\n▒▒▒███▒▒█▒▒███▒▒▒\n▒▒▒▒█▒▒▒█▒▒▒█▒▒▒▒\n▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒\n▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
+        "markup": "<span style=\"color:#ffc03c\">▒</span>     <span style=\"color:#5f0087\">██</span><span style=\"color:#ffc03c\">▒</span><span style=\"color:#5f0087\">██</span>     <span style=\"color:#ffc03c\">▒</span>\n<span style=\"color:#ffc03c\">▒▒</span>  <span style=\"color:#5f0087\">███</span><span style=\"color:#ffc03c\">▒▒▒</span><span style=\"color:#5f0087\">███</span>  <span style=\"color:#ffc03c\">▒▒</span>\n<span style=\"color:#ffc03c\">▒▒▒</span><span style=\"color:#5f0087\">███</span><span style=\"color:#ffc03c\">▒</span><span style=\"color:#ffd781\">▒</span><span style=\"color:#8237a1\">█</span><span style=\"color:#ffd781\">▒</span><span style=\"color:#ffc03c\">▒</span><span style=\"color:#5f0087\">███</span><span style=\"color:#ffc03c\">▒▒▒</span>\n<span style=\"color:#ffc03c\">▒▒▒▒</span><span style=\"color:#5f0087\">█</span><span style=\"color:#ffc03c\">▒▒</span><span style=\"color:#ffd781\">▒</span><span style=\"color:#5f0087\">█</span><span style=\"color:#ffd781\">▒</span><span style=\"color:#ffc03c\">▒▒</span><span style=\"color:#5f0087\">█</span><span style=\"color:#ffc03c\">▒▒▒▒</span>\n<span style=\"color:#ffc03c\">▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒</span>\n<span style=\"color:#ff9e00\">▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</span>"
       },
       "scope": "aarcade",
       "version": "1.0.0",
@@ -225,7 +223,8 @@
         "id": 65,
         "name": "Legendary Wizard Staff",
         "view": "front",
-        "ascii": "  ▄  \n ▄█  \n▄▒██ \n ██▀ \n ▐█  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n     "
+        "ascii": "  ▄  \n ▄█  \n▄▒██ \n ██▀ \n ▐█  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n     ",
+        "markup": "  <span style=\"color:#ffffff\">▄</span>  \n <span style=\"color:#47289b\">▄</span><span style=\"color:#ffffff\">█</span>  \n<span style=\"color:#47289b\">▄</span><span style=\"color:#ffc9ff\">▒</span><span style=\"color:#ffffff\">█</span><span style=\"color:#cb5bff\">█</span> \n <span style=\"color:#cb5bff\">█</span><span style=\"color:#8000ff\">█</span><span style=\"color:#b135ff\">▀</span> \n <span style=\"color:#3a2b77\">▐</span><span style=\"color:#8000ff\">█</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n     "
       },
       "scope": "aarcade",
       "version": "1.0.0",
@@ -250,7 +249,8 @@
         "id": 355,
         "name": "Safety Glasses",
         "view": "front",
-        "ascii": "█████████████████\n ▀█████████████▀ \n  █████████████  \n  ▀███████████▀  \n   ▀███▀ ▀███▀   "
+        "ascii": "█████████████████\n ▀█████████████▀ \n  █████████████  \n  ▀███████████▀  \n   ▀███▀ ▀███▀   ",
+        "markup": "<span style=\"color:#000000\">█</span><span style=\"color:#db3ffd\">█</span><span style=\"color:#000000\">█</span><span style=\"color:#2aa4ff\">█████</span><span style=\"color:#000000\">█</span><span style=\"color:#2aa4ff\">█████</span><span style=\"color:#000000\">█</span><span style=\"color:#db3ffd\">█</span><span style=\"color:#000000\">█</span>\n <span style=\"color:#000000\">▀</span><span style=\"color:#2aa4ff\">█████████████</span><span style=\"color:#000000\">▀</span> \n  <span style=\"color:#2aa4ff\">█████████████</span>  \n  <span style=\"color:#2aa4ff\">▀███████████▀</span>  \n   <span style=\"color:#2aa4ff\">▀███▀</span> <span style=\"color:#2aa4ff\">▀███▀</span>   "
       },
       "scope": "aarcade",
       "version": "1.0.0",
@@ -275,7 +275,8 @@
         "id": 365,
         "name": "Paint Palette",
         "view": "front",
-        "ascii": "  ▄▒▒▄ \n ▄▒▒▒▒▌\n ▒▒▒▒▒▌\n▄▒▒▀▀▀ \n▒▒▒ ▒  \n▒▒▒ ▒  \n▀▒█▄▄▄ \n ▒█▒▒▒▌\n ▀▒▒█▒▌\n  ▀▒▒▀ "
+        "ascii": "  ▄▒▒▄ \n ▄▒▒▒▒▌\n ▒▒▒▒▒▌\n▄▒▒▀▀▀ \n▒▒▒ ▒  \n▒▒▒ ▒  \n▀▒█▄▄▄ \n ▒█▒▒▒▌\n ▀▒▒█▒▌\n  ▀▒▒▀ ",
+        "markup": "  <span style=\"color:#d7c3b4\">▄▒▒▄</span> \n <span style=\"color:#d7c3b4\">▄▒▒</span><span style=\"color:#00ffff\">▒</span><span style=\"color:#d7c3b4\">▒▌</span>\n <span style=\"color:#d7c3b4\">▒</span><span style=\"color:#ffff00\">▒</span><span style=\"color:#d7c3b4\">▒▒▒▌</span>\n<span style=\"color:#d7c3b4\">▄▒</span><span style=\"color:#ffff00\">▒</span><span style=\"color:#d7c3b4\">▀▀▀</span> \n<span style=\"color:#d7c3b4\">▒</span><span style=\"color:#00ff00\">▒</span><span style=\"color:#d7c3b4\">▒</span> <span style=\"color:#d7c3b4\">▒</span>  \n<span style=\"color:#d7c3b4\">▒</span><span style=\"color:#00ff00\">▒</span><span style=\"color:#d7c3b4\">▒</span> <span style=\"color:#d7c3b4\">▒</span>  \n<span style=\"color:#d7c3b4\">▀▒</span><span style=\"color:#ff00ff\">█</span><span style=\"color:#d7c3b4\">▄▄▄</span> \n <span style=\"color:#d7c3b4\">▒</span><span style=\"color:#ff00ff\">█</span><span style=\"color:#d7c3b4\">▒▒▒▌</span>\n <span style=\"color:#d7c3b4\">▀▒▒</span><span style=\"color:#7d00ff\">█</span><span style=\"color:#d7c3b4\">▒▌</span>\n  <span style=\"color:#d7c3b4\">▀▒▒▀</span> "
       },
       "version": "1.0.0",
       "path": "packs/brand-design",
@@ -324,9 +325,7 @@
         "name": "Gentleman Hat",
         "view": "front",
         "ascii": "   ▄███████████████▄   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n███████████████████████",
-        "gotchiId": "owned-23965",
-        "primary": "000000",
-        "secondary": "fbdfeb"
+        "markup": "   <span style=\"color:#000000\">▄███████████████▄</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#282828\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n<span style=\"color:#000000\">███████████████████████</span>"
       },
       "version": "1.0.0",
       "path": "packs/chief-of-staff",
@@ -377,9 +376,7 @@
         "name": "Aagent Headset",
         "view": "front",
         "ascii": "█ \n▀ \n  \n  ",
-        "gotchiId": "owned-5402",
-        "primary": "b6509e",
-        "secondary": "cfeef4"
+        "markup": "<span style=\"color:#ff00ff\">█</span> \n<span style=\"color:#000000\">▀</span> \n  \n  "
       },
       "version": "1.0.0",
       "path": "packs/customer-support",
@@ -446,9 +443,7 @@
         "name": "VR Headset",
         "view": "front",
         "ascii": "       ▐██▌       \n       ▐██▌       \n       ▐██▌       \n       ▐██▌       \n  ▄▄▄▄▄▄██▄▄▄▄▄▄  \n ▄██████████████▄ \n▄████████████████▄\n██████████████████\n██████████████████\n██████████████████\n▐████████████████▌\n ▐██████████████▌ \n  ▐████▌  ▐████▌  ",
-        "gotchiId": "owned-5041",
-        "primary": "0000b9",
-        "secondary": "d4def8"
+        "markup": "       <span style=\"color:#000000\">▐██▌</span>       \n       <span style=\"color:#000000\">▐██▌</span>       \n       <span style=\"color:#000000\">▐██▌</span>       \n       <span style=\"color:#000000\">▐██▌</span>       \n  <span style=\"color:#000000\">▄▄▄▄▄▄██▄▄▄▄▄▄</span>  \n <span style=\"color:#ff0097\">▄██████████████▄</span> \n<span style=\"color:#000000\">▄</span><span style=\"color:#ff0097\">██</span><span style=\"color:#ffffff\">███</span><span style=\"color:#ff0097\">██████</span><span style=\"color:#ffffff\">███</span><span style=\"color:#ff0097\">██</span><span style=\"color:#000000\">▄</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#ff0097\">██</span><span style=\"color:#ff14ff\">████████████</span><span style=\"color:#ff0097\">██</span><span style=\"color:#000000\">█</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#ff0097\">██</span><span style=\"color:#ff14ff\">████████████</span><span style=\"color:#ff0097\">██</span><span style=\"color:#000000\">█</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#ff0097\">██</span><span style=\"color:#ff14ff\">████████████</span><span style=\"color:#ff0097\">██</span><span style=\"color:#000000\">█</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#ff0097\">██</span><span style=\"color:#ff14ff\">████</span><span style=\"color:#ff0097\">████</span><span style=\"color:#ff14ff\">████</span><span style=\"color:#ff0097\">██</span><span style=\"color:#000000\">▌</span>\n <span style=\"color:#000000\">▐</span><span style=\"color:#ff0097\">██████</span><span style=\"color:#000000\">██</span><span style=\"color:#ff0097\">██████</span><span style=\"color:#000000\">▌</span> \n  <span style=\"color:#000000\">▐████▌</span>  <span style=\"color:#000000\">▐████▌</span>  "
       },
       "version": "1.0.0",
       "path": "packs/fe-marketing",
@@ -491,7 +486,8 @@
         "id": 364,
         "name": "Paint Brush",
         "view": "front",
-        "ascii": "▀ \n▐█\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n ▀"
+        "ascii": "▀ \n▐█\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n █\n ▀",
+        "markup": "<span style=\"color:#000000\">▀</span> \n<span style=\"color:#2a2a2a\">▐</span><span style=\"color:#000000\">█</span>\n <span style=\"color:#000000\">█</span>\n <span style=\"color:#ededed\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">█</span>\n <span style=\"color:#7d4100\">▀</span>"
       },
       "version": "1.0.0",
       "path": "packs/game-art-director",
@@ -646,7 +642,8 @@
         "id": 137,
         "name": "Vote Sign",
         "view": "front",
-        "ascii": "▄███████ \n████████▌\n████████▌\n████████▌\n ▀▀▀▀▀▀▀ \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n         "
+        "ascii": "▄███████ \n████████▌\n████████▌\n████████▌\n ▀▀▀▀▀▀▀ \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n         ",
+        "markup": "<span style=\"color:#7d7d7d\">▄███████</span> \n<span style=\"color:#7d7d7d\">█</span><span style=\"color:#ff9900\">███████</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#7d7d7d\">█</span><span style=\"color:#ff9900\">███████</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#7d7d7d\">█</span><span style=\"color:#ff9900\">█</span><span style=\"color:#000000\">█</span><span style=\"color:#ff9900\">█████</span><span style=\"color:#000000\">▌</span>\n <span style=\"color:#7d7d7d\">▀▀▀▀▀▀▀</span> \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n         "
       },
       "scope": "starter",
       "version": "1.0.0",
@@ -676,9 +673,7 @@
         "name": "1337 Laptop",
         "view": "front",
         "ascii": " ██████ \n▐██████▌\n▐██████▌\n▐██████▌\n▐██████▌\n ██████ \n████████",
-        "gotchiId": "owned-14338",
-        "primary": "000000",
-        "secondary": "fbdfeb"
+        "markup": " <span style=\"color:#000000\">██████</span> \n<span style=\"color:#000000\">▐</span><span style=\"color:#00ff00\">██████</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#00ff00\">████</span><span style=\"color:#323232\">█</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#00ff00\">████</span><span style=\"color:#323232\">█</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#323232\">██████</span><span style=\"color:#000000\">▌</span>\n <span style=\"color:#000000\">██████</span> \n<span style=\"color:#000000\">████████</span>"
       },
       "version": "1.0.0",
       "path": "packs/kanban-manager",
@@ -705,9 +700,7 @@
         "name": "Walkie Talkie",
         "view": "front",
         "ascii": "  ▐ \n  ▐ \n▐██▌\n███▌\n▐██▌\n▐██▌\n▐██▌\n ▀▀ ",
-        "gotchiId": "owned-8461",
-        "primary": "282473",
-        "secondary": "489ff8"
+        "markup": "  <span style=\"color:#000000\">▐</span> \n  <span style=\"color:#000000\">▐</span> \n<span style=\"color:#000000\">▐██▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#5a5a5a\">██▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#1e1e1e\">██</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#1e1e1e\">██</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#1e1e1e\">██</span><span style=\"color:#323232\">▌</span>\n <span style=\"color:#323232\">▀▀</span> "
       },
       "version": "1.0.0",
       "path": "packs/mail-courier",
@@ -736,9 +729,7 @@
         "name": "OKex Sign",
         "view": "front",
         "ascii": "▄█████ \n█░████▌\n██░░▒░▌\n▀█████ \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   ",
-        "gotchiId": "owned-12302",
-        "primary": "2664ba",
-        "secondary": "d4e0f1"
+        "markup": "<span style=\"color:#000000\">▄█████</span> \n<span style=\"color:#000000\">█</span><span style=\"color:#ffffff\">░</span><span style=\"color:#205fec\">██</span><span style=\"color:#ffffff\">█</span><span style=\"color:#205fec\">█</span><span style=\"color:#88bdf3\">▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#205fec\">█</span><span style=\"color:#ffffff\">░░▒░▌</span>\n<span style=\"color:#000000\">▀</span><span style=\"color:#ffffff\">█████</span> \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   "
       },
       "version": "1.0.0",
       "path": "packs/market-news",
@@ -764,9 +755,7 @@
         "name": "Galaxy Brain",
         "view": "front",
         "ascii": "  ▄██████▄ ▄██████▄  \n █████▓█▓▓█▓▓██▓██▓█ \n▄▓████▓██▓█████▓██▓▓▄\n█▓▓▓▓█▓██▓████▓▓▓████\n██████▓█▓█▓█▓▓▓▓██▓▓█\n█▓▓█▓▓▓██▒▓▓███▓▓█▓▓█\n██▓▓▓█▓▓█▓███▓██▓████\n████████▓███▓▓█▓▓████\n▀▓█▓▓▓▓▓▓▓█▓▓▓▓▓▓▓█▓▀\n █▓▓▀▀▀▀▀▓█▓▀▀▀▀▀▓██ \n  █▀     ▀█▀     ▀█  ",
-        "gotchiId": "owned-14314",
-        "primary": "ff5e00",
-        "secondary": "ffcaa2"
+        "markup": "  <span style=\"color:#ff32ff\">▄██████</span><span style=\"color:#000000\">▄</span> <span style=\"color:#000000\">▄</span><span style=\"color:#ff32ff\">██████▄</span>  \n <span style=\"color:#ff32ff\">██</span><span style=\"color:#910091\">███</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓</span><span style=\"color:#910091\">██</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">██</span><span style=\"color:#ff32ff\">▓█</span> \n<span style=\"color:#ff32ff\">▄▓█</span><span style=\"color:#910091\">███</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">██</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">█████</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">██</span><span style=\"color:#ff32ff\">▓▓▄</span>\n<span style=\"color:#ff32ff\">█▓▓▓▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">██</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">████</span><span style=\"color:#ff32ff\">▓▓▓</span><span style=\"color:#910091\">███</span><span style=\"color:#ff32ff\">█</span>\n<span style=\"color:#ff32ff\">█</span><span style=\"color:#910091\">█████</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">█</span><span style=\"color:#e17dd7\">▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓▓▓</span><span style=\"color:#910091\">██</span><span style=\"color:#ff32ff\">▓▓█</span>\n<span style=\"color:#ff32ff\">█▓▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓▓</span><span style=\"color:#910091\">██</span><span style=\"color:#ebaae6\">▒</span><span style=\"color:#e17dd7\">▓▓</span><span style=\"color:#910091\">███</span><span style=\"color:#ff32ff\">▓▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓█</span>\n<span style=\"color:#ff32ff\">█</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓</span><span style=\"color:#910091\">█</span><span style=\"color:#e17dd7\">▓</span><span style=\"color:#be32be\">██</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">██</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">███</span><span style=\"color:#ff32ff\">█</span>\n<span style=\"color:#ff32ff\">█</span><span style=\"color:#910091\">███████</span><span style=\"color:#ff32ff\">▓</span><span style=\"color:#910091\">█</span><span style=\"color:#be32be\">█</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓</span><span style=\"color:#910091\">███</span><span style=\"color:#ff32ff\">█</span>\n<span style=\"color:#ff32ff\">▀▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓▓▓▓▓▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▓▓▓▓▓▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▀</span>\n <span style=\"color:#ff32ff\">█▓▓▀</span><span style=\"color:#000000\">▀▀▀</span><span style=\"color:#ff32ff\">▀▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▓▀</span><span style=\"color:#000000\">▀▀▀</span><span style=\"color:#ff32ff\">▀▓</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">█</span> \n  <span style=\"color:#ff32ff\">█▀</span>     <span style=\"color:#ff32ff\">▀</span><span style=\"color:#910091\">█</span><span style=\"color:#ff32ff\">▀</span>     <span style=\"color:#ff32ff\">▀█</span>  "
       },
       "version": "1.0.0",
       "path": "packs/market-research",
@@ -793,9 +782,7 @@
         "name": "Aave Flag",
         "view": "front",
         "ascii": "▄▄▄▄▄▄\n██████\n██░███\n█░████\n██████\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n      ",
-        "gotchiId": "owned-6701",
-        "primary": "0000b9",
-        "secondary": "d4def8"
+        "markup": "<span style=\"color:#7d0064\">▄▄▄▄▄▄</span>\n<span style=\"color:#7d0064\">█</span><span style=\"color:#ffffff\">███</span><span style=\"color:#7d0064\">██</span>\n<span style=\"color:#7d0064\">█</span><span style=\"color:#ffffff\">█░█</span><span style=\"color:#7d0064\">██</span>\n<span style=\"color:#7d0064\">█</span><span style=\"color:#ffffff\">░</span><span style=\"color:#7d0064\">█</span><span style=\"color:#ffffff\">█</span><span style=\"color:#7d0064\">██</span>\n<span style=\"color:#7d0064\">██████</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n      "
       },
       "version": "1.0.0",
       "path": "packs/marketing-agency",
@@ -920,7 +907,8 @@
         "id": 139,
         "name": "Snapshot Cap",
         "view": "front",
-        "ascii": "         ▄▄▄▓▄▄▄     \n       ███████████   \n      █████████████  \n     ███████████████ \n    ████████▓████████\n    ████████▓████████\n    █████████████████\n▄▄▄▄█████████████████\n▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀"
+        "ascii": "         ▄▄▄▓▄▄▄     \n       ███████████   \n      █████████████  \n     ███████████████ \n    ████████▓████████\n    ████████▓████████\n    █████████████████\n▄▄▄▄█████████████████\n▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀",
+        "markup": "         <span style=\"color:#7d7d7d\">▄▄▄▓▄▄▄</span>     \n       <span style=\"color:#7d7d7d\">█</span><span style=\"color:#000000\">███</span><span style=\"color:#7d7d7d\">█</span><span style=\"color:#000000\">█</span><span style=\"color:#7d7d7d\">█</span><span style=\"color:#000000\">███</span><span style=\"color:#7d7d7d\">█</span>   \n      <span style=\"color:#000000\">█████████████</span>  \n     <span style=\"color:#000000\">███████</span><span style=\"color:#ff9900\">██</span><span style=\"color:#000000\">██████</span> \n    <span style=\"color:#7d7d7d\">█</span><span style=\"color:#000000\">██████</span><span style=\"color:#ff9900\">█▓</span><span style=\"color:#000000\">███████</span><span style=\"color:#7d7d7d\">█</span>\n    <span style=\"color:#7d7d7d\">█</span><span style=\"color:#000000\">██████</span><span style=\"color:#ff9900\">█▓█</span><span style=\"color:#000000\">██</span><span style=\"color:#7d7d7d\">█</span><span style=\"color:#000000\">████</span>\n    <span style=\"color:#7d7d7d\">█</span><span style=\"color:#000000\">██████</span><span style=\"color:#ff9900\">██</span><span style=\"color:#000000\">███</span><span style=\"color:#7d7d7d\">█</span><span style=\"color:#000000\">████</span>\n<span style=\"color:#7d7d7d\">▄▄▄▄█</span><span style=\"color:#000000\">██████</span><span style=\"color:#ff9900\">█</span><span style=\"color:#000000\">████</span><span style=\"color:#7d7d7d\">█</span><span style=\"color:#000000\">████</span>\n<span style=\"color:#7d7d7d\">▀▀▀▀▀</span><span style=\"color:#000000\">▀▀▀</span><span style=\"color:#7d7d7d\">▀</span><span style=\"color:#000000\">▀▀▀▀▀▀▀</span><span style=\"color:#7d7d7d\">▀</span><span style=\"color:#000000\">▀▀▀</span><span style=\"color:#7d7d7d\">▀</span>"
       },
       "version": "1.0.0",
       "path": "packs/product-manager",
@@ -987,7 +975,8 @@
         "id": 213,
         "name": "H4xx0r Shirt",
         "view": "front",
-        "ascii": "█▄             ▄█\n██▄           ▄██\n███▄         ▄███\n█████▄▄▄▄▄▄▄█████\n█████████████████\n█████████████████\n█████████████████\n█████████████████\n█████████████████\n██▒▒█████████▒▒██"
+        "ascii": "█▄             ▄█\n██▄           ▄██\n███▄         ▄███\n█████▄▄▄▄▄▄▄█████\n█████████████████\n█████████████████\n█████████████████\n█████████████████\n█████████████████\n██▒▒█████████▒▒██",
+        "markup": "<span style=\"color:#000000\">█▄</span>             <span style=\"color:#000000\">▄█</span>\n<span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">█▄</span>           <span style=\"color:#000000\">▄█</span><span style=\"color:#00ff00\">█</span>\n<span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">██▄</span>         <span style=\"color:#000000\">▄██</span><span style=\"color:#00ff00\">█</span>\n<span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">████</span><span style=\"color:#00ff00\">▄▄▄▄▄▄▄</span><span style=\"color:#000000\">████</span><span style=\"color:#00ff00\">█</span>\n<span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">███████</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">███████</span><span style=\"color:#00ff00\">█</span>\n<span style=\"color:#000000\">█████</span><span style=\"color:#00ff00\">███████</span><span style=\"color:#000000\">█████</span>\n<span style=\"color:#000000\">█████</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">██</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">██</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">█████</span>\n<span style=\"color:#000000\">███</span><span style=\"color:#00ff00\">███</span><span style=\"color:#000000\">██</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">██</span><span style=\"color:#00ff00\">███</span><span style=\"color:#000000\">███</span>\n<span style=\"color:#000000\">████████</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">████████</span>\n<span style=\"color:#00ff00\">██▒▒█████████▒▒██</span>"
       },
       "version": "1.0.0",
       "path": "packs/security-engineer",
@@ -1036,9 +1025,7 @@
         "name": "Signal Headset",
         "view": "front",
         "ascii": " █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n █                 █ \n▄█                 █▄\n██                 ██\n██                 ██\n██                 ██\n██                 ██\n▀█                 █▀\n ▀                 ▀ ",
-        "gotchiId": "owned-7298",
-        "primary": "0000b9",
-        "secondary": "d4def8"
+        "markup": " <span style=\"color:#2800af\">█</span>                 <span style=\"color:#2800af\">█</span> \n <span style=\"color:#2800af\">█</span>                 <span style=\"color:#2800af\">█</span> \n <span style=\"color:#2800af\">█</span>                 <span style=\"color:#2800af\">█</span> \n <span style=\"color:#2800af\">█</span>                 <span style=\"color:#2800af\">█</span> \n <span style=\"color:#2800af\">█</span>                 <span style=\"color:#2800af\">█</span> \n <span style=\"color:#2800af\">█</span>                 <span style=\"color:#2800af\">█</span> \n<span style=\"color:#000000\">▄</span><span style=\"color:#9b00a0\">█</span>                 <span style=\"color:#9b00a0\">█</span><span style=\"color:#000000\">▄</span>\n<span style=\"color:#2800af\">█</span><span style=\"color:#9b00a0\">█</span>                 <span style=\"color:#9b00a0\">█</span><span style=\"color:#2800af\">█</span>\n<span style=\"color:#2800af\">█</span><span style=\"color:#ff09d7\">█</span>                 <span style=\"color:#ff09d7\">█</span><span style=\"color:#2800af\">█</span>\n<span style=\"color:#2800af\">█</span><span style=\"color:#ff09d7\">█</span>                 <span style=\"color:#ff09d7\">█</span><span style=\"color:#2800af\">█</span>\n<span style=\"color:#2800af\">█</span><span style=\"color:#ff09d7\">█</span>                 <span style=\"color:#ff09d7\">█</span><span style=\"color:#2800af\">█</span>\n<span style=\"color:#000000\">▀</span><span style=\"color:#9b00a0\">█</span>                 <span style=\"color:#9b00a0\">█</span><span style=\"color:#000000\">▀</span>\n <span style=\"color:#000000\">▀</span>                 <span style=\"color:#000000\">▀</span> "
       },
       "version": "1.0.0",
       "path": "packs/social-media-manager",
@@ -1102,7 +1089,8 @@
         "id": 239,
         "name": "Wagie Cap",
         "view": "front",
-        "ascii": "     ▄▄▄█▄▄▄     \n   ███████████   \n  █████████████  \n ███████████████ \n██████▒█▒█▒██████\n██████▒█▒█▒██████\n██████▓█▓█▓██████\n███████▓█▓███████\n▀▀█████████████▀▀\n  ▀▀▀▀▀▀▀▀▀▀▀▀▀  "
+        "ascii": "     ▄▄▄█▄▄▄     \n   ███████████   \n  █████████████  \n ███████████████ \n██████▒█▒█▒██████\n██████▒█▒█▒██████\n██████▓█▓█▓██████\n███████▓█▓███████\n▀▀█████████████▀▀\n  ▀▀▀▀▀▀▀▀▀▀▀▀▀  ",
+        "markup": "     <span style=\"color:#960000\">▄▄▄█▄▄▄</span>     \n   <span style=\"color:#960000\">███████████</span>   \n  <span style=\"color:#960000\">█████████████</span>  \n <span style=\"color:#960000\">███████████████</span> \n<span style=\"color:#960000\">██████</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">██████</span>\n<span style=\"color:#960000\">██████</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">██████</span>\n<span style=\"color:#960000\">██████</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">██████</span>\n<span style=\"color:#960000\">███████</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">███████</span>\n<span style=\"color:#960000\">▀▀█████████████▀▀</span>\n  <span style=\"color:#960000\">▀▀▀▀▀▀▀▀▀▀▀▀▀</span>  "
       },
       "version": "1.0.0",
       "path": "packs/worker",

@@ -9,9 +9,7 @@
     "name": "OKex Sign",
     "view": "front",
     "ascii": "▄█████ \n█░████▌\n██░░▒░▌\n▀█████ \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   \n   ▌   ",
-    "gotchiId": "owned-12302",
-    "primary": "2664ba",
-    "secondary": "d4e0f1"
+    "markup": "<span style=\"color:#000000\">▄█████</span> \n<span style=\"color:#000000\">█</span><span style=\"color:#ffffff\">░</span><span style=\"color:#205fec\">██</span><span style=\"color:#ffffff\">█</span><span style=\"color:#205fec\">█</span><span style=\"color:#88bdf3\">▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#205fec\">█</span><span style=\"color:#ffffff\">░░▒░▌</span>\n<span style=\"color:#000000\">▀</span><span style=\"color:#ffffff\">█████</span> \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   \n   <span style=\"color:#000000\">▌</span>   "
   },
   "skills": [
     "market-news-feed",

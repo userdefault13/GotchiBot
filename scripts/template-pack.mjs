@@ -26,7 +26,6 @@
  * cartridge — the wallet gate). No secrets.
  */
 import { spawnSync } from "node:child_process";
-import { resolveBoundWearableColors } from "./wearable-color.mjs";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +37,6 @@ const MARKET = join(ROOT, "templates", "marketplace");
 const PACKS = join(MARKET, "packs");
 const CATALOG = join(MARKET, "catalog.json");
 const WEARABLES_FILE = join(MARKET, "wearables.json");
-const BOUND_GOTCHIS_FILE = join(MARKET, "bound-gotchis.json");
 const WEB = join(MARKET, "web", "index.html");
 const PLAYBOOKS_FILE = join(ROOT, "config", "agent-role-playbooks.json");
 const ROLES_FILE = join(ROOT, "config", "agent-roles.json");
@@ -289,13 +287,13 @@ function wearableForRole(roleId) {
   const all = readJson(WEARABLES_FILE, null);
   const row = all && typeof all === "object" ? all[roleId] : null;
   if (!row || typeof row.ascii !== "string" || !row.ascii) return null;
-  const bound = resolveBoundWearableColors(readJson(BOUND_GOTCHIS_FILE, {})?.[roleId]);
+  const markup = typeof row.markup === "string" ? row.markup : "";
   return {
     id: row.id,
     name: row.name,
     ...(row.view ? { view: row.view } : {}),
     ascii: row.ascii,
-    ...(bound || {}),
+    ...(markup ? { markup } : {}),
   };
 }
 

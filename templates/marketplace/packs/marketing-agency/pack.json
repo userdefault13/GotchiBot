@@ -9,9 +9,7 @@
     "name": "Aave Flag",
     "view": "front",
     "ascii": "▄▄▄▄▄▄\n██████\n██░███\n█░████\n██████\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n     ▐\n      ",
-    "gotchiId": "owned-6701",
-    "primary": "0000b9",
-    "secondary": "d4def8"
+    "markup": "<span style=\"color:#7d0064\">▄▄▄▄▄▄</span>\n<span style=\"color:#7d0064\">█</span><span style=\"color:#ffffff\">███</span><span style=\"color:#7d0064\">██</span>\n<span style=\"color:#7d0064\">█</span><span style=\"color:#ffffff\">█░█</span><span style=\"color:#7d0064\">██</span>\n<span style=\"color:#7d0064\">█</span><span style=\"color:#ffffff\">░</span><span style=\"color:#7d0064\">█</span><span style=\"color:#ffffff\">█</span><span style=\"color:#7d0064\">██</span>\n<span style=\"color:#7d0064\">██████</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n     <span style=\"color:#8e7064\">▐</span>\n      "
   },
   "skills": [
     "browser-tool",

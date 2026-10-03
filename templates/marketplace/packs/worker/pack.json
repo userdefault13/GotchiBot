@@ -8,7 +8,8 @@
     "id": 239,
     "name": "Wagie Cap",
     "view": "front",
-    "ascii": "     ▄▄▄█▄▄▄     \n   ███████████   \n  █████████████  \n ███████████████ \n██████▒█▒█▒██████\n██████▒█▒█▒██████\n██████▓█▓█▓██████\n███████▓█▓███████\n▀▀█████████████▀▀\n  ▀▀▀▀▀▀▀▀▀▀▀▀▀  "
+    "ascii": "     ▄▄▄█▄▄▄     \n   ███████████   \n  █████████████  \n ███████████████ \n██████▒█▒█▒██████\n██████▒█▒█▒██████\n██████▓█▓█▓██████\n███████▓█▓███████\n▀▀█████████████▀▀\n  ▀▀▀▀▀▀▀▀▀▀▀▀▀  ",
+    "markup": "     <span style=\"color:#960000\">▄▄▄█▄▄▄</span>     \n   <span style=\"color:#960000\">███████████</span>   \n  <span style=\"color:#960000\">█████████████</span>  \n <span style=\"color:#960000\">███████████████</span> \n<span style=\"color:#960000\">██████</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">██████</span>\n<span style=\"color:#960000\">██████</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▒</span><span style=\"color:#960000\">██████</span>\n<span style=\"color:#960000\">██████</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">██████</span>\n<span style=\"color:#960000\">███████</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">█</span><span style=\"color:#ffc900\">▓</span><span style=\"color:#960000\">███████</span>\n<span style=\"color:#960000\">▀▀█████████████▀▀</span>\n  <span style=\"color:#960000\">▀▀▀▀▀▀▀▀▀▀▀▀▀</span>  "
   },
   "skills": [
     "cursor-cli",

@@ -9,9 +9,7 @@
     "name": "Aagent Headset",
     "view": "front",
     "ascii": "█ \n▀ \n  \n  ",
-    "gotchiId": "owned-5402",
-    "primary": "b6509e",
-    "secondary": "cfeef4"
+    "markup": "<span style=\"color:#ff00ff\">█</span> \n<span style=\"color:#000000\">▀</span> \n  \n  "
   },
   "skills": [
     "browser-tool",

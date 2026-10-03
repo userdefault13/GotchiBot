@@ -8,7 +8,8 @@
     "id": 65,
     "name": "Legendary Wizard Staff",
     "view": "front",
-    "ascii": "  ▄  \n ▄█  \n▄▒██ \n ██▀ \n ▐█  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n     "
+    "ascii": "  ▄  \n ▄█  \n▄▒██ \n ██▀ \n ▐█  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n  ▌  \n     ",
+    "markup": "  <span style=\"color:#ffffff\">▄</span>  \n <span style=\"color:#47289b\">▄</span><span style=\"color:#ffffff\">█</span>  \n<span style=\"color:#47289b\">▄</span><span style=\"color:#ffc9ff\">▒</span><span style=\"color:#ffffff\">█</span><span style=\"color:#cb5bff\">█</span> \n <span style=\"color:#cb5bff\">█</span><span style=\"color:#8000ff\">█</span><span style=\"color:#b135ff\">▀</span> \n <span style=\"color:#3a2b77\">▐</span><span style=\"color:#8000ff\">█</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n  <span style=\"color:#47289b\">▌</span>  \n     "
   },
   "scope": "aarcade",
   "skills": [

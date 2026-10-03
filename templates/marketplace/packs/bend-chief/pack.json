@@ -8,7 +8,8 @@
     "id": 149,
     "name": "Royal Crown",
     "view": "front",
-    "ascii": "▒     ██▒██     ▒\n▒▒  ███▒▒▒███  ▒▒\n▒▒▒███▒▒█▒▒███▒▒▒\n▒▒▒▒█▒▒▒█▒▒▒█▒▒▒▒\n▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒\n▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓"
+    "ascii": "▒     ██▒██     ▒\n▒▒  ███▒▒▒███  ▒▒\n▒▒▒███▒▒█▒▒███▒▒▒\n▒▒▒▒█▒▒▒█▒▒▒█▒▒▒▒\n▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒\n▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
+    "markup": "<span style=\"color:#ffc03c\">▒</span>     <span style=\"color:#5f0087\">██</span><span style=\"color:#ffc03c\">▒</span><span style=\"color:#5f0087\">██</span>     <span style=\"color:#ffc03c\">▒</span>\n<span style=\"color:#ffc03c\">▒▒</span>  <span style=\"color:#5f0087\">███</span><span style=\"color:#ffc03c\">▒▒▒</span><span style=\"color:#5f0087\">███</span>  <span style=\"color:#ffc03c\">▒▒</span>\n<span style=\"color:#ffc03c\">▒▒▒</span><span style=\"color:#5f0087\">███</span><span style=\"color:#ffc03c\">▒</span><span style=\"color:#ffd781\">▒</span><span style=\"color:#8237a1\">█</span><span style=\"color:#ffd781\">▒</span><span style=\"color:#ffc03c\">▒</span><span style=\"color:#5f0087\">███</span><span style=\"color:#ffc03c\">▒▒▒</span>\n<span style=\"color:#ffc03c\">▒▒▒▒</span><span style=\"color:#5f0087\">█</span><span style=\"color:#ffc03c\">▒▒</span><span style=\"color:#ffd781\">▒</span><span style=\"color:#5f0087\">█</span><span style=\"color:#ffd781\">▒</span><span style=\"color:#ffc03c\">▒▒</span><span style=\"color:#5f0087\">█</span><span style=\"color:#ffc03c\">▒▒▒▒</span>\n<span style=\"color:#ffc03c\">▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒</span>\n<span style=\"color:#ff9e00\">▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</span>"
   },
   "scope": "aarcade",
   "skills": [

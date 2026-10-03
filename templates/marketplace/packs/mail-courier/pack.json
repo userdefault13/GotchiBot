@@ -9,9 +9,7 @@
     "name": "Walkie Talkie",
     "view": "front",
     "ascii": "  ▐ \n  ▐ \n▐██▌\n███▌\n▐██▌\n▐██▌\n▐██▌\n ▀▀ ",
-    "gotchiId": "owned-8461",
-    "primary": "282473",
-    "secondary": "489ff8"
+    "markup": "  <span style=\"color:#000000\">▐</span> \n  <span style=\"color:#000000\">▐</span> \n<span style=\"color:#000000\">▐██▌</span>\n<span style=\"color:#000000\">█</span><span style=\"color:#5a5a5a\">██▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#1e1e1e\">██</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#1e1e1e\">██</span><span style=\"color:#323232\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#1e1e1e\">██</span><span style=\"color:#323232\">▌</span>\n <span style=\"color:#323232\">▀▀</span> "
   },
   "skills": [
     "agentmail",

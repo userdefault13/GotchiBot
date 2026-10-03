@@ -8,7 +8,8 @@
     "id": 137,
     "name": "Vote Sign",
     "view": "front",
-    "ascii": "▄███████ \n████████▌\n████████▌\n████████▌\n ▀▀▀▀▀▀▀ \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n         "
+    "ascii": "▄███████ \n████████▌\n████████▌\n████████▌\n ▀▀▀▀▀▀▀ \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n    ▌    \n         ",
+    "markup": "<span style=\"color:#7d7d7d\">▄███████</span> \n<span style=\"color:#7d7d7d\">█</span><span style=\"color:#ff9900\">███████</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#7d7d7d\">█</span><span style=\"color:#ff9900\">███████</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#7d7d7d\">█</span><span style=\"color:#ff9900\">█</span><span style=\"color:#000000\">█</span><span style=\"color:#ff9900\">█████</span><span style=\"color:#000000\">▌</span>\n <span style=\"color:#7d7d7d\">▀▀▀▀▀▀▀</span> \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n    <span style=\"color:#7d7d7d\">▌</span>    \n         "
   },
   "scope": "starter",
   "skills": [

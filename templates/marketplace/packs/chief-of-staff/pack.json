@@ -9,9 +9,7 @@
     "name": "Gentleman Hat",
     "view": "front",
     "ascii": "   ▄███████████████▄   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n███████████████████████",
-    "gotchiId": "owned-23965",
-    "primary": "000000",
-    "secondary": "fbdfeb"
+    "markup": "   <span style=\"color:#000000\">▄███████████████▄</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#282828\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n<span style=\"color:#000000\">███████████████████████</span>"
   },
   "skills": [
     "morning-recap",

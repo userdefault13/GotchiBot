@@ -93,10 +93,10 @@ const RARITY_COLOR = {
   mythical: "FF5252",
 };
 
-/** Glyphs treated as solid body (primary). Marketplace wearables use this same set. */
-export const PRIMARY_CHARS = "█▓▀▄■▪◉●";
+/** Glyphs treated as solid body (primary). */
+const PRIMARY_CHARS = "█▓▀▄■▪◉●";
 /** Glyphs treated as lighter fill / dots (secondary). */
-export const SECONDARY_CHARS = "▒░∙·˚*";
+const SECONDARY_CHARS = "▒░∙·˚*";
 
 function rarityBand(traits) {
   const dist = (traits ?? [])

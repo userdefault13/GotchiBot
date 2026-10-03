@@ -9,9 +9,7 @@
     "name": "1337 Laptop",
     "view": "front",
     "ascii": " ██████ \n▐██████▌\n▐██████▌\n▐██████▌\n▐██████▌\n ██████ \n████████",
-    "gotchiId": "owned-14338",
-    "primary": "000000",
-    "secondary": "fbdfeb"
+    "markup": " <span style=\"color:#000000\">██████</span> \n<span style=\"color:#000000\">▐</span><span style=\"color:#00ff00\">██████</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#00ff00\">████</span><span style=\"color:#323232\">█</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#00ff00\">████</span><span style=\"color:#323232\">█</span><span style=\"color:#00ff00\">█</span><span style=\"color:#000000\">▌</span>\n<span style=\"color:#000000\">▐</span><span style=\"color:#323232\">██████</span><span style=\"color:#000000\">▌</span>\n <span style=\"color:#000000\">██████</span> \n<span style=\"color:#000000\">████████</span>"
   },
   "skills": [
     "project-kanban",

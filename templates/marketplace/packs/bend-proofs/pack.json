@@ -8,7 +8,8 @@
     "id": 355,
     "name": "Safety Glasses",
     "view": "front",
-    "ascii": "█████████████████\n ▀█████████████▀ \n  █████████████  \n  ▀███████████▀  \n   ▀███▀ ▀███▀   "
+    "ascii": "█████████████████\n ▀█████████████▀ \n  █████████████  \n  ▀███████████▀  \n   ▀███▀ ▀███▀   ",
+    "markup": "<span style=\"color:#000000\">█</span><span style=\"color:#db3ffd\">█</span><span style=\"color:#000000\">█</span><span style=\"color:#2aa4ff\">█████</span><span style=\"color:#000000\">█</span><span style=\"color:#2aa4ff\">█████</span><span style=\"color:#000000\">█</span><span style=\"color:#db3ffd\">█</span><span style=\"color:#000000\">█</span>\n <span style=\"color:#000000\">▀</span><span style=\"color:#2aa4ff\">█████████████</span><span style=\"color:#000000\">▀</span> \n  <span style=\"color:#2aa4ff\">█████████████</span>  \n  <span style=\"color:#2aa4ff\">▀███████████▀</span>  \n   <span style=\"color:#2aa4ff\">▀███▀</span> <span style=\"color:#2aa4ff\">▀███▀</span>   "
   },
   "scope": "aarcade",
   "skills": [

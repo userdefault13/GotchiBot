@@ -11,8 +11,7 @@ import {
   scopeLabel,
   STARTER_PACK_IDS,
 } from "../scripts/template-pack.mjs";
-import { findCollateralColors } from "../scripts/collateral-resolve.mjs";
-import { PRIMARY_CHARS, SECONDARY_CHARS, wearableMarkup } from "../scripts/wearable-color.mjs";
+import { wearableMarkup } from "../scripts/wearable-color.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
 
@@ -89,17 +88,37 @@ describe("marketplace Base set", () => {
   });
 });
 
-describe("marketplace wearable collateral colors", () => {
-  const LINK_CUBE = [
-    "  ▄▄  ",
-    " ▄█░▄ ",
-    "▄██░░▄",
-    "▓▒█░▒▓",
-    "▓▓▒▒▓▓",
-    "▀▓▒▒▓▀",
-    " ▀░░▀ ",
-    "  ▀▀  ",
-  ].join("\n");
+describe("marketplace wearable sprite colors", () => {
+  // Majority opaque fills sampled from app.aavegotchi.com/images/items/{id}.svg.
+  // Not collateral primary/secondary.
+  const SPRITE_COLORS = {
+    9: ["#000000", "#1e1e1e", "#323232", "#5a5a5a"],
+    32: ["#7d0064", "#8e7064", "#ffffff"],
+    41: ["#000000", "#00ff00", "#323232"],
+    52: ["#000000", "#910091", "#be32be", "#e17dd7", "#ebaae6", "#ff32ff"],
+    53: ["#00ff00", "#7d00ff", "#ff00ff", "#ffff00"],
+    55: ["#000000", "#ff00ff"],
+    65: ["#3a2b77", "#47289b", "#8000ff", "#b135ff", "#cb5bff", "#ffc9ff", "#ffffff"],
+    75: ["#000000", "#205fec", "#88bdf3", "#ffffff"],
+    84: ["#000000", "#282828"],
+    137: ["#000000", "#7d7d7d", "#ff9900"],
+    139: ["#000000", "#7d7d7d", "#ff9900"],
+    149: ["#5f0087", "#8237a1", "#ff9e00", "#ffc03c", "#ffd781"],
+    202: ["#000000", "#ff0097", "#ff14ff", "#ffffff"],
+    212: ["#000000", "#00ff00", "#323232"],
+    213: ["#000000", "#00ff00"],
+    239: ["#960000", "#ffc900"],
+    263: ["#000000", "#2800af", "#9b00a0", "#ff09d7"],
+    355: ["#000000", "#2aa4ff", "#db3ffd"],
+    364: ["#000000", "#2a2a2a", "#7d4100", "#ededed"],
+    365: ["#00ff00", "#00ffff", "#7d00ff", "#d7c3b4", "#ff00ff", "#ffff00"],
+    369: ["#176dad", "#23a3cf", "#3bccff", "#581693", "#7a15ad", "#ac14f8", "#bfdcff", "#bfffd2", "#f5fdff"],
+  };
+  const COLLATERAL_HEX = ["0000b9", "d4def8", "ff2a7a", "ffc3df", "fbdfeb", "b6509e", "cfeef4", "282473", "489ff8", "2664ba", "d4e0f1", "ff5e00", "ffcaa2"];
+
+  function spanColors(markup) {
+    return [...new Set([...markup.matchAll(/color:(#[0-9a-f]{6})/g)].map((m) => m[1]))].sort();
+  }
 
   function pageWearableMarkup() {
     const html = readFileSync(join(root, "templates/marketplace/web/index.html"), "utf8");
@@ -111,64 +130,55 @@ describe("marketplace wearable collateral colors", () => {
     return new Function(`${src.slice(fnStart)}\nreturn wearableMarkup;`)();
   }
 
-  it("colors Link Cube shades with the bound gotchi primary and secondary", () => {
-    const link = findCollateralColors("link", 1);
-    const page = pageWearableMarkup();
-    const wearable = { gotchiId: "owned-5041", primary: link.primary, secondary: link.secondary };
-    const html = wearableMarkup(LINK_CUBE, wearable);
-    assert.equal(html, page(LINK_CUBE, wearable));
-    assert.match(html, new RegExp(`<span style="color:#${link.primary}">█</span>`));
-    assert.match(html, new RegExp(`<span style="color:#${link.secondary}">░</span>`));
-    assert.match(html, new RegExp(`<span style="color:#${link.secondary}">▒</span>`));
-    assert.match(html, new RegExp(`<span style="color:#${link.primary}">▓</span>`));
-    assert.equal(wearableMarkup(LINK_CUBE, { primary: link.primary, secondary: link.secondary }), null);
-    assert.equal(wearableMarkup(LINK_CUBE, { gotchiId: "owned-5041" }), null);
-    const pageSrc = readFileSync(join(root, "templates/marketplace/web/index.html"), "utf8");
-    assert.match(pageSrc, /pre\.dataset\.primary/);
-    assert.match(pageSrc, /pre\.dataset\.secondary/);
-    assert.match(pageSrc, /colored == null/);
-  });
-
-  it("puts those two colors on Base set wearables that have a bound gotchi", () => {
+  it("uses stored sprite-cell markup, not collateral primary/secondary", () => {
     const catalog = loadCatalog();
-    const roles = JSON.parse(readFileSync(join(root, "config/agent-roles.json"), "utf8"));
-    const bound = JSON.parse(readFileSync(join(root, "templates/marketplace/bound-gotchis.json"), "utf8"));
-    const fe = catalog.packs.find((p) => p.id === "fe-marketing");
-    assert.equal(fe.title, "UI/UX");
-    const link = findCollateralColors("link", 1);
-    assert.equal(fe.wearable.primary, link.primary);
-    assert.equal(fe.wearable.secondary, link.secondary);
-    assert.equal(roles[fe.wearable.gotchiId], "fe-marketing");
-    for (const [roleId, row] of Object.entries(bound)) {
-      assert.equal(roles[row.gotchiId], roleId, roleId);
-      const colors = findCollateralColors(row.collateral, row.hauntId);
+    const wearables = JSON.parse(readFileSync(join(root, "templates/marketplace/wearables.json"), "utf8"));
+    const page = pageWearableMarkup();
+    const pageSrc = readFileSync(join(root, "templates/marketplace/web/index.html"), "utf8");
+    assert.equal(pageSrc.includes("pre.dataset.primary"), false);
+    assert.equal(pageSrc.includes("pre.dataset.secondary"), false);
+    assert.equal(pageSrc.includes("aavegotchi.com/images/items/"), false);
+    assert.match(pageSrc, /pre\.innerHTML = colored/);
+    assert.match(pageSrc, /colored == null/);
+    const seen = new Set();
+    for (const [roleId, row] of Object.entries(wearables)) {
+      assert.notEqual(row.id, 17, roleId);
+      assert.equal(SPRITE_COLORS[row.id] != null, true, roleId);
       const pack = catalog.packs.find((p) => p.id === roleId);
-      assert.equal(pack.wearable.primary, colors.primary, roleId);
-      assert.equal(pack.wearable.secondary, colors.secondary, roleId);
-      const markup = wearableMarkup(pack.wearable.ascii, pack.wearable);
-      const glyphs = [...pack.wearable.ascii];
-      if (glyphs.some((ch) => PRIMARY_CHARS.includes(ch))) {
-        assert.match(markup, new RegExp(`#${colors.primary}`), roleId);
-      }
-      if (glyphs.some((ch) => SECONDARY_CHARS.includes(ch))) {
-        assert.match(markup, new RegExp(`#${colors.secondary}`), roleId);
+      assert.equal(pack.wearable.ascii, row.ascii, roleId);
+      assert.equal(pack.wearable.markup, row.markup, roleId);
+      assert.equal(pack.wearable.primary, undefined, roleId);
+      assert.equal(pack.wearable.secondary, undefined, roleId);
+      assert.equal(pack.wearable.gotchiId, undefined, roleId);
+      const markup = wearableMarkup(row.ascii, row);
+      assert.equal(markup, row.markup, roleId);
+      assert.equal(markup, page(row.ascii, row), roleId);
+      assert.deepEqual(spanColors(markup), SPRITE_COLORS[row.id], roleId);
+      for (const hex of COLLATERAL_HEX) {
+        assert.equal(markup.includes(`#${hex}`), false, `${roleId} ${hex}`);
       }
       const onDisk = JSON.parse(readFileSync(join(root, "templates/marketplace/packs", roleId, "pack.json"), "utf8"));
-      assert.equal(onDisk.wearable.primary, colors.primary, roleId);
-      assert.equal(onDisk.wearable.secondary, colors.secondary, roleId);
+      assert.equal(onDisk.wearable.markup, row.markup, roleId);
+      assert.equal(onDisk.wearable.primary, undefined, roleId);
+      seen.add(row.id);
     }
-    const architect = catalog.packs.find((p) => p.id === "architect");
-    const arch = wearableMarkup(architect.wearable.ascii, architect.wearable);
-    assert.match(arch, new RegExp(`#${architect.wearable.primary}`));
-    assert.match(arch, new RegExp(`#${architect.wearable.secondary}`));
-    for (const id of ["worker", "product-manager", "auditor", "brand-design", "game-art-director", "jev", "security-engineer"]) {
-      const pack = catalog.packs.find((p) => p.id === id);
-      assert.equal(pack.wearable.gotchiId, undefined, id);
-      assert.equal(pack.wearable.primary, undefined, id);
-      assert.equal(wearableMarkup(pack.wearable.ascii, pack.wearable), null, id);
-    }
+    assert.deepEqual([...seen].sort((a, b) => a - b), Object.keys(SPRITE_COLORS).map(Number).sort((a, b) => a - b));
+    const support = wearables["customer-support"];
+    assert.equal(
+      support.markup,
+      '<span style="color:#ff00ff">█</span> \n<span style="color:#000000">▀</span> \n  \n  ',
+    );
+    assert.equal(wearableMarkup(support.ascii, { gotchiId: "owned-5402", primary: "b6509e", secondary: "cfeef4" }), null);
+    assert.equal(wearableMarkup(support.ascii, { markup: support.markup + "<script>" }), null);
+    assert.equal(wearableMarkup(support.ascii + "x", support), null);
+    const fe = catalog.packs.find((p) => p.id === "fe-marketing");
+    assert.equal(fe.title, "UI/UX");
+    assert.equal(fe.wearable.id, 202);
+    assert.deepEqual(spanColors(fe.wearable.markup), SPRITE_COLORS[202]);
     assert.equal(catalog.packs.find((p) => p.id === "bend-crew").wearable, undefined);
-    assert.equal(bound["bend-crew"], undefined);
-    assert.equal(bound["prof-link-cube"], undefined);
+    assert.equal(catalog.packs.find((p) => p.id === "prof-link-cube")?.wearable, undefined);
+    assert.equal(wearables["bend-crew"], undefined);
+    assert.equal(wearables["prof-link-cube"], undefined);
+    assert.equal(catalog.packs.some((p) => p.wearable && p.wearable.id === 17), false);
   });
 });
