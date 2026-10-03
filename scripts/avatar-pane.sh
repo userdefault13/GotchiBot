@@ -175,6 +175,53 @@ memo_call() {
 # heroes are on screen, not what any hero is — so it must not invalidate the
 # memo cache. Prev/next used to re-derive collateral and re-draw every thumb
 # through fresh node spawns purely because the page number lives in a file.
+# NOTE: sessions/pstack/<project>/roster.json is also NOT hashed here. The
+# open pane reloads that file in refresh_roster_for_order before this runs.
+# Hashing it without rebuilding .avatar-roster.json first would latch the new
+# checksum while the strip still paints the previous cache.
+# Project roster.json is the display order settings just saved. The strip
+# paints .avatar-roster.json, which is only rebuilt when something else in
+# the fingerprint moves — so a position change on an already-open pane never
+# showed up. Checksum the project file and rebuild before deciding to idle.
+project_roster_file() {
+  local slug="" f
+  for f in "$SESSIONS/.pstack-dossier-current" "$SESSIONS/.project-current"; do
+    [ -f "$f" ] || continue
+    slug="$(tr -d '[:space:]' < "$f" 2>/dev/null || true)"
+    [ -n "$slug" ] && break
+  done
+  case "$slug" in
+    ""|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  printf '%s\n' "$SESSIONS/pstack/${slug}/roster.json"
+}
+
+project_roster_sig() {
+  local f
+  f="$(project_roster_file 2>/dev/null || true)"
+  if [ -n "${f}" ] && [ -f "$f" ]; then
+    cksum "$f" | awk '{print $1}'
+  fi
+}
+
+# $1 current roster.json checksum, $2 checksum last rebuilt into the strip.
+# Different means the open pane would keep a stale order if it did not rebuild.
+roster_order_needs_refresh() {
+  [ "${1-}" != "${2-}" ]
+}
+
+refresh_roster_for_order() {
+  local sig
+  ROSTER_ORDER_REFRESHED=0
+  sig="$(project_roster_sig || true)"
+  if ! roster_order_needs_refresh "$sig" "${ROSTER_ORDER_SIG-}"; then
+    return 0
+  fi
+  refresh_roster
+  ROSTER_ORDER_SIG="$sig"
+  ROSTER_ORDER_REFRESHED=1
+}
+
 state_fingerprint() {
   local sig live
   sig="$(cat "$PIN" "$FOCUS" "$ROSTER_CACHE" \
@@ -1234,8 +1281,11 @@ render_body() {
 
   roster_raw="$(load_roster_json)"
 
-  local ids
-  memo_call ids "ids" roster_ids "$roster_raw"
+  local ids ids_key
+  # Key on the payload, not a bare "ids". A refresh that rewrote the cache
+  # must not replay the previous strip order from the memo.
+  ids_key="ids|$(printf '%s' "$roster_raw" | cksum | awk '{print $1}')"
+  memo_call ids "$ids_key" roster_ids "$roster_raw"
 
   if [ -z "$(printf '%s' "$ids" | tr -d '[:space:]')" ]; then
     put_line "$row" "$(printf '%b(none else on cartridge)%b' "$AV_MUTED" "$AV_RST")"
@@ -1416,6 +1466,9 @@ safe_render() {
   RENDERING=1
   while true; do
     PENDING_RENDER=0
+    # A key or poke paints immediately. Rebuild if roster.json moved so this
+    # paint cannot settle on the new file while still drawing the old strip.
+    refresh_roster_for_order
     pane_dims_lock
     memo_reset_if_stale
     dbg "safe_render: paint page=$(cat "$PAGE_FILE" 2>/dev/null || echo ?) memo_keys=$(printf '%s' "$MEMO_KEYS" | wc -w | tr -d ' ')"
@@ -1469,6 +1522,15 @@ case "${1:-watch}" in
     esac
     sb_click_wake "${3:-}"
     ;;
+  roster-order-check)
+    # usage: avatar-pane.sh roster-order-check <current-sig> <last-painted-sig>
+    # refresh = the open pane must rebuild; keep = the strip order is current.
+    if roster_order_needs_refresh "${2-}" "${3-}"; then
+      printf 'refresh\n'
+    else
+      printf 'keep\n'
+    fi
+    ;;
   roster-origin)
     # Geometry probe. No tmux, no terminal read — roster_geometry + real join.
     cols="${2:-44}"
@@ -1508,6 +1570,9 @@ case "${1:-watch}" in
     render_now || true
     dbg "watch: first paint done"
     LAST_FP="$(state_fingerprint)"
+    # Captured after the first paint. A later save of roster.json differs and
+    # the next tick rebuilds. Startup already refreshes in the background.
+    ROSTER_ORDER_SIG="$(project_roster_sig || true)"
     ( refresh_roster; kill -USR1 $$ 2>/dev/null ) &
     refresh_roster_async
     load_page; LAST_PAGE_DRAWN="$PAGE"
@@ -1525,15 +1590,20 @@ case "${1:-watch}" in
         fi
         continue
       fi
-      # Timeout. The tick is a cheap stat/pgrep fingerprint of the pane's
-      # inputs — no node, no repaint — so an idle pane stays perfectly still.
-      # Real changes arrive here, or immediately via USR1 (poke-avatar.sh).
+      # Timeout. The tick fingerprints the pane's inputs and stays still when
+      # nothing moved. roster.json is the exception: a position save touches
+      # only that file, so it is checksummed above and rebuilt before paint.
+      # Other changes arrive here, or immediately via USR1 (poke-avatar.sh).
       load_page
       if [ "$PAGE" != "$LAST_PAGE_DRAWN" ]; then
         # Page moved on disk without a repaint (a click whose USR1 was lost).
         safe_render
         continue
       fi
+      # Idle ticks used to skip node entirely. A position save only touches
+      # roster.json, which is outside the fingerprint, so reload it first.
+      # The rebuilt cache then changes the fingerprint and this tick paints.
+      refresh_roster_for_order
       fp="$(state_fingerprint)"
       if [ "$fp" = "$LAST_FP" ]; then
         if [ "$LOADING_VISIBLE" = 1 ]; then
@@ -1544,7 +1614,10 @@ case "${1:-watch}" in
       fi
       dbg "tick: fp changed ($LAST_FP -> $fp)"
       memo_reset
-      refresh_roster
+      # Order-file changes already rebuilt the cache above.
+      if [ "${ROSTER_ORDER_REFRESHED:-0}" != 1 ]; then
+        refresh_roster
+      fi
       render_now || true
       load_page; LAST_PAGE_DRAWN="$PAGE"
       LAST_FP="$(state_fingerprint)"

@@ -879,7 +879,39 @@ export function saveRoster(roster, slug = currentProjectSlug()) {
   };
   writeFileSync(rp, `${JSON.stringify(body, null, 2)}\n`, "utf8");
   publishProjectWrite(rp, { root: ROOT });
+  // The open avatar pane paints sessions/.avatar-roster.json and only
+  // rebuilds that cache when its fingerprint moves. Rewrite it from this
+  // heroes array so the next tick (or USR1) draws the saved positions
+  // without a desk restart. Pin stays pinned inside avatar-roster.
+  refreshOpenAvatarStrip();
   return body;
+}
+
+function refreshOpenAvatarStrip() {
+  if (process.execArgv.includes("--test") || process.env.NODE_TEST_CONTEXT != null) return;
+  if (process.env.GOTCHIBOT_AVATAR_REFRESH === "0") return;
+  try {
+    spawnSync(process.execPath, [join(ROOT, "scripts/avatar-roster.mjs"), "--json"], {
+      cwd: ROOT,
+      stdio: "ignore",
+      timeout: 20000,
+    });
+  } catch {
+    /* pane refresh still re-reads roster.json */
+  }
+  try {
+    const listed = spawnSync("pgrep", ["-f", "scripts/avatar-pane.sh"], {
+      encoding: "utf8",
+      timeout: 2000,
+    });
+    const self = String(listed.pid || "");
+    for (const pid of String(listed.stdout || "").split(/\s+/)) {
+      if (!/^\d+$/.test(pid) || pid === self) continue;
+      try { process.kill(Number(pid), "SIGUSR1"); } catch { /* pane already gone */ }
+    }
+  } catch {
+    /* no open pane */
+  }
 }
 
 /** Fill this project with the main roster. Existing project roles stay. */

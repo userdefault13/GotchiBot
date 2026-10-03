@@ -5,8 +5,14 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { mergeRosterHeroes, moveRosterHero, placeRosterHero } from "../scripts/project-context.mjs";
 import { othersInDisplayOrder } from "../scripts/avatar-roster.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("roster display order", () => {
   it("moves a row up or down and keeps its project role", () => {
@@ -86,5 +92,55 @@ describe("roster display order", () => {
     assert.deepEqual(placeRosterHero(further, "missing", 4).map((h) => h.id), further.map((h) => h.id));
     const chain = further.map((h) => ({ id: h.id, name: h.id }));
     assert.equal(othersInDisplayOrder(chain, "owned-1", further.map((h) => h.id))[26], "owned-30");
+  });
+
+  it("an open avatar pane reloads roster.json instead of keeping the previous strip", () => {
+    const pane = readFileSync(path.join(root, "scripts/avatar-pane.sh"), "utf8");
+    const loopAt = pane.indexOf("while true; do");
+    const fpAt = pane.indexOf('fp="$(state_fingerprint)"', loopAt);
+    assert.ok(loopAt > 0 && fpAt > loopAt, "watch loop fingerprints after the order check");
+    const beforeFp = pane.slice(loopAt, fpAt);
+    assert.match(beforeFp, /refresh_roster_for_order/);
+    assert.match(pane, /pstack\/\$\{slug\}\/roster\.json/);
+    const safeAt = pane.indexOf("safe_render()");
+    const safe = pane.slice(safeAt, pane.indexOf("on_usr1()", safeAt));
+    const memoAt = safe.indexOf("memo_reset_if_stale");
+    assert.ok(memoAt > 0);
+    assert.match(safe.slice(0, memoAt), /refresh_roster_for_order/);
+    // The id memo has to include the payload. A bare "ids" key replayed the old strip.
+    assert.match(pane, /ids_key="ids\|/);
+
+    const bin = path.join(root, "scripts/avatar-pane.sh");
+    const decision = (current, prev) =>
+      execFileSync("bash", [bin, "roster-order-check", current, prev], {
+        cwd: root,
+        encoding: "utf8",
+      }).trim();
+    assert.equal(decision("bbbb", "aaaa"), "refresh");
+    assert.equal(decision("aaaa", "aaaa"), "keep");
+
+    const chain = [
+      { id: "owned-1", name: "orch" },
+      { id: "owned-2", name: "B" },
+      { id: "owned-3", name: "C" },
+      { id: "owned-9", name: "extra" },
+    ];
+    const before = [
+      { id: "owned-1", role: null },
+      { id: "owned-2", role: null },
+      { id: "owned-3", role: "scribe" },
+    ];
+    const stale = othersInDisplayOrder(chain, "owned-1", before.map((h) => h.id));
+    const saved = placeRosterHero(before, "owned-3", 1);
+    assert.equal(saved[0].id, "owned-3");
+    assert.equal(saved[0].role, "scribe");
+    // What the strip paints: keep would leave the pre-save order; refresh
+    // reads the heroes array just written (orchestrator pin stays out).
+    const painted = decision("bbbb", "aaaa") === "refresh"
+      ? othersInDisplayOrder(chain, "owned-1", saved.map((h) => h.id))
+      : stale;
+    assert.notDeepEqual(painted, stale);
+    assert.deepEqual(painted, ["owned-3", "owned-2", "owned-9"]);
+    assert.equal(painted.includes("owned-1"), false);
   });
 });
