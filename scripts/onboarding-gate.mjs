@@ -2182,6 +2182,33 @@ async function implementGotchiHubNetwork() {
   await pause();
 }
 
+async function viewHubDashboard() {
+  clear();
+  title("Hub dashboard");
+  console.log("  Desks, database, projects, logs, VM serial. q returns here.\n");
+  try {
+    rl.pause();
+  } catch {}
+  let r;
+  try {
+    r = spawnSync(process.execPath, [`${ROOT}/scripts/hub-dashboard.mjs`], {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: process.env,
+    });
+  } finally {
+    try {
+      rl.resume();
+    } catch {}
+  }
+  if (r?.status !== 0 && r?.status != null) {
+    clear();
+    title("Hub dashboard");
+    console.log(`  ✗ dashboard exited ${r.status}`);
+    await pause();
+  }
+}
+
 async function viewHubInfra() {
   clear();
   title("Hub infra");
@@ -2576,7 +2603,7 @@ function cockpitMenuLeafCount(rows) {
  * Cockpit "What next?" rows. Related actions sit under a parent; Enter on that
  * row opens the group, Esc returns here. Leaf labels and relative order match
  * the old flat list, so 1..n inside a group still picks those siblings.
- * Top-level is 8 rows. Leaves are 19 (Hub down) or 20 (Hub SSH up).
+ * Top-level is 8 rows. Leaves are 20 (Hub down) or 21 (Hub SSH up).
  */
 function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
   const item = (key, label) => ({ key, label });
@@ -2590,6 +2617,7 @@ function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
           ? "Hub network (this computer is the Hub)"
           : "Set up Hub network (Tailscale)",
     ),
+    item("hub-dashboard", "Hub dashboard (desks · db · projects · logs · VM)"),
     ...(sshHubUp
       ? [
           item("hub", "Hub status (iMac OpenClaw · tunnel · Docker)"),
@@ -2902,6 +2930,11 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "hub-infra") {
       await viewHubInfra();
+      continue;
+    }
+
+    if (pick.key === "hub-dashboard") {
+      await viewHubDashboard();
       continue;
     }
 

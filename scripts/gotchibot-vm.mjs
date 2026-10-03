@@ -1200,6 +1200,49 @@ function cmdExec(id, cmdArgs) {
   process.exit(r.status ?? 1);
 }
 
+/**
+ * Read-only preview of the one shared Debian guest. Does not boot QEMU.
+ * The picture is the guest serial log (`-serial file:…/serial.log`, `-display none`).
+ */
+export function sharedGuestPreview({ maxLines = 16 } = {}) {
+  const id = SHARED_GUEST_ID;
+  const serialPath = `${stateDir(id)}/serial.log`;
+  const running = vmRunning(id);
+  const meta = readMeta(id);
+  let lines = null;
+  if (existsSync(serialPath)) {
+    try {
+      const st = statSync(serialPath);
+      const len = Math.min(st.size, 64 * 1024);
+      const buf = Buffer.alloc(len);
+      const fd = openSync(serialPath, "r");
+      try {
+        readSync(fd, buf, 0, len, Math.max(0, st.size - len));
+      } finally {
+        closeSync(fd);
+      }
+      lines = buf
+        .toString("utf8")
+        .split(/\r?\n/)
+        .map((l) => l.replace(/\s+$/g, ""))
+        .filter((l) => l.length)
+        .slice(-maxLines);
+    } catch {
+      lines = null;
+    }
+  }
+  return {
+    id,
+    name: meta.name || vmName(id),
+    running,
+    holder: meta.holder ?? null,
+    port: running ? (meta.port ?? null) : null,
+    serialPath,
+    lines,
+    image: "Debian 12 shared guest (one qemu on the 2020, not a VM per gotchi)",
+  };
+}
+
 function describeVm(sid) {
   const meta = readMeta(sid);
   const guest = meta.guestId && vmRunning(meta.guestId) ? meta.guestId : vmRunning(sid) ? sid : meta.guestId || sid;
