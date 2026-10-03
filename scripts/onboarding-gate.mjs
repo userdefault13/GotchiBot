@@ -2974,11 +2974,14 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "hub-dashboard") {
       await viewHubDashboard();
+      // q exits 0. Re-open Hub… instead of dropping to the top-level list.
+      openGroup = "group:hub";
       continue;
     }
 
     if (pick.key === "hub-lite") {
       await viewHubLite();
+      openGroup = "group:hub";
       continue;
     }
 

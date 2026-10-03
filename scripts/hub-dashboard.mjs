@@ -12,7 +12,10 @@
  *
  *   node scripts/hub-dashboard.mjs [--once]
  *   node scripts/hub-dashboard.mjs --lite [--once]
- *   q back · r refresh
+ *   q back to Hub… · r refresh
+ *
+ * q must exit 0. The keypress decoder keeps stdin alive, so returning from
+ * main() never unblocks the cockpit's spawn, and a thrown key crashes the pane.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, openSync, readSync, closeSync, statSync } from "node:fs";
@@ -596,6 +599,22 @@ export async function collectHubLite({ root = ROOT, roster } = {}) {
   });
 }
 
+/**
+ * Key the cockpit Hub… page understands. "back" is a clean return to that
+ * menu (exit 0). Never throws — emitKeypressEvents rethrows a sync throw
+ * out of the data listener and the pane dies.
+ */
+export function hubDashboardCommand(str, key) {
+  try {
+    if (key?.ctrl && key?.name === "c") return "back";
+    if (key?.name === "q" || str === "q") return "back";
+    if (key?.name === "r" || str === "r") return "refresh";
+    return "ignore";
+  } catch {
+    return "ignore";
+  }
+}
+
 function paint(text) {
   const cols = process.stdout.columns || 80;
   const rows = process.stdout.rows || 24;
@@ -622,39 +641,52 @@ async function main() {
   if (once) return;
 
   readline.emitKeypressEvents(process.stdin);
-  process.stdin.setRawMode(true);
+  if (process.stdin.isTTY) process.stdin.setRawMode(true);
   process.stdin.resume();
-  await new Promise((done) => {
-    const onKey = async (str, key) => {
-      if (key?.ctrl && key?.name === "c") {
-        cleanup();
-        done();
-        return;
-      }
-      if (key?.name === "q" || str === "q") {
-        cleanup();
-        done();
-        return;
-      }
-      if (key?.name === "r" || str === "r") {
-        try {
-          await draw();
-        } catch (e) {
-          paint(unavailable(e?.message || e));
-        }
-      }
-    };
-    const cleanup = () => {
-      process.stdin.off("keypress", onKey);
+  const onKey = (str, key) => {
+    let cmd = "ignore";
+    try {
+      cmd = hubDashboardCommand(str, key);
+    } catch {
+      cmd = "ignore";
+    }
+    if (cmd === "back") {
+      leaveToMenu();
+      return;
+    }
+    if (cmd !== "refresh") return;
+    draw().catch((e) => {
       try {
-        process.stdin.setRawMode(false);
+        paint(unavailable(e?.message || e));
       } catch {
-        /* not a tty anymore */
+        /* keep the page up */
       }
-      process.stdout.write(`${ESC}[0m`);
-    };
-    process.stdin.on("keypress", onKey);
-  });
+    });
+  };
+  // Resolving main() is not enough: emitKeypressEvents leaves a stdin data
+  // listener, so the process stays up and the cockpit never redraws Hub….
+  // A non-zero exit (or a key handler throw) is what the pane shows as a crash.
+  const leaveToMenu = () => {
+    process.stdin.off("keypress", onKey);
+    try {
+      if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    } catch {
+      /* not a tty anymore */
+    }
+    try {
+      process.stdin.pause();
+    } catch {
+      /* already paused */
+    }
+    try {
+      process.stdout.write(`${ESC}[0m\n`);
+    } catch {
+      /* parent redraws */
+    }
+    process.exit(0);
+  };
+  process.stdin.on("keypress", onKey);
+  await new Promise(() => {});
 }
 
 if (isMainModule(import.meta.url)) {

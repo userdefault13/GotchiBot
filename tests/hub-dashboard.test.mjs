@@ -17,6 +17,7 @@ import {
   assembleHubDashboard,
   assembleHubLite,
   collectHubLite,
+  hubDashboardCommand,
   renderHubDashboard,
   renderHubLite,
 } from "../scripts/hub-dashboard.mjs";
@@ -214,6 +215,57 @@ describe("hub dashboard", () => {
       if (prev == null) delete process.env.GOTCHIBOT_HUB_PIN;
       else process.env.GOTCHIBOT_HUB_PIN = prev;
       rmSync(pin, { force: true });
+    }
+  });
+
+  it("q does not throw and signals a return to the Hub menu", () => {
+    assert.doesNotThrow(() => hubDashboardCommand("q", { name: "q" }));
+    assert.equal(hubDashboardCommand("q", { name: "q" }), "back");
+    assert.equal(hubDashboardCommand("q", undefined), "back");
+    assert.equal(hubDashboardCommand("", { name: "q" }), "back");
+    assert.equal(hubDashboardCommand("r", { name: "r" }), "refresh");
+    assert.equal(hubDashboardCommand("x", { name: "x" }), "ignore");
+    assert.equal(hubDashboardCommand(undefined, undefined), "ignore");
+    assert.equal(hubDashboardCommand("\u0003", { ctrl: true, name: "c" }), "back");
+
+    const dir = mkdtempSync(path.join(tmpdir(), "hub-lite-q-"));
+    const parent = path.join(dir, "parent.mjs");
+    const drive = path.join(dir, "drive.py");
+    writeFileSync(
+      parent,
+      [
+        'import readline from "node:readline";',
+        'import { spawnSync } from "node:child_process";',
+        "const rl = readline.createInterface({ input: process.stdin, output: process.stdout });",
+        "try { rl.pause(); } catch {}",
+        "const r = spawnSync(process.execPath, ['scripts/hub-dashboard.mjs', '--lite'], {",
+        "  cwd: process.env.HUB_ROOT,",
+        "  stdio: 'inherit',",
+        "  env: process.env,",
+        "});",
+        "let resumeErr = '';",
+        "try { rl.resume(); } catch (e) { resumeErr = e?.message || String(e); }",
+        "if (resumeErr) { console.log('RESUME_THROW ' + resumeErr); process.exit(3); }",
+        "if (r.status === 0) { console.log('RETURNED_TO_MENU'); process.exit(0); }",
+        "console.log('CRASH status=' + r.status + ' signal=' + r.signal);",
+        "process.exit(1);",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(drive, 'import os, pty, select, time, sys\nparent, root = sys.argv[1], sys.argv[2]\npid, fd = pty.fork()\nif pid == 0:\n    os.chdir(root)\n    env = os.environ.copy()\n    env["TERM"] = "xterm-256color"\n    env["HUB_ROOT"] = root\n    os.execvpe("node", ["node", parent], env)\nbuf = b""\nstart = time.time()\nsent_r = False\nsent_q = False\nrefreshed = False\nwhile time.time() - start < 20:\n    ready, _, _ = select.select([fd], [], [], 0.2)\n    if ready:\n        try:\n            chunk = os.read(fd, 8192)\n        except OSError:\n            break\n        if not chunk:\n            break\n        buf += chunk\n    text = buf.decode("utf-8", "replace")\n    if (not sent_r) and "HUB LITE" in text:\n        time.sleep(0.15)\n        os.write(fd, b"r")\n        sent_r = True\n        continue\n    if sent_r and (not sent_q) and text.count("HUB LITE") >= 2:\n        refreshed = True\n        print("refresh-kept", flush=True)\n        time.sleep(0.1)\n        os.write(fd, b"q")\n        sent_q = True\n    if "RETURNED_TO_MENU" in text or "CRASH " in text or "RESUME_THROW" in text:\n        break\ndeadline = time.time() + 5\nstatus = None\nwhile time.time() < deadline:\n    wpid, st = os.waitpid(pid, os.WNOHANG)\n    if wpid:\n        status = st\n        break\n    try:\n        chunk = os.read(fd, 8192)\n    except OSError:\n        chunk = b""\n    if chunk:\n        buf += chunk\n    else:\n        time.sleep(0.05)\nelse:\n    try:\n        os.kill(pid, 9)\n        os.waitpid(pid, 0)\n    except OSError:\n        pass\n    print("HUNG", flush=True)\n    sys.exit(1)\n# drain\nwhile True:\n    try:\n        chunk = os.read(fd, 8192)\n    except OSError:\n        break\n    if not chunk:\n        break\n    buf += chunk\ntext = buf.decode("utf-8", "replace")\nsys.stdout.write(text)\nif not text.endswith("\\n"):\n    sys.stdout.write("\\n")\nif status is None:\n    print("HUNG", flush=True)\n    sys.exit(1)\ncode = os.waitstatus_to_exitcode(status)\nprint("parent-exit=%s" % code, flush=True)\nif (not refreshed) or code != 0 or "RETURNED_TO_MENU" not in text or "CRASH " in text or "RESUME_THROW" in text:\n    sys.exit(1)\n');
+    const r = spawnSync("python3", [drive, parent, root], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 30000,
+      env: { ...process.env, TERM: "xterm-256color" },
+    });
+    try {
+      assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+      assert.match(r.stdout, /refresh-kept/);
+      assert.match(r.stdout, /RETURNED_TO_MENU/);
+      assert.doesNotMatch(r.stdout, /CRASH |RESUME_THROW|HUNG/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
