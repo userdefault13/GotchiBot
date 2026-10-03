@@ -233,6 +233,18 @@ snapshot_hub_on_load() {
   fi
 }
 
+# Desk load revives the Mac desk receiver when :45679 is down.
+# Receiver script only. Do not call hub-bridge-ensure here — that opens Hub VS Code.
+ensure_desk_receiver_on_load() {
+  command -v node >/dev/null 2>&1 || return 0
+  mkdir -p "$SESSIONS"
+  (
+    trap '' HUP
+    node "$ROOT/scripts/desk-receiver-ensure.mjs" --json
+  ) </dev/null >>"$SESSIONS/.desk-receiver.log" 2>&1 &
+  disown 2>/dev/null || true
+}
+
 
 cmd_chat() {
   local want="${1:-opencode}"
@@ -324,6 +336,7 @@ cmd_tmux() {
     </dev/null >>"$SESSIONS/.fleet-sync.log" 2>&1 &
   disown 2>/dev/null || true
   snapshot_hub_on_load
+  ensure_desk_receiver_on_load
   boot_mark "hub snapshot"
   local sess_name="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
   sess_name="${sess_name#=}"

@@ -8,7 +8,6 @@
  *   abra run gotchibot -- node ./scripts/hub-bridge-ensure.mjs --json
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -17,6 +16,7 @@ import {
   probeBridgeHttp,
   resolveClaudeHostMode,
 } from "./claude-bridge-role.mjs";
+import { checkReceiverHealth, ensureDeskReceiver } from "./desk-receiver-ensure.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -42,40 +42,7 @@ for (let i = 0; i < args.length; i++) {
 const log = jsonOut ? () => {} : (...a) => console.log(...a);
 const err = jsonOut ? () => {} : (...a) => console.error(...a);
 
-// ── Receiver :45679 ──
-
-function checkReceiver() {
-  const health = "http://127.0.0.1:45679/health";
-  try {
-    const r = spawnSync("curl", ["-sf", "--max-time", "2", health], { encoding: "utf8" });
-    return r.status === 0;
-  } catch {
-    return false;
-  }
-}
-
-async function startReceiver() {
-  if (checkReceiver()) return true;
-  const candidates = [
-    join(process.env.HOME || "", "Dev/gotchibot-bridge/mbp-receiver/receiver.js"),
-    join(process.env.HOME || "", "dev/gotchibot-bridge/mbp-receiver/receiver.js"),
-  ];
-  const script = candidates.find((p) => existsSync(p));
-  if (!script) return false;
-  try {
-    const { spawn } = await import("node:child_process");
-    const child = spawn(process.execPath, [script], {
-      cwd: dirname(script),
-      stdio: "ignore",
-      detached: true,
-    });
-    child.unref();
-    spawnSync("sleep", ["0.7"]);
-    return checkReceiver();
-  } catch {
-    return false;
-  }
-}
+// ── Receiver :45679 (shared with desk load; this file still recovers the Hub bridge) ──
 
 // ── Hub bridge :45678 ──
 
@@ -114,10 +81,10 @@ async function main() {
 
   // Step 1: Desk receiver
   log("Checking Desk receiver :45679 …");
-  let receiverOk = checkReceiver();
+  let receiverOk = await checkReceiverHealth();
   if (!receiverOk) {
     log("Receiver down — starting …");
-    receiverOk = await startReceiver();
+    receiverOk = (await ensureDeskReceiver()).ok;
   }
   steps.push({ step: "receiver", ok: receiverOk });
   if (receiverOk) log("  ✓ Desk receiver :45679 up");

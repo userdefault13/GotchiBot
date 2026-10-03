@@ -135,6 +135,16 @@ ensure_wisp_proxy() {
 }
 ensure_wisp_proxy
 
+# Desk receiver (:45679). Same load check as the wisp proxy: health, else start the script.
+# Receiver only — hub-bridge-ensure also opens Hub VS Code, which desk load must not do.
+ensure_desk_receiver() {
+  command -v node >/dev/null 2>&1 || return 0
+  mkdir -p "$ROOT/sessions"
+  nohup node "$ROOT/scripts/desk-receiver-ensure.mjs" >>"$ROOT/sessions/.desk-receiver.log" 2>&1 &
+  disown 2>/dev/null || true
+}
+ensure_desk_receiver
+
 # Sync persisted TTS preference into the chat pane environment.
 if [ -f "$ROOT/sessions/.tts.json" ] && command -v node >/dev/null; then
   eval "$(node -e "
