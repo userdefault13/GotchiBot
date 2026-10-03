@@ -4,7 +4,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -53,15 +53,47 @@ exec ${JSON.stringify(realGit)} "$@"
   return bin;
 }
 
-function runCheck(dir, mode, args) {
+function startManifest(manifest) {
+  const source = `
+    import { createServer } from "node:http";
+    const manifest = ${JSON.stringify(manifest)};
+    const server = createServer((req, res) => {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(manifest));
+    });
+    server.listen(0, "127.0.0.1", () => {
+      process.stdout.write(String(server.address().port) + "\\n");
+    });
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return new Promise((resolve, reject) => {
+    let buf = "";
+    const timer = setTimeout(() => reject(new Error("manifest server did not listen")), 3000);
+    child.stdout.on("data", (chunk) => {
+      buf += chunk;
+      const line = buf.split("\n")[0];
+      if (!line) return;
+      clearTimeout(timer);
+      resolve({ child, url: `http://127.0.0.1:${line}/latest.json` });
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`manifest server exited ${code}`));
+    });
+  });
+}
+
+function runCheck(dir, mode, args, urls = {}) {
   const env = {
     ...process.env,
     PATH: `${dir}${path.delimiter}${process.env.PATH || ""}`,
     STUB_GIT_MODE: mode,
     GOTCHIBOT_GIT_TIMEOUT_MS: "1500",
-    GOTCHIBOT_CDN_LATEST: "http://127.0.0.1:9/latest.json",
-    GOTCHIBOT_WWW_LATEST: "http://127.0.0.1:9/latest.json",
-    GOTCHIBOT_GITHUB_LATEST: "http://127.0.0.1:9/latest.json",
+    GOTCHIBOT_CDN_LATEST: urls.cdn || "http://127.0.0.1:9/latest.json",
+    GOTCHIBOT_WWW_LATEST: urls.www || "http://127.0.0.1:9/latest.json",
+    GOTCHIBOT_GITHUB_LATEST: urls.github || "http://127.0.0.1:9/latest.json",
   };
   delete env.GOTCHIBOT_SKIP_UPDATE_CHECK;
   const started = Date.now();
@@ -100,6 +132,49 @@ describe("update-check git network", () => {
       assert.match(r.stdout, /4 commit\(s\) behind/);
       assert.ok(r.elapsed < 7000, `check took ${r.elapsed}ms`);
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("local 0.2.2 vs published 0.2.1 is not an update and does not spawn git", async () => {
+    const local = JSON.parse(readFileSync(path.join(root, "config/version.json"), "utf8")).version;
+    assert.equal(local, "0.2.2");
+    const dir = mkdtempSync(path.join(tmpdir(), "gb-upd-"));
+    const manifest = {
+      version: "0.2.1",
+      notes: "Launch-time updater; git pull or clone from GitHub",
+      url: "https://github.com/userdefault13/GotchiBot",
+    };
+    const served = await startManifest(manifest);
+    const url = served.url;
+    try {
+      gitStub(dir);
+      const r = withoutCache(() => runCheck(dir, "ok", ["--launch"], { cdn: url, www: url, github: url }));
+      assert.equal(r.status, 0, `status ${r.status} signal ${r.signal} stderr ${r.stderr}`);
+      assert.ok(r.elapsed < 7000, `launch check hung for ${r.elapsed}ms`);
+      assert.doesNotMatch(r.stdout || "", /update available/);
+      assert.doesNotMatch(r.stdout || "", /0\.2\.2\s*→\s*0\.2\.1/);
+      assert.equal(existsSync(path.join(dir, "git-args")), false, "git was spawned for a downgrade");
+    } finally {
+      served.child.kill();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a published manifest newer than local still fetches", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "gb-upd-"));
+    const manifest = { version: "9.9.9", notes: "newer", url: "https://example.invalid/gotchibot" };
+    const served = await startManifest(manifest);
+    const url = served.url;
+    try {
+      gitStub(dir);
+      const r = withoutCache(() => runCheck(dir, "ok", ["--check"], { cdn: url, www: url, github: url }));
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(r.stdout, /latest:\s+9\.9\.9/);
+      assert.match(readFileSync(path.join(dir, "git-args"), "utf8"), /fetch/);
+      assert.ok(r.elapsed < 7000, `check took ${r.elapsed}ms`);
+    } finally {
+      served.child.kill();
       rmSync(dir, { recursive: true, force: true });
     }
   });

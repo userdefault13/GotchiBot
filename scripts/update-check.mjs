@@ -201,7 +201,11 @@ async function resolveLatest(force) {
   }
 
   const cdn = await fetchCdnLatest();
-  const gitBehind = gitBehindCount();
+  const manifestVersion = cdn?.manifest?.version;
+  const haveRelease = Boolean(manifestVersion && manifestVersion !== "git");
+  // Already at or ahead of the published release: not an update, and not a git fetch/pull.
+  const gitBehind =
+    haveRelease && !isNewer(manifestVersion, readLocalVersion()) ? 0 : gitBehindCount();
   const latest = cdn ?? (gitBehind && gitBehind > 0 ? { manifest: { version: "git" }, source: "git" } : null);
 
   if (latest) {
@@ -219,7 +223,9 @@ async function resolveLatest(force) {
 
 function updateAvailable(localVersion, latest, gitBehind) {
   if (latest?.manifest?.version && latest.manifest.version !== "git") {
-    if (isNewer(latest.manifest.version, localVersion)) return true;
+    // Equality and a newer checkout are not updates. Do not fall through to git-behind
+    // or the launch line becomes a downgrade (0.2.2 → 0.2.1) and then a pull.
+    return isNewer(latest.manifest.version, localVersion);
   }
   return typeof gitBehind === "number" && gitBehind > 0;
 }
