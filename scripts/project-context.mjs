@@ -778,19 +778,37 @@ export function orderByRosterIds(items, rosterIds, idOf = (item) => item?.id) {
 
 /** Move one roster row by delta (-1 up, +1 down). No-op at the ends or if the id is missing. Roles stay on the row. */
 export function moveRosterHero(heroes, id, delta) {
+  const list = normalizeRosterList(heroes);
+  const step = Number(delta);
+  if (!Number.isInteger(step) || step === 0) return list;
+  const from = list.findIndex((h) => h.id === String(id));
+  if (from < 0) return list;
+  return placeRosterHero(list, id, from + 1 + step);
+}
+
+function normalizeRosterList(heroes) {
   const list = [];
   for (const entry of heroes || []) {
     const hero = normalizeRosterHero(entry);
     if (hero?.id) list.push(hero);
   }
-  const step = Number(delta);
-  if (!Number.isInteger(step) || step === 0) return list;
+  return list;
+}
+
+/**
+ * Move one roster row to a 1-based position (the number on the reorder screen).
+ * Out of range, an unknown id, or the row's current position leaves the order
+ * unchanged. Roles stay on the row. Does not sort and does not consult the
+ * avatar cache — the array you pass is the order you get back.
+ */
+export function placeRosterHero(heroes, id, position) {
+  const list = normalizeRosterList(heroes);
+  const dest = Number(position);
+  if (!Number.isInteger(dest) || dest < 1 || dest > list.length) return list;
   const from = list.findIndex((h) => h.id === String(id));
-  if (from < 0) return list;
-  const to = from + step;
-  if (to < 0 || to >= list.length) return list;
+  if (from < 0 || from === dest - 1) return list;
   const [row] = list.splice(from, 1);
-  list.splice(to, 0, row);
+  list.splice(dest - 1, 0, row);
   return list;
 }
 

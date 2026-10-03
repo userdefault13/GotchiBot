@@ -1706,12 +1706,37 @@ async function githubMenu() {
   }
 }
 
+async function askRosterPosition(label, max) {
+  const range = `1-${max}/esc/q`;
+  for (;;) {
+    let esc = false;
+    const onKey = (_s, key) => {
+      if (key?.name !== "escape") return;
+      esc = true;
+      rl.write(null, { ctrl: true, name: "u" });
+      rl.write("\n");
+    };
+    input.on("keypress", onKey);
+    let ans = "";
+    try {
+      ans = (await rl.question(`\n  Position for ${label} [${range}]: `)).trim().toLowerCase();
+    } finally {
+      input.off("keypress", onKey);
+    }
+    if (esc || ans === "esc" || ans === "\u001b") return null;
+    if (ans === "q" || ans === "quit") quitToTerminal();
+    const n = Number(ans);
+    if (Number.isInteger(n) && n >= 1 && n <= max) return n;
+    console.log("  Out of range — order unchanged.");
+  }
+}
+
 async function reorderRosterMenu() {
   const {
     currentProjectSlug,
     loadRoster,
     saveRoster,
-    moveRosterHero,
+    placeRosterHero,
     mergeRosterHeroes,
     mainRosterIds,
   } = await import("./project-context.mjs");
@@ -1725,6 +1750,10 @@ async function reorderRosterMenu() {
     return;
   }
   const roster = loadRoster(slug);
+  // One working list for the whole visit. Avatar-cache order and the sorted
+  // main roster only append ids missing from roster.json — they must not
+  // reshuffle a saved sequence. After a save, the next place uses that saved
+  // array, not a fresh read of the pane cache.
   let heroes = rosterHeroesForMenu(roster.heroes, mainRosterIds, mergeRosterHeroes);
   if (!heroes.length) {
     clear();
@@ -1734,7 +1763,7 @@ async function reorderRosterMenu() {
     await pause();
     return;
   }
-  let note = "Pick a gotchi, then move it up or down. Esc returns.";
+  let note = "Pick a gotchi, then type its position number. Esc returns.";
   for (;;) {
     clear();
     title("Roster display order");
@@ -1753,24 +1782,22 @@ async function reorderRosterMenu() {
     });
     const pick = await choose("Which gotchi?", options, { back: true });
     if (!pick || pick.key === "back") return;
-    const dir = await choose(pick.label, [
-      { key: "up", label: "Move up" },
-      { key: "down", label: "Move down" },
-    ], { back: true });
-    if (!dir || dir.key === "back") {
+    const position = await askRosterPosition(pick.label, heroes.length);
+    if (position == null) {
       note = "Not moved.";
       continue;
     }
-    const delta = dir.key === "up" ? -1 : 1;
-    const next = moveRosterHero(heroes, pick.id, delta);
+    const next = placeRosterHero(heroes, pick.id, position);
     const changed = next.some((h, i) => h.id !== heroes[i]?.id);
     if (!changed) {
-      note = delta < 0 ? "Already at the top." : "Already at the bottom.";
+      note = `Already at ${position}.`;
       continue;
     }
     const saved = saveRoster({ ...roster, heroes: next }, slug);
+    // Next redraw and the next place both use the array just written — not a
+    // fresh merge of the avatar cache or the sorted main roster.
     heroes = saved.heroes;
-    note = delta < 0 ? `Moved up — saved.` : `Moved down — saved.`;
+    note = `Moved to ${position} — saved.`;
   }
 }
 
@@ -1783,6 +1810,8 @@ function rosterHeroesForMenu(stored, mainIds, merge) {
   } catch {
     /* pane cache absent — stored project order is enough */
   }
+  // Stored roster.json order is the list. Cache order and the alphabetical
+  // main roster are only ids the file does not already contain, appended.
   const base = (stored || []).length
     ? stored
     : cacheIds.map((id) => ({ id, role: null }));
