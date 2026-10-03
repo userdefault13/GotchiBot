@@ -23,6 +23,8 @@ const SNAPSHOT_MAX_BYTES = 12 * 1024 * 1024;
 const LAST_SEEN_MIN_MS = 60_000;
 /** Trusted server-side writer for hub-runner assistant replies (not an HTTP desk). */
 const HUB_RUNNER_DESK_ID = "hub-runner";
+/** Desk ids whose user messages the hub runner should answer. The MacBook desk. */
+const HUB_REPLY_DESK_IDS = new Set(["01M3ZTEW67RX4EJFE83YW5YP0H"]);
 /** Claimed replies older than this are reclaimable / retryable. */
 const REPLY_STALE_MS = 5 * 60 * 1000;
 /** Runner considered offline if lastBeatAt older than this. */
@@ -111,6 +113,16 @@ function deskKindOf(desk) {
   if (!desk) return "desk";
   const k = desk.kind != null ? String(desk.kind).trim().toLowerCase() : "";
   return k === "phone" ? "phone" : "desk";
+}
+
+/**
+ * True when this desk's user messages should be claimed by the hub runner.
+ * Only HUB_REPLY_DESK_IDS. Phone desks are handled separately.
+ */
+function deskQueuesHubReply(desk) {
+  if (!desk || desk.revoked) return false;
+  const id = desk.deskId != null ? String(desk.deskId).trim() : "";
+  return HUB_REPLY_DESK_IDS.has(id);
 }
 
 /**
@@ -556,7 +568,10 @@ export async function connectStore({ mongoUri, dbName }) {
    * - new threadId is owned by the phone (createdByDeskId); race-safe pre-create
    * - stamps originKind:"phone" + reply:{status:"pending",requestedAt}
    *
-   * Desk / hub-runner pushes are unchanged (no reply tracking).
+   * Other desks and hub-runner pushes are unchanged (no reply tracking).
+   * A user message from a desk in HUB_REPLY_DESK_IDS (the MacBook desk) is
+   * stamped originKind "phone" + reply pending so the hub runner claims it.
+   * That desk's kind is unchanged, and phone write restrictions are not applied.
    * Trusted runner: call with deskId HUB_RUNNER_DESK_ID (or any non-phone desk).
    */
   async function pushMessages(input) {
@@ -581,6 +596,7 @@ export async function connectStore({ mongoUri, dbName }) {
     const deskId = input.deskId;
     const desk = input.desk || (deskId ? await desks.findOne({ deskId }) : null);
     const isPhone = desk && deskKindOf(desk) === "phone";
+    const queueHubReply = !isPhone && deskQueuesHubReply(desk);
     const now = new Date();
 
     // Phone must not push into an existing unshared thread; claim ownership
@@ -680,6 +696,15 @@ export async function connectStore({ mongoUri, dbName }) {
             requestedAt: now,
             attempts: 0,
           };
+        } else if (queueHubReply && op === "message" && role === "user" && text.trim()) {
+          // Match claimNextPendingReply (originKind phone, reply pending, threadKind not desk)
+          // so the already-running hub runner picks this up. Desk stays kind desk.
+          doc.originKind = "phone";
+          doc.reply = {
+            status: "pending",
+            requestedAt: now,
+            attempts: 0,
+          };
         }
         await chatMessages.insertOne(doc);
         inserted += 1;
@@ -769,6 +794,7 @@ export async function connectStore({ mongoUri, dbName }) {
     if (creating && resolvedTitle == null) {
       resolvedTitle = bodyText.trim().slice(0, 60);
     }
+    const queueHubReply = deskQueuesHubReply(desk);
     const result = await pushMessages({
       threadId: tid,
       title: resolvedTitle,
@@ -789,7 +815,7 @@ export async function connectStore({ mongoUri, dbName }) {
     const row = result.results?.[0] || {};
     const replyStatus =
       row.reply?.status ||
-      (deskKindOf(desk) === "phone" ? "pending" : "none");
+      (deskKindOf(desk) === "phone" || queueHubReply ? "pending" : "none");
     return {
       ok: true,
       threadId: tid,
@@ -1768,7 +1794,9 @@ export async function connectStore({ mongoUri, dbName }) {
 
 export {
   HUB_RUNNER_DESK_ID,
+  HUB_REPLY_DESK_IDS,
   REPLY_STALE_MS,
   RUNNER_OFFLINE_MS,
   sanitizePublicText,
+  deskQueuesHubReply,
 };
