@@ -957,6 +957,14 @@ cell_block() {
     [ "${TUI_GLYPHS}" = "ascii" ] && name="loading..."
   fi
   # Prefer the shared thumb ASCII; optional SVG only when explicitly enabled.
+  # Template portraits reserved at assets/templates/<id>.png (Julius). Missing file keeps the glyph.
+  local template_png=""
+  if [ -n "$id" ]; then
+    template_png="$ROOT/assets/templates/${id}.png"
+  fi
+  if [ -z "${art:-}" ] && [ -n "$template_png" ] && [ -f "$template_png" ]; then
+    art="$(mini_chafa "$template_png" "$cell_w" "$cell_h")"
+  fi
   if [ -z "${art:-}" ] && [ "${GOTCHIBOT_THUMB_CHAFA:-0}" = "1" ]; then
     art="$(mini_chafa "$svg" "$cell_w" "$cell_h")"
   fi
@@ -999,7 +1007,19 @@ render_main_art() {
   [ "$chafa_w" -gt 72 ] && chafa_w=72
   [ "$chafa_h" -lt 8 ] && chafa_h=8
 
-  if [ "$use_static" = 0 ] && [ -n "$hero_id" ] && command -v chafa >/dev/null && command -v node >/dev/null; then
+  # assets/templates/<id>.png when Julius has dropped it; otherwise the glyph below.
+  local template_png=""
+  [ -n "$hero_id" ] && template_png="$ROOT/assets/templates/${hero_id}.png"
+  if [ -z "$body" ] && [ -n "$template_png" ] && [ -f "$template_png" ] && command -v chafa >/dev/null; then
+    body="$(chafa --size "${chafa_w}x${chafa_h}" --symbols "$AV_CHAFA_SYMBOLS" $AV_CHAFA_COLORS --animate off "$template_png" 2>/dev/null \
+      | sed -e 's/\x1b\[[?][0-9;]*[hl]//g')" || body=""
+    if [ -n "$body" ]; then
+      ART_CACHE="$body"
+      ART_CACHE_STATUS="png:$hero_id:${TUI_COLOR}/${TUI_GLYPHS}"
+    fi
+  fi
+
+  if [ "$use_static" = 0 ] && [ -z "$body" ] && [ -n "$hero_id" ] && command -v chafa >/dev/null && command -v node >/dev/null; then
     if [ ! -f "$svg_path" ] || [ "${GOTCHIBOT_AVATAR_REFRESH:-0}" = "1" ]; then
       node "$ROOT/scripts/gotchi-svg.mjs" --refresh "$hero_id" >/dev/null 2>&1 || true
     fi

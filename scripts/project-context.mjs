@@ -735,13 +735,33 @@ const HERO_ID_RE = /^(owned|starter|rental)-[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const ROSTER_NOTE =
   "Fresh copy of the main roster. role is this project's assignment; null means unassigned. The same gotchi may hold a different role in another project.";
 
+/** Worker slot on a template hero. Absent on a plain gotchi row. Never invents an id. */
+export function normalizeRosterWorker(worker) {
+  if (typeof worker === "string") {
+    const id = worker.trim();
+    if (!id || id === "unbound") return { status: "unbound", gotchiId: null };
+    return { status: "bound", gotchiId: id };
+  }
+  if (!worker || typeof worker !== "object") return { status: "unbound", gotchiId: null };
+  const raw = worker.gotchiId == null ? "" : String(worker.gotchiId).trim();
+  if (!raw || worker.status === "unbound") return { status: "unbound", gotchiId: null };
+  return { status: "bound", gotchiId: raw };
+}
+
 /** One roster row. A string entry is an id with no role stored yet. */
 export function normalizeRosterHero(entry) {
   if (typeof entry === "string" && entry.trim()) return { id: entry.trim(), role: null };
   if (entry && typeof entry === "object" && entry.id) {
     const raw = entry.role == null ? "" : String(entry.role).trim();
     const role = !raw || raw === "none" || raw === "unassigned" ? null : raw;
-    return { id: String(entry.id), role };
+    const hero = { id: String(entry.id), role };
+    if (typeof entry.name === "string" && entry.name.trim()) hero.name = entry.name.trim();
+    if (entry.worker !== undefined && entry.worker !== null) hero.worker = normalizeRosterWorker(entry.worker);
+    if (entry.avatar && typeof entry.avatar === "object" && entry.avatar.path) {
+      const ready = entry.avatar.ready === true;
+      hero.avatar = { path: String(entry.avatar.path), ready, fallback: ready ? null : "glyph" };
+    }
+    return hero;
   }
   return null;
 }
