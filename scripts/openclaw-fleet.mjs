@@ -29,6 +29,8 @@
  * looks. `doctor` fails when a rendered prompt references a skill or script
  * that does not exist.
  */
+import { assertTailnetHost, assertTailnetUrl } from "./tailnet-transport.mjs";
+import { readTailscaleStatus } from "./tailscale-cli.mjs";
 import {
   readFileSync,
   writeFileSync,
@@ -976,12 +978,13 @@ export function saveGatewayConfig(data) {
 
 /** Point MBP chat at iMac (or any) OpenClaw gateway. */
 export function pointGateway({ host, port = "18789", token } = {}) {
-  const h =
+  let h =
     host?.trim() ||
     process.env.REMOTE_HOST?.trim() ||
     process.env.GOTCHIBOT_REMOTE_HOST?.trim() ||
     process.env.GOTCHIBOT_OPENCLAW_HOST?.trim();
   if (!h) throw new Error("need host (arg or REMOTE_HOST)");
+  h = assertTailnetHost(h, { local: true, status: () => readTailscaleStatus().json });
   let tok = token?.trim() || process.env.OPENCLAW_GATEWAY_TOKEN?.trim() || "";
   if (!tok) {
     for (const p of [`${ROOT}/../openclaw/.env`, `${homedir()}/Dev/openclaw/.env`]) {
@@ -1005,12 +1008,12 @@ export function gatewayUrl() {
     process.env.OPENCLAW_GATEWAY_URL?.trim() ||
     process.env.GOTCHIBOT_OPENCLAW_URL?.trim() ||
     "";
-  if (raw) return raw.replace(/\/$/, "");
+  if (raw) return assertTailnetUrl(raw.replace(/\/$/, ""), { local: true, status: () => readTailscaleStatus().json });
   const file = loadGatewayConfig();
-  if (file?.url) return String(file.url).replace(/\/$/, "");
+  if (file?.url) return assertTailnetUrl(String(file.url).replace(/\/$/, ""), { local: true, status: () => readTailscaleStatus().json });
   const port = process.env.OPENCLAW_GATEWAY_PORT || process.env.GOTCHIBOT_OPENCLAW_PORT || "18789";
   const host = process.env.GOTCHIBOT_OPENCLAW_HOST || "127.0.0.1";
-  return `http://${host}:${port}`;
+  return assertTailnetUrl(`http://${host}:${port}`, { local: true, status: () => readTailscaleStatus().json });
 }
 
 export function gatewayWsUrl() {

@@ -71,11 +71,20 @@ function hasOpencodeGoKey() {
   return !!process.env.OPENCODE_API_KEY;
 }
 
+function hasNvidiaNimKey() {
+  return !!(process.env.NVIDIA_API_KEY_GLM_5_3 || process.env.NVIDIA_API_KEY);
+}
+
 function buildPrefer(cfg) {
   const skip = new Set((cfg.skip || []).map(oc));
-  const base = (cfg.prefer || []).map(oc).filter((id) => !skip.has(id));
+  const nvidiaKeyPresent = hasNvidiaNimKey();
+  const base = (cfg.prefer || [])
+    .map(oc)
+    .filter((id) => !skip.has(id) && (!id.startsWith("nvidia/") || nvidiaKeyPresent));
   if (!hasOpencodeGoKey()) return base;
-  const go = (cfg.goPrefer || []).map(oc).filter((id) => !skip.has(id));
+  const go = (cfg.goPrefer || [])
+    .map(oc)
+    .filter((id) => !skip.has(id) && (!id.startsWith("nvidia/") || nvidiaKeyPresent));
   const seen = new Set(go);
   return [...go, ...base.filter((id) => !seen.has(id))];
 }
@@ -128,10 +137,12 @@ export function workingModelCandidates({ includeGo = true } = {}) {
   const now = Date.now();
   const skip = new Set((cfg.skip || []).map(oc));
   const out = [];
+  const nvidiaKeyPresent = hasNvidiaNimKey();
   const push = (id) => {
     const m = oc(id);
     if (!m || skip.has(m) || out.includes(m)) return;
     if (m.startsWith("opencode-go/") && !includeGo && !hasOpencodeGoKey()) return;
+    if (m.startsWith("nvidia/") && !nvidiaKeyPresent) return;
     if (cache.cooldown?.[m] && now < cache.cooldown[m]) return;
     out.push(m);
   };
@@ -147,17 +158,23 @@ export async function pickSubagentModel({ json = false } = {}) {
   const cache = loadCache();
   const now = Date.now();
   const goKeyPresent = hasOpencodeGoKey();
+  const nvidiaKeyPresent = hasNvidiaNimKey();
   const fallback = cfg.subagentFallback || "opencode/big-pickle";
 
   // Free Zen first (no Go key required). Skip opencode-go/* unless Go key is present.
   const prefer = (cfg.subagentPrefer || []).map(oc);
   for (const model of prefer) {
     if (model.startsWith("opencode-go/") && !goKeyPresent) continue;
+    if (model.startsWith("nvidia/") && !nvidiaKeyPresent) continue;
     if (cache.cooldown?.[model] && now < cache.cooldown[model]) continue;
     const result = {
       route: "spawn",
       model,
-      reason: model.startsWith("opencode-go/") ? "subagent-prefer-go" : "subagent-prefer-zen-free",
+      reason: model.startsWith("nvidia/")
+        ? "subagent-prefer-nvidia-nim"
+        : model.startsWith("opencode-go/")
+          ? "subagent-prefer-go"
+          : "subagent-prefer-zen-free",
       cached: false,
     };
     if (json) return result;
@@ -261,6 +278,7 @@ if (isCli) {
         prefer: cfg.prefer,
         effectivePrefer: buildPrefer(cfg),
         opencodeKey: hasOpencodeKey(),
+        nvidiaKey: hasNvidiaNimKey(),
         lastResort: cfg.lastResort,
         cache: loadCache(),
       };

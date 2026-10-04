@@ -12,7 +12,11 @@
     "status": "optional — key in abra project 'gotchibot'",
     "baseURL": "https://integrate.api.nvidia.com/v1",
     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
-    "keyEnv": "NVIDIA_API_KEY (abracadabra project 'gotchibot')"
+    "model2": "nvidia/z-ai/glm-5.3",
+    "provider2": "nvidia",
+    "keyEnv": "NVIDIA_API_KEY (abracadabra project 'gotchibot'; nemotron-3.5-lightning-30b-a3b fallback via provider id nvidia-nim in the global opencode config)",
+    "keyEnv2": "NVIDIA_API_KEY_GLM_5_3 (abracadabra project 'gotchibot'; z-ai/glm-5.3 via provider id nvidia in the repo opencode config, model id nvidia/z-ai/glm-5.3)",
+    "note": "Two NIM keys now live in abra project 'gotchibot'. NVIDIA_API_KEY remains for the nemotron fallback; NVIDIA_API_KEY_GLM_5_3 is for GLM 5.3."
   },
   "interim": {
     "provider": "cloudflare-workers-ai",
@@ -32,6 +36,7 @@
   "$fallbacksNote": "No local Ollama/llama and no Gemini (decision 2026-09-25). Hosted providers only: OpenCode, NVIDIA NIM, Cloudflare Workers AI.",
   "fallbacks": [
     "opencode-go/glm-5.3-flash (OpenCode Go; hub-runner pin)",
+    "nvidia/z-ai/glm-5.3 (NVIDIA NIM GLM 5.3; needs NVIDIA_API_KEY_GLM_5_3)",
     "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b (NVIDIA NIM; needs NVIDIA_API_KEY)",
     "cloudflare-workers-ai @cf/zai-org/glm-5.2 (interim; free tier)"
   ]

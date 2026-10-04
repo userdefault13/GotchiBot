@@ -547,6 +547,29 @@ describe("desk threads on the Hub (Mongo)", async () => {
     assert.equal(deskTurn.threadKind, "desk");
   });
 
+  it("recovery inventory paginates all visible threads without skipping when updatedAt changes", async () => {
+    const desk = await token('desk');
+    await store.ensureDeskThread({ slug: 'recover-a', title: 'Recovery A' });
+    await store.ensureDeskThread({ slug: 'recover-b', title: 'Recovery B' });
+    const first = await get('/api/gotchibot/chats/threads?paginate=1&limit=1', desk);
+    assert.equal(first.data.threads.length, 1);
+    assert.equal(first.data.hasMore, true);
+    const seen = [first.data.threads[0].threadId];
+    let after = first.data.nextAfter;
+    await store.db.collection('chat_threads').updateMany({}, { $set: { updatedAt: new Date() } });
+    for (let page = 0; page < 20; page++) {
+      const next = await get(`/api/gotchibot/chats/threads?paginate=1&limit=1&after=${encodeURIComponent(after)}`, desk);
+      seen.push(...next.data.threads.map(t => t.threadId));
+      if (!next.data.hasMore) break;
+      assert.notEqual(next.data.nextAfter, after);
+      after = next.data.nextAfter;
+    }
+    assert.equal(new Set(seen).size, seen.length);
+    assert.ok(seen.includes('desk-recover-a'));
+    assert.ok(seen.includes('desk-recover-b'));
+    assert.deepEqual(seen, [...seen].sort());
+  });
+
   it("phones cannot mint desk-* threads; session claims are race-safe", async () => {
     await assert.rejects(
       store.sendMessage({ desk: { deskId: "phone-c", kind: "phone" }, threadId: "desk-beta", text: "x" }),

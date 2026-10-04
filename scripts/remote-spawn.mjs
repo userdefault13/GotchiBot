@@ -29,6 +29,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const FORWARD = [
   "NVIDIA_API_KEY",
+  "NVIDIA_API_KEY_GLM_5_3",
   "OPENROUTER_API_KEY",
   "DEEPSEEK_API_KEY",
   "OPENCODE_API_KEY",

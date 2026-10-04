@@ -17,6 +17,7 @@ function q(s) {
 const FORWARD = [
   "AARCADE_GOTCHIBOT_SERVICE_SECRET",
   "NVIDIA_API_KEY",
+  "NVIDIA_API_KEY_GLM_5_3",
   "OPENROUTER_API_KEY",
   "DEEPSEEK_API_KEY",
   "GOTCHIBOT_OWNER",
@@ -125,6 +126,7 @@ try {
     (s || "")
       .replace(/DISCORD_BOT_TOKEN='[^']*'/g, "DISCORD_BOT_TOKEN='***'")
       .replace(/AARCADE_GOTCHIBOT_SERVICE_SECRET='[^']*'/g, "AARCADE_GOTCHIBOT_SERVICE_SECRET='***'")
+      .replace(/NVIDIA_API_KEY_GLM_5_3='[^']*'/g, "NVIDIA_API_KEY_GLM_5_3='***'")
       .replace(/NVIDIA_API_KEY='[^']*'/g, "NVIDIA_API_KEY='***'");
   process.stdout.write(scrub(r.stdout));
   process.stderr.write(scrub(r.stderr));

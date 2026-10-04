@@ -1567,7 +1567,7 @@ export async function connectStore({ mongoUri, dbName }) {
    * @param {{ limit?: number, desk?: object, project?: string|null }} [opts]
    * project: pstack slug, or "none" for threads with no project.
    */
-  async function listThreads({ limit = 100, desk, project } = {}) {
+  async function listThreads({ limit = 100, desk, project, paginate = false, after } = {}) {
     const lim = Math.min(500, Math.max(1, Number(limit) || 100));
     const visible = visibleThreadFilter(desk);
     let filter = visible;
@@ -1576,16 +1576,20 @@ export async function connectStore({ mongoUri, dbName }) {
     } else if (project != null && String(project).trim() !== "") {
       filter = { $and: [visible, { project: normalizeProjectSlug(project) }] };
     }
+    if (paginate && after) filter = { $and: [filter, { threadId: { $gt: String(after) } }] };
     const rows = await chatThreads
       .find(filter)
-      .sort({ updatedAt: -1 })
-      .limit(lim)
+      .sort(paginate ? { threadId: 1 } : { updatedAt: -1 })
+      .limit(paginate ? lim + 1 : lim)
       .toArray();
+    const hasMore = paginate && rows.length > lim;
+    if (hasMore) rows.pop();
     const isPhone = desk && deskKindOf(desk) === "phone";
     const isFullDesk = desk && deskKindOf(desk) === "desk";
     const callerId = desk?.deskId;
     return {
       ok: true,
+      ...(paginate ? { hasMore, nextAfter: rows.at(-1)?.threadId || after || null } : {}),
       threads: rows.map((t) => {
         const sharedIds = Array.isArray(t.sharedWithDeskIds)
           ? t.sharedWithDeskIds

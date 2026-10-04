@@ -13,7 +13,7 @@ import { normalizeChatArgs, redactSecrets, talkToHub } from "../mcp-servers/hub-
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV = {
   ...process.env,
-  GOTCHIBOT_DESK_API_BASE: "http://hub.test:8794",
+  GOTCHIBOT_DESK_API_BASE: "http://hub.test.ts.net:8794",
   GOTCHIBOT_DESK_TOKEN: "gbd_testtokenvalue",
 };
 

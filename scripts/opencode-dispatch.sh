@@ -552,7 +552,7 @@ if [ "\${GOTCHIBOT_AUTO_APPROVE:-1}" = "1" ]; then AUTO_FLAGS+=(--auto); fi
 SESSION_FLAGS=()
 if [ -n "$ses" ]; then SESSION_FLAGS+=(--session "$ses"); else SESSION_FLAGS+=(--title "gotchibot:$id"); fi
 run_opencode() {
-  if [ "\${GOTCHIBOT_SKIP_ABRA:-}" = "1" ] || [ -n "\${NVIDIA_API_KEY:-}\${OPENROUTER_API_KEY:-}\${DEEPSEEK_API_KEY:-}\${OPENCODE_API_KEY:-}\${OPENCODE_ZEN_API_KEY:-}" ]; then
+  if [ "\${GOTCHIBOT_SKIP_ABRA:-}" = "1" ] || [ -n "\${NVIDIA_API_KEY:-}\${NVIDIA_API_KEY_GLM_5_3:-}\${OPENROUTER_API_KEY:-}\${DEEPSEEK_API_KEY:-}\${OPENCODE_API_KEY:-}\${OPENCODE_ZEN_API_KEY:-}" ]; then
     opencode run -m "\$MODEL" "\${SESSION_FLAGS[@]}" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" >> "$dir/output.md" 2>> "$dir/output.log"
   elif command -v abra >/dev/null 2>&1; then
     abra run gotchibot -- opencode run -m "\$MODEL" "\${SESSION_FLAGS[@]}" --dir "$ROOT" "\${AUTO_FLAGS[@]}" "\$PROMPT" >> "$dir/output.md" 2>> "$dir/output.log"

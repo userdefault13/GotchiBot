@@ -626,7 +626,9 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
         if (req.method === "GET" && path === "/api/gotchibot/chats/threads") {
           const limit = url.searchParams.get("limit") || 100;
           const project = url.searchParams.get("project") || undefined;
-          const result = await store.listThreads({ limit, desk, project });
+          const paginate = url.searchParams.get("paginate") === "1";
+          const after = url.searchParams.get("after") || undefined;
+          const result = await store.listThreads({ limit, desk, project, paginate, after });
           return json(res, 200, result);
         }
 

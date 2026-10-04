@@ -2,7 +2,7 @@
 /**
  * Desk → Hub Claude bridge.
  *
- * Policy: remote desks on Tailscale/LAN ALWAYS use the Hub bridge
+ * Policy: remote desks on Tailscale ALWAYS use the Hub bridge
  * (never a local Claude). Prefer HTTP to Hub:45678; fall back to SSH.
  *
  *   abra run gotchibot -- ./scripts/gotchibot bridge "hello"

@@ -149,6 +149,17 @@ ensure_desk_receiver() {
 }
 ensure_desk_receiver
 
+# Paired desks must reconnect, resync and pass all recovery probes before chat.
+# A supervisor keeps retrying disruptions; startup waits for a fresh ready cycle.
+if [ -f "$ROOT/sessions/.hub.json" ] && [ ! -f "$ROOT/sessions/.hub-api.json" ]; then
+  until node "$ROOT/scripts/hub-desk-recovery.mjs" once; do
+    printf '%s\n' 'UserDefault, desk recovery is degraded; chat is waiting for the Hub and required health checks.'
+    sleep 30
+  done
+  nohup node "$ROOT/scripts/hub-desk-recovery.mjs" run >>"$ROOT/sessions/.recovery.log" 2>&1 &
+  disown 2>/dev/null || true
+fi
+
 # Sync persisted TTS preference into the chat pane environment.
 if [ -f "$ROOT/sessions/.tts.json" ] && command -v node >/dev/null; then
   eval "$(node -e "
@@ -431,7 +442,7 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
       if [ ! -x "$OPENCLAW_BIN" ]; then
         OPENCLAW_BIN=openclaw
       fi
-      if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ] \
+      if [ -z "${NVIDIA_API_KEY:-}${NVIDIA_API_KEY_GLM_5_3:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ] \
         && [ "${GOTCHIBOT_SKIP_ABRA:-}" != "1" ] \
         && command -v abra >/dev/null 2>&1; then
         if abra run gotchibot -- "$OPENCLAW_BIN" "${TUI_ARGS[@]}"; then
@@ -589,7 +600,7 @@ fi
 skip_abra=0
 if [ "${GOTCHIBOT_SKIP_ABRA:-}" = "1" ]; then
   skip_abra=1
-elif [ -n "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ]; then
+elif [ -n "${NVIDIA_API_KEY:-}${NVIDIA_API_KEY_GLM_5_3:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ]; then
   skip_abra=1
 fi
 
@@ -612,12 +623,12 @@ if [ "$skip_abra" != "1" ] && command -v abra >/dev/null 2>&1; then
     # Probe must prove secrets inject — `abra … true` can succeed with an empty vault.
     _abra_probe() {
       abra run gotchibot -- /usr/bin/printenv 2>/dev/null | \
-        grep -E '^(NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=' | \
+        grep -E '^(NVIDIA_API_KEY|NVIDIA_API_KEY_GLM_5_3|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=' | \
         grep -q .
     }
     if command -v perl >/dev/null 2>&1; then
       if perl -e 'alarm shift; exec @ARGV' "${GOTCHIBOT_ABRA_TIMEOUT:-25}" \
-        bash -c 'abra run gotchibot -- /usr/bin/printenv 2>/dev/null | grep -E "^(NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=" | grep -q .'; then
+        bash -c 'abra run gotchibot -- /usr/bin/printenv 2>/dev/null | grep -E "^(NVIDIA_API_KEY|NVIDIA_API_KEY_GLM_5_3|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)=" | grep -q .'; then
         abra_unlocked=1
       fi
     elif _abra_probe; then

@@ -385,20 +385,23 @@ function argValue(args, flag) {
   return null;
 }
 
+/** An explicit hero must never silently borrow another hero's traits or collateral. */
+export function selectCartridgeHero(roster, heroId, activeHeroId) {
+  if (heroId) {
+    const tokenId = tokenIdFromHeroId(heroId);
+    return roster.find(h => h.id === heroId) ||
+      (tokenId ? roster.find(h => String(h.sourceTokenId) === tokenId) : null) || null;
+  }
+  return roster.find(h => h.id === activeHeroId) || roster.find(h => h.active) || roster[0] || null;
+}
+
 async function loadCartridgeHero(heroId) {
   const meta = loadMeta();
   if (!meta?.cartridgeId || !existsSync(`${ROOT}/sessions/.identity.json`)) return null;
   try {
     if (!isSepoliaCartridgeId(meta.cartridgeId)) return null;
     const { heroes: roster } = await readSepoliaHeroes(meta.cartridgeId);
-    return (
-      roster.find((h) => h.id === heroId) ||
-      roster.find((h) => String(h.sourceTokenId) === String(tokenIdFromHeroId(heroId) || "")) ||
-      roster.find((h) => h.id === meta.activeHeroId) ||
-      roster.find((h) => h.active) ||
-      roster[0] ||
-      null
-    );
+    return selectCartridgeHero(roster, heroId, meta.activeHeroId);
   } catch {
     return null;
   }

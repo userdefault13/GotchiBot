@@ -3,7 +3,7 @@
  * Ask Hub VS Code Claude (gotchibot bridge) and print only the reply.
  * Orchestrator stays on big-pickle; this is a tool call, not a model switch.
  *
- * Remote desks on Tailscale/LAN ALWAYS use the Hub bridge (network HTTP → SSH).
+ * Remote desks on Tailscale ALWAYS use the Hub bridge (network HTTP → SSH).
  * Hub uses local :45678. Never nest abra from headless (Touch ID fails).
  */
 import { spawnSync } from "node:child_process";

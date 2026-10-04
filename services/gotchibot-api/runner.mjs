@@ -25,6 +25,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Same presence list as scripts/colabo.mjs hasKeys. */
 export const PROVIDER_KEY_NAMES = [
   "NVIDIA_API_KEY",
+  "NVIDIA_API_KEY_GLM_5_3",
   "OPENROUTER_API_KEY",
   "DEEPSEEK_API_KEY",
   "OPENCODE_API_KEY",
@@ -236,7 +237,7 @@ export function sanitizeRunnerError(value, max = 180) {
     .replace(/Bearer\s+\S+/gi, "Bearer ***")
     .replace(/sk-[A-Za-z0-9_-]+/g, "sk-***")
     .replace(
-      /(NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)\s*=\s*\S+/gi,
+      /(NVIDIA_API_KEY_GLM_5_3|NVIDIA_API_KEY|OPENROUTER_API_KEY|DEEPSEEK_API_KEY|OPENCODE_API_KEY|OPENCODE_ZEN_API_KEY)\s*=\s*\S+/gi,
       "$1=***",
     );
   s = s.replace(/\s+/g, " ").trim().slice(0, max);

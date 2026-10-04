@@ -18,7 +18,12 @@ export const OpenCodeGoKimiFix = async () => {
       const isGo =
         providerId === "opencode-go" ||
         (!providerId && /^(kimi-|glm-|grok-|minimax-|deepseek-)/i.test(modelId));
-      if (!isGo) return;
+      const isNvidia =
+        providerId === "nvidia-nim" ||
+        providerId === "nvidia" ||
+        /nemotron/i.test(modelId) ||
+        /nvidia/i.test(providerId);
+      if (!isGo && !isNvidia) return;
 
       const stripOrder = (obj) => {
         if (!obj || typeof obj !== "object") return;

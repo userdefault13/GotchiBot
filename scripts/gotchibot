@@ -894,6 +894,8 @@ case "$cmd" in
   passoff) exec node "$ROOT/scripts/passoff.mjs" "$@" ;;
   consult) exec node "$ROOT/scripts/gotchi-consult.mjs" "$@" ;;
   route) exec node "$ROOT/scripts/orch-route.mjs" "$@" ;;
+  recovery) exec node "$ROOT/scripts/hub-desk-recovery.mjs" "$@" ;;
+  recovery-service-plan) exec node "$ROOT/scripts/recovery-service-plan.mjs" "$@" ;;
   wake|desk-wake) exec node "$ROOT/scripts/desk-wake.mjs" "$@" ;;
   pstack)
     if [ "${1:-}" = "dossier" ]; then

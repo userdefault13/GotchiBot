@@ -29,6 +29,8 @@ import { hubPinPath, isArcadeSharedChatBase } from "./infra-client.mjs";
 import { hubRequest } from "./chat-hub-client.mjs";
 import { resolveApiConfig } from "../services/gotchibot-api/config.mjs";
 import { connectStore } from "../services/gotchibot-api/store.mjs";
+import { assertTailnetUrl } from "./tailnet-transport.mjs";
+import { readTailscaleStatus } from "./tailscale-cli.mjs";
 import { tailscaleBin } from "./tailscale-cli.mjs";
 
 function usage() {
@@ -484,7 +486,7 @@ async function cmdJoin(host, code, opts) {
     console.error("usage: gotchibot hub join <host> <code> [--name NAME]");
     process.exit(2);
   }
-  const base = resolveJoinBase(host);
+  const base = assertTailnetUrl(resolveJoinBase(host), { local: true, status: () => readTailscaleStatus().json });
   if (isArcadeSharedChatBase(base)) {
     console.error(
       "That host looks like Arcade shared chat — refuse. Use YOUR Hub MagicDNS or 100.x address.",
@@ -537,7 +539,7 @@ async function cmdJoin(host, code, opts) {
   }
 
   writeHubPinMerge({
-    tailscaleHost: hostWithoutSchemePort(host),
+    tailscaleHost: new URL(base).hostname,
     deskApiBase: base,
     deskId,
     deskToken,

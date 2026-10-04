@@ -48,3 +48,4 @@ sessions/.wisp.env
 sessions/.wisp.json
 
 sessions/.opencode-agent-sessions.json
+config/recovery.json

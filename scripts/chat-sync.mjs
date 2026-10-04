@@ -61,6 +61,7 @@ function parseArgs(argv) {
     if (a === "--thread" || a === "-t") out.thread = argv[++i];
     else if (a === "--since") out.since = argv[++i];
     else if (a === "--after") out.after = argv[++i];
+    else if (a === "--max-pages") out.maxPages = Number(argv[++i]);
     else if (a === "--file" || a === "-f") out.file = argv[++i];
     else if (a === "--title") out.title = argv[++i];
     else if (a === "--commit") out.commit = argv[++i];
@@ -160,6 +161,8 @@ async function cmdPush(opts) {
 
 async function cmdPull(opts) {
   const threadId = opts.thread || DEFAULT_THREAD;
+  const pageCap = opts.maxPages ?? PULL_PAGE_CAP;
+  if (!Number.isInteger(pageCap) || pageCap < 1 || pageCap > PULL_PAGE_CAP) throw new Error('invalid --max-pages');
   if (opts.since != null) {
     console.warn("warning: --since is deprecated (seq cursor); use --after <seq>");
   }
@@ -178,11 +181,11 @@ async function cmdPull(opts) {
   let pages = 0;
   let lastResult = { ok: true, threadId, messages: [], nextAfter: after ?? null, hasMore: false };
 
-  while (hasMore && pages < PULL_PAGE_CAP) {
+  while (hasMore && pages < pageCap) {
     pages += 1;
     const query = { threadId, limit: 500 };
     if (nextAfter != null) query.after = nextAfter;
-    lastResult = await hubRequest("GET", "/api/gotchibot/chats/pull", { query });
+    lastResult = await hubRequest("GET", "/api/gotchibot/chats/pull", { query, signal: AbortSignal.timeout(8000) });
     const batch = lastResult.messages || [];
     all.push(...batch);
     nextAfter = lastResult.nextAfter;
@@ -190,6 +193,7 @@ async function cmdPull(opts) {
     if (!batch.length) break;
   }
 
+  // Persist progress, but never report a capped/incomplete pull as recovered.
   const startAfter = after ?? null;
   cur[threadId] = {
     ...(cur[threadId] || {}),
@@ -197,16 +201,16 @@ async function cmdPull(opts) {
     lastSeq: nextAfter ?? cur[threadId]?.lastSeq,
     pulledAt: new Date().toISOString(),
   };
-  saveCursor(cur);
-
   const result = {
     ...lastResult,
     messages: all,
     nextAfter,
-    hasMore: false,
+    hasMore,
   };
   const outPath = `${SESSIONS}/.chat-sync-pull-${threadId}.json`;
   writeFileSync(outPath, `${JSON.stringify(result, null, 2)}\n`);
+  saveCursor(cur);
+  if (hasMore) throw new Error("Chat pull incomplete; retry from persisted cursor");
   if (opts.json) console.log(JSON.stringify(result));
   else {
     console.log(`pulled ${all.length} (after ${startAfter ?? "∅"} → ${nextAfter ?? startAfter ?? "∅"})`);

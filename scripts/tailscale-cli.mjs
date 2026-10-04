@@ -13,7 +13,7 @@ let cachedBin;
 
 export function tailscaleBin() {
   if (cachedBin !== undefined) return cachedBin;
-  const r = spawnSync("tailscale", ["version"], { stdio: "ignore" });
+  const r = spawnSync("tailscale", ["version"], { stdio: "ignore", timeout: 5000 });
   if (!r.error) cachedBin = "tailscale";
   else if (process.platform === "darwin" && existsSync(MAC_APP_CLI)) cachedBin = MAC_APP_CLI;
   else cachedBin = null;

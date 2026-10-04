@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
  * Shared Claude bridge role + URL resolution.
- * Desk (remote clients on Tailscale/LAN) always use Hub bridge — never a local Claude.
+ * Desk (remote clients on Tailscale) always use Hub bridge — never a local Claude.
  * Hub uses localhost :45678. Docker uses host.docker.internal.
  */
+import { assertTailnetHost, assertTailnetUrl } from "./tailnet-transport.mjs";
+import { readTailscaleStatus } from "./tailscale-cli.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -41,20 +43,21 @@ export function isHubMachine() {
   return false;
 }
 
-/** Hub Tailscale / MagicDNS / LAN hostname for network desks. */
+/** Hub Tailscale / MagicDNS hostname for network desks. */
 export function hubNetworkHost() {
-  return (
+  const host = (
     process.env.GOTCHIBOT_HUB_HOST?.trim() ||
     process.env.REMOTE_HOST?.trim() ||
     process.env.GOTCHIBOT_REMOTE_HOST?.trim() ||
     loadHubBridgeConfig().host ||
     "hub"
   );
+  return assertTailnetHost(host, { status: () => readTailscaleStatus().json });
 }
 
 export function hubBridgeHttpUrl() {
   if (process.env.GOTCHIBOT_BRIDGE_URL?.trim()) {
-    const u = process.env.GOTCHIBOT_BRIDGE_URL.trim();
+    const u = assertTailnetUrl(process.env.GOTCHIBOT_BRIDGE_URL.trim(), { local: inDocker() || isHubMachine(), status: () => readTailscaleStatus().json });
     return u.endsWith("/prompt") ? u : `${u.replace(/\/$/, "")}/prompt`;
   }
   const cfg = loadHubBridgeConfig();
@@ -66,14 +69,14 @@ export function hubBridgeHttpUrl() {
   if (isHubMachine()) {
     return `http://127.0.0.1:${port}${path.startsWith("/") ? path : `/${path}`}`;
   }
-  // Desk / remote client on same Tailscale/LAN → Hub bridge over the network
+  // Desk / remote client on same Tailscale → Hub bridge over the network
   return `http://${hubNetworkHost()}:${port}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 /**
  * @returns {"local"|"imac"|"network"}
  * - local: Hub (or Docker → host bridge)
- * - network: Desk HTTP to Hub:45678 (same Tailscale/LAN)
+ * - network: Desk HTTP to Hub:45678 (same Tailscale)
  * - imac: Desk SSH tunnel POST (fallback when HTTP blocked)
  */
 export function resolveClaudeHostMode(explicit) {

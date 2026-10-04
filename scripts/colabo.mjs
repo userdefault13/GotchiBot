@@ -124,6 +124,7 @@ async function runAgent(agentId, message, timeoutS) {
 
   const hasKeys = !!(
     process.env.NVIDIA_API_KEY ||
+    process.env.NVIDIA_API_KEY_GLM_5_3 ||
     process.env.OPENROUTER_API_KEY ||
     process.env.DEEPSEEK_API_KEY ||
     process.env.OPENCODE_API_KEY ||

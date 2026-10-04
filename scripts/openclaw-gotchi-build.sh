@@ -43,6 +43,7 @@ cp "$PATCH_DIR/gotchi-system-tray.ts" "$OPENCLAW_SRC/src/tui/components/gotchi-s
 cp "$PATCH_DIR/tool-execution.ts" "$OPENCLAW_SRC/src/tui/components/tool-execution.ts"
 cp "$PATCH_DIR/commands.ts" "$OPENCLAW_SRC/src/tui/commands.ts"
 cp "$PATCH_DIR/tui-command-handlers.ts" "$OPENCLAW_SRC/src/tui/tui-command-handlers.ts"
+cp "$PATCH_DIR/tui-plugin-approvals.ts" "$OPENCLAW_SRC/src/tui/tui-plugin-approvals.ts"
 cp "$PATCH_DIR/tui.ts" "$OPENCLAW_SRC/src/tui/tui.ts"
 cp "$PATCH_DIR/theme.ts" "$OPENCLAW_SRC/src/tui/theme/theme.ts"
 cp "$PATCH_DIR/opencode-palette.ts" "$OPENCLAW_SRC/src/tui/theme/opencode-palette.ts"

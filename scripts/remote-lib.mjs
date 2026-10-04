@@ -14,6 +14,9 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
+import { assertTailnetHost } from "./tailnet-transport.mjs";
+import { readTailscaleStatus } from "./tailscale-cli.mjs";
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function hubPinHost() {
@@ -27,8 +30,9 @@ function hubPinHost() {
 }
 
 export function remoteConfig() {
-  const host =
+  let host =
     process.env.REMOTE_HOST || process.env.GOTCHIBOT_REMOTE_HOST || hubPinHost() || "";
+  if (host) host = assertTailnetHost(host, { status: () => readTailscaleStatus().json });
   const user = process.env.REMOTE_USER || process.env.GOTCHIBOT_REMOTE_USER || "";
   let dir = (process.env.REMOTE_DIR || process.env.GOTCHIBOT_REMOTE_DIR || "").trim();
   if (!dir || dir.includes("$HOME") || dir.startsWith("~/")) {
@@ -83,6 +87,7 @@ export function materializeKey(privateKey) {
 }
 
 export function sshArgs(cfg, keyPath, remoteCommand) {
+  cfg = { ...cfg, host: assertTailnetHost(cfg.host, { status: () => readTailscaleStatus().json }) };
   const target = `${cfg.user}@${cfg.host}`;
   const base = [
     "-o",
@@ -150,6 +155,7 @@ export function sshSessionDirExists(cfg, keyPath, id) {
 }
 
 export function runScp(cfg, keyPath, localPaths, remoteSubdir = "sessions") {
+  cfg = { ...cfg, host: assertTailnetHost(cfg.host, { status: () => readTailscaleStatus().json }) };
   const baseDir = cfg.dir.replace(/\/$/, "");
   const targetDir = `${cfg.user}@${cfg.host}:${baseDir}/${remoteSubdir}/`;
   const args = [

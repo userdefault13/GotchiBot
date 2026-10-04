@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { assertTailnetUrl } from "./tailnet-transport.mjs";
+import { readTailscaleStatus } from "./tailscale-cli.mjs";
 /**
  * Outbound auth helpers.
  *
@@ -212,7 +214,7 @@ export function assertChatDeskAllowed(env = process.env) {
     throw err;
   }
 
-  return { ok: true, base };
+  return { ok: true, base: assertTailnetUrl(base, { env, local: true, status: () => readTailscaleStatus().json }) };
 }
 
 export function resolveSubgraphUrl(subgraphName = "aavegotchi-core-base", env = process.env) {

@@ -1,11 +1,13 @@
 ---
 name: gotchibot-ssh
-description: SSH connection manager for GotchiBot — auto-detects home network (direct SSH) vs remote (Tailscale) and routes sub-agent spawns accordingly. Use when spawning agents on iMac or checking remote status.
+description: SSH over Tailscale for GotchiBot. LAN/direct transport selection is legacy and opt-in only.
 ---
 
 # GotchiBot SSH Skill
 
-Manages SSH connections to the home iMac orchestrator. Automatically detects network context and selects the optimal transport.
+Active policy: use the paired Hub's Tailscale IP or full MagicDNS name. No automatic LAN fallback. `scripts/tailnet-transport.mjs` enforces this in remote SSH, pairing, gateway and bridge clients. Short names must resolve from Tailscale status. See `docs/RECOVERY.md` for the active recovery workflow.
+
+The transport-selection process below is **legacy documentation only**. Existing installations can explicitly opt into compatibility with `GOTCHIBOT_LEGACY_DIRECT_ROUTING=1`; recovery ignores that opt-in and requires Tailscale. Do not start a LAN routing process as part of recovery.
 
 ## Behavior
 

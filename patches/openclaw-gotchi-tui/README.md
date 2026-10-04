@@ -63,3 +63,7 @@ OpenClaw and OpenCode are different TUIs (pi-tui vs OpenCode's). The legacy patc
 | Back to orchestrator | **Ctrl+O** in chat pane, or **Ctrl+b o** anywhere |
 | Switch to open meeting | **Ctrl+U** in OpenCode chat (existing meeting only); tmux **Ctrl+b m** or **Option+M** / **F8** |
 | Slash | `/orch` `/list` `/switch` `/cockpit` `/meet` `/details` (after build) |
+
+### Remembering authorization
+
+Plugin approval menus show **Allow once**, **Don’t ask again**, and **Deny** when the gateway offers all three decisions. “Don’t ask again” submits the existing `allow-always` decision: approve this request and matching future changes. The gateway owns persistence and the matching scope; this is not a blanket authorization for unrelated work. Requests that only allow one-time approval do not gain a persistent option. Apply with `scripts/openclaw-gotchi-build.sh`. This patch does not change the Codex app’s approval UI.

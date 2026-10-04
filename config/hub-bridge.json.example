@@ -1,6 +1,6 @@
 {
-  "$comment": "Copy to config/hub-bridge.json and set host to your Hub Tailscale MagicDNS name (or LAN hostname). Desks POST here — not a local Claude.",
-  "host": "YOUR-HUB-HOSTNAME",
+  "$comment": "Copy to config/hub-bridge.json and set host to your Hub Tailscale MagicDNS name (full .ts.net name). Desks POST here — not a local Claude.",
+  "host": "hub.YOUR-TAILNET.ts.net",
   "bridgePort": 45678,
   "bridgePath": "/prompt",
   "receiverPort": 45679

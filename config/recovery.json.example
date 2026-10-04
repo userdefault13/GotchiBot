@@ -1,0 +1,10 @@
+{
+  "role": "desk",
+  "runtime": "opencode",
+  "sshUser": "YOUR-HUB-USER",
+  "attempts": 4,
+  "backoffMs": 1000,
+  "intervalMs": 30000,
+  "healthUrls": {},
+  "repairServices": {}
+}

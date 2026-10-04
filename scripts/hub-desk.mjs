@@ -7,6 +7,8 @@
  *   gotchibot hub desk run [--once]                    desk runner (Hub; the systemd unit runs this)
  *   gotchibot hub desk service install|uninstall|status  Hub services (Linux): OpenCode server + desk runner
  */
+import { assertTailnetHost } from "./tailnet-transport.mjs";
+import { readTailscaleStatus } from "./tailscale-cli.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, copyFileSync, writeFileSync, rmSync } from "node:fs";
 import { homedir, platform } from "node:os";
@@ -117,11 +119,12 @@ async function openDesk(argv) {
   }
 
   const local = sameDir(desk.repoDir, ROOT);
-  const target = local ? null : sshTarget(argv);
+  let target = local ? null : sshTarget(argv);
   if (!local && !target) {
     console.error("first time on this machine: gotchibot hub desk ssh <user>@<hub-host>  (remembered after that)");
     return OPEN_EXIT.noSsh;
   }
+  if (target) target = `${target.split("@")[0]}@${assertTailnetHost(target.split("@").pop(), { status: () => readTailscaleStatus().json })}`;
   if (flagValue(argv, "--ssh")) writePrefs({ ssh: target });
 
   const syncEnv = follow ? deskSyncEnv(slug) : {};
@@ -158,7 +161,7 @@ async function newSession(argv) {
 }
 
 function sshCommand(argv) {
-  const value = argv[0];
+  let value = argv[0];
   if (!value) {
     console.log(readPrefs().ssh || "(not set) — gotchibot hub desk ssh <user>@<hub-host>");
     return 0;
@@ -167,6 +170,7 @@ function sshCommand(argv) {
     console.error("expected <user>@<hub-host>, e.g. user_default@imacomarchy");
     return 1;
   }
+  value = `${value.split("@")[0]}@${assertTailnetHost(value.split("@").pop(), { status: () => readTailscaleStatus().json })}`;
   writePrefs({ ssh: value });
   console.log(`hub desk ssh target: ${value}`);
   return 0;

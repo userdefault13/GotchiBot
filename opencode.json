@@ -21,6 +21,19 @@
         }
       }
     },
+    "nvidia": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "NVIDIA NIM (GLM 5.3)",
+      "options": {
+        "baseURL": "https://integrate.api.nvidia.com/v1",
+        "apiKey": "{env:NVIDIA_API_KEY_GLM_5_3}"
+      },
+      "models": {
+        "z-ai/glm-5.3": {
+          "name": "GLM 5.3 (NVIDIA NIM)"
+        }
+      }
+    },
     "claudemode": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "@claudemode (Hub VS Code Claude)",
