@@ -100,6 +100,8 @@ MINI="${GOTCHIBOT_OPENCODE_MINI:-0}"
 REPLAY="${GOTCHIBOT_OPENCODE_REPLAY:-1}"
 REPLAY_LIMIT="${GOTCHIBOT_OPENCODE_REPLAY_LIMIT:-}"
 export OPENCODE_TUI_CONFIG="${GOTCHIBOT_TUI_CONFIG:-$ROOT/config/tui.json}"
+# OC_DIR may be another project checkout; keep gotchi/sandbox/verse/ask from $ROOT/.opencode.
+export OPENCODE_CONFIG_DIR="$ROOT/.opencode"
 # Hex gotchi theme needs truecolor (OpenCode path — not only legacy OpenClaw).
 export COLORTERM="${COLORTERM:-truecolor}"
 # Wheel scrolls the transcript scrollbar. gotchi-chat-scroll drops wheel events on the
