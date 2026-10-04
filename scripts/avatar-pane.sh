@@ -77,6 +77,13 @@ case "${TUI_COLOR}" in
     ;;
 esac
 
+# Background behind the selected sub-agent card. Empty when color is off.
+case "${TUI_COLOR}" in
+  none) AV_SEL_BG="" ;;
+  16) AV_SEL_BG=$'\033[100m' ;;
+  *) AV_SEL_BG=$'\033[48;5;236m' ;;
+esac
+
 if [ "${TUI_GLYPHS}" = "ascii" ]; then
   AV_ARROW_L="<"
   AV_ARROW_R=">"
@@ -262,7 +269,15 @@ CTRL_ROW=-1
 CTRL_COLS=0
 PAGE_FILE="$SESSIONS/.avatar-roster-page"
 PAGE_ENV="$SESSIONS/.avatar-page.env"
+SEL_FILE="$SESSIONS/.avatar-sel.env"
 AVATAR_PID="$SESSIONS/.avatar-pane.pid"
+SEL=0
+MODAL=0
+SEL_SIG=""
+EXPANDED=0
+N_IDS=0
+PAGE_SIZE=12
+SEL_COLS=4
 
 load_page() {
   PAGE=0
@@ -283,6 +298,10 @@ load_page_env() {
   NPAGES=1
   CTRL_ROW=-1
   CTRL_COLS=0
+  EXPANDED=0
+  N_IDS=0
+  PAGE_SIZE=12
+  SEL_COLS=4
   if [ -f "$PAGE_ENV" ]; then
     # shellcheck disable=SC1090
     . "$PAGE_ENV" 2>/dev/null || true
@@ -290,6 +309,10 @@ load_page_env() {
   case "${NPAGES:-}" in ''|*[!0-9]*) NPAGES=1 ;; esac
   case "${CTRL_ROW:-}" in ''|-*|*[!0-9]*) ;; esac
   case "${CTRL_COLS:-}" in ''|*[!0-9]*) CTRL_COLS=0 ;; esac
+  case "${EXPANDED:-}" in 1) EXPANDED=1 ;; *) EXPANDED=0 ;; esac
+  case "${N_IDS:-}" in ''|*[!0-9]*) N_IDS=0 ;; esac
+  case "${PAGE_SIZE:-}" in ''|*[!0-9]*) PAGE_SIZE=12 ;; esac
+  case "${SEL_COLS:-}" in ''|*[!0-9]*) SEL_COLS=4 ;; esac
 }
 
 save_page_env() {
@@ -297,6 +320,10 @@ save_page_env() {
 NPAGES=${NPAGES:-1}
 CTRL_ROW=${CTRL_ROW:--1}
 CTRL_COLS=${CTRL_COLS:-0}
+EXPANDED=${EXPANDED:-0}
+N_IDS=${N_IDS:-0}
+PAGE_SIZE=${PAGE_SIZE:-12}
+SEL_COLS=${SEL_COLS:-4}
 EOF
 }
 
@@ -343,6 +370,213 @@ page_end() {
     PAGE=0
   fi
   save_page
+}
+
+# Blank rows above a block so the remainder sits below (equal, odd row below).
+expanded_vpad() {
+  local pane_h="${1:-0}" block_h="${2:-0}"
+  EXPANDED_TOP=0
+  EXPANDED_BOTTOM=0
+  case "$pane_h" in ''|*[!0-9]*) pane_h=0 ;; esac
+  case "$block_h" in ''|*[!0-9]*) block_h=0 ;; esac
+  if [ "$pane_h" -gt "$block_h" ]; then
+    EXPANDED_TOP=$(( (pane_h - block_h) / 2 ))
+    EXPANDED_BOTTOM=$(( pane_h - block_h - EXPANDED_TOP ))
+  fi
+}
+
+load_sel() {
+  SEL=0
+  MODAL=0
+  SEL_SIG=""
+  if [ -f "$SEL_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$SEL_FILE" 2>/dev/null || true
+  fi
+  case "${SEL:-}" in ''|*[!0-9]*) SEL=0 ;; esac
+  case "${MODAL:-}" in 1) MODAL=1 ;; *) MODAL=0 ;; esac
+  case "${SEL_SIG:-}" in *[!0-9]*) SEL_SIG="" ;; esac
+}
+
+save_sel() {
+  mkdir -p "$SESSIONS"
+  local tmp="$SEL_FILE.tmp"
+  {
+    printf 'SEL=%s\n' "${SEL:-0}"
+    printf 'MODAL=%s\n' "${MODAL:-0}"
+    printf 'SEL_SIG=%s\n' "${SEL_SIG:-}"
+  } > "$tmp"
+  mv "$tmp" "$SEL_FILE"
+}
+
+# This pane has no input line, so space opens the sub-agent modal.
+# A future prompt must echo its length here so space is not stolen while typing.
+avatar_prompt_len() {
+  printf '0'
+}
+
+# Move the sub-agent cursor. Prints sel= and page=. Does not touch files.
+# Past the edge of a page, step onto the next page instead of sticking.
+select_move_pure() {
+  local dir="$1" sel="$2" n="$3" page_size="$4" cols="$5"
+  local page local_i n_on_page npages col
+  case "$sel" in ''|*[!0-9]*) sel=0 ;; esac
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  case "$page_size" in ''|0|*[!0-9]*) page_size=1 ;; esac
+  case "$cols" in ''|0|*[!0-9]*) cols=1 ;; esac
+  if [ "$n" -lt 1 ]; then
+    printf 'sel=0\npage=0\n'
+    return 0
+  fi
+  [ "$sel" -ge "$n" ] && sel=$((n - 1))
+  npages=$(( (n + page_size - 1) / page_size ))
+  page=$((sel / page_size))
+  local_i=$((sel % page_size))
+  n_on_page=$((n - page * page_size))
+  [ "$n_on_page" -gt "$page_size" ] && n_on_page=$page_size
+  col=$((local_i % cols))
+  case "$dir" in
+    right)
+      if [ $((local_i + 1)) -lt "$n_on_page" ]; then
+        sel=$((sel + 1))
+      elif [ $((page + 1)) -lt "$npages" ]; then
+        sel=$(( (page + 1) * page_size ))
+      else
+        sel=$((page * page_size))
+      fi
+      ;;
+    left)
+      if [ "$local_i" -gt 0 ]; then
+        sel=$((sel - 1))
+      elif [ "$page" -gt 0 ]; then
+        local prev_page=$((page - 1)) prev_n
+        prev_n=$((n - prev_page * page_size))
+        [ "$prev_n" -gt "$page_size" ] && prev_n=$page_size
+        sel=$((prev_page * page_size + prev_n - 1))
+      else
+        sel=$((page * page_size + n_on_page - 1))
+      fi
+      ;;
+    down)
+      if [ $((local_i + cols)) -lt "$n_on_page" ]; then
+        sel=$((sel + cols))
+      elif [ $((page + 1)) -lt "$npages" ]; then
+        local next_page=$((page + 1)) next_n target
+        next_n=$((n - next_page * page_size))
+        [ "$next_n" -gt "$page_size" ] && next_n=$page_size
+        target=$col
+        [ "$target" -ge "$next_n" ] && target=$((next_n - 1))
+        sel=$((next_page * page_size + target))
+      else
+        local target=$col
+        [ "$target" -ge "$n_on_page" ] && target=$((n_on_page - 1))
+        sel=$((page * page_size + target))
+      fi
+      ;;
+    up)
+      if [ "$local_i" -ge "$cols" ]; then
+        sel=$((sel - cols))
+      elif [ "$page" -gt 0 ]; then
+        local prev_page=$((page - 1)) prev_n last_row target
+        prev_n=$((n - prev_page * page_size))
+        [ "$prev_n" -gt "$page_size" ] && prev_n=$page_size
+        last_row=$(( ((prev_n - 1) / cols) * cols ))
+        target=$((last_row + col))
+        [ "$target" -ge "$prev_n" ] && target=$((prev_n - 1))
+        sel=$((prev_page * page_size + target))
+      else
+        local last_row target
+        last_row=$(( ((n_on_page - 1) / cols) * cols ))
+        target=$((last_row + col))
+        [ "$target" -ge "$n_on_page" ] && target=$((n_on_page - 1))
+        sel=$((page * page_size + target))
+      fi
+      ;;
+  esac
+  page=$((sel / page_size))
+  printf 'sel=%s\npage=%s\n' "$sel" "$page"
+}
+
+# EXPANDED=1 only after a focused expanded paint. Otherwise return 1 so
+# ←/→ keep paging and space is not stolen.
+apply_select_key() {
+  local key="$1"
+  local prompt=0 moved sel_out page_out
+  load_page
+  load_page_env
+  load_sel
+  if [ "${EXPANDED:-0}" != 1 ]; then
+    return 1
+  fi
+  local n="${N_IDS:-0}" ps="${PAGE_SIZE:-12}" cols="${SEL_COLS:-4}"
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  case "$ps" in ''|0|*[!0-9]*) ps=12 ;; esac
+  case "$cols" in ''|0|*[!0-9]*) cols=4 ;; esac
+  case "$key" in
+    left|right|up|down)
+      [ "$n" -ge 1 ] || return 1
+      moved="$(select_move_pure "$key" "$SEL" "$n" "$ps" "$cols")"
+      sel_out="$(printf '%s\n' "$moved" | awk -F= '/^sel=/{print $2}')"
+      page_out="$(printf '%s\n' "$moved" | awk -F= '/^page=/{print $2}')"
+      case "$sel_out" in ''|*[!0-9]*) return 1 ;; esac
+      case "$page_out" in ''|*[!0-9]*) return 1 ;; esac
+      SEL="$sel_out"
+      PAGE="$page_out"
+      MODAL=0
+      save_sel
+      save_page
+      return 0
+      ;;
+    space)
+      prompt="$(avatar_prompt_len)"
+      case "$prompt" in ''|*[!0-9]*) prompt=0 ;; esac
+      [ "$prompt" -gt 0 ] && return 1
+      [ "$n" -ge 1 ] || return 1
+      if [ "${MODAL:-0}" = 1 ]; then
+        MODAL=0
+      else
+        MODAL=1
+      fi
+      save_sel
+      return 0
+      ;;
+    esc)
+      [ "${MODAL:-0}" = 1 ] || return 1
+      MODAL=0
+      save_sel
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+# Index 0 when the pane opens or the ordered roster changes. Off-page cursors
+# snap to the page (h/l and prefix P/N), so the highlight stays visible.
+settle_selection() {
+  local ids_text="$1" n_ids="$2" page_size="$3" sig page_start
+  case "$n_ids" in ''|*[!0-9]*) n_ids=0 ;; esac
+  case "$page_size" in ''|0|*[!0-9]*) page_size=1 ;; esac
+  sig="$(printf '%s\n' "$ids_text" | awk -F '\037' 'NF { print $1 }' | cksum | awk '{print $1}')"
+  load_sel
+  if [ "$SEL_SIG" != "$sig" ]; then
+    SEL=0
+    MODAL=0
+    SEL_SIG="$sig"
+  fi
+  if [ "$n_ids" -le 0 ]; then
+    SEL=0
+    MODAL=0
+  elif [ "$SEL" -ge "$n_ids" ]; then
+    SEL=$((n_ids - 1))
+    MODAL=0
+  fi
+  page_start=$((PAGE * page_size))
+  if [ "$n_ids" -gt 0 ] && { [ "$SEL" -lt "$page_start" ] || [ "$SEL" -ge $((page_start + page_size)) ]; }; then
+    SEL=$page_start
+    [ "$SEL" -ge "$n_ids" ] && SEL=$((n_ids - 1))
+    MODAL=0
+  fi
+  save_sel
 }
 
 # tmux #{mouse_x}/#{mouse_y} are 0-based. Control row: left third = prev, right third = next.
@@ -414,6 +648,11 @@ pin_avatar_history() {
 watch_enter() {
   alt_screen_enter
   pin_avatar_history
+  # Pane open: selector starts on the first sub-agent.
+  SEL=0
+  MODAL=0
+  SEL_SIG=""
+  save_sel
 }
 
 watch_leave() {
@@ -453,6 +692,7 @@ handle_x10_mouse() {
 handle_esc() {
   local ch="" acc=""
   if ! read_seq_char; then
+    if apply_select_key esc; then return 0; fi
     return 1
   fi
   ch="$REPLY"
@@ -477,9 +717,15 @@ handle_esc() {
       acc="${acc}${REPLY}"
     done
     case "$acc" in
-      # ← / → page the roster (not ↑/↓ — those stay unused here)
-      D|*D) page_prev; return 0 ;;
-      C|*C) page_next; return 0 ;;
+      # Expanded avatar: arrows move the sub-agent selector. Else ←/→ page.
+      A|*A) if apply_select_key up; then return 0; fi; return 1 ;;
+      B|*B) if apply_select_key down; then return 0; fi; return 1 ;;
+      D|*D)
+        if apply_select_key left; then return 0; fi
+        page_prev; return 0 ;;
+      C|*C)
+        if apply_select_key right; then return 0; fi
+        page_next; return 0 ;;
       H|*H) page_home; return 0 ;;
       F|*F) page_end; return 0 ;;
       1~|7~) page_home; return 0 ;;
@@ -492,8 +738,14 @@ handle_esc() {
       return 1
     fi
     case "$REPLY" in
-      D) page_prev; return 0 ;;
-      C) page_next; return 0 ;;
+      A) if apply_select_key up; then return 0; fi; return 1 ;;
+      B) if apply_select_key down; then return 0; fi; return 1 ;;
+      D)
+        if apply_select_key left; then return 0; fi
+        page_prev; return 0 ;;
+      C)
+        if apply_select_key right; then return 0; fi
+        page_next; return 0 ;;
       H) page_home; return 0 ;;
       F) page_end; return 0 ;;
     esac
@@ -506,6 +758,10 @@ handle_esc() {
 handle_key() {
   local key="$1"
   case "$key" in
+    # No prompt in this pane: space opens or closes the sub-agent modal.
+    ' ')
+      if apply_select_key space; then return 0; fi
+      return 1 ;;
     # h/l aliases for ←/→; keep [ ]
     l|']') page_next; return 0 ;;
     h|'[') page_prev; return 0 ;;
@@ -1009,8 +1265,21 @@ loading_art() {
   done
 }
 
+# Selected mid card: shade the whole cell and bracket the three caption lines.
+emit_line() {
+  local text="$1"
+  if [ "${CELL_SELECTED:-0}" = 1 ] && [ -n "${AV_SEL_BG:-}" ]; then
+    text="${text//$'\033[0m'/${AV_RST}${AV_SEL_BG}}"
+    printf '%s%s%s\n' "$AV_SEL_BG" "$text" "$AV_RST"
+    return 0
+  fi
+  printf '%s\n' "$text"
+}
+
 cell_block() {
   local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}" role="${9:-}" loading="${10:-}" face="${11:-mini}"
+  CELL_SELECTED=0
+  [ "${12:-0}" = 1 ] && CELL_SELECTED=1
   local art label status_color
   case "$status" in
     working)
@@ -1084,18 +1353,31 @@ cell_block() {
       lp=$(( (pane_w - max_vis) / 2 ))
     fi
     for ((i = 0; i < ${#ART_LINES[@]}; i++)); do
-      block_pad_line "${ART_LINES[i]}" "$pane_w" "$lp"
-      printf '\n'
+      emit_line "$(block_pad_line "${ART_LINES[i]}" "$pane_w" "$lp")"
     done
   fi
-  printf '%b%s%b\n' "$status_color" "$(center_pad "$label" "$pane_w")" "$AV_RST"
-  id_show="${name:-$id}"
-  id_show="${id_show:0:$pane_w}"
-  printf '%b%s%b\n' "$AV_ROSTER" "$(center_pad "$id_show" "$pane_w")" "$AV_RST"
-  local role_show="${role//-/ }" role_color="$AV_ROLE_GAL"
-  [ -z "$role" ] && role_show="no role" && role_color="$AV_MUTED"
-  role_show="${role_show:0:$pane_w}"
-  printf '%b%s%b\n' "$role_color" "$(center_pad "$role_show" "$pane_w")" "$AV_RST"
+  if [ "$CELL_SELECTED" = 1 ]; then
+    local inner=$((pane_w - 2)) ml="[" mr="]"
+    [ "$inner" -lt 1 ] && inner=1
+    [ "${TUI_GLYPHS}" != "ascii" ] && ml="▌" && mr="▐"
+    emit_line "$(printf '%b%s%b%s%b%s%b' "$AV_LIT" "$ml" "$status_color" "$(center_pad "$label" "$inner")" "$AV_LIT" "$mr" "$AV_RST")"
+    id_show="${name:-$id}"
+    id_show="${id_show:0:$inner}"
+    emit_line "$(printf '%b%s%b%s%b%s%b' "$AV_LIT" "$ml" "$AV_ROSTER" "$(center_pad "$id_show" "$inner")" "$AV_LIT" "$mr" "$AV_RST")"
+    local role_show="${role//-/ }" role_color="$AV_ROLE_GAL"
+    [ -z "$role" ] && role_show="no role" && role_color="$AV_MUTED"
+    role_show="${role_show:0:$inner}"
+    emit_line "$(printf '%b%s%b%s%b%s%b' "$AV_LIT" "$ml" "$role_color" "$(center_pad "$role_show" "$inner")" "$AV_LIT" "$mr" "$AV_RST")"
+  else
+    emit_line "$(printf '%b%s%b' "$status_color" "$(center_pad "$label" "$pane_w")" "$AV_RST")"
+    id_show="${name:-$id}"
+    id_show="${id_show:0:$pane_w}"
+    emit_line "$(printf '%b%s%b' "$AV_ROSTER" "$(center_pad "$id_show" "$pane_w")" "$AV_RST")"
+    local role_show="${role//-/ }" role_color="$AV_ROLE_GAL"
+    [ -z "$role" ] && role_show="no role" && role_color="$AV_MUTED"
+    role_show="${role_show:0:$pane_w}"
+    emit_line "$(printf '%b%s%b' "$role_color" "$(center_pad "$role_show" "$pane_w")" "$AV_RST")"
+  fi
 }
 
 render_main_art() {
@@ -1358,6 +1640,73 @@ roster_pad_line() {
   printf '%*s%s' "$pad" '' "$text"
 }
 
+
+repeat_char() {
+  local ch="$1" n="$2" i out=""
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  for ((i = 0; i < n; i++)); do
+    out="${out}${ch}"
+  done
+  printf '%s' "$out"
+}
+
+modal_put() {
+  local row="$1" col="$2" text="$3"
+  [ "$row" -ge 0 ] || return 0
+  [ "$col" -lt 0 ] && col=0
+  printf '\033[%d;%dH%s' "$((row + 1))" "$((col + 1))" "$text"
+  [ "$row" -gt "$RENDER_MAX_ROW" ] && RENDER_MAX_ROW="$row"
+}
+
+# Dossier-style overlay for the selected sub-agent. Display only.
+# Close with esc or space (same keys the pane already handles).
+draw_sub_modal() {
+  local name="$1" role="$2" status="$3" cols="$4" pane_h="$5" id="$6"
+  [ -n "$name" ] || name="${id:-sub-agent}"
+  local role_show="${role//-/ }"
+  [ -z "$role" ] && role_show="no role"
+  [ -n "$status" ] || status="available"
+  local tl="+" tr="+" bl="+" br="+" hz="-" vt="|"
+  if [ "${TUI_GLYPHS}" != "ascii" ]; then
+    tl="┌"; tr="┐"; bl="└"; br="┘"; hz="─"; vt="│"
+  fi
+  local inner=34
+  if [ "$cols" -lt $((inner + 4)) ]; then
+    inner=$((cols - 4))
+  fi
+  [ "$inner" -lt 12 ] && inner=12
+  local width=$((inner + 2))
+  local left=$(( (cols - width) / 2 ))
+  [ "$left" -lt 0 ] && left=0
+  local box_h=6
+  local top=$(( (pane_h - box_h) / 2 ))
+  [ "$top" -lt 0 ] && top=0
+  local bg="${AV_SEL_BG:-}" fg="" rst="$AV_RST"
+  if [ -n "$bg" ]; then
+    case "${TUI_COLOR}" in
+      16) fg=$'\033[97m' ;;
+      none) fg="" ;;
+      *) fg=$'\033[38;5;255m' ;;
+    esac
+  fi
+  local bar
+  bar="$(repeat_char "$hz" "$inner")"
+  modal_put "$top" "$left" "${bg}${fg}${tl}${bar}${tr}${rst}"
+  modal_put $((top + 1)) "$left" "$(modal_row " ${name}" "$inner" "$bg" "$fg" "$vt" "$rst")"
+  modal_put $((top + 2)) "$left" "$(modal_row " ${role_show}" "$inner" "$bg" "$fg" "$vt" "$rst")"
+  modal_put $((top + 3)) "$left" "$(modal_row " ${status}" "$inner" "$bg" "$fg" "$vt" "$rst")"
+  modal_put $((top + 4)) "$left" "$(modal_row " esc / space closes" "$inner" "$bg" "$fg" "$vt" "$rst")"
+  modal_put $((top + 5)) "$left" "${bg}${fg}${bl}${bar}${br}${rst}"
+}
+
+modal_row() {
+  local text="$1" inner="$2" bg="$3" fg="$4" vt="$5" rst="$6" cut pad
+  cut="${text:0:$inner}"
+  pad=$((inner - ${#cut}))
+  [ "$pad" -lt 0 ] && pad=0
+  printf '%s%s%s%s%*s%s%s' "$bg" "$fg" "$vt" "$cut" "$pad" '' "$vt" "$rst"
+}
+
 render_body() {
   local status="$1"
   local cols pane_h row=0 line
@@ -1498,6 +1847,10 @@ render_body() {
     else
       put_line "$row" "$(printf '%b(none else on cartridge)%b' "$AV_MUTED" "$AV_RST")"
     fi
+    EXPANDED=0
+    [ "$side" = 1 ] && EXPANDED=1
+    N_IDS=0
+    save_page_env
     printf '\033[1;1H'
     return
   fi
@@ -1544,6 +1897,7 @@ render_body() {
   [ "$NPAGES" -lt 1 ] && NPAGES=1
   clamp_page
   save_page
+  settle_selection "$ids" "$n_ids" "$page_size"
 
   # Hand the roster to warm_other_cells (runs after this paint is on screen).
   WARM_N="$n_ids"
@@ -1578,9 +1932,11 @@ render_body() {
       for slot in 0 1 2 3; do
         vi=$((i + slot))
         [ "$vi" -ge "$n_ids" ] && continue
-        k1="g|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[vi]}|${ST_ARR[vi]}|${COL_ARR[vi]}|${HAUNT_ARR[vi]}|${NAME_ARR[vi]}|${ROLE_ARR[vi]}|${LOAD_ARR[vi]}|$cell_w|$cell_h|$face"
+        sel_flag=0
+        [ "$vi" -eq "${SEL:-0}" ] && sel_flag=1
+        k1="g|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[vi]}|${ST_ARR[vi]}|${COL_ARR[vi]}|${HAUNT_ARR[vi]}|${NAME_ARR[vi]}|${ROLE_ARR[vi]}|${LOAD_ARR[vi]}|$cell_w|$cell_h|$face|$sel_flag"
         memo_call left "$k1" \
-          cell_block "${ID_ARR[vi]}" "${ST_ARR[vi]}" "${SVG_ARR[vi]}" "$cell_w" "$cell_h" "${COL_ARR[vi]}" "${HAUNT_ARR[vi]}" "${NAME_ARR[vi]}" "${ROLE_ARR[vi]}" "${LOAD_ARR[vi]}" "$face"
+          cell_block "${ID_ARR[vi]}" "${ST_ARR[vi]}" "${SVG_ARR[vi]}" "$cell_w" "$cell_h" "${COL_ARR[vi]}" "${HAUNT_ARR[vi]}" "${NAME_ARR[vi]}" "${ROLE_ARR[vi]}" "${LOAD_ARR[vi]}" "$face" "$sel_flag"
         case "$slot" in
           0) c0="$left"; k1s="$k1" ;;
           1) c1="$left"; k2="$k1" ;;
@@ -1605,29 +1961,54 @@ render_body() {
     gap_s="  "
     while IFS= read -r li || [ -n "$li" ]; do L+=("$li"); done < <(printf '%s\n' "$LEFT_BLOCK")
     while IFS= read -r gi || [ -n "$gi" ]; do G+=("$gi"); done < <(printf '%s\n' "$GRID_BLOCK")
-    # Center the portrait in the left column. The grid stays at the top.
-    local top=0 llen=${#L[@]}
-    if [ "$pane_h" -gt "$llen" ]; then
-      top=$(( (pane_h - llen) / 2 ))
+    # Center the portrait column and the 4 by 3 grid as one block.
+    local llen=${#L[@]} glen=${#G[@]} block_h=$llen pager=0
+    [ "$glen" -gt "$block_h" ] && block_h=$glen
+    if [ "$NPAGES" -gt 1 ]; then
+      pager=1
+      [ $((glen + 1)) -gt "$block_h" ] && block_h=$((glen + 1))
     fi
-    nmax=${#G[@]}
-    gi=$((top + llen))
-    [ "$gi" -gt "$nmax" ] && nmax=$gi
-    [ "$nmax" -gt "$pane_h" ] && nmax=$pane_h
-    for ((i = 0; i < nmax; i++)); do
+    expanded_vpad "$pane_h" "$block_h"
+    local top=$EXPANDED_TOP row lft gline
+    for ((i = 0; i < top && i < pane_h; i++)); do
+      put_line "$i" ""
+    done
+    local nlines=$llen
+    [ "$glen" -gt "$nlines" ] && nlines=$glen
+    for ((i = 0; i < nlines; i++)); do
+      row=$((top + i))
+      [ "$row" -ge "$pane_h" ] && break
       lft=""
-      if [ "$i" -ge "$top" ] && [ $((i - top)) -lt "$llen" ]; then
-        lft="${L[i - top]}"
+      if [ "$i" -lt "$llen" ]; then
+        lft="${L[i]}"
       fi
       lft="$(pad_cell_line "$lft" "$LEFT_W")"
-      gline="${G[i]:-}"
-      put_line "$i" "${lft}${gap_s}${gline}"
+      gline=""
+      if [ "$i" -lt "$glen" ]; then
+        gline="${G[i]}"
+      fi
+      put_line "$row" "${lft}${gap_s}${gline}"
     done
-    if [ "$NPAGES" -gt 1 ] && [ "$nmax" -lt "$pane_h" ]; then
-      CTRL_ROW=$nmax
-      CTRL_COLS=$cols
-      save_page_env
-      put_line "$nmax" "$(printf '%*s' "$((LEFT_W + 2))" '')$(printf '%d / %d' "$((PAGE + 1))" "$NPAGES")"
+    EXPANDED=1
+    N_IDS=$n_ids
+    PAGE_SIZE=$page_size
+    SEL_COLS=${ROSTER_COLS:-4}
+    if [ "$pager" = 1 ]; then
+      row=$((top + glen))
+      if [ "$row" -lt "$pane_h" ]; then
+        CTRL_ROW=$row
+        CTRL_COLS=$cols
+        lft=""
+        if [ "$glen" -lt "$llen" ]; then
+          lft="${L[$glen]}"
+        fi
+        lft="$(pad_cell_line "$lft" "$LEFT_W")"
+        put_line "$row" "${lft}${gap_s}$(printf '%d / %d' "$((PAGE + 1))" "$NPAGES")"
+      fi
+    fi
+    save_page_env
+    if [ "${MODAL:-0}" = 1 ] && [ "$n_ids" -gt 0 ] && [ "$SEL" -lt "$n_ids" ]; then
+      draw_sub_modal "${NAME_ARR[$SEL]:-}" "${ROLE_ARR[$SEL]:-}" "${ST_ARR[$SEL]:-}" "$cols" "$pane_h" "${ID_ARR[$SEL]:-}"
     fi
     printf '\033[1;1H'
     return
@@ -1654,6 +2035,10 @@ render_body() {
   fi
   CTRL_ROW="$row"
   CTRL_COLS="$cols"
+  EXPANDED=0
+  N_IDS=$n_ids
+  PAGE_SIZE=$page_size
+  SEL_COLS=1
   save_page_env
 
   local dim="$AV_DIM" lit="$AV_LIT" num="$AV_NUM" rst="$AV_RST"
@@ -1783,6 +2168,76 @@ case "${1:-watch}" in
     mkdir -p "$SESSIONS"
     apply_page_click "${2:-0}" "${3:-0}" tmux || true
     sb_click_wake "${4:-}"
+    ;;
+  select-arrow)
+    # tmux gotchi-avatar table. Expanded focus moves the sub-agent selector.
+    mkdir -p "$SESSIONS"
+    case "${2:-}" in
+      left|right|up|down|space|esc) ;;
+      *)
+        echo "usage: avatar-pane.sh select-arrow left|right|up|down|space|esc [pid]" >&2
+        exit 2
+        ;;
+    esac
+    if apply_select_key "${2}" ; then
+      sb_click_wake "${3:-}"
+      exit 0
+    fi
+    case "${2}" in
+      left) page_prev; sb_click_wake "${3:-}" ;;
+      right) page_next; sb_click_wake "${3:-}" ;;
+    esac
+    ;;
+  select-apply)
+    # Pure probe. No files. focused=0 leaves sel/page/modal unchanged.
+    focused="${2:-0}"
+    n="${3:-0}"
+    ps="${4:-12}"
+    cols="${5:-4}"
+    sel="${6:-0}"
+    page="${7:-0}"
+    modal="${8:-0}"
+    key="${9:-}"
+    prompt="${10:-0}"
+    case "$prompt" in ''|*[!0-9]*) prompt=0 ;; esac
+    if [ "$focused" != 1 ]; then
+      printf 'sel=%s\npage=%s\nmodal=%s\n' "$sel" "$page" "$modal"
+      exit 0
+    fi
+    case "$key" in
+      space)
+        if [ "$prompt" -gt 0 ]; then
+          printf 'sel=%s\npage=%s\nmodal=%s\n' "$sel" "$page" "$modal"
+          exit 0
+        fi
+        if [ "$modal" = 1 ]; then modal=0; else modal=1; fi
+        printf 'sel=%s\npage=%s\nmodal=%s\nmodal_for=%s\n' "$sel" "$page" "$modal" "$sel"
+        exit 0
+        ;;
+      esc)
+        modal=0
+        printf 'sel=%s\npage=%s\nmodal=%s\n' "$sel" "$page" "$modal"
+        exit 0
+        ;;
+      left|right|up|down)
+        moved="$(select_move_pure "$key" "$sel" "$n" "$ps" "$cols")"
+        sel="$(printf '%s\n' "$moved" | awk -F= '/^sel=/{print $2}')"
+        page="$(printf '%s\n' "$moved" | awk -F= '/^page=/{print $2}')"
+        printf 'sel=%s\npage=%s\nmodal=0\n' "$sel" "$page"
+        exit 0
+        ;;
+      *)
+        echo "usage: avatar-pane.sh select-apply <focused> <n> <page_size> <cols> <sel> <page> <modal> <key> [prompt_len]" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  block-origin)
+    # Pure: blank rows above and below a block of the given height.
+    case "${2:-}" in ''|*[!0-9]*) echo "usage: avatar-pane.sh block-origin <pane-height> <block-height>" >&2; exit 2 ;; esac
+    case "${3:-}" in ''|*[!0-9]*) echo "usage: avatar-pane.sh block-origin <pane-height> <block-height>" >&2; exit 2 ;; esac
+    expanded_vpad "$2" "$3"
+    printf 'top=%s\nbottom=%s\n' "$EXPANDED_TOP" "$EXPANDED_BOTTOM"
     ;;
   sb-wheel)
     # tmux WheelUp/Down on avatar → page gotchi roster (vertical scroll).
@@ -1922,7 +2377,7 @@ case "${1:-watch}" in
     done
     ;;
   *)
-    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|roster-origin [cols]|roster-rows <pane-height>|sb-click <x> <y> [pid]|sb-wheel up|down [pid]]" >&2
+    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|roster-origin [cols]|roster-rows <pane-height>|block-origin <pane-h> <block-h>|select-apply ...|select-arrow left|right|up|down|space|esc [pid]|sb-click <x> <y> [pid]|sb-wheel up|down [pid]]" >&2
     exit 2
     ;;
 esac

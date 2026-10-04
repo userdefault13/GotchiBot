@@ -382,10 +382,14 @@ install_meet_gallery_mouse() {
 # NEVER send-keys -t #{pane_id} — that format is empty and errors in the status bar.
 # Match avatar ONLY via @gotchibot-avatar=1 (never pane_index).
 install_avatar_mouse() {
-  # Avatar: ← / → page the gotchi roster. Wheel is not bound.
+  # Avatar: expanded focus uses arrows for the sub-agent selector. Wheel is not bound.
   # Keep commands free of nested single-quotes — tmux if-shell "run-shell '…'" breaks them.
-  local ru="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel up #{pane_pid}"
-  local rd="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel down #{pane_pid}"
+  local sl="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh select-arrow left #{pane_pid}"
+  local sr="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh select-arrow right #{pane_pid}"
+  local su="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh select-arrow up #{pane_pid}"
+  local sd="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh select-arrow down #{pane_pid}"
+  local ss="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh select-arrow space #{pane_pid}"
+  local se="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh select-arrow esc #{pane_pid}"
   local rc="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-click #{mouse_x} #{mouse_y} #{pane_pid}"
   local def_drag='if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"'
   local av_if='#{==:#{@gotchibot-avatar},1}'
@@ -415,9 +419,13 @@ install_avatar_mouse() {
   tmux bind-key -n MouseDrag1Pane \
     if-shell -F "#{!=:#{@gotchibot-avatar},1}" "$def_drag" 2>/dev/null || true
 
-  # ← / → ONLY in gotchi-avatar key-table (focus hook). Never root -n.
-  tmux bind-key -T gotchi-avatar Left "run-shell \"$ru\"" 2>/dev/null || true
-  tmux bind-key -T gotchi-avatar Right "run-shell \"$rd\"" 2>/dev/null || true
+  # Focused expanded avatar: arrows move the sub-agent selector instead of paging.
+  tmux bind-key -T gotchi-avatar Left "run-shell \"$sl\"" 2>/dev/null || true
+  tmux bind-key -T gotchi-avatar Right "run-shell \"$sr\"" 2>/dev/null || true
+  tmux bind-key -T gotchi-avatar Up "run-shell \"$su\"" 2>/dev/null || true
+  tmux bind-key -T gotchi-avatar Down "run-shell \"$sd\"" 2>/dev/null || true
+  tmux bind-key -T gotchi-avatar Space "run-shell \"$ss\"" 2>/dev/null || true
+  tmux bind-key -T gotchi-avatar Escape "run-shell \"$se\"" 2>/dev/null || true
   install_avatar_page_keys
 }
 

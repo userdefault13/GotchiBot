@@ -318,7 +318,7 @@ describe("avatar roster width", () => {
     assert.match(body, /face=mid/);
     assert.match(body, /roster_geometry "\$right_w" wide/);
     assert.match(body, /join4 /);
-    assert.match(body, /\(pane_h - llen\) \/ 2/);
+    assert.match(body, /expanded_vpad "\$pane_h" "\$block_h"/);
     assert.doesNotMatch(body, /thumb_art "" "\$pin_id" "" mid/);
     assert.match(pane, /GOTCHI_INCLUDE_PINNED/);
   });
@@ -361,5 +361,94 @@ describe("avatar roster width", () => {
     assert.equal(out, "AarcadeGh-t · idle");
     const src = read(path.join(root, "scripts/lib/desk-label.sh"));
     assert.match(src, /desk_label_subtitle "\$line" "\$\(desk_label_project\)"/);
+  });
+
+  function probe(args) {
+    const out = execFileSync("bash", ["scripts/avatar-pane.sh", ...args], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    return Object.fromEntries(
+      out.trim().split("\n").filter(Boolean).map((line) => {
+        const eq = line.indexOf("=");
+        return [line.slice(0, eq), line.slice(eq + 1)];
+      }),
+    );
+  }
+
+  it("centers the expanded portrait and grid with blank rows above and below", () => {
+    const laptop = probe(["block-origin", "46", "37"]);
+    assert.equal(Number(laptop.top) > 0, true, `top ${laptop.top}`);
+    assert.equal(Number(laptop.bottom) > 0, true, `bottom ${laptop.bottom}`);
+    assert.ok(Math.abs(Number(laptop.top) - Number(laptop.bottom)) <= 1);
+    const desk = probe(["block-origin", "70", "36"]);
+    assert.equal(Number(desk.top) > 0, true);
+    assert.equal(Number(desk.bottom) > 0, true);
+    assert.ok(Math.abs(Number(desk.top) - Number(desk.bottom)) <= 1);
+    const full = probe(["block-origin", "46", "46"]);
+    assert.equal(full.top, "0");
+    assert.equal(full.bottom, "0");
+    const pane = read(path.join(root, "scripts/avatar-pane.sh"));
+    const body = pane.slice(pane.indexOf("render_body()"), pane.indexOf("rerender()"));
+    assert.match(body, /expanded_vpad "\$pane_h" "\$block_h"/);
+    assert.match(body, /lft="\$\{L\[i\]\}"/);
+    assert.match(body, /gline="\$\{G\[i\]\}"/);
+    assert.doesNotMatch(body, /The grid stays at the top/);
+  });
+
+  it("starts the sub-agent selector on the first card and moves it with arrows", () => {
+    const pane = read(path.join(root, "scripts/avatar-pane.sh"));
+    assert.match(pane, /SEL=0/);
+    assert.match(pane, /settle_selection/);
+    const origin = probe(["select-apply", "1", "13", "12", "4", "0", "0", "0", "right"]);
+    assert.equal(origin.sel, "1");
+    assert.equal(origin.page, "0");
+    assert.equal(origin.modal, "0");
+    const across = probe(["select-apply", "1", "13", "12", "4", "11", "0", "0", "right"]);
+    assert.equal(across.sel, "12");
+    assert.equal(across.page, "1");
+    const down = probe(["select-apply", "1", "13", "12", "4", "8", "0", "0", "down"]);
+    assert.equal(down.sel, "12");
+    assert.equal(down.page, "1");
+    const back = probe(["select-apply", "1", "13", "12", "4", "12", "1", "0", "up"]);
+    assert.equal(back.sel, "8");
+    assert.equal(back.page, "0");
+    const left = probe(["select-apply", "1", "13", "12", "4", "12", "1", "0", "left"]);
+    assert.equal(left.sel, "11");
+    assert.equal(left.page, "0");
+  });
+
+  it("opens the sub-agent modal with space and ignores selector keys when unfocused", () => {
+    const open = probe(["select-apply", "1", "13", "12", "4", "12", "1", "0", "space"]);
+    assert.equal(open.modal, "1");
+    assert.equal(open.modal_for, "12");
+    assert.equal(open.sel, "12");
+    const close = probe(["select-apply", "1", "13", "12", "4", "12", "1", "1", "space"]);
+    assert.equal(close.modal, "0");
+    const esc = probe(["select-apply", "1", "13", "12", "4", "12", "1", "1", "esc"]);
+    assert.equal(esc.modal, "0");
+    assert.equal(esc.sel, "12");
+    const typed = probe(["select-apply", "1", "13", "12", "4", "0", "0", "0", "space", "4"]);
+    assert.equal(typed.modal, "0");
+    const idle = probe(["select-apply", "0", "13", "12", "4", "3", "0", "0", "right"]);
+    assert.equal(idle.sel, "3");
+    assert.equal(idle.page, "0");
+    assert.equal(idle.modal, "0");
+    const idleSpace = probe(["select-apply", "0", "13", "12", "4", "3", "0", "1", "space"]);
+    assert.equal(idleSpace.sel, "3");
+    assert.equal(idleSpace.modal, "1");
+    const pane = read(path.join(root, "scripts/avatar-pane.sh"));
+    assert.match(pane, /draw_sub_modal/);
+    assert.match(pane, /esc \/ space closes/);
+    assert.match(pane, /EXPANDED:-0\}" != 1/);
+    assert.match(pane, /CELL_SELECTED/);
+    assert.match(pane, /AV_SEL_BG/);
+    const layout = read(path.join(root, "scripts/orchestrator-layout.sh"));
+    assert.match(layout, /bind-key -T gotchi-avatar Left "run-shell \\"\$sl\\""/);
+    assert.match(layout, /bind-key -T gotchi-avatar Up "run-shell \\"\$su\\""/);
+    assert.match(layout, /select-arrow left/);
+    assert.match(layout, /Focused expanded avatar: arrows move the sub-agent selector instead of paging/);
+    assert.doesNotMatch(layout, /tmux bind-key -n Left/);
+    assert.doesNotMatch(layout, /tmux bind-key -n Up/);
   });
 });
