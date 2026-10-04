@@ -396,7 +396,7 @@ function withActionButton(meta, turn, cols, hit) {
       : hit.copied === "fail"
         ? COPY_FAILED_LABEL
         : COPY_LABEL;
-  const colStart = THUMB_W + 1 + visLen(meta) + 1;
+  const colStart = THUMB_W + 2 + visLen(meta) + 1;
   if (colStart + label.length > cols) return meta;
   hit.hits.push({
     line: hit.line,
@@ -414,8 +414,12 @@ function withActionButton(meta, turn, cols, hit) {
 function renderTurn(turn, meeting, cols, hit = null) {
   const { name, role, id } = participantInfo(meeting, turn.speaker);
   const thumb = getThumb(id);
-  const bodyW = Math.max(16, cols - THUMB_W - 2);
+  // 2 columns between the sprite and the words, 2 columns before the right edge.
+  const TEXT_PAD_X = 2;
+  const TEXT_PAD_RIGHT = 2;
+  const bodyW = Math.max(12, cols - THUMB_W - TEXT_PAD_X - TEXT_PAD_RIGHT);
   const bodyLines = wrapLines(turn.text, bodyW);
+  const gutter = " ".repeat(TEXT_PAD_X);
   // Quiet "edited" cue on the user's own corrected messages — not a badge card.
   const edited = turn.editedAt && role === "user" ? ` ${C.dim}(edited)${C.reset}` : "";
   const meta = `${nameColor(role)}${name}${C.reset} ${C.dim}${formatTime(turn.ts)}${C.reset}${edited}`;
@@ -426,19 +430,17 @@ function renderTurn(turn, meeting, cols, hit = null) {
   for (let i = 0; i < blockH; i++) {
     const thumbPart = padVis(thumb[i] || "", THUMB_W);
     if (i === 0) {
-      rows.push(`${thumbPart} ${header}`);
+      rows.push(`${thumbPart}${gutter}${header}`);
       continue;
     }
     const text = bodyLines[i - 1];
     if (text) {
-      rows.push(`${thumbPart} ${C.body}${text}${C.reset}`);
+      rows.push(`${thumbPart}${gutter}${C.body}${text}${C.reset}`);
     } else if (stripAnsi(thumb[i] || "").trim()) {
       rows.push(thumbPart);
     }
   }
-  rows.push("");
-  rows.push("");
-  rows.push(""); // air between iMessage turns — thumbs otherwise kiss
+  rows.push(""); // 1 row of air under the message
   return rows;
 }
 

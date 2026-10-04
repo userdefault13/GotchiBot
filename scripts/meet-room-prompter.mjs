@@ -30,6 +30,7 @@ import {
   loadCurrentMeeting,
   renderMeetChannel,
   maxScrollFromBottom,
+  getThumb,
 } from "./meet-channel.mjs";
 import {
   stripPardonPrefix,
@@ -60,6 +61,10 @@ const PROMPT_FOOTER_ROWS = 1;
 const PROMPT_PANEL_ROWS = PROMPT_INPUT_ROWS + PROMPT_FOOTER_ROWS;
 /** Gutter bar + one space before text (matches OpenCode prompt). */
 const INPUT_LEFT = 2;
+/** Purple input bar inset so it does not touch the pane edges. */
+const INPUT_PAD_X = 2;
+/** Chat-list column: mini gotchi, name, short status. Last column is the rule. */
+export const MEET_SIDEBAR_COLS = 28;
 
 /** Single-terminal mode: no tmux gallery / poke / leave-file. */
 const INLINE =
@@ -101,6 +106,12 @@ function stripAnsi(s) {
 
 function visLen(s) {
   return stripAnsi(s).length;
+}
+
+function padVis(s, width) {
+  const n = visLen(s);
+  if (n >= width) return s;
+  return s + " ".repeat(width - n);
 }
 
 function paneSize() {
@@ -175,6 +186,38 @@ function renderRoomStripLine(cols, meeting) {
  * Top-of-screen frame for inline mode (strip + transcript), as a string.
  * Input panel is drawn separately via drawInputPanel.
  */
+function clipSide(text, width) {
+  const s = String(text || "");
+  if (s.length <= width) return s;
+  return width <= 1 ? s.slice(0, width) : `${s.slice(0, width - 1)}…`;
+}
+
+/**
+ * Meet-room chat list. Two rows per gotchi: the round head on the left,
+ * the name and a short status on the right. Not the 3×2 seat grid.
+ */
+export function renderMeetSidebar(rows, width = MEET_SIDEBAR_COLS - 1) {
+  const blank = " ".repeat(Math.max(0, width));
+  if (rows <= 0 || width < 16) return Array(Math.max(0, rows)).fill(blank);
+  const members = listMeetMembers();
+  const status = loadMeetStatus();
+  const nameW = Math.max(4, width - 14);
+  const lines = [];
+  for (const m of members) {
+    if (lines.length + 2 > rows) break;
+    const thumb = getThumb(m.id);
+    const head = thumb[0] || "";
+    const chin = thumb[1] || "";
+    const st = statusFor(m.id, status);
+    const sub =
+      st.status && st.status !== "idle" ? statusLabel(st.status, st.since) : m.role || "";
+    lines.push(padVis(`${head} ${clipSide(m.label, nameW)}`, width));
+    lines.push(padVis(`${chin} ${clipSide(sub, nameW)}`, width));
+  }
+  while (lines.length < rows) lines.push(blank);
+  return lines.slice(0, rows);
+}
+
 export function renderInlineFrame({
   cols = 80,
   rows = 24,
@@ -187,14 +230,21 @@ export function renderInlineFrame({
   const stripStyled = `${T.brand}${strip}${T.reset}`;
   const foldedStrip =
     _tui.glyphs === "ascii" ? toAsciiGlyphs(stripStyled) : stripStyled;
+  const useSide = Boolean(m) && layout.cols >= 64;
+  const sideW = useSide ? Math.min(MEET_SIDEBAR_COLS, layout.cols - 36) : 0;
   const channel = renderMeetChannel({
-    cols: layout.cols,
+    cols: layout.cols - sideW,
     rows: layout.transcriptRows,
     scrollFromBottom,
   });
   const pad = Math.max(0, layout.cols - stripAnsi(foldedStrip).length);
   const stripLine = `${foldedStrip}${" ".repeat(pad)}`;
-  return `${stripLine}\n${channel}`;
+  if (!useSide) return `${stripLine}\n${channel}`;
+  const side = renderMeetSidebar(layout.transcriptRows, sideW - 1);
+  const rule = `${T.muted}│${T.reset}`;
+  const right = channel.split("\n");
+  const zipped = side.map((line, i) => `${padVis(line, sideW - 1)}${rule}${right[i] || ""}`);
+  return `${stripLine}\n${zipped.join("\n")}`;
 }
 
 function mentionTags() {
@@ -775,9 +825,10 @@ function consumeEditRequest() {
 }
 
 function padPanelLine(text, cols) {
+  const inner = Math.max(1, cols - INPUT_PAD_X * 2);
   const n = visLen(text);
-  const pad = Math.max(0, cols - n);
-  return `${text}${T.panel}${" ".repeat(pad)}${T.reset}`;
+  const pad = Math.max(0, inner - n);
+  return `${" ".repeat(INPUT_PAD_X)}${text}${T.panel}${" ".repeat(pad)}${T.reset}${" ".repeat(INPUT_PAD_X)}`;
 }
 
 function loadPinnedModelId() {
@@ -814,7 +865,7 @@ function footerTicks(cols, used) {
 
 /** Split buffer across input rows (OpenCode-style — no meet › prefix). */
 function layoutInput(buffer, cursor, cols) {
-  const width = Math.max(1, cols - INPUT_LEFT);
+  const width = Math.max(1, cols - INPUT_LEFT - INPUT_PAD_X * 2);
   const segments = [];
   let pos = 0;
   for (let i = 0; i < PROMPT_INPUT_ROWS; i++) {
@@ -824,13 +875,13 @@ function layoutInput(buffer, cursor, cols) {
   }
 
   let cursorRow = 0;
-  let cursorCol = INPUT_LEFT;
+  let cursorCol = INPUT_PAD_X + INPUT_LEFT;
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
     const end = seg.start + seg.text.length;
     if (cursor <= end || i === segments.length - 1) {
       cursorRow = i;
-      cursorCol = INPUT_LEFT + Math.max(0, cursor - seg.start);
+      cursorCol = INPUT_PAD_X + INPUT_LEFT + Math.max(0, cursor - seg.start);
       break;
     }
   }
@@ -878,7 +929,7 @@ function drawInputPanel(top, cols) {
         ? `${T.panel}${T.muted} · j/k scroll · PgUp/PgDn · q quit · /edit · /end · /help${T.reset}`
         : `${T.panel}${T.muted} · j/k scroll · ←→ page · /edit · /cockpit · /start · /end · /help${T.reset}`);
   }
-  writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols, visLen(footerCore)), cols));
+  writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols - INPUT_PAD_X * 2, visLen(footerCore)), cols));
 
   stdout.write(`\x1b[${top + cursorRow};${Math.min(cols, cursorCol + 1)}H`);
 }

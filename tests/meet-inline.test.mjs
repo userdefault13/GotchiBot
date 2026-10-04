@@ -12,8 +12,11 @@ import path from "node:path";
 import {
   inlineLayout,
   meetScrollDelta,
+  MEET_SIDEBAR_COLS,
   renderInlineFrame,
+  renderMeetSidebar,
 } from "../scripts/meet-room-prompter.mjs";
+import { renderMeetChannel } from "../scripts/meet-channel.mjs";
 import { resolveMeetingsRoot } from "../scripts/project-context.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -178,23 +181,33 @@ describe("meet transcript j/k", () => {
 
 describe("meet transcript inset", () => {
   it("leaves 2 columns beside the message text and 1 row above and below", () => {
-    const frame = renderInlineFrame({
-      cols: 80,
-      rows: 24,
-      meeting: { topic: "test", participants: [] },
-      scrollFromBottom: 0,
-    });
+    const frame = renderMeetChannel({ cols: 70, rows: 24, scrollFromBottom: 0 });
     const lines = frame.split("\n");
-    const channel = lines.slice(1);
-    assert.ok(channel.length >= 3);
+    assert.ok(lines.length >= 3);
     const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
     const contentOf = (s) => plain(s).slice(0, -1);
-    assert.equal(contentOf(channel[0]).trim(), "");
-    assert.equal(contentOf(channel[channel.length - 1]).trim(), "");
-    const body = channel.slice(1, -1).map(contentOf).find((line) => line.trim().length > 0);
-    assert.ok(body, "expected a transcript line");
-    assert.match(body, /^ {2}/);
-    assert.match(body, / {2}$/);
+    assert.equal(contentOf(lines[0]).trim(), "");
+    assert.equal(contentOf(lines[lines.length - 1]).trim(), "");
+    const body = lines.map(contentOf).find((line) => /\d:\d\d/.test(line));
+    assert.ok(body, "expected a speaker line");
+    const gap = body.match(/\S( +)\S/);
+    assert.ok(gap, "expected a gap between the sprite and the name");
+    assert.ok(gap[1].length >= 2, `gap was ${gap[1].length}`);
+  });
+});
+
+describe("meet sidebar", () => {
+  it("lists mini gotchi heads with a name, beside the transcript", () => {
+    const side = renderMeetSidebar(8, MEET_SIDEBAR_COLS - 1);
+    assert.equal(side.length, 8);
+    const plain = side.map((s) => s.replace(/\x1b\[[0-9;]*m/g, "")).join("\n");
+    assert.match(plain, /[▄▀█░]/);
+    assert.doesNotMatch(plain, /seat/);
+    const frame = renderInlineFrame({ cols: 90, rows: 30, scrollFromBottom: 0 });
+    const row = frame.split("\n")[2] || "";
+    const vis = row.replace(/\x1b\[[0-9;]*m/g, "");
+    assert.ok(vis.length > MEET_SIDEBAR_COLS);
+    assert.equal(vis[MEET_SIDEBAR_COLS - 1], "│");
   });
 });
 
