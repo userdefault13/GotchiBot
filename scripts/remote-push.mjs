@@ -70,9 +70,12 @@ const cfg = assertRemoteReady();
 const key = materializeKey(cfg.key);
 
 try {
-  const home = `/Users/${cfg.user}`;
-  const remoteRoot = `${home}/Dev/GotchiBot`;
-  dbg("G", "resolved remote root", { remoteRoot, home });
+  const remoteRoot = String(cfg.dir || "").replace(/\/$/, "");
+  if (!remoteRoot) {
+    console.error("remote dir is empty (set REMOTE_DIR)");
+    process.exit(2);
+  }
+  dbg("G", "resolved remote root", { remoteRoot });
 
   ssh(cfg, key.path, `mkdir -p '${remoteRoot}'`, { stdio: "inherit" });
 
