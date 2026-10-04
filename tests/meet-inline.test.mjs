@@ -176,3 +176,25 @@ describe("meet transcript j/k", () => {
   });
 });
 
+describe("meet transcript inset", () => {
+  it("leaves 2 columns beside the message text and 1 row above and below", () => {
+    const frame = renderInlineFrame({
+      cols: 80,
+      rows: 24,
+      meeting: { topic: "test", participants: [] },
+      scrollFromBottom: 0,
+    });
+    const lines = frame.split("\n");
+    const channel = lines.slice(1);
+    assert.ok(channel.length >= 3);
+    const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
+    const contentOf = (s) => plain(s).slice(0, -1);
+    assert.equal(contentOf(channel[0]).trim(), "");
+    assert.equal(contentOf(channel[channel.length - 1]).trim(), "");
+    const body = channel.slice(1, -1).map(contentOf).find((line) => line.trim().length > 0);
+    assert.ok(body, "expected a transcript line");
+    assert.match(body, /^ {2}/);
+    assert.match(body, / {2}$/);
+  });
+});
+

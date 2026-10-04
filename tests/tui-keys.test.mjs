@@ -191,17 +191,22 @@ describe("meet room transcript scroll", () => {
 });
 
 describe("chat pane size", () => {
-  it("caps the OpenCode chat prompt at 5 lines and pads 2 by 1", () => {
+  it("keeps the OpenCode input at 5 lines and does not pad via the logo wrapper", () => {
     const cfg = JSON.parse(read(path.join(root, "config/tui.json")));
     assert.equal(cfg.prompt.max_height, 5);
     const logo = read(path.join(root, ".opencode/tui-plugins/gotchi-logo.tsx"));
-    assert.match(logo, /const CHAT_LINES = 5/);
-    assert.match(logo, /const CHAT_PAD_X = 2/);
-    assert.match(logo, /const CHAT_PAD_Y = 1/);
-    assert.match(logo, /paddingLeft=\{CHAT_PAD_X\}/);
-    assert.match(logo, /paddingRight=\{CHAT_PAD_X\}/);
-    assert.match(logo, /paddingTop=\{CHAT_PAD_Y\}/);
-    assert.match(logo, /paddingBottom=\{CHAT_PAD_Y\}/);
+    assert.doesNotMatch(logo, /CHAT_PAD_X/);
+    assert.doesNotMatch(logo, /paddingLeft=\{CHAT_PAD/);
+  });
+
+  it("insets the meet transcript body by 2 columns and 1 row", () => {
+    const src = read(path.join(root, "scripts/meet-channel.mjs"));
+    assert.match(src, /export const TRANSCRIPT_PAD_X = 2/);
+    assert.match(src, /export const TRANSCRIPT_PAD_Y = 1/);
+    assert.match(src, /function insetTranscript/);
+    const fn = src.slice(src.indexOf("export function renderMeetChannel"), src.indexOf("function finalizeChannelFrame"));
+    assert.match(fn, /insetTranscript\(/);
+    assert.match(fn, /transcriptContentCols\(/);
   });
 });
 

@@ -30,6 +30,9 @@ const THUMB_FALLBACK = `${ROOT}/assets/gotchi-thumb.ascii`;
 const THUMB_CACHE_DIR = `${ROOT}/sessions/.meet-thumbs`;
 const THUMB_W = 14;
 const SCROLLBAR_COLS = 2;
+/** Inset of the meet transcript next to the avatar pane. */
+export const TRANSCRIPT_PAD_X = 2;
+export const TRANSCRIPT_PAD_Y = 1;
 const SCROLL_STEP = Math.max(1, Number(process.env.GOTCHIBOT_MEET_CHANNEL_SCROLL_STEP || 3) || 3);
 const COPY_LABEL = "[copy]";
 const COPIED_LABEL = "[copied]";
@@ -498,11 +501,34 @@ function attachScrollbar(contentLines, barLines, cols) {
   return out.join("\n");
 }
 
+function transcriptContentCols(cols) {
+  return Math.max(16, cols - SCROLLBAR_COLS - TRANSCRIPT_PAD_X * 2);
+}
+
+function transcriptMessageRows(rows) {
+  return Math.max(1, rows - TRANSCRIPT_PAD_Y * 2);
+}
+
+/** Left inset on each line, plus a blank row above and below the messages. */
+function insetTranscript(lines, rows) {
+  const left = " ".repeat(TRANSCRIPT_PAD_X);
+  const body = lines.map((line) => left + (line || ""));
+  const blank = left;
+  const out = [
+    ...Array(TRANSCRIPT_PAD_Y).fill(blank),
+    ...body,
+    ...Array(TRANSCRIPT_PAD_Y).fill(blank),
+  ];
+  while (out.length < rows) out.push(blank);
+  if (out.length > rows) out.length = rows;
+  return out;
+}
+
 export function maxScrollFromBottom({ cols = 80, rows = 40, meeting = loadCurrentMeeting() } = {}) {
   if (!meeting) return 0;
-  const contentCols = Math.max(24, cols - SCROLLBAR_COLS);
+  const contentCols = transcriptContentCols(cols);
   const total = buildMeetChannelLines(meeting, cols, contentCols).length;
-  return Math.max(0, total - Math.max(8, rows));
+  return Math.max(0, total - transcriptMessageRows(rows));
 }
 
 export function renderMeetChannel({ cols = 80, rows = 40, scrollFromBottom = 0 } = {}) {
@@ -519,10 +545,10 @@ export function renderMeetChannel({ cols = 80, rows = 40, scrollFromBottom = 0 }
     );
   }
 
-  const contentCols = Math.max(24, cols - SCROLLBAR_COLS);
+  const contentCols = transcriptContentCols(cols);
   const allLines = buildMeetChannelLines(meeting, cols, contentCols);
   const total = allLines.length;
-  const viewport = Math.max(8, rows);
+  const viewport = transcriptMessageRows(rows);
   const fromBottom = Math.max(
     0,
     Math.min(
@@ -532,26 +558,19 @@ export function renderMeetChannel({ cols = 80, rows = 40, scrollFromBottom = 0 }
   );
   const bar = buildScrollbar(total, viewport, fromBottom, rows);
 
+  let visible;
   if (total <= viewport) {
-    return finalizeChannelFrame(attachScrollbar(allLines, bar, cols));
+    visible = allLines.slice();
+  } else {
+    const end = total - fromBottom;
+    const start = Math.max(0, end - viewport);
+    visible = allLines.slice(start, end);
+    if (start > 0) visible.unshift(`${C.dim}↑ older${C.reset}`);
+    if (fromBottom > 0) visible.push(`${C.dim}↓ newer · End latest${C.reset}`);
+    if (visible.length > viewport) visible.length = viewport;
   }
 
-  const maxScroll = total - viewport;
-  const end = total - fromBottom;
-  const start = Math.max(0, end - viewport);
-  const visible = allLines.slice(start, end);
-
-  if (start > 0) {
-    visible.unshift(`${C.dim}↑ older${C.reset}`);
-  }
-  if (fromBottom > 0) {
-    visible.push(`${C.dim}↓ newer · End latest${C.reset}`);
-  }
-
-  while (visible.length < rows) visible.push("");
-  if (visible.length > rows) visible.length = rows;
-
-  return finalizeChannelFrame(attachScrollbar(visible, bar, cols));
+  return finalizeChannelFrame(attachScrollbar(insetTranscript(visible, rows), bar, cols));
 }
 
 function finalizeChannelFrame(frame) {
