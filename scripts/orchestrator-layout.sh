@@ -907,6 +907,7 @@ DESK_PANE_COUNT=9
 focus_index() {
   case "$1" in
     chat) echo 3 ;;
+    avatar) echo 1 ;;
     cockpit) echo 2 ;;
     factory) echo 4 ;;
     pstack) echo 5 ;;
@@ -1100,6 +1101,7 @@ focus_pane_widths() {
     # The window's extra columns (163 vs 147) all go to the focused pane.
     # Kanban's bar (3) plus its separator (1) come out of that focused pane.
     chat) w3=0 ;;
+    avatar) w1=0 ;;
     factory) w4=0 ;;
     pstack|dossier) w5=0 ;;
     inbox) w6=0 ;;
@@ -1129,6 +1131,7 @@ focus_pane_widths() {
   [ "$budget" -lt 36 ] && budget=36
   case "$focus" in
     chat) w3="$budget" ;;
+    avatar) w1="$budget" ;;
     cockpit) w2="$budget" ;;
     factory) w4="$budget" ;;
     pstack|dossier) w5="$budget" ;;
@@ -1203,7 +1206,8 @@ pane_step() {
   idx="$1"
   kind="$(pane_kind_of "$idx")"
   case "$kind" in
-    files|avatar|other) tmux select-pane -t "$sess:work.$idx" 2>/dev/null || true ;;
+    files|other) tmux select-pane -t "$sess:work.$idx" 2>/dev/null || true ;;
+    avatar) focus_desk avatar ;;
     cockpit) focus_desk cockpit ;;
     chat) focus_desk chat ;;
     factory) focus_desk factory ;;
@@ -1510,7 +1514,7 @@ fit_max_keep_drag() {
 
 fit_quiet() {
   case "$(layout_mode)" in
-    cockpit|factory|pstack|meet|chat|inbox|kanban)
+    cockpit|factory|pstack|meet|chat|inbox|kanban|avatar)
       apply_focus_sizes "$(layout_mode)"
       return 0
       ;;
@@ -1866,6 +1870,9 @@ case "$cmd" in
     ;;
   show-avatar|avatar)
     restore_avatar_pane
+    ;;
+  focus-avatar)
+    focus_desk avatar
     ;;
   enter-avatar-max)
     enter_avatar_max

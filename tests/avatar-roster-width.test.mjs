@@ -301,19 +301,52 @@ describe("avatar roster width", () => {
     assert.equal(rosterRows(40).page, "6");
   });
 
-  it("reserves the framed portrait only while the avatar pane is focused", () => {
+  it("reserves the framed portrait and a row of mid sub-agents when focused", () => {
     const laptop = rosterRowsMode(46, "focused");
     assert.equal(laptop.rows, "1");
-    assert.equal(laptop.page, "2");
-    assert.equal(laptop.grid, "13");
-    assert.equal(rosterRowsMode(27, "focused").grid, "6");
-    assert.equal(rosterRowsMode(27, "focused").page, "1");
+    assert.equal(laptop.page, "3");
+    assert.equal(laptop.grid, "19");
+    assert.equal(rosterRowsMode(27, "focused").grid, "11");
+    assert.equal(rosterRowsMode(27, "focused").page, "3");
+    assert.equal(rosterRowsMode(70, "focused").rows, "3");
+    assert.equal(rosterRowsMode(70, "focused").page, "9");
     const pane = read(path.join(root, "scripts/avatar-pane.sh"));
     const body = pane.slice(pane.indexOf("render_body()"), pane.indexOf("rerender()"));
     assert.match(body, /avatar_pane_focused/);
     assert.match(body, /render_main_art/);
+    assert.match(body, /face=mid/);
+    assert.match(body, /roster_geometry "\$cols" wide/);
     assert.doesNotMatch(body, /thumb_art "" "\$pin_id" "" mid/);
     assert.match(pane, /GOTCHI_INCLUDE_PINNED/);
+  });
+
+  it("expands the avatar pane on focus and leaves chat wide when chat is focused", () => {
+    const chat = sizes(163, "chat");
+    assert.equal(chat.avatar, "24");
+    assert.equal(chat.chat, "110");
+    assert.equal(chat.cockpit, "3");
+    const cockpit = sizes(163, "cockpit");
+    assert.equal(cockpit.cockpit, "110");
+    assert.equal(cockpit.avatar, "24");
+    assert.equal(cockpit.chat, "3");
+    const av = sizes(163, "avatar");
+    assert.equal(av.files, "3");
+    assert.equal(av.avatar, "131");
+    assert.equal(av.cockpit, "3");
+    assert.equal(av.chat, "3");
+    assert.equal(av.factory, "3");
+    assert.equal(av.dossier, "3");
+    assert.equal(av.inbox, "3");
+    assert.equal(av.meet, "3");
+    assert.equal(av.kanban, "3");
+    assert.equal(av.sum, "155");
+    const widths = rowKeys.map((k) => Number(av[k]));
+    assert.equal(widths.reduce((n, w) => n + w, 0) + 8, 163);
+    const av147 = sizes(147, "avatar");
+    assert.equal(av147.avatar, "115");
+    assert.equal(av147.chat, "3");
+    assert.equal(av147.cockpit, "3");
+    assert.equal(av147.sum, "139");
   });
 
   it("puts the project name where the tab subtitle used to lead with the orchestrator", () => {

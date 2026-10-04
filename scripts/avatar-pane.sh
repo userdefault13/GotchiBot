@@ -983,7 +983,7 @@ loading_art() {
 }
 
 cell_block() {
-  local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}" role="${9:-}" loading="${10:-}"
+  local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}" role="${9:-}" loading="${10:-}" face="${11:-mini}"
   local art label status_color
   case "$status" in
     working)
@@ -1034,12 +1034,14 @@ cell_block() {
     art="$(mini_chafa "$svg" "$cell_w" "$cell_h")"
   fi
   if [ -z "${art:-}" ]; then
-    art="$(thumb_art "$collateral" "$id" "$haunt" mini)"
+    art="$(thumb_art "$collateral" "$id" "$haunt" "$face")"
   fi
   local line id_show pane_w max_vis lp i
-  # Center in the full pane, same axis as the selected face. cell_w is the
-  # column inside the one-column gutter, so add that gutter back.
-  pane_w=$(( cell_w + ${ROSTER_PAD:-0} ))
+  # One column: center on the full pane. Three mid columns: center in the cell.
+  pane_w=$cell_w
+  if [ "${ROSTER_COLS:-1}" = 1 ]; then
+    pane_w=$(( cell_w + ${ROSTER_PAD:-0} ))
+  fi
   [ "$pane_w" -lt 1 ] && pane_w=$cell_w
   if [ -n "${art:-}" ]; then
     art="$(printf '%s\n' "$art" | { head -n "$cell_h" || true; })"
@@ -1235,8 +1237,10 @@ warm_other_cells() {
   dbg "warm: $WARM_N tiles @ ${WARM_W}x${WARM_H}"
   for ((i = 0; i < WARM_N; i++)); do
     [ -n "${W_LOAD[i]:-}" ] && continue
-    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|${W_NAME[i]}|${W_ROLE[i]}||$WARM_W|$WARM_H" \
-      cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}" "${W_NAME[i]}" "${W_ROLE[i]}"
+    local warm_face=mini
+    [ "${WARM_H:-0}" -ge 9 ] && warm_face=mid
+    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|${W_NAME[i]}|${W_ROLE[i]}||$WARM_W|$WARM_H|$warm_face" \
+      cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}" "${W_NAME[i]}" "${W_ROLE[i]}" "" "$warm_face"
   done
   WARM_DONE=1
   dbg "warm: done"
@@ -1252,19 +1256,32 @@ render_now() {
 }
 
 
-# Single column of minis. ROSTER_ROWS is always 1.
-# collapsed (default): no selected header, the whole pane is minis.
-# focused: reserve the framed portrait plus its status/name/role caption.
-# ROSTER_PAGE is how many mini faces fit. ROSTER_GRID is the strip they occupy.
+# collapsed: the whole pane is a single column of minis. No selected header.
+# focused: framed portrait on top, then rows of mid-size sub-agents (3 across).
 roster_budget() {
-  local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 reserve=0 remain
+  local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain
   case "$pane_h" in
     ''|*[!0-9]*) pane_h=0 ;;
   esac
-  # 26-line portrait + status, name, role, and the roster label.
-  [ "$mode" = "focused" ] && reserve=33
+  if [ "$mode" = "focused" ]; then
+    ROSTER_ROWS=1
+    ROSTER_PAGE=3
+    if [ "$pane_h" -lt 28 ]; then
+      ROSTER_GRID=11
+    elif [ "$pane_h" -le 40 ]; then
+      ROSTER_GRID=15
+    else
+      ROSTER_GRID=19
+    fi
+    if [ "$pane_h" -ge 70 ]; then
+      ROSTER_ROWS=3
+      ROSTER_PAGE=9
+      ROSTER_GRID=43
+    fi
+    return 0
+  fi
   ROSTER_ROWS=1
-  remain=$((pane_h - reserve))
+  remain=$pane_h
   [ "$remain" -lt "$mini" ] && remain=$mini
   ROSTER_PAGE=$((remain / mini))
   [ "$ROSTER_PAGE" -lt 1 ] && ROSTER_PAGE=1
@@ -1273,7 +1290,33 @@ roster_budget() {
 
 # One column. One pad column when the pane can spare it; the cell is the rest.
 roster_geometry() {
-  local cols="${1:-0}"
+  local cols="${1:-0}" mode="${2:-collapsed}"
+  if [ "$mode" = "wide" ]; then
+    local gap=2 gaps pad avail
+    gaps=$((gap * 2))
+    ROSTER_PAD=0
+    ROSTER_COLS=3
+    ROSTER_CELL_W=10
+    ROSTER_ROW_W=$((ROSTER_CELL_W * 3 + gaps))
+    for pad in 1 0; do
+      [ "$cols" -lt 1 ] && pad=0
+      avail=$((cols - pad - gaps))
+      if [ "$avail" -lt 0 ]; then
+        ROSTER_CELL_W=0
+      else
+        ROSTER_CELL_W=$((avail / 3))
+      fi
+      [ "$ROSTER_CELL_W" -lt 10 ] && ROSTER_CELL_W=10
+      [ "$ROSTER_CELL_W" -gt 36 ] && ROSTER_CELL_W=36
+      ROSTER_ROW_W=$((ROSTER_CELL_W * 3 + gaps))
+      ROSTER_PAD=$pad
+      if [ "$pad" -eq 0 ] || [ $((ROSTER_PAD + ROSTER_ROW_W)) -le "$cols" ]; then
+        break
+      fi
+    done
+    return 0
+  fi
+  ROSTER_COLS=1
   ROSTER_PAD=0
   [ "$cols" -ge 12 ] && ROSTER_PAD=1
   ROSTER_CELL_W=$((cols - ROSTER_PAD))
@@ -1422,12 +1465,18 @@ render_body() {
     return
   fi
 
-  roster_geometry "$cols"
+  local face=mini
+  # Expanded pane: mid thumbs in three columns. Collapsed: one column of minis.
+  if [ "$expanded" = 1 ]; then
+    face=mid
+    roster_geometry "$cols" wide
+  else
+    roster_geometry "$cols"
+  fi
   local gap=2
   local cell_w="$ROSTER_CELL_W"
-  # Mini face is 5 rows. Unselected stay minis. The framed portrait is only
-  # the header, and only while this pane is focused.
   local cell_h=5
+  [ "$face" = "mid" ] && cell_h=9
 
   # LOAD_ARR holds the spinner frame for a loading tile, empty once it resolved.
   local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR ROLE_ARR LOAD_ARR
@@ -1469,7 +1518,7 @@ render_body() {
   W_ROLE=("${ROLE_ARR[@]}")
   W_LOAD=("${LOAD_ARR[@]}")
 
-  local i base left k1 r vi end
+  local i base left k1 r vi end mid right pair k2 k3
   base=$((PAGE * page_size))
   LOADING_VISIBLE=0
   end=$((base + page_size))
@@ -1480,6 +1529,37 @@ render_body() {
       break
     fi
   done
+  if [ "${ROSTER_COLS:-1}" = 3 ]; then
+    for ((r = 0; r < roster_rows; r++)); do
+      i=$((base + r * 3))
+      [ "$i" -ge "$n_ids" ] && break
+      [ "$row" -ge "$pane_h" ] && break
+      left=""; mid=""; right=""; k1=""; k2=""; k3=""
+      if [ "$i" -lt "$n_ids" ]; then
+        k1="m|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h|$face"
+        memo_call left "$k1" \
+          cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}" "$face"
+      fi
+      if [ $((i + 1)) -lt "$n_ids" ]; then
+        k2="m|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|${ROLE_ARR[i+1]}|${LOAD_ARR[i+1]}|$cell_w|$cell_h|$face"
+        memo_call mid "$k2" \
+          cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}" "${ROLE_ARR[i+1]}" "${LOAD_ARR[i+1]}" "$face"
+      fi
+      if [ $((i + 2)) -lt "$n_ids" ]; then
+        k3="m|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|${ROLE_ARR[i+2]}|${LOAD_ARR[i+2]}|$cell_w|$cell_h|$face"
+        memo_call right "$k3" \
+          cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}" "${ROLE_ARR[i+2]}" "${LOAD_ARR[i+2]}" "$face"
+      fi
+      memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap|$face" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
+      while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        put_line "$row" "$(roster_pad_line "$line")"
+        row=$((row + 1))
+        [ "$row" -ge "$pane_h" ] && break
+      done < <(printf '%s\n' "$pair")
+    done
+  fi
+  if [ "${ROSTER_COLS:-1}" != 3 ]; then
   for ((i = base; i < end; i++)); do
     [ "$row" -ge "$pane_h" ] && break
     k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
@@ -1492,8 +1572,9 @@ render_body() {
       [ "$row" -ge "$pane_h" ] && break
     done < <(printf '%s\n' "$left")
   done
+  fi
 
-  # Button row under the single column: [ ← ]  n / N  [ → ]
+  # Button row under the roster: [ ← ]  n / N  [ → ]
   if [ "$row" -lt "$pane_h" ]; then
     put_line "$row" ""
     row=$((row + 1))
