@@ -1,6 +1,6 @@
 {
   "name": "@userdefault/gotchibot",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "GotchiBot — Aavegotchi agent orchestrator (OpenClaw / OpenCode; macOS, Linux, Windows/WSL)",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
