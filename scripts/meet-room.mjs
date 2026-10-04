@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 /**
- * Meet room — Zoom-style participant carousel + helpers.
+ * Meet room — iMessage transcript helpers (not the seat grid).
  *
- *   node scripts/meet-room.mjs --render [--cols N] [--rows N] [--page N]
+ *   node scripts/meet-room.mjs --render [--cols N] [--rows N]
  *   node scripts/meet-room.mjs --members [--json]
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadCurrentMeeting, participantInfo, getThumb, orderMeetingParticipants } from "./meet-channel.mjs";
+import {
+  loadCurrentMeeting,
+  participantInfo,
+  getThumb,
+  orderMeetingParticipants,
+  renderMeetChannel,
+} from "./meet-channel.mjs";
 import { loadMeetStatus, statusFor, statusLabel } from "./meet-status.mjs";
 import { isMainModule } from "./is-main.mjs";
 import { downgradeAnsi, renderMode, toAsciiGlyphs } from "./lib/term-color.mjs";
@@ -194,6 +200,7 @@ function renderPager(cur, pages, cols) {
 }
 
 export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includeHint = true } = {}) {
+  void page;
   const meeting = loadCurrentMeeting();
   if (!meeting) {
     return finalizeMeetFrame(
@@ -206,48 +213,14 @@ export function renderMeetRoom({ cols = 80, rows = 40, page = loadPage(), includ
     );
   }
 
-  const members = listMeetMembers(meeting);
-  const pages = pageCount(members);
-  const cur = clampPage(page, members);
-  const slice = members.slice(cur * PER_PAGE, cur * PER_PAGE + PER_PAGE);
-  const statusState = loadMeetStatus();
-
-  const lines = [];
-  lines.push(`${C.topic}# ${meeting.topic || "Untitled meeting"}${C.reset}`);
-  lines.push(
-    `${C.dim}${members.length} in room · ${GRID_COLS}×${GRID_ROWS} grid · ←→ page · /cockpit · /chat leave UI · /end record${C.reset}`,
-  );
-  lines.push(`${C.bar}${"─".repeat(Math.min(cols - 2, 58))}${C.reset}`);
-  lines.push("");
-
-  const grid = renderGrid(slice, cols, GRID_COLS, GRID_ROWS, statusState);
-  lines.push(...grid);
-
-  lines.push("");
-  lines.push(renderPager(cur, pages, cols));
-  if (includeHint) {
-    lines.push("");
-    lines.push(
-      `${C.hint}← → /prev /next · @LINK · @everyone · pardon me, … · /continue — # meet →${C.reset}`,
-    );
-  }
-
-  const maxLines = Math.max(10, rows - 2);
-  if (lines.length > maxLines) {
-    // Keep topic/header + as much grid as fits + always keep the pager.
-    // (Old slice(-maxLines) dropped the top of the grid and made next/prev look broken.)
-    const pagerIdx = lines.findLastIndex(
-      (l) => /prev/.test(stripAnsi(l)) && /next/.test(stripAnsi(l)),
-    );
-    const pagerLine = pagerIdx >= 0 ? lines[pagerIdx] : null;
-    const budget = Math.max(1, maxLines - (pagerLine ? 1 : 0));
-    const prefix = lines
-      .filter((_, i) => i !== pagerIdx)
-      .slice(0, budget);
-    if (pagerLine) prefix.push(pagerLine);
-    return finalizeMeetFrame(prefix.join("\n"));
-  }
-  return finalizeMeetFrame(lines.join("\n"));
+  // iMessage transcript (thumb + text). Not the 3×2 seat grid.
+  const channel = renderMeetChannel({
+    cols,
+    rows: Math.max(8, rows - (includeHint ? 2 : 0)),
+    scrollFromBottom: 0,
+  });
+  if (!includeHint) return channel;
+  return `${channel}\n${C.hint}j/k · PgUp/Dn scroll · /cockpit · /chat leave UI · /end record${C.reset}`;
 }
 
 function finalizeMeetFrame(frame) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Meet room TUI — gallery + OpenCode-style prompter.
+ * Meet room TUI — iMessage transcript + OpenCode-style prompter.
  *
  *   node scripts/meet-room-prompter.mjs
  *   node scripts/meet-room-prompter.mjs --inline   # single terminal (no tmux)
@@ -17,14 +17,7 @@ import {
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stdin, stdout } from "node:process";
-import {
-  renderMeetRoom,
-  loadPage,
-  savePage,
-  pageCount,
-  listMeetMembers,
-  clampPage,
-} from "./meet-room.mjs";
+import { listMeetMembers } from "./meet-room.mjs";
 import {
   setMeetStatus,
   loadMeetStatus,
@@ -241,8 +234,8 @@ const SLASH_COMMANDS = [
   { tag: "/start", hint: "start recording", needsArg: true },
   { tag: "/end", hint: "stop recording", needsArg: false },
   { tag: "/help", hint: "list commands", needsArg: false },
-  { tag: "/prev", hint: "prev seat page", needsArg: false },
-  { tag: "/next", hint: "next seat page", needsArg: false },
+  { tag: "/prev", hint: "older messages", needsArg: false },
+  { tag: "/next", hint: "newer messages", needsArg: false },
   { tag: "/colabo", hint: "round-robin", needsArg: true },
   { tag: "/pardon", hint: "interrupt round", needsArg: true },
   { tag: "/continue", hint: "resume parked", needsArg: false },
@@ -741,20 +734,22 @@ function backToCockpit() {
   requestLeave("cockpit");
 }
 
+/** Scroll the iMessage transcript toward older turns. */
 function pagePrev() {
-  const members = listMeetMembers();
-  const before = loadPage();
-  const next = clampPage(before - 1, members);
-  savePage(next);
-  return next !== before;
+  const { cols, rows } = paneSize();
+  const layout = inlineLayout(cols, rows);
+  scrollFromBottom += 5;
+  clampInlineScroll(layout.cols, layout.transcriptRows);
+  return true;
 }
 
+/** Scroll the iMessage transcript toward newer turns. */
 function pageNext() {
-  const members = listMeetMembers();
-  const before = loadPage();
-  const next = clampPage(before + 1, members);
-  savePage(next);
-  return next !== before;
+  const { cols, rows } = paneSize();
+  const layout = inlineLayout(cols, rows);
+  scrollFromBottom = Math.max(0, scrollFromBottom - 5);
+  clampInlineScroll(layout.cols, layout.transcriptRows);
+  return true;
 }
 
 /** 1-based row of the pager in the last draw (for mouse hits). */
@@ -1216,72 +1211,8 @@ function drawBodyInline() {
 }
 
 function drawBody() {
-  if (INLINE) {
-    drawBodyInline();
-    return;
-  }
-  consumeEditRequest();
-  const { cols, rows } = paneSize();
-  const mentionRow = rows - PROMPT_PANEL_ROWS;
-  const galleryRows = Math.max(8, rows - PROMPT_PANEL_ROWS - 1);
-  const page = loadPage();
-  const gallery = renderMeetRoom({
-    cols,
-    rows: galleryRows,
-    page,
-    includeHint: false,
-  });
-
-  // Home + clear-to-EOL per line (one write) instead of a full-screen clear:
-  // no blank flash on /next, /prev, or a status tick.
-  const galleryLines = String(gallery).split("\n");
-  const activeLine = deskActiveLine();
-  if (activeLine) {
-    galleryLines.unshift(`${T.muted}${truncatePlain(activeLine, cols)}${T.reset}`);
-  }
-  lastPagerCols = cols;
-  lastPagerRow = 0;
-  for (let i = 0; i < galleryLines.length; i++) {
-    const plain = galleryLines[i].replace(/\x1b\[[0-9;]*m/g, "");
-    if (/prev/.test(plain) && /next/.test(plain)) lastPagerRow = i + 1; // 1-based
-  }
-  stdout.write(`\x1b[H${galleryLines.map((l) => `${l}\x1b[K`).join("\n")}\n\x1b[J`);
-
-  const top = rows - PROMPT_PANEL_ROWS + 1;
-  const slashQ = activeSlashQuery(editor.buffer);
-  const slashMatches = slashQ != null ? matchingSlashCmds(slashQ) : [];
-  const mentionQ = slashQ == null ? activeMentionQuery(editor.buffer) : null;
-  const mentionMatches = mentionQ != null ? matchingMentions(mentionQ) : [];
-
-  if (slashMatches.length && slashQ != null) {
-    const n = slashMatches.length;
-    const menu = slashMatches
-      .slice(0, 8)
-      .map((c, i) => {
-        const on = i === editor.menuIdx % n;
-        const tag = `${on ? T.menu : T.mention}${c.tag}${T.reset}`;
-        const hint = on ? `${T.muted} ${c.hint}${T.reset}` : "";
-        return `${tag}${hint}`;
-      })
-      .join(`${T.muted} · ${T.reset}`);
-    writeAt(
-      Math.max(1, mentionRow),
-      1,
-      padPanelLine(`${T.accentBar}${T.panel} ${menu}`, cols),
-    );
-  } else if (mentionMatches.length && mentionQ != null) {
-    const menu = mentionMatches
-      .slice(0, 6)
-      .map((m, i) => `${i === editor.menuIdx % mentionMatches.length ? T.menu : T.mention}${m.tag}${T.reset}`)
-      .join(`${T.muted}  ${T.reset}`);
-    writeAt(
-      Math.max(1, mentionRow),
-      1,
-      padPanelLine(`${T.accentBar}${T.panel} ${T.muted}${menu}${T.reset}`, cols),
-    );
-  }
-
-  drawInputPanel(top, cols);
+  // Desk meet pane and --inline share the iMessage transcript, not the 3×2 seat grid.
+  drawBodyInline();
 }
 
 function draw() {
@@ -1467,7 +1398,7 @@ function handleEsc(seq) {
       return "redraw";
     }
   }
-  // PageUp / PageDown — always page the seat carousel (gallery mode).
+  // PageUp / PageDown — scroll the iMessage transcript.
   if (seq === "\x1b[5~" || seq === "\x1b[6~") {
     if (seq === "\x1b[5~") pagePrev();
     else pageNext();
@@ -1595,7 +1526,6 @@ function stopInlineWatch() {
 }
 
 function startInlineWatch() {
-  if (!INLINE) return;
   stopInlineWatch();
   lastInlineWatchKey = inlineWatchSnapshot();
 
@@ -1655,16 +1585,14 @@ function main() {
     },
   });
   if (!INLINE) {
-    // Pre-render every member's thumb to disk in the background so the first
-    // visit to each room page is a file read, not a gotchi-art spawn per tile.
+    // Thumbs for the iMessage transcript. File reads, not a spawn per tile.
     try {
       warmThumbs(listMeetMembers().map((m) => m.id));
     } catch {
       /* ok */
     }
-  } else {
-    startInlineWatch();
   }
+  startInlineWatch();
 
   process.on("SIGUSR1", () => {
     ensureStatusAnim();

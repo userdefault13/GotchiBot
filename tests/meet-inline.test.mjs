@@ -13,10 +13,21 @@ import {
   inlineLayout,
   renderInlineFrame,
 } from "../scripts/meet-room-prompter.mjs";
+import { resolveMeetingsRoot } from "../scripts/project-context.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const meetCli = path.join(root, "scripts/gotchi-meet.mjs");
 const currentPtr = path.join(root, "sessions/meetings/.current");
+
+function meetingPointerExists() {
+  try {
+    const scoped = path.join(resolveMeetingsRoot().root, ".current");
+    if (existsSync(scoped)) return true;
+  } catch {
+    /* fall through */
+  }
+  return existsSync(currentPtr);
+}
 
 describe("inlineLayout", () => {
   it("80x24: strip + transcript + 4-row prompt", () => {
@@ -96,7 +107,7 @@ describe("gotchi-meet --inline gating", () => {
     assert.ok(ensureIdx > spawnInlineIdx || ensureIdx < 0);
   });
 
-  it("exits non-zero with no open meeting (when .current absent)", { skip: existsSync(currentPtr) }, () => {
+  it("exits non-zero with no open meeting (when .current absent)", { skip: meetingPointerExists() }, () => {
     let err;
     try {
       execFileSync(process.execPath, [meetCli, "room", "--inline"], {
@@ -111,5 +122,44 @@ describe("gotchi-meet --inline gating", () => {
     assert.notEqual(err.status, 0);
     const out = `${err.stdout || ""}${err.stderr || ""}`;
     assert.match(out, /no open meeting/i);
+  });
+});
+
+describe("meet room iMessage layout", () => {
+  const roomSrc = readFileSync(path.join(root, "scripts/meet-room.mjs"), "utf8");
+  const prompterSrc = readFileSync(path.join(root, "scripts/meet-room-prompter.mjs"), "utf8");
+
+  it("desk drawBody paints the iMessage frame, not the seat grid", () => {
+    const draw = prompterSrc.slice(
+      prompterSrc.indexOf("function drawBody("),
+      prompterSrc.indexOf("function draw("),
+    );
+    assert.match(draw, /drawBodyInline\(/);
+    assert.doesNotMatch(draw, /renderMeetRoom\(/);
+    assert.doesNotMatch(draw, /3×2 grid/);
+    assert.match(prompterSrc, /function drawBodyInline\(/);
+    assert.match(prompterSrc, /renderInlineFrame\(/);
+    assert.match(prompterSrc, /renderMeetChannel\(/);
+  });
+
+  it("renderMeetRoom paints the iMessage channel, not a cols×rows grid", () => {
+    const fn = roomSrc.slice(
+      roomSrc.indexOf("export function renderMeetRoom"),
+      roomSrc.indexOf("function finalizeMeetFrame"),
+    );
+    assert.match(fn, /renderMeetChannel\(/);
+    assert.doesNotMatch(fn, /renderGrid\(/);
+    assert.doesNotMatch(fn, /in room/);
+    assert.doesNotMatch(fn, /×\$\{GRID_/);
+    assert.doesNotMatch(roomSrc, /3×2 grid/);
+  });
+
+  it("rendered meet room text has no seat-grid status", async () => {
+    const { renderMeetRoom } = await import("../scripts/meet-room.mjs");
+    const frame = renderMeetRoom({ cols: 80, rows: 24, includeHint: true });
+    assert.equal(typeof frame, "string");
+    assert.doesNotMatch(frame, /3×2 grid/);
+    assert.doesNotMatch(frame, /\d+×\d+ grid/);
+    assert.doesNotMatch(frame, /in room/);
   });
 });
