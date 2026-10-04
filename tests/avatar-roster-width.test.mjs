@@ -1,5 +1,5 @@
 /**
- * Avatar pane is 34 at a 147-column desk and at 163 (147+16). One column is a left pad.
+ * Avatar pane is 24 at a 147-column desk and at 163 (147+16). One column is a left pad.
  * Collapsed label bars are 3: one space, the glyph, one space. They are not shrunk to 1.
  * Focused chat/factory/dossier/inbox/meet/cockpit/kanban is 74 at 147 and 90 at 163.
  * Kanban is pane 8: its collapsed bar (3) and separator (1) come out of the focused pane (was 78 and 94).
@@ -46,14 +46,14 @@ describe("avatar roster width", () => {
     const wide = 163;
     const chatWide = (wide - separators) - chrome - avatar;
 
-    assert.equal(avatar, 34);
-    assert.equal(cellW, 33);
+    assert.equal(avatar, 24);
+    assert.equal(cellW, 23);
     assert.ok(cellW >= 12, `cell_w ${cellW} >= 12 (12-column thumb fits)`);
-    assert.equal(row, 33);
+    assert.equal(row, 23);
     assert.equal(pad, 1);
     assert.ok(pad + row <= avatar, `pad+row ${pad + row} <= avatar ${avatar}`);
-    assert.equal(chat, 84);
-    assert.equal(chatWide, 100);
+    assert.equal(chat, 94);
+    assert.equal(chatWide, 110);
     assert.ok(chatWide > chat, "the extra 16 columns widen chat");
     assert.ok(chat > 57, `chat ${chat} still > 57`);
 
@@ -96,7 +96,7 @@ describe("avatar roster width", () => {
   });
 
   it("left-pads the roster so the label and first sprite start at column 1", () => {
-    const out = execFileSync("bash", ["scripts/avatar-pane.sh", "roster-origin", "34"], {
+    const out = execFileSync("bash", ["scripts/avatar-pane.sh", "roster-origin", "24"], {
       cwd: root,
       encoding: "utf8",
     });
@@ -108,11 +108,11 @@ describe("avatar roster width", () => {
       got[line.slice(0, eq)] = line.slice(eq + 1);
     }
     assert.equal(got.pad, "1");
-    assert.equal(got.cell_w, "33");
-    assert.equal(got.row_w, "33");
+    assert.equal(got.cell_w, "23");
+    assert.equal(got.row_w, "23");
     assert.equal(got.label_col, "1");
     assert.equal(got.sprite_col, "1");
-    assert.equal(got.line_w, "34");
+    assert.equal(got.line_w, "24");
     assert.equal(got.label_prefix, " ");
     const labelCol = Number(got.label_col);
     const spriteCol = Number(got.sprite_col);
@@ -133,12 +133,12 @@ describe("avatar roster width", () => {
 
   const rowKeys = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet", "kanban"];
 
-  it("pads collapsed labels and keeps chat at 84 on the previous 147-wide desk", () => {
+  it("pads collapsed labels and keeps chat at 94 on the previous 147-wide desk", () => {
     const got = sizes(147, "chat");
     assert.equal(got.files, "3");
-    assert.equal(got.avatar, "34");
+    assert.equal(got.avatar, "24");
     assert.equal(got.cockpit, "3");
-    assert.equal(got.chat, "84");
+    assert.equal(got.chat, "94");
     assert.equal(got.factory, "3");
     assert.equal(got.dossier, "3");
     assert.equal(got.inbox, "3");
@@ -149,9 +149,9 @@ describe("avatar roster width", () => {
     assert.equal(widths.reduce((n, w) => n + w, 0) + 8, 147);
 
     const cockpit = sizes(147, "cockpit");
-    assert.equal(cockpit.avatar, "34");
+    assert.equal(cockpit.avatar, "24");
     assert.equal(cockpit.chat, "3");
-    assert.equal(cockpit.cockpit, "84");
+    assert.equal(cockpit.cockpit, "94");
     assert.equal(cockpit.kanban, "3");
     assert.equal(cockpit.factory, "3");
     assert.equal(cockpit.sum, "139");
@@ -160,9 +160,9 @@ describe("avatar roster width", () => {
   it("gives the extra 16 columns to chat, factory, dossier, inbox, meet, and kanban at 163", () => {
     const chat = sizes(163, "chat");
     assert.equal(chat.files, "3");
-    assert.equal(chat.avatar, "34");
+    assert.equal(chat.avatar, "24");
     assert.equal(chat.cockpit, "3");
-    assert.equal(chat.chat, "100");
+    assert.equal(chat.chat, "110");
     assert.equal(chat.factory, "3");
     assert.equal(chat.dossier, "3");
     assert.equal(chat.inbox, "3");
@@ -176,8 +176,8 @@ describe("avatar roster width", () => {
     for (const [pane, focus] of Object.entries(focused)) {
       const got = sizes(163, focus);
       assert.equal(got.files, "3", focus);
-      assert.equal(got.avatar, "34", focus);
-      assert.equal(got[pane], "100", focus);
+      assert.equal(got.avatar, "24", focus);
+      assert.equal(got[pane], "110", focus);
       assert.equal(got.sum, "155", focus);
       for (const other of ["cockpit", "chat", "factory", "dossier", "inbox", "meet", "kanban"]) {
         if (other === pane) continue;
@@ -189,15 +189,15 @@ describe("avatar roster width", () => {
     const at147 = sizes(147, "chat");
     assert.equal(Number(chat.chat) - Number(at147.chat), 16);
     const pstack = sizes(163, "pstack");
-    assert.equal(pstack.dossier, "100");
+    assert.equal(pstack.dossier, "110");
     assert.equal(pstack.chat, "3");
     assert.equal(pstack.kanban, "3");
-    assert.equal(pstack.avatar, "34");
+    assert.equal(pstack.avatar, "24");
     const cockpit = sizes(163, "cockpit");
-    assert.equal(cockpit.cockpit, "100");
+    assert.equal(cockpit.cockpit, "110");
     assert.equal(cockpit.chat, "3");
     assert.equal(cockpit.kanban, "3");
-    assert.equal(cockpit.avatar, "34");
+    assert.equal(cockpit.avatar, "24");
   });
 
   it("draws collapsed label text with one space on each side", () => {
