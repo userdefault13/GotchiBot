@@ -195,7 +195,7 @@ export function renderKanbanAscii(colors = null, opts = {}) {
 export function renderMiniAscii(colors = null, { useColor = true, mode = "truecolor" } = {}) {
   const base = existsSync(MINI_ASCII)
     ? readFileSync(MINI_ASCII, "utf8").replace(/\s+$/, "")
-    : "  ▄▄▄▄▄  \n▄▀  ░░  ▀▄\n█  ▀▀▀▀ █\n█       █\n▀▄▀▄▀▄▀▄▀";
+    : "  ▄▄▄▄▄  \n▄▀  ░░  ▀▄\n█  ▀ ▀  █\n█       █\n▀▄▀▄▀▄▀▄▀";
   if (useColor && (colors?.primary || colors?.secondary)) {
     return recolorAscii(base, {
       primary: colors.primary,

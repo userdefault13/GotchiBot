@@ -13,7 +13,7 @@ sess_name="${sess_name#=}"
 sess="$sess_name"
 min_right="${GOTCHIBOT_TMUX_RIGHT_WIDTH:-47}"
 # Desk canvas is 163 columns by 46 rows on a laptop (was 147 by 40: +16 columns, +6 rows). A client whose content area is at least 70 rows grows the window to that height so the avatar can show 3 roster rows; shorter clients stay at 46. 9 panes, 8 separators, content 155 at 163 (139 at 147). Avatar stays 44. Files bar stays 3. Collapsed label bars stay 3: one space, the glyph, one space (they are not shrunk to 1). Kanban is pane 8. Chrome = files 3 + six collapsed bars of 3 = 21, so a focused chat/factory/dossier/inbox/meet/cockpit/kanban pane is 139-21-44 = 74 at 147 and 155-21-44 = 90 at 163 (was 78 and 94 before the kanban bar and its separator). The extra 16 columns still land on that focused pane. Roster cell is floor((44-1-4)/3)=13. The joined row is 43. The extra avatar column is a left pad, not a wider cell. 12-col thumb still fits; names longer than 13 still clip.
-min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-44}"
+min_avatar="${GOTCHIBOT_TMUX_AVATAR_MIN_WIDTH:-34}"
 min_left="${GOTCHIBOT_TMUX_LEFT_WIDTH:-30}"
 sidebar_collapsed="${GOTCHIBOT_SIDEBAR_COLLAPSED:-3}"
 chat_collapsed="${GOTCHIBOT_CHAT_COLLAPSED:-3}"
