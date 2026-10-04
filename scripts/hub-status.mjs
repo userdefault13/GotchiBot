@@ -17,6 +17,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { remoteConfig, materializeKey, runSsh } from "./remote-lib.mjs";
 import { getTopology } from "./topology.mjs";
+import { isMainModule } from "./is-main.mjs";
+import { hubNetworkSummary, probeHealth } from "./hub-network.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -25,15 +27,83 @@ const IMAC_CACHE = `${SESSIONS}/.imac-status-cache.json`;
 const ACTIVE = new Set(["running", "working", "active"]);
 
 function parseArgs(argv) {
-  const out = { json: false, live: false, infra: false, help: false };
+  const out = { json: false, live: false, infra: false, help: false, deskSnapshot: false };
   for (const a of argv) {
     if (a === "--json") out.json = true;
     else if (a === "--live") out.live = true;
     else if (a === "--infra" || a === "infra") out.infra = true;
+    else if (a === "--desk-snapshot") out.deskSnapshot = true;
     else if (a === "status") continue;
     else if (a === "-h" || a === "--help") out.help = true;
   }
   return out;
+}
+
+
+/**
+ * This computer is the hub only when sessions/.hub-api.json exists
+ * (hubNetworkSummary().hubInstalled). sessions/.hub.json is pairing.
+ * One pinned desk API — never scan for another hub.
+ */
+export async function probePinnedHubApi() {
+  const summary = hubNetworkSummary();
+  if (summary.hubInstalled) {
+    if (!summary.hubPort) return { reachable: false, via: "local-hub" };
+    const body = await probeHealth("127.0.0.1", summary.hubPort, 1500);
+    return { reachable: Boolean(body), via: "local-hub" };
+  }
+  const base = summary.deskApiBase;
+  if (!base) return { reachable: false, via: "unpaired" };
+  let url;
+  try {
+    url = new URL(base);
+  } catch {
+    return { reachable: false, via: "bad-pin" };
+  }
+  const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  if (!Number.isFinite(port)) return { reachable: false, via: "bad-pin" };
+  if (url.protocol === "http:") {
+    const body = await probeHealth(url.hostname, port, 2000);
+    return { reachable: Boolean(body), via: "pin" };
+  }
+  try {
+    const r = await fetch(`${base.replace(/\/$/, "")}/health`, { signal: AbortSignal.timeout(2000) });
+    const j = await r.json();
+    return { reachable: j?.service === "gotchibot-api", via: "pin" };
+  } catch {
+    return { reachable: false, via: "pin" };
+  }
+}
+
+/** ok when SSH or the pinned hub API answers. Unreachable is unavailable, never "?". */
+export function hubReachWord({ sshOk = false, sshConfigured = false, apiReachable = false } = {}) {
+  if (sshOk === true || apiReachable === true) return "ok";
+  if (sshConfigured && sshOk === false) return "bad";
+  return "unavailable";
+}
+
+/** Fast desk-load write of barLine + hubFetchedAt. No SSH. */
+export async function writeDeskHubSnapshot() {
+  const api = await probePinnedHubApi();
+  const focusList = readJson(FOCUS_LIST);
+  const sessions = countSessions(focusList);
+  const hubWord = hubReachWord({ apiReachable: api.reachable === true });
+  const load =
+    sessions.imac.running > 0
+      ? `${sessions.imac.running} run`
+      : sessions.imac.total > 0
+        ? `${sessions.imac.total} idle`
+        : "idle";
+  const barLine = `Hub: ${hubWord} · ${load}`;
+  writeImacCachePatch({
+    remoteOk: hubWord === "ok" ? true : null,
+    running: sessions.imac.running,
+    total: sessions.imac.total,
+    reason: hubWord === "ok" ? null : "hub-unreachable",
+    barLine,
+    remoteFetchedAt: new Date().toISOString(),
+  });
+  return { barLine, remoteOk: hubWord === "ok", via: api.via };
 }
 
 function readJson(path) {
@@ -368,8 +438,13 @@ async function buildStatus({ live }) {
     docker.reason = ssh.reason || "ssh down";
   }
 
-  const remoteOk = ssh.ok === true;
-  const hubWord = remoteOk ? "ok" : sshReady() ? "bad" : "?";
+  const api = await probePinnedHubApi();
+  const hubWord = hubReachWord({
+    sshOk: ssh.ok === true,
+    sshConfigured: sshReady(),
+    apiReachable: api.reachable === true,
+  });
+  const remoteOk = hubWord === "ok";
   const barLine = [
     `Hub: ${hubWord}`,
     sessions.imac.running > 0
@@ -387,7 +462,7 @@ async function buildStatus({ live }) {
     remoteOk,
     running: sessions.imac.running,
     total: sessions.imac.total,
-    reason: ssh.reason || null,
+    reason: remoteOk ? null : ssh.reason || (hubWord === "unavailable" ? "hub-unreachable" : null),
     openclawReachable: openclaw.reachable,
     bridgeOk: bridge.ok,
     receiverOk: bridge.receiverOk,
@@ -503,6 +578,11 @@ function printInfraHuman(payload) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  if (opts.deskSnapshot) {
+    const snap = await writeDeskHubSnapshot();
+    if (opts.json) console.log(JSON.stringify(snap));
+    return;
+  }
   if (opts.help) {
     console.log(`usage: hub-status.mjs [status] [--json] [--live] [--infra|infra]
   status   Hub dashboard (SSH, OpenClaw, mesh, tunnel, docker summary)
@@ -525,7 +605,9 @@ async function main() {
   process.exit(payload.ssh?.ok ? 0 : 1);
 }
 
-main().catch((e) => {
-  console.error(e?.message || e);
-  process.exit(1);
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((e) => {
+    console.error(e?.message || e);
+    process.exit(1);
+  });
+}

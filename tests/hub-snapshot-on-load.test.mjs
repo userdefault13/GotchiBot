@@ -33,6 +33,7 @@ describe("hub snapshot on desk load", () => {
     assert.match(tmux, /snapshot_hub_on_load/);
     const snap = fnBody(gotchi, "snapshot_hub_on_load");
     assert.match(snap, /scripts\/hub-status\.mjs/);
+    assert.match(snap, /--desk-snapshot/);
     assert.match(snap, /--json/);
     assert.match(snap, /&/);
     assert.equal(snap.includes("exec "), false);

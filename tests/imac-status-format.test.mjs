@@ -1,5 +1,5 @@
 /**
- * Hub tmux status: a known hub is ok or bad, never an ellipsis.
+ * Hub tmux status: a known hub is ok or bad. Unreachable is unavailable, never "?".
  *   node --test tests/imac-status-format.test.mjs
  */
 import { describe, it } from "node:test";
@@ -37,13 +37,27 @@ describe("formatStatus hub word", () => {
     assert.equal(text, "Hub: no-ssh · OC?");
   });
 
-  it("marks unknown when there is no ssh and no snapshot", () => {
+  it("says unavailable when there is no ssh and no snapshot", () => {
     const text = line({ staleNoSsh: true, remoteOk: false, openclawReachable: null });
-    assert.equal(text, "Hub: ? · OC?");
+    assert.equal(text, "Hub: unavailable · OC?");
+    assert.equal(text.includes("Hub: ?"), false);
     assert.equal(text.includes("…"), false);
     assert.equal(text.includes("..."), false);
     assert.equal(text.includes("ok"), false);
     assert.equal(text.includes("bad"), false);
+  });
+
+  it("rewrites a cached question mark to unavailable", () => {
+    const text = line(
+      { remoteOk: false, openclawReachable: null },
+      {
+        readCache: () => ({
+          barLine: "Hub: ? · idle · OC?",
+          hubFetchedAt: new Date().toISOString(),
+        }),
+      },
+    );
+    assert.equal(text, "Hub: unavailable · idle · OC?");
   });
 
   it("says ok from a stale snapshot that was up", () => {

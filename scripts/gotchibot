@@ -212,10 +212,13 @@ sync_openclaw_fleet() {
 # One hub-status snapshot per desk load. Writes sessions/.imac-status-cache.json
 # (barLine + hubFetchedAt) so the next status-bar tick can say Hub: ok or Hub: bad.
 # The 30s tick only reads that cache (3 minutes). Do not SSH from the bar.
-# Skips when there is no SSH env and no abra — a blind run would pin Hub: ? for 3 min.
+# --desk-snapshot is the pinned hub API only (sessions/.hub.json pairing, or
+# sessions/.hub-api.json when this machine is the hub). Unreachable is
+# "unavailable", never "Hub: ?". The background run adds SSH extras when it can.
 snapshot_hub_on_load() {
   command -v node >/dev/null 2>&1 || return 0
   mkdir -p "$SESSIONS"
+  node "$ROOT/scripts/hub-status.mjs" --desk-snapshot >/dev/null 2>&1 || true
   if [ -n "${SSH_PRIVATE_KEY:-}" ] && [ -n "${REMOTE_HOST:-}" ]; then
     (
       trap '' HUP
@@ -230,7 +233,13 @@ snapshot_hub_on_load() {
       abra run gotchibot -- node "$ROOT/scripts/hub-status.mjs" --json >/dev/null
     ) </dev/null >/dev/null 2>&1 &
     disown 2>/dev/null || true
+    return 0
   fi
+  (
+    trap '' HUP
+    node "$ROOT/scripts/hub-status.mjs" --json >/dev/null
+  ) </dev/null >/dev/null 2>&1 &
+  disown 2>/dev/null || true
 }
 
 # Desk load revives the Mac desk receiver when :45679 is down.

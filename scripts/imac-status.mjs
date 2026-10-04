@@ -38,7 +38,9 @@ function readJson(path) {
 
 function writeCache(data) {
   mkdirSync(SESSIONS, { recursive: true });
-  writeFileSync(CACHE, `${JSON.stringify(data, null, 2)}\n`);
+  // Merge. A gateway probe must not wipe barLine / hubFetchedAt from desk load.
+  const cur = readJson(CACHE) || {};
+  writeFileSync(CACHE, `${JSON.stringify({ ...cur, ...data }, null, 2)}\n`);
 }
 
 function countImacSessions(focusList) {
@@ -164,7 +166,9 @@ export function formatStatus(
   // Prefer Hub barLine when hub-status recently wrote one.
   if (cached.barLine && cached.hubFetchedAt) {
     const age = Date.now() - Date.parse(cached.hubFetchedAt);
-    if (Number.isFinite(age) && age < 3 * 60_000) return cached.barLine;
+    if (Number.isFinite(age) && age < 3 * 60_000) {
+      return String(cached.barLine).replace(/^Hub:\s*\?/, "Hub: unavailable");
+    }
   }
 
   if (staleNoSsh) {
@@ -177,7 +181,7 @@ export function formatStatus(
     if (snap?.remoteOk === false) {
       return `Hub: bad · ${extras}`;
     }
-    return `Hub: ? · ${extras}`;
+    return `Hub: unavailable · ${extras}`;
   }
 
   if (remoteOk === false) {
@@ -268,6 +272,6 @@ async function main() {
 
 if (isMainModule(import.meta.url)) {
   main().catch(() => {
-    console.log("Hub: ?");
+    console.log("Hub: unavailable");
   });
 }
