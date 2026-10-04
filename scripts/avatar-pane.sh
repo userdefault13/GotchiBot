@@ -1962,7 +1962,13 @@ render_body() {
     while IFS= read -r li || [ -n "$li" ]; do L+=("$li"); done < <(printf '%s\n' "$LEFT_BLOCK")
     while IFS= read -r gi || [ -n "$gi" ]; do G+=("$gi"); done < <(printf '%s\n' "$GRID_BLOCK")
     # Center the portrait column and the 4 by 3 grid as one block.
-    local llen=${#L[@]} glen=${#G[@]} block_h=$llen pager=0
+    # bash 3.2: local x=${#arr[@]} in a multi-assign leaves the name unbound
+    # and set -u kills the pane (Files then swallows the row).
+    local llen glen block_h pager
+    llen=${#L[@]}
+    glen=${#G[@]}
+    block_h=$llen
+    pager=0
     [ "$glen" -gt "$block_h" ] && block_h=$glen
     if [ "$NPAGES" -gt 1 ]; then
       pager=1

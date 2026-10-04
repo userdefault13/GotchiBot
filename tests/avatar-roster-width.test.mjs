@@ -376,6 +376,23 @@ describe("avatar roster width", () => {
     );
   }
 
+  it("keeps the focused expanded render alive on bash 3.2", () => {
+    const pane = read(path.join(root, "scripts/avatar-pane.sh"));
+    assert.doesNotMatch(pane, /local llen=\$\{#L\[@\]\}/);
+    execFileSync("bash", ["scripts/avatar-pane.sh", "once"], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 30000,
+      env: {
+        ...process.env,
+        TMUX: "",
+        TMUX_PANE: "",
+        GOTCHIBOT_AVATAR_FOCUSED: "1",
+        TERM: "xterm-256color",
+      },
+    });
+  });
+
   it("centers the expanded portrait and grid with blank rows above and below", () => {
     const laptop = probe(["block-origin", "46", "37"]);
     assert.equal(Number(laptop.top) > 0, true, `top ${laptop.top}`);
