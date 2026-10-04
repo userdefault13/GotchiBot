@@ -12,6 +12,8 @@ import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chatPaneTarget, sessionName } from "./tmux-pane.mjs";
+import { currentProjectSlug } from "./project-context.mjs";
+import { chatSessionFor, loadChatMap } from "./project-chat.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE = `${ROOT}/sessions/.agent-mode.json`;
@@ -75,23 +77,17 @@ function saveSessionMap(map) {
   writeFileSync(SESSION_MAP, `${JSON.stringify(map, null, 2)}\n`);
 }
 
-/** Remember the newest OpenCode session for an agent in the GotchiBot project. */
-function isProjectSessionTitle(title) {
-  const t = String(title || "");
-  return /^gotchibot:s/i.test(t) || /^GotchiBot\b/.test(t);
-}
-
+/** Remember the newest OpenCode session for a side agent (ask/plan/build/…). */
 function rememberAgentSession(agent) {
+  if (agent === "gotchi") {
+    // Never adopt the newest GotchiBot row — that transcript belongs to whichever
+    // project last wrote it. A project with no pin starts empty.
+    return chatSessionFor(loadChatMap(), currentProjectSlug()) || null;
+  }
   if (!agent || !existsSync(OPENCODE_DB)) return null;
   try {
     const safe = String(agent).replace(/[^a-z0-9_-]/gi, "");
-    // Gotchi "current project" = gotchibot:s… / GotchiBot… titles only.
-    // OpenCode Tab can rewrite a Wisp Greeting session's agent to gotchi in-place —
-    // never treat that as the project chat.
-    const sql =
-      safe === "gotchi"
-        ? `SELECT id, title FROM session WHERE directory LIKE '%/GotchiBot%' AND time_archived IS NULL AND (title LIKE 'gotchibot:s%' OR title LIKE 'GotchiBot%') AND IFNULL(agent,'') != 'wisp' ORDER BY time_updated DESC LIMIT 1;`
-        : `SELECT id, title FROM session WHERE directory LIKE '%/GotchiBot%' AND agent='${safe}' AND time_archived IS NULL ORDER BY time_updated DESC LIMIT 1;`;
+    const sql = `SELECT id, title FROM session WHERE directory LIKE '%/GotchiBot%' AND agent='${safe}' AND time_archived IS NULL ORDER BY time_updated DESC LIMIT 1;`;
     const q = spawnSync(
       "sqlite3",
       ["-separator", "\t", OPENCODE_DB, sql],
@@ -102,14 +98,8 @@ function rememberAgentSession(agent) {
     const [id, ...titleParts] = line.split("\t");
     const title = titleParts.join("\t");
     if (!id.startsWith("ses_")) return null;
-    if (safe === "gotchi" && !isProjectSessionTitle(title)) return null;
     const map = loadSessionMap();
-    // Keep an existing project pin if DB has nothing better (don't clobber).
-    if (safe === "gotchi" && map.project?.sessionId?.startsWith("ses_") && !isProjectSessionTitle(title)) {
-      return map.project.sessionId;
-    }
     map[agent] = { sessionId: id, title: title || null, updatedAt: new Date().toISOString() };
-    if (agent === "gotchi") map.project = map[agent];
     saveSessionMap(map);
     return id;
   } catch {
@@ -118,9 +108,9 @@ function rememberAgentSession(agent) {
 }
 
 function pinnedSessionFor(agent) {
+  if (agent === "gotchi") return chatSessionFor(loadChatMap(), currentProjectSlug());
   const map = loadSessionMap();
-  const hit = map[agent] || (agent === "gotchi" ? map.project : null);
-  const id = hit?.sessionId || "";
+  const id = map[agent]?.sessionId || "";
   return id.startsWith("ses_") ? id : "";
 }
 

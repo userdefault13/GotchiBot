@@ -487,22 +487,13 @@ args=(--agent "$AGENT" -m "$MODEL")
 # Resume / pin OpenCode sessions.
 # Gotchi mode = current PROJECT chat only (gotchibot:s… / GotchiBot…). Never --continue
 # onto whatever OpenCode touched last (often a Wisp Greeting Tab-rewritten to agent=gotchi).
-# Pin file: sessions/.opencode-agent-sessions.json (written by agent-mode.mjs).
+# Pin file: sessions/.opencode-agent-sessions.json, keyed by project slug.
+# No pin for this project → empty chat. Never the newest GotchiBot session
+# (that was the previous project's transcript).
 resolve_project_session() {
-  local pin_file="$ROOT/sessions/.opencode-agent-sessions.json"
-  local db="${HOME}/.local/share/opencode/opencode.db"
   local id=""
-  if [ -f "$pin_file" ] && command -v node >/dev/null 2>&1; then
-    id="$(node -e "
-      try {
-        const m=require(process.argv[1]);
-        const id=(m.project&&m.project.sessionId)||(m.gotchi&&m.gotchi.sessionId)||'';
-        if(/^ses_/.test(id)) process.stdout.write(id);
-      } catch {}
-    " "$pin_file" 2>/dev/null || true)"
-  fi
-  if [ -z "$id" ] && [ -f "$db" ] && command -v sqlite3 >/dev/null 2>&1; then
-    id="$(sqlite3 "$db" "SELECT id FROM session WHERE directory LIKE '%/GotchiBot%' AND time_archived IS NULL AND (title LIKE 'gotchibot:s%' OR title LIKE 'GotchiBot%') AND IFNULL(agent,'') != 'wisp' ORDER BY time_updated DESC LIMIT 1;" 2>/dev/null || true)"
+  if command -v node >/dev/null 2>&1; then
+    id="$(node "$ROOT/scripts/project-chat.mjs" id 2>/dev/null || true)"
   fi
   printf '%s' "$id"
 }
@@ -515,15 +506,7 @@ elif [ "$AGENT" = "gotchi" ]; then
     args+=(--session "$_proj")
     # Keep pin fresh for the next switch-back.
     if command -v node >/dev/null 2>&1; then
-      node -e "
-        const fs=require('fs');
-        const p=process.argv[1], id=process.argv[2];
-        let m={}; try{m=JSON.parse(fs.readFileSync(p,'utf8'))}catch{}
-        const row={sessionId:id, updatedAt:new Date().toISOString()};
-        m.gotchi=row; m.project=row;
-        fs.mkdirSync(require('path').dirname(p),{recursive:true});
-        fs.writeFileSync(p, JSON.stringify(m,null,2)+'\n');
-      " "$ROOT/sessions/.opencode-agent-sessions.json" "$_proj" 2>/dev/null || true
+      node "$ROOT/scripts/project-chat.mjs" remember "$_proj" 2>/dev/null || true
     fi
   else
     # No project session yet — start fresh gotchi, do not inherit Wisp Greeting.
