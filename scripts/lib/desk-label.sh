@@ -36,6 +36,38 @@ desk_label_render() {
   done
 }
 
+
+# Current project title (dossier fields.title, else the slug). Empty if none.
+desk_label_project() {
+  node --input-type=module -e '
+    import { readFileSync } from "node:fs";
+    import { currentProjectSlug } from "./scripts/project-context.mjs";
+    const slug = currentProjectSlug();
+    if (!slug) process.exit(0);
+    let title = slug;
+    try {
+      const d = JSON.parse(readFileSync(`sessions/pstack/${slug}/dossier.json`, "utf8"));
+      const t = d?.fields?.title || d?.slug;
+      if (t) title = String(t);
+    } catch {}
+    process.stdout.write(title.replace(/\s+/g, " ").trim());
+  ' 2>/dev/null || true
+}
+
+# Put the project name where the orchestrator name used to lead the subtitle.
+# "User0xDefault · idle" + "AarcadeGh-t" → "AarcadeGh-t · idle".
+desk_label_subtitle() {
+  local line="${1:-}" proj="${2:-}"
+  if [ -z "$proj" ]; then
+    printf '%s' "$line"
+    return 0
+  fi
+  case "$line" in
+    *" · "*) printf '%s' "${proj} · ${line#* · }" ;;
+    *) printf '%s' "$proj" ;;
+  esac
+}
+
 # One source: sessions/.desk-active.line. Republish when the line is older than 2s.
 desk_label_watch() {
   local word="${1:-Pane}"
@@ -51,6 +83,7 @@ desk_label_watch() {
     fi
     line=""
     [ -f "$linefile" ] && line="$(tr -d '\n' < "$linefile" 2>/dev/null || true)"
+    line="$(desk_label_subtitle "$line" "$(desk_label_project)")"
     if [ "$dirty" = 1 ] || [ "$line" != "$prev" ]; then
       desk_label_render "$word" "$line"
       prev="$line"

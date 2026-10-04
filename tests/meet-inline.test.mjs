@@ -13,6 +13,8 @@ import {
   inlineLayout,
   meetScrollDelta,
   MEET_SIDEBAR_COLS,
+  SIDEBAR_CARD_ROWS,
+  meetFocusTarget,
   renderInlineFrame,
   renderMeetSidebar,
 } from "../scripts/meet-room-prompter.mjs";
@@ -198,8 +200,11 @@ describe("meet transcript inset", () => {
 
 describe("meet sidebar", () => {
   it("lists mini gotchi heads with a name, beside the transcript", () => {
-    const side = renderMeetSidebar(8, MEET_SIDEBAR_COLS - 1);
-    assert.equal(side.length, 8);
+    const side = renderMeetSidebar(10, MEET_SIDEBAR_COLS - 1);
+    assert.equal(side.length, 10);
+    assert.equal(SIDEBAR_CARD_ROWS, 5);
+    const plainLines = side.map((s) => s.replace(/\x1b\[[0-9;]*m/g, ""));
+    assert.equal(plainLines[4].trim(), "");
     const plain = side.map((s) => s.replace(/\x1b\[[0-9;]*m/g, "")).join("\n");
     assert.match(plain, /[▄▀█░]/);
     assert.doesNotMatch(plain, /seat/);
@@ -208,6 +213,18 @@ describe("meet sidebar", () => {
     const vis = row.replace(/\x1b\[[0-9;]*m/g, "");
     assert.ok(vis.length > MEET_SIDEBAR_COLS);
     assert.equal(vis[MEET_SIDEBAR_COLS - 1], "│");
+  });
+
+  it("m focuses the sidebar and n focuses the chat, and typing still takes the letters", () => {
+    assert.equal(meetFocusTarget("m"), "sidebar");
+    assert.equal(meetFocusTarget("M"), "sidebar");
+    assert.equal(meetFocusTarget("n"), "chat");
+    assert.equal(meetFocusTarget("N"), "chat");
+    assert.equal(meetFocusTarget("j"), "");
+    const src = readFileSync(path.join(root, "scripts/meet-room-prompter.mjs"), "utf8");
+    const fn = src.slice(src.indexOf("function handleKey"), src.indexOf("function handleEsc"));
+    assert.ok(fn.indexOf("meetFocusTarget") < fn.indexOf("editor.insert"));
+    assert.match(fn, /bufferEmpty\(\)/);
   });
 });
 

@@ -762,7 +762,7 @@ resolve_thumb_collateral() {
 # Roster tile — large thumb, doubled collateral, eyes plain.
 # (iMessage meet bubbles use --thumb and stay plain regular eyes.)
 thumb_art() {
-  local collateral="${1:-}" id="${2:-}" haunt="${3:-}"
+  local collateral="${1:-}" id="${2:-}" haunt="${3:-}" size="${4:-mid}"
   local art="" resolved spirit
   if [ -z "$collateral" ] && [ -n "$id" ]; then
     resolved="$(resolve_thumb_collateral "$id" "$collateral" "$haunt")"
@@ -780,18 +780,22 @@ thumb_art() {
   fi
   if command -v node >/dev/null && [ -f "$ROOT/scripts/gotchi-art.mjs" ]; then
     # Prefer --hero so cartridge traits (eyeColor / eyeShape) load with the glyph.
+    local flag="--roster"
+    [ "$size" = "mini" ] && flag="--mini"
     if [ -n "$id" ]; then
-      art="$(gotchi_art --roster --hero "$id" --color 2>/dev/null)" || art=""
+      art="$(gotchi_art "$flag" --hero "$id" --color 2>/dev/null)" || art=""
     fi
     if [ -z "$art" ] && [ -n "$collateral" ]; then
       if [ -n "$haunt" ]; then
-        art="$(gotchi_art --roster --collateral "$collateral" --haunt "$haunt" --color 2>/dev/null)" || art=""
+        art="$(gotchi_art "$flag" --collateral "$collateral" --haunt "$haunt" --color 2>/dev/null)" || art=""
       else
-        art="$(gotchi_art --roster --collateral "$collateral" --color 2>/dev/null)" || art=""
+        art="$(gotchi_art "$flag" --collateral "$collateral" --color 2>/dev/null)" || art=""
       fi
     fi
   fi
-  if [ -z "$art" ] && [ -f "$ASCII_THUMB" ]; then
+  if [ -z "$art" ] && [ "$size" = "mini" ] && [ -f "$ROOT/assets/gotchi-kanban.ascii" ]; then
+    art="$(cat "$ROOT/assets/gotchi-kanban.ascii")"
+  elif [ -z "$art" ] && [ -f "$ASCII_THUMB" ]; then
     art="$(cat "$ASCII_THUMB")"
   fi
   printf '%s\n' "$art"
@@ -969,10 +973,11 @@ cell_block() {
     art="$(mini_chafa "$svg" "$cell_w" "$cell_h")"
   fi
   if [ -z "${art:-}" ]; then
-    art="$(thumb_art "$collateral" "$id" "$haunt")"
+    art="$(thumb_art "$collateral" "$id" "$haunt" mini)"
   fi
   local line id_show
   if [ -n "${art:-}" ]; then
+    art="$(printf '%s\n' "$art" | { head -n "$cell_h" || true; })"
     while IFS= read -r line || [ -n "$line" ]; do
       pad_cell_line "$line" "$cell_w"
       printf '\n'
@@ -1166,58 +1171,34 @@ render_now() {
 }
 
 
-# Roster rows from pane height. One row is 12 lines: 9-line thumb + status, name, role.
-# Laptop panes stay on one row. grid reserves that strip so the portrait does not cover it:
-#   pane < 28 → 11, pane <= 40 → 15, else 19.
-# Three rows need grid 19+24 = 43. The 46-row portrait budget is 46-19-7 = 20, so a pane
-# of 20+43+7 = 70 is the shortest that fits 3 rows without squeezing the portrait.
-# Sets ROSTER_ROWS, ROSTER_PAGE (3 columns × rows), ROSTER_GRID.
+# Single column under the mid-size selected avatar.
+# ROSTER_ROWS is always 1. ROSTER_PAGE is how many mini faces fit under it.
+# ROSTER_GRID is the strip those minis occupy.
 roster_budget() {
-  local pane_h="${1:-0}"
+  local pane_h="${1:-0}" mid=16 mini=6 remain
   case "$pane_h" in
     ''|*[!0-9]*) pane_h=0 ;;
   esac
   ROSTER_ROWS=1
-  ROSTER_PAGE=3
-  if [ "$pane_h" -lt 28 ]; then
-    ROSTER_GRID=11
-  elif [ "$pane_h" -le 40 ]; then
-    ROSTER_GRID=15
-  else
-    ROSTER_GRID=19
-  fi
-  if [ "$pane_h" -ge 70 ]; then
-    ROSTER_ROWS=3
-    ROSTER_PAGE=9
-    ROSTER_GRID=43
-  fi
+  remain=$((pane_h - mid))
+  [ "$remain" -lt "$mini" ] && remain=$mini
+  ROSTER_PAGE=$((remain / mini))
+  [ "$ROSTER_PAGE" -lt 1 ] && ROSTER_PAGE=1
+  ROSTER_GRID=$remain
 }
 
-# Pane cols → ROSTER_PAD, ROSTER_CELL_W, ROSTER_ROW_W.
-# Pad is one column unless the pane cannot spare it (padded row would pass cols).
-# gap is 2, so the two gutters are 4. Cell clamps stay 10..36.
+# One column. One pad column when the pane can spare it; the cell is the rest.
 roster_geometry() {
-  local cols="${1:-0}" gap=2 gaps pad avail
-  gaps=$((gap * 2))
+  local cols="${1:-0}"
   ROSTER_PAD=0
-  ROSTER_CELL_W=10
-  ROSTER_ROW_W=$((ROSTER_CELL_W * 3 + gaps))
-  for pad in 1 0; do
-    [ "$cols" -lt 1 ] && pad=0
-    avail=$((cols - pad - gaps))
-    if [ "$avail" -lt 0 ]; then
-      ROSTER_CELL_W=0
-    else
-      ROSTER_CELL_W=$((avail / 3))
-    fi
-    [ "$ROSTER_CELL_W" -lt 10 ] && ROSTER_CELL_W=10
-    [ "$ROSTER_CELL_W" -gt 36 ] && ROSTER_CELL_W=36
-    ROSTER_ROW_W=$((ROSTER_CELL_W * 3 + gaps))
-    ROSTER_PAD=$pad
-    if [ "$pad" -eq 0 ] || [ $((ROSTER_PAD + ROSTER_ROW_W)) -le "$cols" ]; then
-      break
-    fi
-  done
+  [ "$cols" -ge 12 ] && ROSTER_PAD=1
+  ROSTER_CELL_W=$((cols - ROSTER_PAD))
+  [ "$ROSTER_CELL_W" -lt 10 ] && ROSTER_CELL_W=10
+  if [ $((ROSTER_PAD + ROSTER_CELL_W)) -gt "$cols" ] && [ "$cols" -ge 10 ]; then
+    ROSTER_PAD=0
+    ROSTER_CELL_W=$cols
+  fi
+  ROSTER_ROW_W=$ROSTER_CELL_W
 }
 
 # Prefix exactly ROSTER_PAD spaces. The cursor stays where put_line homes it.
@@ -1265,11 +1246,13 @@ render_body() {
     grid_budget=0
   fi
 
-  # Pinned header from row 0 — orch face never moves. Pagination swaps the 3-col row.
-  # (main art + ── orchestrator ── caption + roster label)
-  local main
-  memo_call main "art|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget" \
-    render_main_art "$status" "$cols" "$main_budget"
+  # Gallery keeps the large face. The desk avatar column uses the mid thumb,
+  # filled in once pin_id is known below.
+  local main=""
+  if [ "$gallery" = 1 ]; then
+    memo_call main "art|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget" \
+      render_main_art "$status" "$cols" "$main_budget"
+  fi
 
   local role_color="$AV_ROLE_ORCH"
   [ "$role" = "sub-agent" ] && role_color="$AV_ROLE_SUB"
@@ -1306,8 +1289,15 @@ render_body() {
     caption="${caption}"$'\n'"$(printf '%b%s%b' "$AV_MUTED" "$active_line" "$AV_RST")"
   fi
 
-  # Framed orch (art + caption) padded once per (art, caption, width); a page
-  # flip or a repaint only replays the lines. Do not clip the face.
+  # Selected avatar is the mid thumb (not the framed portrait). Unselected
+  # roster faces below are minis. Selecting another gotchi expands that one.
+  if [ "$gallery" != 1 ]; then
+    main_budget=12
+    memo_call main "mid|${TUI_COLOR}/${TUI_GLYPHS}|$pin_id" \
+      thumb_art "" "$pin_id" "" mid
+  fi
+
+  # Art + caption padded once per (art, caption, width). Do not clip the face.
   local hdr
   memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_show|$active_line" \
     render_header_block "$main" "$caption" "$cols" "$main_budget"
@@ -1344,9 +1334,8 @@ render_body() {
   roster_geometry "$cols"
   local gap=2
   local cell_w="$ROSTER_CELL_W"
-  # Thumb ASCII is ~10 rows; keep cells compact unless pane is very wide.
-  local cell_h=10
-  [ "$cols" -ge 90 ] && cell_h=12
+  # Mini face is 5 rows. The selected avatar above is the mid thumb.
+  local cell_h=5
 
   # LOAD_ARR holds the spinner frame for a loading tile, empty once it resolved.
   local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR ROLE_ARR LOAD_ARR
@@ -1388,7 +1377,7 @@ render_body() {
   W_ROLE=("${ROLE_ARR[@]}")
   W_LOAD=("${LOAD_ARR[@]}")
 
-  local i base left mid right pair k1 k2 k3 r vi end
+  local i base left k1 r vi end
   base=$((PAGE * page_size))
   LOADING_VISIBLE=0
   end=$((base + page_size))
@@ -1399,42 +1388,20 @@ render_body() {
       break
     fi
   done
-  for ((r = 0; r < roster_rows; r++)); do
-    i=$((base + r * 3))
-    [ "$i" -ge "$n_ids" ] && break
+  for ((i = base; i < end; i++)); do
     [ "$row" -ge "$pane_h" ] && break
-    left=""
-    mid=""
-    right=""
-    k1=""
-    k2=""
-    k3=""
-    if [ "$i" -lt "$n_ids" ]; then
-      # r| = roster traits on large thumb; bump if roster tile art format changes
-      k1="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
-      memo_call left "$k1" \
-        cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}"
-    fi
-    if [ $((i + 1)) -lt "$n_ids" ]; then
-      k2="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|${ROLE_ARR[i+1]}|${LOAD_ARR[i+1]}|$cell_w|$cell_h"
-      memo_call mid "$k2" \
-        cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}" "${ROLE_ARR[i+1]}" "${LOAD_ARR[i+1]}"
-    fi
-    if [ $((i + 2)) -lt "$n_ids" ]; then
-      k3="r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|${ROLE_ARR[i+2]}|${LOAD_ARR[i+2]}|$cell_w|$cell_h"
-      memo_call right "$k3" \
-        cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}" "${ROLE_ARR[i+2]}" "${LOAD_ARR[i+2]}"
-    fi
-    memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
+    k1="m|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
+    memo_call left "$k1" \
+      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}"
     while IFS= read -r line || [ -n "$line" ]; do
       [ -z "$line" ] && continue
       put_line "$row" "$(roster_pad_line "$line")"
       row=$((row + 1))
       [ "$row" -ge "$pane_h" ] && break
-    done < <(printf '%s\n' "$pair")
+    done < <(printf '%s\n' "$left")
   done
 
-  # Button row under the 3-col row: [ ← ]  n / N  [ → ]
+  # Button row under the single column: [ ← ]  n / N  [ → ]
   if [ "$row" -lt "$pane_h" ]; then
     put_line "$row" ""
     row=$((row + 1))
@@ -1613,7 +1580,7 @@ case "${1:-watch}" in
     esac
     roster_geometry "$cols"
     cell="$(printf 'S%*s' "$((ROSTER_CELL_W - 1))" '')"
-    row_line="$(pair_blocks "$cell" "$cell" "$cell" 2)"
+    row_line="$cell"
     row_line="${row_line%%$'\n'*}"
     padded="$(roster_pad_line "$row_line")"
     label="$(roster_pad_line "roster")"

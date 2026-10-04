@@ -49,6 +49,8 @@ const THUMB_FALLBACK =
   "  ▄▀▀▀▀▀▀▄  \n▄▀   ░░   ▀▄\n█  ▄▄  ▄▄ ░█\n█  ▀▀  ▀▀ ░█\n█   ▀▄▄▀  ░█\n█ ▄      ▄░█\n█  ▀▄  ▄▀ ░█\n█ ▀▀    ▀▀░█\n█▄▄▀▀▄▄▀▀▄▄█";
 /** @deprecated alias — mini seat file no longer used for kanban/roster */
 const KANBAN_ASCII = THUMB_ASCII;
+/** Small round face for the avatar column. Not the iMessage thumb. */
+const MINI_ASCII = `${ROOT}/assets/gotchi-kanban.ascii`;
 /** Prof. Link-Cube NPC — meeting / invite thumb (not a cAavegotchi). */
 const PROF_LINK_CUBE_ASCII = `${ROOT}/assets/prof-link-cube.ascii`;
 export const PROF_LINK_CUBE_ID = "prof-link-cube";
@@ -187,6 +189,22 @@ export function renderThumbAscii(colors = null, { useColor = true, mode = "truec
 /** Alias — kanban seats / pstack grid share the plain iMessage thumb. */
 export function renderKanbanAscii(colors = null, opts = {}) {
   return renderThumbAscii(colors, opts);
+}
+
+/** Mini face for the unselected avatar column. About half the thumb height. */
+export function renderMiniAscii(colors = null, { useColor = true, mode = "truecolor" } = {}) {
+  const base = existsSync(MINI_ASCII)
+    ? readFileSync(MINI_ASCII, "utf8").replace(/\s+$/, "")
+    : "  ▄▄▄▄▄  \n▄▀  ░░  ▀▄\n█  ▀▀▀▀ █\n█       █\n▀▄▀▄▀▄▀▄▀";
+  if (useColor && (colors?.primary || colors?.secondary)) {
+    return recolorAscii(base, {
+      primary: colors.primary,
+      secondary: colors.secondary,
+      useColor: true,
+      mode,
+    });
+  }
+  return base;
 }
 
 /**
@@ -518,7 +536,7 @@ async function main() {
       args.includes("--roster")) &&
       colorMode !== "none");
 
-  if (args.includes("--thumb") || args.includes("--kanban") || args.includes("--roster")) {
+  if (args.includes("--thumb") || args.includes("--kanban") || args.includes("--roster") || args.includes("--mini")) {
     // --thumb / --kanban = plain recolor (iMessage + kanban seats)
     // --roster = doubled forehead collateral, eyes left alone (avatar sub-agents)
     // --npc / --hero prof-link-cube = Prof. Link-Cube meeting glyph
@@ -534,6 +552,7 @@ async function main() {
       return;
     }
     const isRoster = args.includes("--roster");
+    const isMini = args.includes("--mini");
     let colors = colorsFromCli(args);
     if (!colors?.primary && heroId && !isProfLinkCubeId(heroId)) {
       const hero = (await loadCartridgeHero(heroId)) || { id: heroId };
@@ -543,9 +562,11 @@ async function main() {
         colors = resolveHeroColors(enriched, heroId);
       }
     }
-    let art = isRoster
-      ? renderRosterAscii(colors, { useColor, mode: colorMode })
-      : renderThumbAscii(colors, { useColor, mode: colorMode });
+    let art = isMini
+      ? renderMiniAscii(colors, { useColor, mode: colorMode })
+      : isRoster
+        ? renderRosterAscii(colors, { useColor, mode: colorMode })
+        : renderThumbAscii(colors, { useColor, mode: colorMode });
     art = finalizeArt(art, glyphs);
     process.stdout.write(art.endsWith("\n") ? art : `${art}\n`);
     return;

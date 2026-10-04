@@ -29,7 +29,7 @@ function defaultAvatarMin(src) {
 }
 
 describe("avatar roster width", () => {
-  it("defaults min avatar to a width that fits three cells at a 147-col desk", () => {
+  it("defaults min avatar to a width that fits one column at a 147-col desk", () => {
     const avatar = defaultAvatarMin(read(layout));
     const windowW = 147;
     const separators = 9 - 1;
@@ -40,14 +40,14 @@ describe("avatar roster width", () => {
     const chrome = filesBar + labelBars;
     const content = windowW - separators;
     const pad = 1;
-    const cellW = Math.floor((avatar - pad - 4) / 3);
-    const row = cellW * 3 + 4;
+    const cellW = avatar - pad;
+    const row = cellW;
     const chat = content - chrome - avatar;
     const wide = 163;
     const chatWide = (wide - separators) - chrome - avatar;
 
     assert.equal(avatar, 44);
-    assert.equal(cellW, 13);
+    assert.equal(cellW, 43);
     assert.ok(cellW >= 12, `cell_w ${cellW} >= 12 (12-column thumb fits)`);
     assert.equal(row, 43);
     assert.equal(pad, 1);
@@ -64,14 +64,10 @@ describe("avatar roster width", () => {
       "dossier-ai-cron-site".replaceAll("-", " "),
       "chief-of-staff".replaceAll("-", " "),
     ];
-    assert.ok(
-      labels.some((label) => label.length > cellW),
-      "at least one name label is longer than cell_w and clips",
-    );
     for (const label of labels) {
       assert.ok(
-        label.length > cellW,
-        `${JSON.stringify(label)} length ${label.length} clips in cell_w ${cellW}`,
+        label.length <= cellW,
+        `${JSON.stringify(label)} length ${label.length} fits in cell_w ${cellW}`,
       );
     }
   });
@@ -100,7 +96,7 @@ describe("avatar roster width", () => {
       got[line.slice(0, eq)] = line.slice(eq + 1);
     }
     assert.equal(got.pad, "1");
-    assert.equal(got.cell_w, "13");
+    assert.equal(got.cell_w, "43");
     assert.equal(got.row_w, "43");
     assert.equal(got.label_col, "1");
     assert.equal(got.sprite_col, "1");
@@ -250,25 +246,39 @@ describe("avatar roster width", () => {
     assert.equal(canvasHeight(120), "119");
   });
 
-  it("shows one roster row below 70 pane rows and three at 70", () => {
+  it("keeps the roster a single column and fits more minis as the pane grows", () => {
     const laptop = rosterRows(46);
     assert.equal(laptop.rows, "1");
-    assert.equal(laptop.page, "3");
-    assert.equal(laptop.grid, "19");
+    assert.equal(laptop.page, "5");
+    assert.equal(laptop.grid, "30");
     const almost = rosterRows(69);
     assert.equal(almost.rows, "1");
-    assert.equal(almost.grid, "19");
+    assert.equal(almost.page, "8");
+    assert.equal(almost.grid, "53");
     const desk = rosterRows(70);
-    assert.equal(desk.rows, "3");
+    assert.equal(desk.rows, "1");
     assert.equal(desk.page, "9");
-    assert.equal(desk.grid, "43");
+    assert.equal(desk.grid, "54");
     const tall = rosterRows(119);
-    assert.equal(tall.rows, "3");
-    assert.equal(tall.grid, "43");
-    // Short pane budgets are unchanged.
+    assert.equal(tall.rows, "1");
+    assert.equal(tall.page, "17");
+    assert.equal(tall.grid, "103");
     assert.equal(rosterRows(27).grid, "11");
     assert.equal(rosterRows(27).rows, "1");
-    assert.equal(rosterRows(40).grid, "15");
+    assert.equal(rosterRows(27).page, "1");
+    assert.equal(rosterRows(40).grid, "24");
     assert.equal(rosterRows(40).rows, "1");
+    assert.equal(rosterRows(40).page, "4");
+  });
+
+  it("puts the project name where the tab subtitle used to lead with the orchestrator", () => {
+    const out = execFileSync(
+      "bash",
+      ["-c", 'source scripts/lib/desk-label.sh; desk_label_subtitle "User0xDefault · idle" "AarcadeGh-t"'],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(out, "AarcadeGh-t · idle");
+    const src = read(path.join(root, "scripts/lib/desk-label.sh"));
+    assert.match(src, /desk_label_subtitle "\$line" "\$\(desk_label_project\)"/);
   });
 });
