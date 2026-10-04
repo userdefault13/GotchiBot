@@ -301,21 +301,23 @@ describe("avatar roster width", () => {
     assert.equal(rosterRows(40).page, "6");
   });
 
-  it("reserves the framed portrait and a row of mid sub-agents when focused", () => {
+  it("puts a 4 by 4 mid grid beside the portrait when the pane is focused", () => {
     const laptop = rosterRowsMode(46, "focused");
-    assert.equal(laptop.rows, "1");
-    assert.equal(laptop.page, "3");
-    assert.equal(laptop.grid, "19");
-    assert.equal(rosterRowsMode(27, "focused").grid, "11");
-    assert.equal(rosterRowsMode(27, "focused").page, "3");
-    assert.equal(rosterRowsMode(70, "focused").rows, "3");
-    assert.equal(rosterRowsMode(70, "focused").page, "9");
+    assert.equal(laptop.cols, "4");
+    assert.equal(laptop.rows, "4");
+    assert.equal(laptop.page, "16");
+    assert.equal(rosterRowsMode(27, "focused").rows, "2");
+    assert.equal(rosterRowsMode(27, "focused").page, "8");
+    assert.equal(rosterRowsMode(27, "focused").cols, "4");
+    assert.equal(rosterRowsMode(70, "focused").rows, "4");
+    assert.equal(rosterRowsMode(70, "focused").page, "16");
     const pane = read(path.join(root, "scripts/avatar-pane.sh"));
     const body = pane.slice(pane.indexOf("render_body()"), pane.indexOf("rerender()"));
     assert.match(body, /avatar_pane_focused/);
     assert.match(body, /render_main_art/);
     assert.match(body, /face=mid/);
-    assert.match(body, /roster_geometry "\$cols" wide/);
+    assert.match(body, /roster_geometry "\$right_w" wide/);
+    assert.match(body, /join4 /);
     assert.doesNotMatch(body, /thumb_art "" "\$pin_id" "" mid/);
     assert.match(pane, /GOTCHI_INCLUDE_PINNED/);
   });

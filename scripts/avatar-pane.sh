@@ -934,6 +934,33 @@ pad_cell_line() {
   printf '%s%*s' "$text" "$((width - vis))" ''
 }
 
+# Four mid cells for one row of the expanded side grid.
+join4() {
+  local a="$1" b="$2" c="$3" d="$4" gap="${5:-2}"
+  local gap_s i max=0
+  local -a A B C D
+  gap_s="$(printf '%*s' "$gap" '')"
+  if [ -n "$a" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do A+=("$line"); done < <(printf '%s\n' "$a")
+  fi
+  if [ -n "$b" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do B+=("$line"); done < <(printf '%s\n' "$b")
+  fi
+  if [ -n "$c" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do C+=("$line"); done < <(printf '%s\n' "$c")
+  fi
+  if [ -n "$d" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do D+=("$line"); done < <(printf '%s\n' "$d")
+  fi
+  max=${#A[@]}
+  [ "${#B[@]}" -gt "$max" ] && max=${#B[@]}
+  [ "${#C[@]}" -gt "$max" ] && max=${#C[@]}
+  [ "${#D[@]}" -gt "$max" ] && max=${#D[@]}
+  for ((i = 0; i < max; i++)); do
+    printf '%s%s%s%s%s%s%s\n' "${A[i]:-}" "$gap_s" "${B[i]:-}" "$gap_s" "${C[i]:-}" "$gap_s" "${D[i]:-}"
+  done
+}
+
 # Join up to 3 cell blocks on one row (left / mid / right). Empty args stay empty slots.
 pair_blocks() {
   local left="$1" mid="$2" right="$3" gap="${4:-2}"
@@ -1068,7 +1095,11 @@ cell_block() {
   local role_show="${role//-/ }" role_color="$AV_ROLE_GAL"
   [ -z "$role" ] && role_show="no role" && role_color="$AV_MUTED"
   role_show="${role_show:0:$pane_w}"
-  printf '%b%s%b\n' "$role_color" "$(center_pad "$role_show" "$pane_w")" "$AV_RST"
+  # The side grid is mid faces plus status and name. The role stays on the
+  # large portrait, so four rows still fit beside it.
+  if [ "$face" != "mid" ]; then
+    printf '%b%s%b\n' "$role_color" "$(center_pad "$role_show" "$pane_w")" "$AV_RST"
+  fi
 }
 
 render_main_art() {
@@ -1257,29 +1288,24 @@ render_now() {
 
 
 # collapsed: the whole pane is a single column of minis. No selected header.
-# focused: framed portrait on top, then rows of mid-size sub-agents (3 across).
+# focused: the portrait is the left column. The right column is a 4-wide grid
+# of mid faces, up to 4 rows (11 lines: 9 art + status + name).
 roster_budget() {
-  local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain
+  local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain stride=11 rows
   case "$pane_h" in
     ''|*[!0-9]*) pane_h=0 ;;
   esac
   if [ "$mode" = "focused" ]; then
-    ROSTER_ROWS=1
-    ROSTER_PAGE=3
-    if [ "$pane_h" -lt 28 ]; then
-      ROSTER_GRID=11
-    elif [ "$pane_h" -le 40 ]; then
-      ROSTER_GRID=15
-    else
-      ROSTER_GRID=19
-    fi
-    if [ "$pane_h" -ge 70 ]; then
-      ROSTER_ROWS=3
-      ROSTER_PAGE=9
-      ROSTER_GRID=43
-    fi
+    rows=$((pane_h / stride))
+    [ "$rows" -gt 4 ] && rows=4
+    [ "$rows" -lt 1 ] && rows=1
+    ROSTER_ROWS=$rows
+    ROSTER_COLS_N=4
+    ROSTER_PAGE=$((rows * ROSTER_COLS_N))
+    ROSTER_GRID=$pane_h
     return 0
   fi
+  ROSTER_COLS_N=1
   ROSTER_ROWS=1
   remain=$pane_h
   [ "$remain" -lt "$mini" ] && remain=$mini
@@ -1293,26 +1319,24 @@ roster_geometry() {
   local cols="${1:-0}" mode="${2:-collapsed}"
   if [ "$mode" = "wide" ]; then
     local gap=2 gaps pad avail
-    gaps=$((gap * 2))
     ROSTER_PAD=0
-    ROSTER_COLS=3
-    ROSTER_CELL_W=10
-    ROSTER_ROW_W=$((ROSTER_CELL_W * 3 + gaps))
-    for pad in 1 0; do
+    ROSTER_COLS=4
+    gaps=$((gap * (ROSTER_COLS - 1)))
+    ROSTER_CELL_W=12
+    ROSTER_ROW_W=$((ROSTER_CELL_W * ROSTER_COLS + gaps))
+    for pad in 0; do
       [ "$cols" -lt 1 ] && pad=0
       avail=$((cols - pad - gaps))
       if [ "$avail" -lt 0 ]; then
-        ROSTER_CELL_W=0
+        ROSTER_CELL_W=12
       else
-        ROSTER_CELL_W=$((avail / 3))
+        ROSTER_CELL_W=$((avail / ROSTER_COLS))
       fi
-      [ "$ROSTER_CELL_W" -lt 10 ] && ROSTER_CELL_W=10
-      [ "$ROSTER_CELL_W" -gt 36 ] && ROSTER_CELL_W=36
-      ROSTER_ROW_W=$((ROSTER_CELL_W * 3 + gaps))
+      [ "$ROSTER_CELL_W" -lt 12 ] && ROSTER_CELL_W=12
+      [ "$ROSTER_CELL_W" -gt 22 ] && ROSTER_CELL_W=22
+      ROSTER_ROW_W=$((ROSTER_CELL_W * ROSTER_COLS + gaps))
       ROSTER_PAD=$pad
-      if [ "$pad" -eq 0 ] || [ $((ROSTER_PAD + ROSTER_ROW_W)) -le "$cols" ]; then
-        break
-      fi
+      break
     done
     return 0
   fi
@@ -1382,6 +1406,12 @@ render_body() {
     [ "$main_budget" -lt 6 ] && main_budget=6
     grid_budget=0
   fi
+  # Expanded desk: portrait is the left column, so it is not squeezed by a
+  # roster strip underneath it.
+  if [ "$expanded" = 1 ] && [ "$gallery" != 1 ]; then
+    main_budget=$pane_h
+    [ "$main_budget" -gt 30 ] && main_budget=30
+  fi
 
   # Gallery, and the desk column while this pane is focused, use the framed
   # portrait. Unfocused, the header stays empty so the column is only minis.
@@ -1426,27 +1456,30 @@ render_body() {
     caption="${caption}"$'\n'"$(printf '%b%s%b' "$AV_MUTED" "$active_line" "$AV_RST")"
   fi
 
-  # Focused: framed portrait plus the status / name / role stack.
-  # Unfocused: no selected face. The pinned gotchi joins the mini column.
+  # Focused: framed portrait on the left. Unfocused: no selected face.
+  local side=0 LEFT_BLOCK="" LEFT_W=42
   if [ "$expanded" = 1 ]; then
-    local hdr
-    memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_show|$active_line|$expanded" \
-      render_header_block "$main" "$caption" "$cols" "$main_budget"
-    while IFS= read -r line || [ -n "$line" ]; do
-      put_line "$row" "$line"
-      row=$((row + 1))
-    done < <(printf '%s\n' "$hdr")
-
-    if [ "$gallery" = 1 ]; then
-      printf '\033[1;1H'
-      return
+    local hdr hdr_cols="$cols"
+    if [ "$gallery" != 1 ]; then
+      side=1
+      [ "$LEFT_W" -ge $((cols - 20)) ] && LEFT_W=$((cols / 3))
+      [ "$LEFT_W" -lt 38 ] && LEFT_W=38
+      hdr_cols=$LEFT_W
     fi
-
-    put_line "$row" ""
-    row=$((row + 1))
-
-    put_line "$row" "$(roster_pad_line "$(printf '%broster%b' "$AV_ROSTER" "$AV_RST")")"
-    row=$((row + 1))
+    memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$hdr_cols|$main_budget|$role|$pin_show|$active_line|$expanded|$side" \
+      render_header_block "$main" "$caption" "$hdr_cols" "$main_budget"
+    if [ "$side" = 1 ]; then
+      LEFT_BLOCK="$hdr"
+    else
+      while IFS= read -r line || [ -n "$line" ]; do
+        put_line "$row" "$line"
+        row=$((row + 1))
+      done < <(printf '%s\n' "$hdr")
+      if [ "$gallery" = 1 ]; then
+        printf '\033[1;1H'
+        return
+      fi
+    fi
   fi
 
   roster_raw="$(load_roster_json)"
@@ -1460,16 +1493,27 @@ render_body() {
   memo_call ids "$ids_key" roster_ids "$roster_raw" "$include_pinned"
 
   if [ -z "$(printf '%s' "$ids" | tr -d '[:space:]')" ]; then
-    put_line "$row" "$(printf '%b(none else on cartridge)%b' "$AV_MUTED" "$AV_RST")"
+    if [ "$side" = 1 ]; then
+      row=0
+      while IFS= read -r line || [ -n "$line" ]; do
+        put_line "$row" "$line"
+        row=$((row + 1))
+      done < <(printf '%s\n' "$LEFT_BLOCK")
+    else
+      put_line "$row" "$(printf '%b(none else on cartridge)%b' "$AV_MUTED" "$AV_RST")"
+    fi
     printf '\033[1;1H'
     return
   fi
 
-  local face=mini
-  # Expanded pane: mid thumbs in three columns. Collapsed: one column of minis.
-  if [ "$expanded" = 1 ]; then
+  local face=mini right_w="$cols"
+  # Expanded pane: mid thumbs, four across, on the right of the portrait.
+  # Collapsed: one column of minis.
+  if [ "$side" = 1 ]; then
     face=mid
-    roster_geometry "$cols" wide
+    right_w=$((cols - LEFT_W - 2))
+    [ "$right_w" -lt 54 ] && right_w=54
+    roster_geometry "$right_w" wide
   else
     roster_geometry "$cols"
   fi
@@ -1529,37 +1573,60 @@ render_body() {
       break
     fi
   done
-  if [ "${ROSTER_COLS:-1}" = 3 ]; then
+  local GRID_BLOCK="" c0 c1 c2 c3 k4 slot
+  if [ "$side" = 1 ]; then
     for ((r = 0; r < roster_rows; r++)); do
-      i=$((base + r * 3))
+      i=$((base + r * ROSTER_COLS))
       [ "$i" -ge "$n_ids" ] && break
-      [ "$row" -ge "$pane_h" ] && break
-      left=""; mid=""; right=""; k1=""; k2=""; k3=""
-      if [ "$i" -lt "$n_ids" ]; then
-        k1="m|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h|$face"
+      c0=""; c1=""; c2=""; c3=""; k1=""; k2=""; k3=""; k4=""
+      for slot in 0 1 2 3; do
+        vi=$((i + slot))
+        [ "$vi" -ge "$n_ids" ] && continue
+        k1="g|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[vi]}|${ST_ARR[vi]}|${COL_ARR[vi]}|${HAUNT_ARR[vi]}|${NAME_ARR[vi]}|${ROLE_ARR[vi]}|${LOAD_ARR[vi]}|$cell_w|$cell_h|$face"
         memo_call left "$k1" \
-          cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}" "$face"
+          cell_block "${ID_ARR[vi]}" "${ST_ARR[vi]}" "${SVG_ARR[vi]}" "$cell_w" "$cell_h" "${COL_ARR[vi]}" "${HAUNT_ARR[vi]}" "${NAME_ARR[vi]}" "${ROLE_ARR[vi]}" "${LOAD_ARR[vi]}" "$face"
+        case "$slot" in
+          0) c0="$left"; k1s="$k1" ;;
+          1) c1="$left"; k2="$k1" ;;
+          2) c2="$left"; k3="$k1" ;;
+          3) c3="$left"; k4="$k1" ;;
+        esac
+      done
+      [ -z "$c0" ] && c0="$(blank_block "$cell_w" 11)"
+      [ -z "$c1" ] && c1="$(blank_block "$cell_w" 11)"
+      [ -z "$c2" ] && c2="$(blank_block "$cell_w" 11)"
+      [ -z "$c3" ] && c3="$(blank_block "$cell_w" 11)"
+      pair="$(join4 "$c0" "$c1" "$c2" "$c3" "$gap")"
+      if [ -n "$GRID_BLOCK" ]; then
+        GRID_BLOCK="${GRID_BLOCK}"$'
+'"${pair}"
+      else
+        GRID_BLOCK="$pair"
       fi
-      if [ $((i + 1)) -lt "$n_ids" ]; then
-        k2="m|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+1]}|${ST_ARR[i+1]}|${COL_ARR[i+1]}|${HAUNT_ARR[i+1]}|${NAME_ARR[i+1]}|${ROLE_ARR[i+1]}|${LOAD_ARR[i+1]}|$cell_w|$cell_h|$face"
-        memo_call mid "$k2" \
-          cell_block "${ID_ARR[i+1]}" "${ST_ARR[i+1]}" "${SVG_ARR[i+1]}" "$cell_w" "$cell_h" "${COL_ARR[i+1]}" "${HAUNT_ARR[i+1]}" "${NAME_ARR[i+1]}" "${ROLE_ARR[i+1]}" "${LOAD_ARR[i+1]}" "$face"
-      fi
-      if [ $((i + 2)) -lt "$n_ids" ]; then
-        k3="m|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i+2]}|${ST_ARR[i+2]}|${COL_ARR[i+2]}|${HAUNT_ARR[i+2]}|${NAME_ARR[i+2]}|${ROLE_ARR[i+2]}|${LOAD_ARR[i+2]}|$cell_w|$cell_h|$face"
-        memo_call right "$k3" \
-          cell_block "${ID_ARR[i+2]}" "${ST_ARR[i+2]}" "${SVG_ARR[i+2]}" "$cell_w" "$cell_h" "${COL_ARR[i+2]}" "${HAUNT_ARR[i+2]}" "${NAME_ARR[i+2]}" "${ROLE_ARR[i+2]}" "${LOAD_ARR[i+2]}" "$face"
-      fi
-      memo_call pair "row|${TUI_COLOR}/${TUI_GLYPHS}|$k1|$k2|$k3|$gap|$face" page_row_block "$left" "$mid" "$right" "$gap" "$cell_w"
-      while IFS= read -r line || [ -n "$line" ]; do
-        [ -z "$line" ] && continue
-        put_line "$row" "$(roster_pad_line "$line")"
-        row=$((row + 1))
-        [ "$row" -ge "$pane_h" ] && break
-      done < <(printf '%s\n' "$pair")
     done
+    local -a L G
+    local li gi nmax gap_s lft gline
+    gap_s="  "
+    while IFS= read -r li || [ -n "$li" ]; do L+=("$li"); done < <(printf '%s\n' "$LEFT_BLOCK")
+    while IFS= read -r gi || [ -n "$gi" ]; do G+=("$gi"); done < <(printf '%s\n' "$GRID_BLOCK")
+    nmax=${#L[@]}
+    [ "${#G[@]}" -gt "$nmax" ] && nmax=${#G[@]}
+    [ "$nmax" -gt "$pane_h" ] && nmax=$pane_h
+    for ((i = 0; i < nmax; i++)); do
+      lft="$(pad_cell_line "${L[i]:-}" "$LEFT_W")"
+      gline="${G[i]:-}"
+      put_line "$i" "${lft}${gap_s}${gline}"
+    done
+    if [ "$NPAGES" -gt 1 ] && [ "$nmax" -lt "$pane_h" ]; then
+      CTRL_ROW=$nmax
+      CTRL_COLS=$cols
+      save_page_env
+      put_line "$nmax" "$(printf '%*s' "$((LEFT_W + 2))" '')$(printf '%d / %d' "$((PAGE + 1))" "$NPAGES")"
+    fi
+    printf '\033[1;1H'
+    return
   fi
-  if [ "${ROSTER_COLS:-1}" != 3 ]; then
+  if [ "${ROSTER_COLS:-1}" != 4 ]; then
   for ((i = base; i < end; i++)); do
     [ "$row" -ge "$pane_h" ] && break
     k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
@@ -1749,6 +1816,7 @@ case "${1:-watch}" in
     printf 'rows=%s\n' "$ROSTER_ROWS"
     printf 'page=%s\n' "$ROSTER_PAGE"
     printf 'grid=%s\n' "$ROSTER_GRID"
+    printf 'cols=%s\n' "${ROSTER_COLS_N:-1}"
     ;;
   roster-origin)
     # Geometry probe. No tmux, no terminal read — roster_geometry + real join.
