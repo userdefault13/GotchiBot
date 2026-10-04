@@ -5,7 +5,8 @@
 # Ask/plan/build/sandbox/verse stay local OpenCode agents (no OpenClaw relay).
 # Legacy OpenClaw native TUI: GOTCHIBOT_OPENCLAW_TUI=1
 # Scroll past responses: replay on by default (GOTCHIBOT_OPENCODE_REPLAY=1).
-# Mouse wheel is off (it flooded panes). Keyboard still scrolls history.
+# Mouse wheel scrolls the transcript. Wheel over the prompt is ignored.
+# j/k scroll one line when the prompt is empty.
 # Tab/F2: OpenCode TUI cycles agents (tab). tmux does not steal Tab. Mini: GOTCHIBOT_OPENCODE_MINI=1
 # Fallback: `./scripts/gotchibot mode cycle --restart` | Ctrl+X A agent menu
 # Copy: /copy or Ctrl+Y (last assistant reply → clipboard). Shift+drag selects text in terminal.
@@ -15,7 +16,7 @@
 # Shell: start an empty prompt with ! (OpenCode shell mode, like Claude Code's !). Enter runs the
 #   command via bash; the output lands in chat as context the gotchi can see. Esc leaves shell mode.
 #   The meet room prompter does the same: !cmd posts command + output to the room.
-# Disable OpenCode mouse: GOTCHIBOT_OPENCODE_MOUSE=0
+# OpenCode mouse stays on (transcript wheel). Prompt wheel is swallowed by gotchi-chat-scroll.
 # Full OpenCode TUI (not mini): GOTCHIBOT_OPENCODE_MINI=0
 # Resume last session: GOTCHIBOT_OPENCODE_CONTINUE=1 (default). Fresh chat: =0
 # Pin a session: GOTCHIBOT_OPENCODE_SESSION=ses_…
@@ -101,9 +102,10 @@ REPLAY_LIMIT="${GOTCHIBOT_OPENCODE_REPLAY_LIMIT:-}"
 export OPENCODE_TUI_CONFIG="${GOTCHIBOT_TUI_CONFIG:-$ROOT/config/tui.json}"
 # Hex gotchi theme needs truecolor (OpenCode path — not only legacy OpenClaw).
 export COLORTERM="${COLORTERM:-truecolor}"
-# Wheel scroll re-rendered the chat pane on every tick. Keep mouse off.
-export GOTCHIBOT_OPENCODE_MOUSE=0
-export OPENCODE_DISABLE_MOUSE=true
+# Wheel scrolls the transcript. gotchi-chat-scroll drops wheel events on the prompt
+# so they do not walk prompt history or move the cursor. tmux mouse stays off.
+export GOTCHIBOT_OPENCODE_MOUSE=1
+unset OPENCODE_DISABLE_MOUSE
 
 cd "$ROOT"
 # shellcheck source=scripts/progress-bar.sh
@@ -399,7 +401,7 @@ if [ "${GOTCHIBOT_CHAT_RUNTIME}" != "opencode" ] && [ "${GOTCHIBOT_OPENCLAW_TUI:
       export OPENCLAW_THEME="${GOTCHIBOT_OPENCLAW_THEME:-opencode}"
       export GOTCHIBOT_TUI_STYLE="${GOTCHIBOT_TUI_STYLE:-opencode}"
       export GOTCHIBOT_TUI_TITLE="${GOTCHIBOT_TUI_TITLE:-Gotchi}"
-      # Scrollable chat history (PageUp/PageDown, j/k, arrows). Mouse stays off.
+      # Scrollable chat history (PageUp/PageDown, j/k). Wheel scrolls the transcript only.
       export GOTCHIBOT_TUI_SCROLL="${GOTCHIBOT_TUI_SCROLL:-1}"
       export GOTCHIBOT_TUI_MOUSE=0
       export GOTCHIBOT_TUI_SCROLL_SPEED="${GOTCHIBOT_TUI_SCROLL_SPEED:-4}"

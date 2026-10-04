@@ -31,7 +31,8 @@
     "./tui-plugins/gotchi-agent-sync.ts",
     "./tui-plugins/gotchi-project.ts",
     "./tui-plugins/gotchi-model-sync.ts",
-    "./tui-plugins/gotchi-desk-sync.ts"
+    "./tui-plugins/gotchi-desk-sync.ts",
+    "./tui-plugins/gotchi-chat-scroll.ts"
   ],
   "prompt": {
     "max_height": 5
