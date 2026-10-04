@@ -147,7 +147,7 @@ function loadRemoteSnapshot() {
 }
 
 export function formatStatus(
-  { remoteOk, reason, running, total, openclawReachable, staleNoSsh },
+  { remoteOk, reason, running, total, openclawReachable, staleNoSsh, apiReachable },
   deps = {},
 ) {
   const cached = (deps.readCache ? deps.readCache() : readJson(CACHE)) || {};
@@ -162,6 +162,16 @@ export function formatStatus(
         ? `dk ${cached.dockerUnhealthy}↓`
         : "dk✓";
   const extras = [oc, tun, dk].filter(Boolean).join(" · ");
+
+  // A live pinned-hub probe outranks the cached barLine and missing SSH.
+  if (apiReachable === true) {
+    const load =
+      running > 0 ? `${running} run` : total > 0 ? `${total} idle` : "idle";
+    return `Hub: ok · ${load} · ${extras}`;
+  }
+  if (apiReachable === false) {
+    return `Hub: unavailable · ${extras}`;
+  }
 
   // Prefer Hub barLine when hub-status recently wrote one.
   if (cached.barLine && cached.hubFetchedAt) {
@@ -201,6 +211,16 @@ async function probeOpenClawGateway() {
     return await statusGatewayReachable();
   } catch {
     return null;
+  }
+}
+
+async function probeHubApi() {
+  try {
+    const { probePinnedHubApi } = await import("./hub-status.mjs");
+    const api = await probePinnedHubApi();
+    return api?.reachable === true;
+  } catch {
+    return false;
   }
 }
 
@@ -261,6 +281,7 @@ async function main() {
   }
 
   const payload = buildPayload();
+  payload.apiReachable = await probeHubApi();
   const line = formatStatus(payload);
 
   if (json) {

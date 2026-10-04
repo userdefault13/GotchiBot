@@ -76,3 +76,69 @@ describe("formatStatus hub word", () => {
     assert.equal(text, "Hub: bad · OC✗");
   });
 });
+
+describe("formatStatus live hub probe", () => {
+  const freshUnavailable = () => ({
+    barLine: "Hub: unavailable · idle",
+    hubFetchedAt: new Date().toISOString(),
+  });
+
+  it("says ok when the probe answers, over no-ssh and a fresh cached unavailable", () => {
+    const text = line(
+      {
+        apiReachable: true,
+        staleNoSsh: true,
+        remoteOk: false,
+        reason: "no-remote-ssh-env",
+        running: 1,
+        total: 2,
+        openclawReachable: true,
+      },
+      { readCache: freshUnavailable, loadSnapshot: () => null },
+    );
+    assert.equal(text, "Hub: ok · 1 run · OC✓");
+  });
+
+  it("says ok · idle when the probe answers and nothing runs", () => {
+    const text = line(
+      { apiReachable: true, staleNoSsh: true, remoteOk: false, openclawReachable: null },
+      { readCache: freshUnavailable },
+    );
+    assert.equal(text, "Hub: ok · idle · OC?");
+  });
+
+  it("says unavailable when the probe fails, never ? or bad for missing ssh", () => {
+    const text = line(
+      {
+        apiReachable: false,
+        staleNoSsh: true,
+        remoteOk: false,
+        reason: "no-remote-ssh-env",
+        openclawReachable: false,
+      },
+      {
+        readCache: () => ({ barLine: "Hub: ? · idle · OC?", hubFetchedAt: new Date().toISOString() }),
+        loadSnapshot: () => ({ remoteOk: false }),
+      },
+    );
+    assert.equal(text, "Hub: unavailable · OC✗");
+    assert.equal(text.includes("Hub: ?"), false);
+    assert.equal(text.includes("bad"), false);
+  });
+
+  it("keeps the cached barLine when there is no probe result", () => {
+    const text = line(
+      { apiReachable: null, remoteOk: true, running: 3, openclawReachable: true },
+      { readCache: freshUnavailable },
+    );
+    assert.equal(text, "Hub: unavailable · idle");
+  });
+
+  it("keeps stale-snapshot behavior when apiReachable is undefined", () => {
+    const text = line(
+      { staleNoSsh: true, openclawReachable: false },
+      { loadSnapshot: () => ({ remoteOk: false }) },
+    );
+    assert.equal(text, "Hub: bad · OC✗");
+  });
+});
