@@ -975,22 +975,37 @@ cell_block() {
   if [ -z "${art:-}" ]; then
     art="$(thumb_art "$collateral" "$id" "$haunt" mini)"
   fi
-  local line id_show
+  local line id_show pane_w max_vis lp i
+  # Center in the full pane, same axis as the selected face. cell_w is the
+  # column inside the one-column gutter, so add that gutter back.
+  pane_w=$(( cell_w + ${ROSTER_PAD:-0} ))
+  [ "$pane_w" -lt 1 ] && pane_w=$cell_w
   if [ -n "${art:-}" ]; then
     art="$(printf '%s\n' "$art" | { head -n "$cell_h" || true; })"
+    local -a ART_LINES=()
+    max_vis=0
     while IFS= read -r line || [ -n "$line" ]; do
-      pad_cell_line "$line" "$cell_w"
+      ART_LINES+=("$line")
+      vislen_set "$line"
+      [ "$VIS" -gt "$max_vis" ] && max_vis=$VIS
+    done < <(printf '%s\n' "$art")
+    lp=0
+    if [ "$pane_w" -gt "$max_vis" ]; then
+      lp=$(( (pane_w - max_vis) / 2 ))
+    fi
+    for ((i = 0; i < ${#ART_LINES[@]}; i++)); do
+      block_pad_line "${ART_LINES[i]}" "$pane_w" "$lp"
       printf '\n'
-    done < <(printf '%s' "$art")
+    done
   fi
-  printf '%b%s%b\n' "$status_color" "$(center_pad "$label" "$cell_w")" "$AV_RST"
+  printf '%b%s%b\n' "$status_color" "$(center_pad "$label" "$pane_w")" "$AV_RST"
   id_show="${name:-$id}"
-  id_show="${id_show:0:$cell_w}"
-  printf '%b%s%b\n' "$AV_ROSTER" "$(center_pad "$id_show" "$cell_w")" "$AV_RST"
+  id_show="${id_show:0:$pane_w}"
+  printf '%b%s%b\n' "$AV_ROSTER" "$(center_pad "$id_show" "$pane_w")" "$AV_RST"
   local role_show="${role//-/ }" role_color="$AV_ROLE_GAL"
   [ -z "$role" ] && role_show="no role" && role_color="$AV_MUTED"
-  role_show="${role_show:0:$cell_w}"
-  printf '%b%s%b\n' "$role_color" "$(center_pad "$role_show" "$cell_w")" "$AV_RST"
+  role_show="${role_show:0:$pane_w}"
+  printf '%b%s%b\n' "$role_color" "$(center_pad "$role_show" "$pane_w")" "$AV_RST"
 }
 
 render_main_art() {
@@ -1390,12 +1405,12 @@ render_body() {
   done
   for ((i = base; i < end; i++)); do
     [ "$row" -ge "$pane_h" ] && break
-    k1="m|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
+    k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
     memo_call left "$k1" \
       cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}"
     while IFS= read -r line || [ -n "$line" ]; do
       [ -z "$line" ] && continue
-      put_line "$row" "$(roster_pad_line "$line")"
+      put_line "$row" "$line"
       row=$((row + 1))
       [ "$row" -ge "$pane_h" ] && break
     done < <(printf '%s\n' "$left")
@@ -1596,6 +1611,10 @@ case "${1:-watch}" in
     printf 'sprite_col=%s\n' "$sprite_col"
     printf 'line_w=%s\n' "${#padded}"
     printf 'label_prefix=%s\n' "${label:0:1}"
+    # 9-wide mini, centered on the full pane like the 12-wide selected face.
+    pane_w=$((ROSTER_CELL_W + ROSTER_PAD))
+    printf 'mini_col=%s\n' "$(( (pane_w - 9) / 2 ))"
+    printf 'face_col=%s\n' "$(( (cols - 12) / 2 ))"
     ;;
   watch)
     trap 'watch_leave' EXIT

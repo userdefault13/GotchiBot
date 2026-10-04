@@ -95,7 +95,7 @@ describe("avatar roster width", () => {
     assert.match(mid, /▀▀ {2}▀▀/);
   });
 
-  it("left-pads the roster so the label and first sprite start at column 1", () => {
+  it("centers the 9-wide mini under the 12-wide face in a 24-column pane", () => {
     const out = execFileSync("bash", ["scripts/avatar-pane.sh", "roster-origin", "24"], {
       cwd: root,
       encoding: "utf8",
@@ -113,6 +113,14 @@ describe("avatar roster width", () => {
     assert.equal(got.label_col, "1");
     assert.equal(got.sprite_col, "1");
     assert.equal(got.line_w, "24");
+    assert.equal(got.mini_col, "7");
+    assert.equal(got.face_col, "6");
+    assert.ok(Number(got.mini_col) > 1, "mini is not left-aligned");
+    const pane = read(path.join(root, "scripts/avatar-pane.sh"));
+    assert.ok(pane.includes("(pane_w - max_vis) / 2"));
+    const draw = pane.slice(pane.indexOf("for ((i = base; i < end; i++))"));
+    assert.ok(draw.includes('put_line "$row" "$line"'));
+    assert.ok(!draw.slice(0, draw.indexOf("Button row")).includes("roster_pad_line"));
     assert.equal(got.label_prefix, " ");
     const labelCol = Number(got.label_col);
     const spriteCol = Number(got.sprite_col);
