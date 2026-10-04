@@ -113,10 +113,33 @@ function visLen(s) {
   return stripAnsi(s).length;
 }
 
+function cropVis(s, width) {
+  if (width <= 0) return "";
+  const src = String(s || "");
+  let vis = 0;
+  let out = "";
+  for (let i = 0; i < src.length; ) {
+    if (src[i] === "\x1b" && src[i + 1] === "[") {
+      const end = src.indexOf("m", i);
+      if (end < 0) break;
+      out += src.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+    if (vis >= width) break;
+    out += src[i];
+    vis += 1;
+    i += 1;
+  }
+  if (visLen(src) > width) out += "\x1b[0m";
+  return out;
+}
+
 function padVis(s, width) {
-  const n = visLen(s);
-  if (n >= width) return s;
-  return s + " ".repeat(width - n);
+  const cropped = cropVis(s, width);
+  const n = visLen(cropped);
+  if (n >= width) return cropped;
+  return cropped + " ".repeat(width - n);
 }
 
 function paneSize() {
@@ -207,7 +230,6 @@ export function renderMeetSidebar(rows, width = MEET_SIDEBAR_COLS - 1, scroll = 
   if (rows <= 0 || width < 16) return Array(Math.max(0, rows)).fill(blank);
   const members = listMeetMembers();
   const status = loadMeetStatus();
-  const nameW = Math.max(4, width - 11);
   const maxStart = Math.max(0, members.length - 1);
   const start = Math.max(0, Math.min(maxStart, Number(scroll) || 0));
   const lines = [];
@@ -217,11 +239,18 @@ export function renderMeetSidebar(rows, width = MEET_SIDEBAR_COLS - 1, scroll = 
     const st = statusFor(m.id, status);
     const sub =
       st.status && st.status !== "idle" ? statusLabel(st.status, st.since) : m.role || "";
-    const name = clipSide(m.label, nameW);
-    const row = (i, extra) => padVis(`${face[i] || ""}${extra ? " " + extra : ""}`, width);
-    lines.push(row(0, name));
+    const row = (i, extra) => {
+      const faceLine = face[i] || "";
+      let body = faceLine;
+      if (extra) {
+        const room = width - visLen(faceLine) - 1;
+        if (room > 0) body += " " + clipSide(extra, room);
+      }
+      return padVis(body, width);
+    };
+    lines.push(row(0, m.label));
     lines.push(row(1, ""));
-    lines.push(row(2, clipSide(sub, nameW)));
+    lines.push(row(2, sub));
     lines.push(row(3, ""));
     lines.push(row(4, ""));
     lines.push(blank);

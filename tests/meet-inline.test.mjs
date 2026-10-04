@@ -214,6 +214,17 @@ describe("meet sidebar", () => {
     const vis = row.replace(/\x1b\[[0-9;]*m/g, "");
     assert.ok(vis.length > MEET_SIDEBAR_COLS);
     assert.equal(vis[MEET_SIDEBAR_COLS - 1], "│");
+    const width = MEET_SIDEBAR_COLS - 1;
+    const tall = renderMeetSidebar(48, width);
+    for (const line of tall) {
+      const visLine = line.replace(/\x1b\[[0-9;]*m/g, "");
+      assert.ok(visLine.length <= width, JSON.stringify(visLine));
+    }
+    const wide = renderInlineFrame({ cols: 120, rows: 48, scrollFromBottom: 0 });
+    for (const line of wide.split("\n").slice(1)) {
+      const visLine = line.replace(/\x1b\[[0-9;]*m/g, "");
+      assert.equal(visLine[MEET_SIDEBAR_COLS - 1], "│", JSON.stringify(visLine.slice(0, 40)));
+    }
   });
 
   it("m focuses the sidebar and n focuses the chat, and typing still takes the letters", () => {
