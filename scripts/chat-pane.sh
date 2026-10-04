@@ -5,8 +5,8 @@
 # Ask/plan/build/sandbox/verse stay local OpenCode agents (no OpenClaw relay).
 # Legacy OpenClaw native TUI: GOTCHIBOT_OPENCLAW_TUI=1
 # Scroll past responses: replay on by default (GOTCHIBOT_OPENCODE_REPLAY=1).
-# Mouse wheel scrolls the transcript. Wheel over the prompt is ignored.
-# j/k scroll one line when the prompt is empty.
+# Up/Down scroll the transcript when the caret cannot move in the prompt.
+# Ctrl+Up recalls the previous prompt. The wheel scrolls the transcript, not the prompt.
 # Tab/F2: OpenCode TUI cycles agents (tab). tmux does not steal Tab. Mini: GOTCHIBOT_OPENCODE_MINI=1
 # Fallback: `./scripts/gotchibot mode cycle --restart` | Ctrl+X A agent menu
 # Copy: /copy or Ctrl+Y (last assistant reply → clipboard). Shift+drag selects text in terminal.
@@ -16,7 +16,7 @@
 # Shell: start an empty prompt with ! (OpenCode shell mode, like Claude Code's !). Enter runs the
 #   command via bash; the output lands in chat as context the gotchi can see. Esc leaves shell mode.
 #   The meet room prompter does the same: !cmd posts command + output to the room.
-# OpenCode mouse stays on (transcript wheel). Prompt wheel is swallowed by gotchi-chat-scroll.
+# OpenCode mouse stays on so the wheel can move the transcript scrollbar. Prompt wheel is ignored.
 # Full OpenCode TUI (not mini): GOTCHIBOT_OPENCODE_MINI=0
 # Resume last session: GOTCHIBOT_OPENCODE_CONTINUE=1 (default). Fresh chat: =0
 # Pin a session: GOTCHIBOT_OPENCODE_SESSION=ses_…
@@ -102,8 +102,8 @@ REPLAY_LIMIT="${GOTCHIBOT_OPENCODE_REPLAY_LIMIT:-}"
 export OPENCODE_TUI_CONFIG="${GOTCHIBOT_TUI_CONFIG:-$ROOT/config/tui.json}"
 # Hex gotchi theme needs truecolor (OpenCode path — not only legacy OpenClaw).
 export COLORTERM="${COLORTERM:-truecolor}"
-# Wheel scrolls the transcript. gotchi-chat-scroll drops wheel events on the prompt
-# so they do not walk prompt history or move the cursor. tmux mouse stays off.
+# Wheel scrolls the transcript scrollbar. gotchi-chat-scroll drops wheel events on the
+# prompt. Up/Down scroll the chat; Ctrl+Up recalls prompt history. tmux mouse stays off.
 export GOTCHIBOT_OPENCODE_MOUSE=1
 unset OPENCODE_DISABLE_MOUSE
 

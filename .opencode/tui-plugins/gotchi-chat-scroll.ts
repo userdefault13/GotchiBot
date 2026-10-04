@@ -4,10 +4,18 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const require = createRequire(import.meta.url)
-const { jkScroll, parseWheel, wheelPolicy, PROMPT_ROWS } = require(
+const { arrowPolicy, parseArrow, parseWheel, wheelPolicy, PROMPT_ROWS } = require(
   resolve(dirname(fileURLToPath(import.meta.url)), "../../scripts/chat-scroll.mjs"),
 ) as {
-  jkScroll: (key: string, input: string) => "up" | "down" | null
+  arrowPolicy: (input: {
+    kind: string | null
+    busy?: boolean
+    cursorOffset?: number
+    visualRow?: number
+    lineCount?: number
+    textLength?: number
+  }) => "scroll-up" | "scroll-down" | "history-previous" | "history-next" | "passthrough"
+  parseArrow: (chunk: string) => "up" | "down" | "ctrl-up" | "ctrl-down" | null
   parseWheel: (chunk: string) => { button: number; col: number; row: number } | null
   wheelPolicy: (input: {
     button: number
@@ -20,11 +28,6 @@ const { jkScroll, parseWheel, wheelPolicy, PROMPT_ROWS } = require(
 }
 
 const ID = "gotchi.chat-scroll"
-
-function promptText(): string {
-  const ref = (globalThis as { __gotchiPromptRef?: { current?: { input?: string } } }).__gotchiPromptRef
-  return String(ref?.current?.input ?? "")
-}
 
 function termRows(api: any): number {
   const r = api?.renderer
@@ -60,6 +63,27 @@ function uiBusy(api: any): boolean {
   return false
 }
 
+function editorCaret(api: any) {
+  const r = api?.renderer
+  const ed = r?.currentFocusedEditor
+  if (!ed || typeof ed.cursorOffset !== "number") return {}
+  const row = Number(ed.scrollY ?? 0) + Number(ed.visualCursor?.visualRow ?? 0)
+  let lineCount = 1
+  try {
+    const n = ed.editorView?.getTotalVirtualLineCount?.()
+    if (Number.isFinite(n) && n > 0) lineCount = n
+    else lineCount = String(ed.plainText ?? "").split("\n").length || 1
+  } catch {
+    lineCount = String(ed.plainText ?? "").split("\n").length || 1
+  }
+  return {
+    cursorOffset: ed.cursorOffset,
+    visualRow: row,
+    lineCount,
+    textLength: typeof ed.plainText === "string" ? ed.plainText.length : undefined,
+  }
+}
+
 function scroll(api: any, dir: "up" | "down") {
   const cmd = dir === "up" ? "session.line.up" : "session.line.down"
   try {
@@ -69,32 +93,56 @@ function scroll(api: any, dir: "up" | "down") {
   }
 }
 
+function showScrollbar(api: any) {
+  try {
+    api.kv?.set?.("scrollbar_visible", true)
+    return true
+  } catch {
+    return false
+  }
+}
+
 const tui: TuiPlugin = async (api) => {
+  const reveal = () => showScrollbar(api)
+  reveal()
+  let timer: ReturnType<typeof setInterval> | undefined
+  if (!api.kv?.ready) {
+    const started = Date.now()
+    timer = setInterval(() => {
+      if (reveal() || Date.now() - started > 4000) {
+        if (timer) clearInterval(timer)
+      }
+    }, 200)
+  }
+
   const r = api.renderer as any
   if (typeof r?.prependInputHandler !== "function") return
   const onSeq = (chunk: unknown) => {
     const str = typeof chunk === "string" ? chunk : Buffer.from((chunk as Uint8Array) || []).toString("binary")
-    const wheel = parseWheel(str)
-    if (wheel) {
-      const decision = wheelPolicy({
-        button: wheel.button,
-        row: wheel.row,
-        rows: termRows(api),
-        promptLines: PROMPT_ROWS,
-        sessionEmpty: sessionEmpty(api),
-      })
-      if (decision === "ignore") return true
+    const kind = parseArrow(str)
+    if (kind) {
+      const decision = arrowPolicy({ kind, busy: uiBusy(api), ...editorCaret(api) })
+      if (decision === "scroll-up" || decision === "scroll-down") {
+        scroll(api, decision === "scroll-up" ? "up" : "down")
+        return true
+      }
+      // Ctrl+Up/Down stay on prompt.history.* (tui.json). Movement stays with the textarea.
       return
     }
-    if (str !== "j" && str !== "J" && str !== "k" && str !== "K") return
-    if (uiBusy(api)) return
-    const dir = jkScroll(str, promptText())
-    if (!dir) return
-    scroll(api, dir)
-    return true
+    const wheel = parseWheel(str)
+    if (!wheel) return
+    const decision = wheelPolicy({
+      button: wheel.button,
+      row: wheel.row,
+      rows: termRows(api),
+      promptLines: PROMPT_ROWS,
+      sessionEmpty: sessionEmpty(api),
+    })
+    if (decision === "ignore") return true
   }
   r.prependInputHandler(onSeq)
   api.lifecycle.onDispose(() => {
+    if (timer) clearInterval(timer)
     try {
       r.removeInputHandler?.(onSeq)
     } catch {

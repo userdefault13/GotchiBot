@@ -18,7 +18,9 @@
       "key": "ctrl+v",
       "preventDefault": false
     },
-    "input_select_all": "super+a"
+    "input_select_all": "super+a",
+    "history_previous": "ctrl+up",
+    "history_next": "ctrl+down"
   },
   "plugin": [
     "../.opencode/tui-plugins/gotchi-logo.tsx",

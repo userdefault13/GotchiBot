@@ -1,24 +1,52 @@
 /**
  * Chat pane scroll policy.
  *
- * The wheel scrolls the transcript. A wheel event whose row is inside the
- * prompt band is ignored so it cannot walk prompt history or move the cursor.
- * j/k scroll one line only when the prompt is empty (same idea as the meet room).
+ * Up/Down scroll the transcript when the cursor cannot move that way inside
+ * the prompt. Ctrl+Up / Ctrl+Down recall prompt history. The wheel scrolls
+ * the transcript and is ignored over the prompt.
  */
 
 /** Prompt box height from gotchi-logo.tsx (border, input, model line). */
 export const PROMPT_ROWS = 6
 
-export function promptIsEmpty(input) {
-  return !String(input ?? "").trim()
+export function parseArrow(chunk) {
+  const str = typeof chunk === "string" ? chunk : Buffer.from(chunk || "").toString("binary")
+  let m = str.match(/\x1b\[1;5([AB])/) || str.match(/\x1b\[5([AB])/)
+  if (m) return m[1] === "A" ? "ctrl-up" : "ctrl-down"
+  m = str.match(/\x1b\[([AB])/) || str.match(/\x1bO([AB])/)
+  if (m) return m[1] === "A" ? "up" : "down"
+  return null
 }
 
-/** j down (newer), k up (older). Anything else is typed. */
-export function jkScroll(key, input) {
-  if (!promptIsEmpty(input)) return null
-  if (key === "j" || key === "J") return "down"
-  if (key === "k" || key === "K") return "up"
-  return null
+/**
+ * @returns {"scroll-up"|"scroll-down"|"history-previous"|"history-next"|"passthrough"}
+ * passthrough: the prompt (or a dialog) should keep the key.
+ */
+export function arrowPolicy({
+  kind,
+  busy = false,
+  cursorOffset,
+  visualRow,
+  lineCount,
+  textLength,
+} = {}) {
+  if (kind !== "up" && kind !== "down" && kind !== "ctrl-up" && kind !== "ctrl-down") return "passthrough"
+  if (busy) return "passthrough"
+  if (kind === "ctrl-up") return "history-previous"
+  if (kind === "ctrl-down") return "history-next"
+  const offset = Number(cursorOffset)
+  const row = Number(visualRow)
+  const lines = Number(lineCount)
+  const known = Number.isFinite(offset) && Number.isFinite(row) && Number.isFinite(lines) && lines > 0
+  if (!known) return kind === "up" ? "scroll-up" : "scroll-down"
+  if (kind === "up") {
+    if (row > 0 || offset > 0) return "passthrough"
+    return "scroll-up"
+  }
+  const len = Number(textLength)
+  if (row < lines - 1) return "passthrough"
+  if (Number.isFinite(len) && offset < len) return "passthrough"
+  return "scroll-down"
 }
 
 /** SGR 64/65 and X10 wheel buttons, including shift/meta/ctrl bits. */
