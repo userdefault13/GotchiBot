@@ -29,5 +29,8 @@
     "../.opencode/tui-plugins/gotchi-agent-sync.ts",
     "../.opencode/tui-plugins/gotchi-project.ts",
     "../.opencode/tui-plugins/gotchi-model-sync.ts"
-  ]
+  ],
+  "prompt": {
+    "max_height": 5
+  }
 }

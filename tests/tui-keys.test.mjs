@@ -175,3 +175,33 @@ describe("orchestrator-layout.sh — desk hotkeys", () => {
     assert.match(src, /bind-key -T prefix m run-shell/);
   });
 });
+
+describe("meet room transcript scroll", () => {
+  it("j scrolls down one line and k scrolls up when the prompt is empty", () => {
+    const src = read(meetPrompter);
+    assert.match(src, /if \(key === "j" \|\| key === "J"\) return -1/);
+    assert.match(src, /if \(key === "k" \|\| key === "K"\) return 1/);
+    const fn = src.slice(src.indexOf("function handleKey"), src.indexOf("function handleEsc"));
+    assert.match(fn, /bufferEmpty\(\)/);
+    assert.match(fn, /meetScrollDelta\(chunk\)/);
+    assert.match(fn, /scrollFromBottom \+ line/);
+    // Typing still inserts j/k; scroll is only the empty-prompt path.
+    assert.ok(fn.indexOf("meetScrollDelta") < fn.indexOf("editor.insert"));
+  });
+});
+
+describe("chat pane size", () => {
+  it("caps the OpenCode chat prompt at 5 lines and pads 2 by 1", () => {
+    const cfg = JSON.parse(read(path.join(root, "config/tui.json")));
+    assert.equal(cfg.prompt.max_height, 5);
+    const logo = read(path.join(root, ".opencode/tui-plugins/gotchi-logo.tsx"));
+    assert.match(logo, /const CHAT_LINES = 5/);
+    assert.match(logo, /const CHAT_PAD_X = 2/);
+    assert.match(logo, /const CHAT_PAD_Y = 1/);
+    assert.match(logo, /paddingLeft=\{CHAT_PAD_X\}/);
+    assert.match(logo, /paddingRight=\{CHAT_PAD_X\}/);
+    assert.match(logo, /paddingTop=\{CHAT_PAD_Y\}/);
+    assert.match(logo, /paddingBottom=\{CHAT_PAD_Y\}/);
+  });
+});
+

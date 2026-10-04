@@ -11,6 +11,7 @@ import path from "node:path";
 
 import {
   inlineLayout,
+  meetScrollDelta,
   renderInlineFrame,
 } from "../scripts/meet-room-prompter.mjs";
 import { resolveMeetingsRoot } from "../scripts/project-context.mjs";
@@ -163,3 +164,15 @@ describe("meet room iMessage layout", () => {
     assert.doesNotMatch(frame, /in room/);
   });
 });
+
+describe("meet transcript j/k", () => {
+  it("j moves down toward newer turns and k moves up toward older ones", () => {
+    assert.equal(meetScrollDelta("j"), -1);
+    assert.equal(meetScrollDelta("J"), -1);
+    assert.equal(meetScrollDelta("k"), 1);
+    assert.equal(meetScrollDelta("K"), 1);
+    assert.equal(meetScrollDelta("h"), 0);
+    assert.equal(meetScrollDelta("l"), 0);
+  });
+});
+

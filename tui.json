@@ -28,5 +28,8 @@
     "./.opencode/tui-plugins/gotchi-queue-multitask.ts",
     "./.opencode/tui-plugins/gotchi-agent-sync.ts",
     "./.opencode/tui-plugins/gotchi-project.ts"
-  ]
+  ],
+  "prompt": {
+    "max_height": 5
+  }
 }

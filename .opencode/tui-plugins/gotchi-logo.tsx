@@ -10,8 +10,17 @@ const COMPACT = "GotchiCode"
 const MIN_WIDTH = 48
 /** paddingTop + paddingBottom around the logo box below. */
 const LOGO_PADDING_ROWS = 2
-/** Prompt box as the host draws it: border, input rows, model line. */
-const PROMPT_ROWS = 6
+/**
+ * Desk chat pane (OpenCode prompt). The textarea is 5 lines
+ * (prompt.max_height in config/tui.json). This wrapper insets it by
+ * 2 columns and 1 row. The host textarea box already pads left/right 2
+ * and top 1; the bottom row here is the matching inset under the prompt.
+ */
+const CHAT_LINES = 5
+const CHAT_PAD_X = 2
+const CHAT_PAD_Y = 1
+/** Host prompt chrome (border + model line) plus our vertical pad, for empty-session centering. */
+const PROMPT_ROWS = CHAT_LINES + CHAT_PAD_Y * 2 + 2
 
 const DEFAULT_ART = [
   " ▄▄▄  ▄▄   ▄▄▄   ▄▄▄ ▄  ▄  ▄  ▄███▄   ▄▄▄  ▄▄   ▄▄█  ▄▄ ",
@@ -148,20 +157,28 @@ const SessionPromptWithLogo = (props: {
           <Logo theme={props.theme} art={props.art} />
         </box>
       </Show>
-      <Prompt
-        sessionID={props.sessionId}
-        visible={props.visible}
-        disabled={props.disabled}
-        onSubmit={props.onSubmit}
-        // The host passes session_prompt_right here; keep it so plugins (gotchi-steer)
-        // can put a button beside the prompt.
-        right={<Slot name="session_prompt_right" session_id={props.sessionId} />}
-        ref={(r: unknown) => {
-          // Shared with gotchi-steer.ts (interrupt & steer needs the live prompt).
-          ;(globalThis as any).__gotchiPromptRef = r
-          props.promptRef?.(r)
-        }}
-      />
+      <box
+        width="100%"
+        paddingLeft={CHAT_PAD_X}
+        paddingRight={CHAT_PAD_X}
+        paddingTop={CHAT_PAD_Y}
+        paddingBottom={CHAT_PAD_Y}
+      >
+        <Prompt
+          sessionID={props.sessionId}
+          visible={props.visible}
+          disabled={props.disabled}
+          onSubmit={props.onSubmit}
+          // The host passes session_prompt_right here; keep it so plugins (gotchi-steer)
+          // can put a button beside the prompt.
+          right={<Slot name="session_prompt_right" session_id={props.sessionId} />}
+          ref={(r: unknown) => {
+            // Shared with gotchi-steer.ts (interrupt & steer needs the live prompt).
+            ;(globalThis as any).__gotchiPromptRef = r
+            props.promptRef?.(r)
+          }}
+        />
+      </box>
     </box>
   )
 }

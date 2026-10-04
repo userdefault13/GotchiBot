@@ -875,8 +875,8 @@ function drawInputPanel(top, cols) {
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
       (INLINE
-        ? `${T.panel}${T.muted} · PgUp/PgDn scroll · q quit · /edit · /end · /help${T.reset}`
-        : `${T.panel}${T.muted} · ←→ page · /edit · /cockpit · /start · /end · /help${T.reset}`);
+        ? `${T.panel}${T.muted} · j/k scroll · PgUp/PgDn · q quit · /edit · /end · /help${T.reset}`
+        : `${T.panel}${T.muted} · j/k scroll · ←→ page · /edit · /cockpit · /start · /end · /help${T.reset}`);
   }
   writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols, visLen(footerCore)), cols));
 
@@ -1270,7 +1270,7 @@ function setup() {
     process.exit(1);
   }
   // Alt screen, no wrap. Mouse tracking stays off so wheel cannot flood the pane.
-  // Keyboard , [ h and . ] l still page when the prompt is empty.
+  // Keyboard j/k scroll one line; , [ h and . ] l page when the prompt is empty.
   stdout.write("\x1b[?1049h\x1b[?7l\x1b[?25h");
   try {
     stdin.setRawMode(true);
@@ -1286,6 +1286,16 @@ let escBuf = "";
 
 function bufferEmpty() {
   return !String(editor.buffer || "").trim();
+}
+
+/**
+ * Vim line scroll for the iMessage transcript.
+ * +1 is up (older turns). -1 is down (newer turns). 0 is not a scroll key.
+ */
+export function meetScrollDelta(key) {
+  if (key === "j" || key === "J") return -1;
+  if (key === "k" || key === "K") return 1;
+  return 0;
 }
 
 /** Mouse click on pager row: left third = prev, right third = next (1-based x,y). */
@@ -1343,8 +1353,14 @@ function handleKey(chunk) {
     return;
   }
 
-  // Immediate page keys when the prompt is empty (no Enter needed).
+  // Immediate scroll keys when the prompt is empty (no Enter needed).
+  // j/k match the channel and factory panes: j down (newer), k up (older), one line.
   if (bufferEmpty() && !editTargetTs) {
+    const line = meetScrollDelta(chunk);
+    if (line) {
+      scrollFromBottom = Math.max(0, scrollFromBottom + line);
+      return "redraw";
+    }
     if (chunk === "," || chunk === "[" || chunk === "h") {
       pagePrev();
       return "redraw";

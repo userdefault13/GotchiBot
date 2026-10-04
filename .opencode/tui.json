@@ -32,5 +32,8 @@
     "./tui-plugins/gotchi-project.ts",
     "./tui-plugins/gotchi-model-sync.ts",
     "./tui-plugins/gotchi-desk-sync.ts"
-  ]
+  ],
+  "prompt": {
+    "max_height": 5
+  }
 }
