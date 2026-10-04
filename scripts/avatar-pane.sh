@@ -1095,11 +1095,7 @@ cell_block() {
   local role_show="${role//-/ }" role_color="$AV_ROLE_GAL"
   [ -z "$role" ] && role_show="no role" && role_color="$AV_MUTED"
   role_show="${role_show:0:$pane_w}"
-  # The side grid is mid faces plus status and name. The role stays on the
-  # large portrait, so four rows still fit beside it.
-  if [ "$face" != "mid" ]; then
-    printf '%b%s%b\n' "$role_color" "$(center_pad "$role_show" "$pane_w")" "$AV_RST"
-  fi
+  printf '%b%s%b\n' "$role_color" "$(center_pad "$role_show" "$pane_w")" "$AV_RST"
 }
 
 render_main_art() {
@@ -1288,16 +1284,16 @@ render_now() {
 
 
 # collapsed: the whole pane is a single column of minis. No selected header.
-# focused: the portrait is the left column. The right column is a 4-wide grid
-# of mid faces, up to 4 rows (11 lines: 9 art + status + name).
+# focused: the portrait is the left column. The right column is 4 columns by
+# 3 rows. Each card is 12 lines: 9 art + status, name, and role.
 roster_budget() {
-  local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain stride=11 rows
+  local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain stride=12 rows
   case "$pane_h" in
     ''|*[!0-9]*) pane_h=0 ;;
   esac
   if [ "$mode" = "focused" ]; then
     rows=$((pane_h / stride))
-    [ "$rows" -gt 4 ] && rows=4
+    [ "$rows" -gt 3 ] && rows=3
     [ "$rows" -lt 1 ] && rows=1
     ROSTER_ROWS=$rows
     ROSTER_COLS_N=4
@@ -1592,10 +1588,10 @@ render_body() {
           3) c3="$left"; k4="$k1" ;;
         esac
       done
-      [ -z "$c0" ] && c0="$(blank_block "$cell_w" 11)"
-      [ -z "$c1" ] && c1="$(blank_block "$cell_w" 11)"
-      [ -z "$c2" ] && c2="$(blank_block "$cell_w" 11)"
-      [ -z "$c3" ] && c3="$(blank_block "$cell_w" 11)"
+      [ -z "$c0" ] && c0="$(blank_block "$cell_w" 12)"
+      [ -z "$c1" ] && c1="$(blank_block "$cell_w" 12)"
+      [ -z "$c2" ] && c2="$(blank_block "$cell_w" 12)"
+      [ -z "$c3" ] && c3="$(blank_block "$cell_w" 12)"
       pair="$(join4 "$c0" "$c1" "$c2" "$c3" "$gap")"
       if [ -n "$GRID_BLOCK" ]; then
         GRID_BLOCK="${GRID_BLOCK}"$'
@@ -1609,11 +1605,21 @@ render_body() {
     gap_s="  "
     while IFS= read -r li || [ -n "$li" ]; do L+=("$li"); done < <(printf '%s\n' "$LEFT_BLOCK")
     while IFS= read -r gi || [ -n "$gi" ]; do G+=("$gi"); done < <(printf '%s\n' "$GRID_BLOCK")
-    nmax=${#L[@]}
-    [ "${#G[@]}" -gt "$nmax" ] && nmax=${#G[@]}
+    # Center the portrait in the left column. The grid stays at the top.
+    local top=0 llen=${#L[@]}
+    if [ "$pane_h" -gt "$llen" ]; then
+      top=$(( (pane_h - llen) / 2 ))
+    fi
+    nmax=${#G[@]}
+    gi=$((top + llen))
+    [ "$gi" -gt "$nmax" ] && nmax=$gi
     [ "$nmax" -gt "$pane_h" ] && nmax=$pane_h
     for ((i = 0; i < nmax; i++)); do
-      lft="$(pad_cell_line "${L[i]:-}" "$LEFT_W")"
+      lft=""
+      if [ "$i" -ge "$top" ] && [ $((i - top)) -lt "$llen" ]; then
+        lft="${L[i - top]}"
+      fi
+      lft="$(pad_cell_line "$lft" "$LEFT_W")"
       gline="${G[i]:-}"
       put_line "$i" "${lft}${gap_s}${gline}"
     done
