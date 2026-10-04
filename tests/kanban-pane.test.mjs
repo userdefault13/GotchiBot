@@ -44,14 +44,14 @@ describe("kanban desk pane", () => {
     }
   });
 
-  it("focuses kanban at 90 columns and leaves the cockpit bar at 3", () => {
+  it("focuses kanban at 110 columns and leaves the cockpit bar at 3", () => {
     const out = execFileSync("bash", ["scripts/orchestrator-layout.sh", "sizes", "163", "kanban"], {
       cwd: root,
       encoding: "utf8",
       env: { ...process.env, TMUX: "", TMUX_PANE: "", TERM: "xterm-256color" },
     }).trim();
     const got = Object.fromEntries(out.split(/\s+/).map((part) => part.split("=")));
-    assert.equal(got.kanban, "90");
+    assert.equal(got.kanban, "110");
     assert.equal(got.cockpit, "3");
     assert.equal(got.chat, "3");
     assert.equal(got.factory, "3");
@@ -59,7 +59,7 @@ describe("kanban desk pane", () => {
     assert.equal(got.inbox, "3");
     assert.equal(got.meet, "3");
     assert.equal(got.files, "3");
-    assert.equal(got.avatar, "44");
+    assert.equal(got.avatar, "24");
     assert.equal(got.sum, "155");
     const chat = execFileSync("bash", ["scripts/orchestrator-layout.sh", "sizes", "163", "chat"], {
       cwd: root,
@@ -69,11 +69,20 @@ describe("kanban desk pane", () => {
     const chatGot = Object.fromEntries(chat.split(/\s+/).map((part) => part.split("=")));
     assert.equal(chatGot.chat, got.kanban);
     assert.equal(chatGot.kanban, "3");
-    assert.equal(chatGot.avatar, "44");
+    assert.equal(chatGot.avatar, "24");
   });
 
   it("bash -n kanban pane and layout", () => {
     execFileSync("bash", ["-n", path.join(root, "scripts/kanban-pane.sh")]);
     execFileSync("bash", ["-n", path.join(root, "scripts/orchestrator-layout.sh")]);
   });
+
+  it("draws seat avatars as the mini roster head, not the tall thumb", () => {
+    const src = read("scripts/gotchi-kanban.mjs");
+    assert.match(src, /import \{ renderMiniAscii \}/);
+    assert.match(src, /const KANBAN_ART_W = 9/);
+    assert.match(src, /renderMiniAscii\(colors/);
+    assert.doesNotMatch(src, /renderKanbanAscii/);
+  });
+
 });

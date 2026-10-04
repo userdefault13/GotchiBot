@@ -27,6 +27,7 @@ const PENDING = `${ROOT}/sessions/.meet-pending.json`;
 const SCROLL_FILE = `${ROOT}/sessions/.meet-channel-scroll`;
 const STAMP = `${ROOT}/sessions/.meet-channel.stamp`;
 const THUMB_FALLBACK = `${ROOT}/assets/gotchi-thumb.ascii`;
+const MINI_FALLBACK = `${ROOT}/assets/gotchi-kanban.ascii`;
 const THUMB_CACHE_DIR = `${ROOT}/sessions/.meet-thumbs`;
 const THUMB_W = 14;
 const SCROLLBAR_COLS = 2;
@@ -209,6 +210,7 @@ function wrapLines(text, width) {
 }
 
 const thumbCache = new Map();
+const miniCache = new Map();
 
 function thumbDiskPath(heroId) {
   const safe = String(heroId).replace(/[^\w.-]+/g, "_");
@@ -276,6 +278,76 @@ function thumbForHero(heroId) {
     /* ok */
   }
   return lines;
+}
+
+
+function miniDiskPath(heroId) {
+  const safe = String(heroId).replace(/[^\w.-]+/g, "_");
+  return `${THUMB_CACHE_DIR}/${safe}.mini.${_tui.color}-${_tui.glyphs}.txt`;
+}
+
+function gotchiArtMiniArgs(heroId) {
+  const args = gotchiArtThumbArgs(heroId);
+  const i = args.indexOf("--thumb");
+  if (i >= 0) args[i] = "--mini";
+  return args;
+}
+
+function normalizeMiniLines(art) {
+  const lines = String(art || "")
+    .replace(/\n+$/, "")
+    .split("\n");
+  const width = Math.max(9, ...lines.map((l) => plainLen(l)));
+  return lines.map((l) => {
+    const pad = width - plainLen(l);
+    return pad > 0 ? `${l}${" ".repeat(pad)}` : l;
+  });
+}
+
+function miniForHero(heroId) {
+  mkdirSync(THUMB_CACHE_DIR, { recursive: true });
+  const disk = miniDiskPath(heroId);
+  try {
+    if (existsSync(disk)) {
+      const art = readFileSync(disk, "utf8");
+      if (art.trim()) return normalizeMiniLines(art);
+    }
+  } catch {
+    /* regenerate */
+  }
+  const r = spawnSync(process.execPath, gotchiArtMiniArgs(heroId), {
+    cwd: ROOT,
+    encoding: "utf8",
+    timeout: 8000,
+  });
+  let art = r.stdout || "";
+  if (!art.trim()) {
+    try {
+      art = readFileSync(MINI_FALLBACK, "utf8");
+    } catch {
+      art = "  ▄▄▄▄▄  ";
+    }
+  }
+  const lines = normalizeMiniLines(art);
+  try {
+    writeFileSync(disk, `${lines.join("\n")}\n`);
+  } catch {
+    /* ok */
+  }
+  return lines;
+}
+
+/** Small roster head. Not the iMessage thumb. */
+export function getMini(heroId) {
+  if (!heroId || heroId === "userdefault") {
+    try {
+      return normalizeMiniLines(readFileSync(MINI_FALLBACK, "utf8"));
+    } catch {
+      return ["  ▄▄▄▄▄  "];
+    }
+  }
+  if (!miniCache.has(heroId)) miniCache.set(heroId, miniForHero(heroId));
+  return miniCache.get(heroId);
 }
 
 /** Thumb lines for a hero: in-process map → sessions/.meet-thumbs → gotchi-art. */

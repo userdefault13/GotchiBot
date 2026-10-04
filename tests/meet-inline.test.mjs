@@ -202,11 +202,12 @@ describe("meet sidebar", () => {
   it("lists mini gotchi heads with a name, beside the transcript", () => {
     const side = renderMeetSidebar(10, MEET_SIDEBAR_COLS - 1);
     assert.equal(side.length, 10);
-    assert.equal(SIDEBAR_CARD_ROWS, 5);
+    assert.equal(SIDEBAR_CARD_ROWS, 6);
     const plainLines = side.map((s) => s.replace(/\x1b\[[0-9;]*m/g, ""));
-    assert.equal(plainLines[4].trim(), "");
+    assert.equal(plainLines[5].trim(), "");
     const plain = side.map((s) => s.replace(/\x1b\[[0-9;]*m/g, "")).join("\n");
-    assert.match(plain, /[▄▀█░]/);
+    assert.match(plain, /▀ ▀/);
+    assert.doesNotMatch(plain, /▄▀▀▀▀▀▀▄/);
     assert.doesNotMatch(plain, /seat/);
     const frame = renderInlineFrame({ cols: 90, rows: 30, scrollFromBottom: 0 });
     const row = frame.split("\n")[2] || "";

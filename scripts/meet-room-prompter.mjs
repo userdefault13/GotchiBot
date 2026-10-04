@@ -30,7 +30,7 @@ import {
   loadCurrentMeeting,
   renderMeetChannel,
   maxScrollFromBottom,
-  getThumb,
+  getMini,
 } from "./meet-channel.mjs";
 import {
   stripPardonPrefix,
@@ -66,7 +66,7 @@ const INPUT_PAD_X = 2;
 /** Chat-list column: mini gotchi, name, short status. Last column is the rule. */
 export const MEET_SIDEBAR_COLS = 28;
 /** Lines per sidebar card: 4 of the round head, then a blank row. */
-export const SIDEBAR_CARD_ROWS = 5;
+export const SIDEBAR_CARD_ROWS = 6;
 /** Which meet surface j/k moves. m focuses the sidebar, n the transcript. */
 let meetPaneFocus = "chat";
 let sideScroll = 0;
@@ -198,8 +198,8 @@ function clipSide(text, width) {
 }
 
 /**
- * Meet-room chat list. Each card is the round head (4 rows) plus a blank
- * row so the name is not crushed against the next face. Not the 3×2 seat grid.
+ * Meet-room chat list. Each card is the mini roster head (5 rows) plus a blank
+ * row. Not the tall iMessage thumb and not the 3×2 seat grid.
  * `scroll` skips that many cards. `focused` is unused here; the divider shows it.
  */
 export function renderMeetSidebar(rows, width = MEET_SIDEBAR_COLS - 1, scroll = sideScroll) {
@@ -207,22 +207,23 @@ export function renderMeetSidebar(rows, width = MEET_SIDEBAR_COLS - 1, scroll = 
   if (rows <= 0 || width < 16) return Array(Math.max(0, rows)).fill(blank);
   const members = listMeetMembers();
   const status = loadMeetStatus();
-  const nameW = Math.max(4, width - 14);
+  const nameW = Math.max(4, width - 11);
   const maxStart = Math.max(0, members.length - 1);
   const start = Math.max(0, Math.min(maxStart, Number(scroll) || 0));
   const lines = [];
   for (const m of members.slice(start)) {
     if (lines.length + SIDEBAR_CARD_ROWS > rows && lines.length > 0) break;
-    const thumb = getThumb(m.id);
+    const face = getMini(m.id);
     const st = statusFor(m.id, status);
     const sub =
       st.status && st.status !== "idle" ? statusLabel(st.status, st.since) : m.role || "";
     const name = clipSide(m.label, nameW);
-    const face = [0, 1, 2, 3].map((i) => thumb[i] || "");
-    lines.push(padVis(`${face[0]} ${name}`, width));
-    lines.push(padVis(face[1], width));
-    lines.push(padVis(`${face[2]} ${clipSide(sub, nameW)}`, width));
-    lines.push(padVis(face[3], width));
+    const row = (i, extra) => padVis(`${face[i] || ""}${extra ? " " + extra : ""}`, width);
+    lines.push(row(0, name));
+    lines.push(row(1, ""));
+    lines.push(row(2, clipSide(sub, nameW)));
+    lines.push(row(3, ""));
+    lines.push(row(4, ""));
     lines.push(blank);
   }
   while (lines.length < rows) lines.push(blank);

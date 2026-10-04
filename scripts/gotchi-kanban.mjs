@@ -26,7 +26,7 @@ import {
 } from "node:fs";
 import readline from "node:readline";
 import { resolveHeroColors } from "./collateral-resolve.mjs";
-import { renderKanbanAscii } from "./gotchi-art.mjs";
+import { renderMiniAscii } from "./gotchi-art.mjs";
 import { orchestratorId } from "./openclaw-fleet.mjs";
 import { pullOpenProject, startHubProjectMirror } from "./hub-project-sync.mjs";
 
@@ -34,7 +34,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = join(ROOT, "sessions");
 const WATCH_MS = Number(process.env.GOTCHIBOT_KANBAN_WATCH_MS || 5000);
 const REFRESH_S = Math.max(0.5, WATCH_MS / 1000);
-const KANBAN_ART_W = 12; // gotchi-thumb.ascii width (large tombstone, not the 5-line mini)
+const KANBAN_ART_W = 9; // mini roster head, not the 12-wide thumb
 
 const args = process.argv.slice(2);
 const wantJson = args.includes("--json");
@@ -504,7 +504,7 @@ function artForCard(card) {
       },
       card.id,
     ) || null;
-  const art = renderKanbanAscii(colors, {
+  const art = renderMiniAscii(colors, {
     useColor: true,
   });
   const lines = art.split("\n");
