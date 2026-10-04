@@ -21,6 +21,7 @@ import {
   existsSync,
   mkdirSync,
   unlinkSync,
+  readdirSync,
 } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve, join } from "node:path";
@@ -29,7 +30,7 @@ import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./
 import { isProfLinkCubeId, PROF_LINK_CUBE_ID } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
 import { resolveMeetingsRoot } from "./project-context.mjs";
-import { publishProjectWrite } from "./hub-project-sync.mjs";
+import { publishProjectWrite, flushProjectWrites } from "./hub-project-sync.mjs";
 import {
   ROOT,
   SESSIONS,
@@ -818,6 +819,8 @@ function profHero() {
 /** Always seat Prof. Link-Cube beside the chair (factory NPC, not on cartridge roster). */
 function ensureProfInMeeting(meeting) {
   if (!meeting) return meeting;
+  // 1:1 chat (gotchi-meet.mjs chat <hero>): just the user and that gotchi.
+  if (meeting.solo || meeting.direct) return meeting;
   if ((meeting.participants || []).some((p) => isProfLinkCubeId(p.id))) return meeting;
   const p = {
     id: PROF_LINK_CUBE_ID,
@@ -869,6 +872,138 @@ export async function startMeeting(topic = "Untitled meeting", opts = {}) {
   syncMeetMentionAgents(meeting);
   pokeAvatar();
   return meeting;
+}
+
+/** Gotchi ids in a meeting (not the user), sorted — the direct-chat key. */
+function agentSetKey(meeting) {
+  return (meeting?.participants || [])
+    .filter((p) => p.role !== "user")
+    .map((p) => p.id)
+    .sort()
+    .join(",");
+}
+
+/** Every saved meeting in this project, newest first. */
+function allMeetings() {
+  let ids = [];
+  try {
+    ids = readdirSync(meetingsRoot()).filter((d) => /^m\d/.test(d));
+  } catch {
+    return [];
+  }
+  return ids
+    .map((id) => loadMeeting(id))
+    .filter((m) => m && !m.deleted)
+    .sort((a, b) => String(b.createdAt || b.id).localeCompare(String(a.createdAt || a.id)));
+}
+
+/**
+ * Make `target` the current meeting. The one being left stays open but parked
+ * (no minutes — it is paused, not ended). An ended target reopens.
+ */
+function switchCurrentMeeting(target) {
+  const open = loadCurrentMeeting();
+  const now = new Date().toISOString();
+  if (open && open.id !== target.id) {
+    open.current = false;
+    open.parkedAt = now;
+    saveMeeting(open);
+  }
+  if (target.status !== "open") target.reopenedAt = now;
+  target.status = "open";
+  target.current = true;
+  delete target.parkedAt;
+  saveMeeting(target);
+  setCurrent(target.id);
+  clearMeetMentionAgents();
+  syncMeetMentionAgents(target);
+  pokeAvatar();
+  return target;
+}
+
+/**
+ * Soft delete: the Hub project sync has no delete, so removing the folder just
+ * gets it pulled back. A deleted flag syncs like any edit and hides the meeting.
+ */
+export function deleteMeeting(id) {
+  const m = loadMeeting(id);
+  if (!m) throw new Error(`no meeting ${id}`);
+  if (currentMeetingId() === id && m.status === "open") {
+    throw new Error(`${id} is the current meeting — end or switch away first`);
+  }
+  m.deleted = true;
+  m.deletedAt = new Date().toISOString();
+  m.current = false;
+  saveMeeting(m);
+  return m;
+}
+
+/** Resume a parked/ended meeting by id (the meet room uses this from the sidebar). */
+export function resumeMeeting(id) {
+  const m = loadMeeting(id);
+  if (!m) throw new Error(`no meeting ${id}`);
+  return switchCurrentMeeting(m);
+}
+
+/**
+ * Direct chat with one or more gotchis: the user plus exactly those gotchis.
+ * Reuses the newest chat with the same set (reopening it if ended); otherwise
+ * starts one. The first gotchi chairs. The meeting being left is parked.
+ */
+export async function openDirectChat(queries) {
+  const heroes = [];
+  for (const q of [].concat(queries || [])) {
+    const s = String(q || "").trim();
+    if (!s) continue;
+    const hero = await resolveInviteTarget(s);
+    if (!heroes.some((h) => h.id === hero.id)) heroes.push(hero);
+  }
+  if (!heroes.length) throw new Error("chat needs at least one gotchi");
+  const key = heroes.map((h) => h.id).sort().join(",");
+  const isDirect = (m) => Boolean(m && (m.solo || m.direct) && agentSetKey(m) === key);
+  const open = loadCurrentMeeting();
+  if (isDirect(open)) return { meeting: open, reused: true };
+  const found = allMeetings().find(isDirect);
+  if (found) return { meeting: switchCurrentMeeting(found), reused: true };
+
+  const user = userParticipant();
+  const names = heroes.map((h) => displayNameFor(h));
+  const meeting = {
+    id: newMeetingId(),
+    kind: "meeting",
+    direct: true,
+    solo: heroes.length === 1,
+    topic: `chat with ${names.join(", ")}`,
+    createdAt: new Date().toISOString(),
+    status: "open",
+    chairId: heroes[0].id,
+    current: true,
+    participants: [
+      { id: user.id, role: "user", name: user.name },
+      ...heroes.map((h, i) => ({
+        id: h.id,
+        role: i === 0 ? "chair" : "agent",
+        name: names[i],
+        ...(h.kind === "npc" ? { kind: "npc" } : {}),
+      })),
+    ],
+  };
+  if (open) {
+    open.current = false;
+    open.parkedAt = meeting.createdAt;
+    saveMeeting(open);
+  }
+  saveMeeting(meeting);
+  setCurrent(meeting.id);
+  clearMeetMentionAgents();
+  syncMeetMentionAgents(meeting);
+  pokeAvatar();
+  return { meeting, reused: false };
+}
+
+/** Back-compat: 1:1 chat with one gotchi. */
+export async function startSoloChat(query) {
+  return openDirectChat([query]);
 }
 
 export async function inviteParticipant(query) {
@@ -1324,6 +1459,7 @@ function tuiish(agentId) {
 function hasProviderKeys() {
   return !!(
     process.env.NVIDIA_API_KEY ||
+    process.env.NVIDIA_API_KEY_GLM_5_3 ||
     process.env.OPENROUTER_API_KEY ||
     process.env.DEEPSEEK_API_KEY ||
     process.env.OPENCODE_API_KEY ||
@@ -1452,6 +1588,13 @@ async function chairPickSpeakers(meeting, userText) {
   // Explicit @mentions (and direct-address bare names) win for EVERY meeting
   // kind — never let the LLM reroute @Gotchi to Prof. Link-Cube.
   const named = resolveMentionedSpeakers(meeting, userText);
+  // Direct chat with several gotchis: nobody named → each of them answers.
+  if (!named.length && meeting.direct) {
+    const all = everyoneSpeakers(meeting);
+    if (all.length > 1) {
+      return { speakers: all, note: "direct chat: every gotchi answers", fallback: false, everyone: true };
+    }
+  }
   if (named.length) {
     return {
       speakers: named,
@@ -2185,6 +2328,9 @@ function usage() {
   console.error(`usage:
   gotchi-meet.mjs start ["topic"]
   gotchi-meet.mjs start --morning ["topic"]
+  gotchi-meet.mjs chat <gotchi> [<gotchi>…]  # direct chat with exactly those gotchis (reuses the same set)
+  gotchi-meet.mjs switch <meetingId>       # make a parked/ended meeting current (parks the open one)
+  gotchi-meet.mjs delete <meetingId>…      # hide a saved meeting (synced flag; the Hub has no delete)
   gotchi-meet.mjs open|room|ui [--inline]  enter meet UI (tmux gallery, or --inline single terminal)
   gotchi-meet.mjs invite <n|id|name>
   gotchi-meet.mjs invite all
@@ -2240,6 +2386,46 @@ async function main() {
     } else {
       console.log("layout  attach tmux first: ./scripts/gotchibot tmux");
     }
+    return;
+  }
+
+  if (cmd === "chat" || cmd === "dm") {
+    // One arg per gotchi (id, roster number, or name). Same set → same chat.
+    const qs = rest.map((a) => a.trim()).filter(Boolean);
+    if (!qs.length) {
+      usage();
+      process.exit(2);
+    }
+    const { meeting: m, reused } = await openDirectChat(qs);
+    if (!process.env.GOTCHIBOT_MEET_LAYOUT_SKIP) ensureMeetGallery();
+    console.log(`${reused ? "chat reopened" : "chat started"}  ${m.id}`);
+    console.log(`with    ${agentSetKey(m)}`);
+    return;
+  }
+
+  if (cmd === "delete" || cmd === "rm") {
+    const ids = rest.filter(Boolean);
+    if (!ids.length) {
+      usage();
+      process.exit(2);
+    }
+    for (const id of ids) {
+      deleteMeeting(id);
+      console.log(`deleted  ${id}`);
+    }
+    // CLI exits before the debounced push fires; send it now.
+    await flushProjectWrites().catch(() => {});
+    return;
+  }
+
+  if (cmd === "switch" || cmd === "resume-meet") {
+    const id = rest[0];
+    if (!id) {
+      usage();
+      process.exit(2);
+    }
+    const m = resumeMeeting(id);
+    console.log(`current  ${m.id}  (${m.topic || "meeting"})`);
     return;
   }
 

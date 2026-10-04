@@ -172,3 +172,28 @@ describe("inbox pane source", () => {
     assert.equal(mail.messages[0].id, "m1");
   });
 });
+
+describe("one-shot CLI writes reach the hub", () => {
+  it("flushes a queued push before the process exits on its own", async () => {
+    const { mkdtempSync, mkdirSync: mk, writeFileSync: wf } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { execFileSync: run } = await import("node:child_process");
+    const { join: j, resolve: r, dirname: d } = await import("node:path");
+    const { fileURLToPath: f } = await import("node:url");
+    const repo = r(d(f(import.meta.url)), "..");
+    const root = mkdtempSync(j(tmpdir(), "gb-flush-"));
+    const rel = "sessions/pstack/demo/meetings/m1/meeting.json";
+    mk(j(root, "sessions/pstack/demo/meetings/m1"), { recursive: true });
+    wf(j(root, rel), "{}\n");
+    const probe = j(root, "probe.mjs");
+    wf(
+      probe,
+      `import { publishProjectWrite } from ${JSON.stringify(j(repo, "scripts/hub-project-sync.mjs"))};
+const hubRequest = async (m, p, { body }) => { await new Promise((ok) => setTimeout(ok, 50)); console.log("PUSHED " + body.files.map((x) => x.path).join(",")); return { ok: true }; };
+publishProjectWrite(${JSON.stringify(j(root, rel))}, { root: ${JSON.stringify(root)}, hubRequest });
+`,
+    );
+    const out = run(process.execPath, [probe], { encoding: "utf8" });
+    assert.match(out, new RegExp(`PUSHED ${rel}`));
+  });
+});

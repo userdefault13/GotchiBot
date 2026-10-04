@@ -54,8 +54,8 @@ describe("orchestrator-layout.sh — truecolor", () => {
 describe("orchestrator-layout.sh — avatar page keys", () => {
   it("binds prefix N/P to avatar-pane.sh sb-wheel", () => {
     const src = read(layout);
-    assert.match(src, /bind-key -T prefix P if-shell/);
-    assert.match(src, /bind-key -T prefix N if-shell/);
+    assert.match(src, /bind-key -r -T prefix P if-shell/);
+    assert.match(src, /bind-key -r -T prefix N if-shell/);
     assert.match(
       src,
       /avatar-pane\.sh sb-wheel up[\s\S]*?avatar-pane\.sh sb-wheel down|install_avatar_page_keys/,
@@ -67,8 +67,25 @@ describe("orchestrator-layout.sh — avatar page keys", () => {
     assert.ok(fn, "install_avatar_page_keys function present");
     assert.match(fn[0], /avatar-pane\.sh sb-wheel up/);
     assert.match(fn[0], /avatar-pane\.sh sb-wheel down/);
-    assert.match(fn[0], /bind-key -T prefix P/);
-    assert.match(fn[0], /bind-key -T prefix N/);
+    assert.match(fn[0], /bind-key -r -T prefix P/);
+    assert.match(fn[0], /bind-key -r -T prefix N/);
+  });
+
+  it("binds prefix k/j/Enter to avatar-pane.sh roster-nudge, never Ctrl+Shift", () => {
+    const fn = read(layout).match(
+      /install_avatar_page_keys\(\) \{[\s\S]*?\n\}/,
+    );
+    assert.ok(fn);
+    assert.match(fn[0], /bind-key -r -T prefix k if-shell[^\n]*roster-nudge up|rnu=.*roster-nudge up/);
+    assert.match(fn[0], /bind-key -r -T prefix k /);
+    assert.match(fn[0], /bind-key -r -T prefix j /);
+    assert.match(fn[0], /bind-key -T prefix Enter /);
+    assert.match(fn[0], /roster-nudge down/);
+    assert.match(fn[0], /roster-nudge enter/);
+    assert.doesNotMatch(fn[0], /tmux bind-key -n C-S-(Up|Down)/);
+    // Ctrl+J / Ctrl+K step the selector from any pane, session-scoped.
+    assert.match(fn[0], /bind-key -n C-j if-shell -F "\$sess_if"[^\n]*roster|bind-key -n C-j if-shell -F "\$sess_if" "run-shell \\"\$rnd\\"" "send-keys C-j"/);
+    assert.match(fn[0], /bind-key -n C-k if-shell -F "\$sess_if" "run-shell \\"\$rnu\\"" "send-keys C-k"/);
   });
 
   it("binds M-, / M-. session-scoped to sb-wheel", () => {
@@ -93,8 +110,8 @@ describe("orchestrator-layout.sh — avatar page keys", () => {
     assert.match(src, /unbind-key -n WheelUpPane/);
     assert.match(src, /unbind-key -n WheelDownPane/);
     // Keyboard roster paging stays.
-    assert.match(src, /bind-key -T prefix P/);
-    assert.match(src, /bind-key -T prefix N/);
+    assert.match(src, /bind-key -r -T prefix P/);
+    assert.match(src, /bind-key -r -T prefix N/);
   });
 });
 

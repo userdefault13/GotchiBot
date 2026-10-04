@@ -456,7 +456,12 @@ describe("avatar roster width", () => {
     assert.equal(idleSpace.modal, "1");
     const pane = read(path.join(root, "scripts/avatar-pane.sh"));
     assert.match(pane, /draw_sub_modal/);
-    assert.match(pane, /esc \/ space closes/);
+    // Modal menu: Chat (1:1 meeting) and Assign role (catalog list with Back).
+    assert.match(pane, /MODAL_MENU=\("Chat" "Assign role" "Close"\)/);
+    assert.match(pane, /pack-wearable\.mjs" equip "\$SEL_ID" "\$role"/);
+    assert.match(pane, /gotchibot meet chat "\$SEL_ID"/);
+    assert.match(pane, /← back/);
+    assert.match(pane, /esc close/);
     assert.match(pane, /EXPANDED:-0\}" != 1/);
     assert.match(pane, /CELL_SELECTED/);
     assert.match(pane, /AV_SEL_BG/);

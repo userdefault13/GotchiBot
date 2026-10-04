@@ -36,35 +36,38 @@ function meetingPointerExists() {
 }
 
 describe("inlineLayout", () => {
-  it("80x24: strip + transcript + 4-row prompt", () => {
+  it("80x24: strip + transcript + pad + 6-row input + footer + pad", () => {
     const L = inlineLayout(80, 24);
     assert.equal(L.cols, 80);
     assert.equal(L.rows, 24);
     assert.equal(L.stripRow, 1);
     assert.equal(L.transcriptTop, 2);
-    assert.equal(L.promptRows, 4);
-    assert.equal(L.promptTop, 21);
-    assert.equal(L.transcriptRows, 19);
-    assert.equal(L.stripRow + L.transcriptRows + L.promptRows, 24);
+    assert.equal(L.promptRows, 7);
+    assert.equal(L.inputRows, 6);
+    assert.equal(L.padY, 1);
+    assert.equal(L.promptTop, 17);
+    assert.equal(L.transcriptRows, 14);
+    assert.equal(L.stripRow + L.transcriptRows + L.promptRows + L.padY * 2, 24);
   });
 
   it("120x40: scales transcript", () => {
     const L = inlineLayout(120, 40);
     assert.equal(L.cols, 120);
-    assert.equal(L.promptRows, 4);
-    assert.equal(L.promptTop, 37);
+    assert.equal(L.promptRows, 7);
+    assert.equal(L.promptTop, 33);
     assert.equal(L.transcriptTop, 2);
-    assert.equal(L.transcriptRows, 35);
-    assert.equal(L.stripRow + L.transcriptRows + L.promptRows, 40);
+    assert.equal(L.transcriptRows, 30);
+    assert.equal(L.stripRow + L.transcriptRows + L.promptRows + L.padY * 2, 40);
   });
 
-  it("40x12: clamps sensibly", () => {
+  it("40x12: drops the padding and keeps the transcript", () => {
     const L = inlineLayout(40, 12);
     assert.equal(L.cols, 40);
-    assert.equal(L.promptRows, 4);
-    assert.equal(L.promptTop, 9);
+    assert.equal(L.padY, 0);
+    assert.equal(L.promptRows, 7);
+    assert.equal(L.promptTop, 6);
     assert.equal(L.transcriptTop, 2);
-    assert.equal(L.transcriptRows, 7);
+    assert.equal(L.transcriptRows, 4);
     assert.ok(L.transcriptRows >= 1);
     assert.equal(L.stripRow + L.transcriptRows + L.promptRows, 12);
   });
@@ -72,6 +75,7 @@ describe("inlineLayout", () => {
   it("tiny height still returns positive regions", () => {
     const L = inlineLayout(40, 5);
     assert.ok(L.promptRows >= 1);
+    assert.ok(L.inputRows >= 1);
     assert.ok(L.transcriptRows >= 1);
     assert.ok(L.promptTop >= 1);
     assert.ok(L.transcriptTop >= 1);
@@ -240,3 +244,82 @@ describe("meet sidebar", () => {
   });
 });
 
+describe("meet sidebar picks saved meets", () => {
+  it("combines group meetings into one card and marks each start and end", async () => {
+    const { listMeetThreads, buildMeetChannelLines } = await import("../scripts/meet-channel.mjs");
+    const mod = await import("../scripts/meet-room-prompter.mjs");
+    const threads = listMeetThreads();
+    assert.ok(threads.filter((t) => t.id === "group").length <= 1, "one group thread");
+    const plain = mod
+      .renderMeetSidebar(SIDEBAR_CARD_ROWS * 2, MEET_SIDEBAR_COLS - 1)
+      .map((s) => s.replace(/\x1b\[[0-9;]*m/g, ""))
+      .join("\n");
+    const group = threads.find((t) => t.id === "group");
+    if (!group) return;
+    assert.match(plain, /Group meetings/);
+    const lines = buildMeetChannelLines(group, 100, 90).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
+    const starts = lines.filter((l) => /▶ .* started /.test(l)).length;
+    const ends = lines.filter((l) => /■ ended |● in progress/.test(l)).length;
+    assert.equal(starts, group.segments.length);
+    assert.equal(ends, group.segments.length);
+    const at = threads.indexOf(group);
+    while (mod.meetSidebarState().sideSel > at) mod.sidebarKey("up");
+    while (mod.meetSidebarState().sideSel < at) mod.sidebarKey("down");
+    mod.sidebarKey("open");
+    assert.equal(mod.meetSidebarState().viewMeetingId, "group");
+    assert.equal(mod.meetSidebarState().focus, "chat");
+    assert.equal(mod.sidebarKey("x"), "");
+  });
+
+  it("Tab, Ctrl+U/Ctrl+D and the input panel live in the chat column", () => {
+    const src = readFileSync(path.join(root, "scripts/meet-room-prompter.mjs"), "utf8");
+    const fn = src.slice(src.indexOf("function handleKey"), src.indexOf("function handleEsc"));
+    assert.match(fn, /meetPaneFocus === "sidebar"/);
+    assert.match(fn, /focusSidebar\(\)/);
+    assert.match(fn, /\\x15/);
+    assert.match(src, /drawInputPanel\(layout\.promptTop, cols - sideW, sideW \+ 1/);
+  });
+});
+
+describe("/chat picker", () => {
+  it("single picks one gotchi; multi toggles several, then starts that set", async () => {
+    const mod = await import("../scripts/meet-room-prompter.mjs");
+    const roster = mod.chatRoster();
+    if (roster.length < 2) return;
+    const started = [];
+    const start = (ids) => started.push(ids);
+    mod.openChatPicker();
+    assert.equal(mod.chatPickerState().step, "mode");
+    mod.chatPickerKey("enter", { start }); // Single
+    assert.equal(mod.chatPickerState().mode, "single");
+    mod.chatPickerKey("down", { start });
+    mod.chatPickerKey("enter", { start });
+    assert.deepEqual(started.pop(), [roster[1].id]);
+    assert.equal(mod.chatPickerState(), null);
+
+    mod.openChatPicker();
+    mod.chatPickerKey("down", { start });
+    mod.chatPickerKey("enter", { start }); // Multi
+    assert.equal(mod.chatPickerState().mode, "multi");
+    mod.chatPickerKey("toggle", { start });
+    mod.chatPickerKey("down", { start });
+    mod.chatPickerKey("toggle", { start });
+    mod.chatPickerKey("enter", { start });
+    assert.deepEqual(started.pop(), [roster[0].id, roster[1].id]);
+
+    mod.openChatPicker();
+    mod.chatPickerKey("back", { start });
+    assert.equal(mod.chatPickerState(), null, "esc on the first step closes");
+  });
+
+  it("direct chats key the meet list on their exact gotchi set; /desk leaves", () => {
+    const ch = readFileSync(path.join(root, "scripts/meet-channel.mjs"), "utf8");
+    assert.match(ch, /m\.solo \|\| m\.direct \? `direct:\$\{agentKey\(m\)/);
+    const meet = readFileSync(meetCli, "utf8");
+    assert.match(meet, /export async function openDirectChat/);
+    assert.match(meet, /open\.parkedAt = /);
+    const pr = readFileSync(path.join(root, "scripts/meet-room-prompter.mjs"), "utf8");
+    assert.match(pr, /line === "\/chat"\) \{\s+editTargetTs = null;\s+openChatPicker\(\)/);
+    assert.match(pr, /line === "\/desk"/);
+  });
+});

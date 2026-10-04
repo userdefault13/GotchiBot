@@ -436,10 +436,26 @@ install_avatar_page_keys() {
   local rpu="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel up"
   local rpd="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh sb-wheel down"
   local sess_if="#{==:#{session_name},$sess_name}"
-  tmux bind-key -T prefix P if-shell -F "$sess_if" "run-shell \"$rpu\"" 2>/dev/null || true
-  tmux bind-key -T prefix N if-shell -F "$sess_if" "run-shell \"$rpd\"" 2>/dev/null || true
+  tmux bind-key -r -T prefix P if-shell -F "$sess_if" "run-shell \"$rpu\"" 2>/dev/null || true
+  tmux bind-key -r -T prefix N if-shell -F "$sess_if" "run-shell \"$rpd\"" 2>/dev/null || true
   tmux bind-key -n M-, if-shell -F "$sess_if" "run-shell \"$rpu\"" "send-keys M-," 2>/dev/null || true
   tmux bind-key -n M-. if-shell -F "$sess_if" "run-shell \"$rpd\"" "send-keys M-." 2>/dev/null || true
+  # Sub-agent selector from any pane: Ctrl+Space then k/j steps up/down the roster
+  # (crossing pages; -r so further k/j need no prefix); Ctrl+Space then Enter
+  # opens/closes the selected card. Ctrl+Shift arrows never reach tmux in Terminal.
+  local rnu="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh roster-nudge up"
+  local rnd="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh roster-nudge down"
+  local rns="cd $ROOT && GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/avatar-pane.sh roster-nudge enter"
+  tmux unbind-key -n C-S-Up 2>/dev/null || true
+  tmux unbind-key -n C-S-Down 2>/dev/null || true
+  # Ctrl+J / Ctrl+K: same selector steps with no prefix, from any pane. They are
+  # taken from the focused app in this session (OpenCode Ctrl+J newline, shell
+  # Ctrl+K kill-line); other tmux sessions still get them.
+  tmux bind-key -n C-j if-shell -F "$sess_if" "run-shell \"$rnd\"" "send-keys C-j" 2>/dev/null || true
+  tmux bind-key -n C-k if-shell -F "$sess_if" "run-shell \"$rnu\"" "send-keys C-k" 2>/dev/null || true
+  tmux bind-key -r -T prefix k if-shell -F "$sess_if" "run-shell \"$rnu\"" 2>/dev/null || true
+  tmux bind-key -r -T prefix j if-shell -F "$sess_if" "run-shell \"$rnd\"" 2>/dev/null || true
+  tmux bind-key -T prefix Enter if-shell -F "$sess_if" "run-shell \"$rns\"" 2>/dev/null || true
   # Cockpit from any pane: Ctrl+Space then Shift+K. The Hub chat runs OpenCode on the
   # hub over SSH, where /cockpit cannot reach this desk's tmux.
   local rck="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh enter-cockpit"

@@ -118,9 +118,27 @@ export async function pullOpenProject({ root = ROOT, slug, hubRequest, env = pro
  * Schedule a merge-push of one project file. No-ops in `node --test` unless a
  * hubRequest is injected, and when GOTCHIBOT_HUB_PROJECT_SYNC=0.
  */
+/**
+ * The debounce timer is unref'd so it never holds a pane open — which also
+ * meant a one-shot CLI (gotchi-meet.mjs chat/switch/say …) exited before its
+ * push fired and the Hub never saw the write. beforeExit fires when the loop
+ * drains (not on process.exit), so flush there; the push keeps the loop alive
+ * until it lands, then beforeExit fires again with nothing queued.
+ */
+let exitFlushHooked = false;
+function hookExitFlush() {
+  if (exitFlushHooked) return;
+  exitFlushHooked = true;
+  process.on("beforeExit", () => {
+    if (!queues.size) return;
+    flushProjectWrites().catch(() => {});
+  });
+}
+
 export function publishProjectWrite(absPath, { root = ROOT, env = process.env, hubRequest, debounceMs = 400 } = {}) {
   if (env.GOTCHIBOT_HUB_PROJECT_SYNC === "0") return false;
   if (!hubRequest && testProcess()) return false;
+  hookExitFlush();
   const rel = repoRel(root, absPath);
   if (!rel) return false;
   const slug = slugOf(rel);

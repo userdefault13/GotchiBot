@@ -7,6 +7,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
   readFileSync,
+  readdirSync,
   writeFileSync,
   existsSync,
   mkdirSync,
@@ -84,6 +85,111 @@ export function loadCurrentMeeting() {
   const m = readJson(`${root}/${id}/meeting.json`, null);
   if (!m || m.status !== "open") return null;
   return m;
+}
+
+/** One saved meeting by id (open or ended), or null. */
+export function loadMeetingById(id) {
+  if (!id) return null;
+  return readJson(`${meetingsRoot()}/${id}/meeting.json`, null);
+}
+
+/**
+ * Saved meetings, newest first. solo = 1:1 chat (gotchi-meet.mjs chat).
+ * The open meeting is flagged so the sidebar can mark it.
+ */
+export function listMeetings() {
+  const root = meetingsRoot();
+  let ids = [];
+  try {
+    ids = readdirSync(root).filter((d) => /^m\d/.test(d));
+  } catch {
+    return [];
+  }
+  const current = loadCurrentMeeting();
+  const out = [];
+  for (const id of ids) {
+    const m = readJson(`${root}/${id}/meeting.json`, null);
+    if (!m || m.deleted) continue;
+    out.push({
+      ...m,
+      id: m.id || id,
+      isCurrent: Boolean(current && current.id === (m.id || id)),
+    });
+  }
+  out.sort((a, b) => String(b.createdAt || b.id).localeCompare(String(a.createdAt || a.id)));
+  return out;
+}
+
+/**
+ * Meets combined into threads for the meet list: every group meeting is one
+ * "Group meetings" thread; 1:1 chats are one thread per gotchi. Each thread
+ * keeps its meetings oldest-first in `segments` so the log can show where each
+ * one started and ended. Newest thread first.
+ */
+export function listMeetThreads() {
+  const meets = listMeetings();
+  const byKey = new Map();
+  // Direct chats (gotchi-meet.mjs chat) key on their exact gotchi set.
+  const agentKey = (m) =>
+    (m.participants || []).filter((p) => p.role !== "user").map((p) => p.id).sort().join(",");
+  for (const m of meets) {
+    const key = m.solo || m.direct ? `direct:${agentKey(m) || m.chairId}` : "group";
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(m);
+  }
+  const threads = [];
+  for (const [key, list] of byKey) {
+    const segments = [...list].sort((a, b) =>
+      String(a.createdAt || a.id).localeCompare(String(b.createdAt || b.id)),
+    );
+    const latest = segments[segments.length - 1];
+    const open = segments.find((m) => m.isCurrent) || null;
+    // Parked: open but not current (left via /chat). Typing there resumes it.
+    const parked = [...segments].reverse().find((m) => m.status === "open" && !m.isCurrent) || null;
+    const seen = new Map();
+    for (const seg of segments) {
+      for (const p of seg.participants || []) if (!seen.has(p.id)) seen.set(p.id, p);
+    }
+    const direct = key !== "group";
+    const agents = (latest.participants || []).filter((p) => p.role !== "user");
+    threads.push({
+      id: key,
+      combined: true,
+      solo: direct,
+      direct,
+      agentCount: agents.length,
+      topic: direct ? `chat with ${agents.map((p) => p.name || p.id).join(", ") || latest.chairId}` : "group meetings",
+      chairId: (open || latest).chairId,
+      participants: [...seen.values()],
+      segments,
+      createdAt: latest.createdAt,
+      status: open ? "open" : parked ? "paused" : "ended",
+      isCurrent: Boolean(open),
+      openId: open?.id || null,
+      parkedId: parked?.id || null,
+    });
+  }
+  threads.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  return threads;
+}
+
+function stampTime(iso) {
+  const d = new Date(iso || 0);
+  if (Number.isNaN(d.getTime()) || !d.getTime()) return "";
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** Divider row: ── text ─────. */
+function dividerLine(text, cols, color = C.topic) {
+  const label = ` ${text} `;
+  const width = Math.max(label.length + 4, Math.min(cols - 2, 72));
+  const right = Math.max(2, width - label.length - 2);
+  return `${C.bar}──${C.reset}${color}${label}${C.reset}${C.bar}${"─".repeat(right)}${C.reset}`;
 }
 
 export function readTranscript(id) {
@@ -409,9 +515,11 @@ function renderHeader(meeting, cols, interactive = false) {
   const topic = meeting.topic || "Untitled meeting";
   const agents = (meeting.participants || []).filter((p) => p.role !== "user").length;
   const nav = `j/k · ↑↓ · PgUp/Dn`;
+  const n = meeting.segments?.length || 0;
+  const count = meeting.combined ? `${n} ${meeting.solo ? "chat" : "meeting"}${n === 1 ? "" : "s"} · ` : "";
   return [
     `${C.topic}# ${topic}${C.reset}`,
-    `${C.dim}${agents} gotchi${agents === 1 ? "" : "s"} · ${nav}${C.reset}`,
+    `${C.dim}${count}${agents} gotchi${agents === 1 ? "" : "s"} · ${nav}${C.reset}`,
     `${C.bar}${"─".repeat(Math.max(8, Math.min(cols - 2, 56)))}${C.reset}`,
   ];
 }
@@ -521,7 +629,51 @@ function renderTurn(turn, meeting, cols, hit = null) {
  * Pass `opts.hits` (an array) to draw clickable [copy] buttons on responses and
  * collect their hitboxes; `opts.copiedKey`/`opts.copiedState` flash one button.
  */
+/** One thread (listMeetThreads): each meeting between start and end markers. */
+function buildThreadLines(thread, cols, contentCols, opts = {}) {
+  const hits = opts.hits || null;
+  const lines = [...renderHeader(thread, contentCols, Boolean(hits))];
+  const segs = thread.segments || [];
+  if (!segs.length) lines.push(`${C.dim}(no messages saved)${C.reset}`, "");
+  for (const seg of segs) {
+    const open = seg.status === "open" && seg.isCurrent;
+    const paused = seg.status === "open" && !seg.isCurrent;
+    lines.push(dividerLine(`▶ ${seg.topic || "meeting"} · started ${stampTime(seg.createdAt)}`, contentCols));
+    lines.push("");
+    const turns = readTranscript(seg.id);
+    if (!turns.length) lines.push(`${C.dim}  (no messages)${C.reset}`, "");
+    turns.forEach((t, i) => {
+      const role = t.role || participantInfo(seg, t.speaker).role;
+      const key = `${seg.id}:${i}:${t.ts || ""}`;
+      let hit = null;
+      if (hits) {
+        // Only the open meeting's own lines can be edited.
+        const action = role === "user" && open ? "edit" : "copy";
+        hit = {
+          hits,
+          line: lines.length,
+          key,
+          action,
+          copied: action === "copy" && opts.copiedKey === key ? opts.copiedState || "ok" : null,
+        };
+      }
+      lines.push(...renderTurn(t, seg, contentCols, hit));
+    });
+    if (open) {
+      lines.push(...renderPendingTail(seg, cols, turns));
+      lines.push(dividerLine("● in progress", contentCols, C.chair), "");
+    } else if (paused) {
+      lines.push(dividerLine(`‖ paused ${stampTime(seg.parkedAt || seg.updatedAt)} · type to resume`, contentCols, C.dim), "");
+    } else {
+      const end = seg.endedAt || seg.updatedAt;
+      lines.push(dividerLine(`■ ended ${stampTime(end)}`, contentCols, C.dim), "");
+    }
+  }
+  return lines;
+}
+
 export function buildMeetChannelLines(meeting, cols, contentCols = cols, opts = {}) {
+  if (meeting?.combined) return buildThreadLines(meeting, cols, contentCols, opts);
   const hits = opts.hits || null;
   const lines = [...renderHeader(meeting, contentCols, Boolean(hits))];
   const turns = readTranscript(meeting.id);
@@ -602,11 +754,19 @@ export function maxScrollFromBottom({ cols = 80, rows = 40, meeting = loadCurren
   if (!meeting) return 0;
   const contentCols = transcriptContentCols(cols);
   const total = buildMeetChannelLines(meeting, cols, contentCols).length;
-  return Math.max(0, total - transcriptMessageRows(rows));
+  const viewport = transcriptMessageRows(rows);
+  // Scrolled up, the "↓ newer" row takes one line; leave room so the top is reachable.
+  return total > viewport ? total - viewport + 1 : 0;
 }
 
-export function renderMeetChannel({ cols = 80, rows = 40, scrollFromBottom = 0 } = {}) {
-  const meeting = loadCurrentMeeting();
+export function renderMeetChannel({
+  cols = 80,
+  rows = 40,
+  scrollFromBottom = 0,
+  meeting: picked = undefined,
+} = {}) {
+  // undefined → the open meeting; a meeting object → that saved log.
+  const meeting = picked === undefined ? loadCurrentMeeting() : picked;
   if (!meeting) {
     return finalizeChannelFrame(
       [
@@ -626,7 +786,7 @@ export function renderMeetChannel({ cols = 80, rows = 40, scrollFromBottom = 0 }
   const fromBottom = Math.max(
     0,
     Math.min(
-      Math.max(0, total - viewport),
+      total > viewport ? total - viewport + 1 : 0,
       Math.max(0, Number(scrollFromBottom) || 0),
     ),
   );
@@ -636,11 +796,14 @@ export function renderMeetChannel({ cols = 80, rows = 40, scrollFromBottom = 0 }
   if (total <= viewport) {
     visible = allLines.slice();
   } else {
+    // Reserve rows for the ↑/↓ markers so "↓ newer" is never cut off.
     const end = total - fromBottom;
-    const start = Math.max(0, end - viewport);
+    const newer = fromBottom > 0 ? 1 : 0;
+    let start = Math.max(0, end - (viewport - newer));
+    if (start > 0) start = Math.min(end, start + 1);
     visible = allLines.slice(start, end);
     if (start > 0) visible.unshift(`${C.dim}↑ older${C.reset}`);
-    if (fromBottom > 0) visible.push(`${C.dim}↓ newer · End latest${C.reset}`);
+    if (newer) visible.push(`${C.dim}↓ newer · End latest${C.reset}`);
     if (visible.length > viewport) visible.length = viewport;
   }
 

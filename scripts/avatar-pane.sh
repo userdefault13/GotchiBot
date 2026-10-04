@@ -389,6 +389,14 @@ load_sel() {
   SEL=0
   MODAL=0
   SEL_SIG=""
+  MODAL_VIEW=card
+  MENU_SEL=0
+  ROLE_SEL=0
+  SEL_ID=""
+  SEL_NAME=""
+  MODAL_MSG=""
+  # 1 = selector on the orchestrator portrait (the default on load).
+  SEL_ORCH=1
   if [ -f "$SEL_FILE" ]; then
     # shellcheck disable=SC1090
     . "$SEL_FILE" 2>/dev/null || true
@@ -396,6 +404,10 @@ load_sel() {
   case "${SEL:-}" in ''|*[!0-9]*) SEL=0 ;; esac
   case "${MODAL:-}" in 1) MODAL=1 ;; *) MODAL=0 ;; esac
   case "${SEL_SIG:-}" in *[!0-9]*) SEL_SIG="" ;; esac
+  case "${MODAL_VIEW:-}" in roles) MODAL_VIEW=roles ;; *) MODAL_VIEW=card ;; esac
+  case "${MENU_SEL:-}" in ''|*[!0-9]*) MENU_SEL=0 ;; esac
+  case "${ROLE_SEL:-}" in ''|*[!0-9]*) ROLE_SEL=0 ;; esac
+  case "${SEL_ORCH:-}" in 0) SEL_ORCH=0 ;; *) SEL_ORCH=1 ;; esac
 }
 
 save_sel() {
@@ -405,6 +417,14 @@ save_sel() {
     printf 'SEL=%s\n' "${SEL:-0}"
     printf 'MODAL=%s\n' "${MODAL:-0}"
     printf 'SEL_SIG=%s\n' "${SEL_SIG:-}"
+    printf 'MODAL_VIEW=%s\n' "${MODAL_VIEW:-card}"
+    printf 'MENU_SEL=%s\n' "${MENU_SEL:-0}"
+    printf 'ROLE_SEL=%s\n' "${ROLE_SEL:-0}"
+    printf 'SEL_ORCH=%s\n' "${SEL_ORCH:-1}"
+    # Hero under the selector, written by the paint. Other processes act on it.
+    printf 'SEL_ID=%q\n' "${SEL_ID:-}"
+    printf 'SEL_NAME=%q\n' "${SEL_NAME:-}"
+    printf 'MODAL_MSG=%q\n' "${MODAL_MSG:-}"
   } > "$tmp"
   mv "$tmp" "$SEL_FILE"
 }
@@ -413,6 +433,107 @@ save_sel() {
 # A future prompt must echo its length here so space is not stolen while typing.
 avatar_prompt_len() {
   printf '0'
+}
+
+# Sub-agent modal menu. Card: Chat / Assign role / Close. Roles: Back + catalog.
+MODAL_MENU=("Chat" "Assign role" "Close")
+ROLE_LIST_FILE="$SESSIONS/.avatar-role-list"
+ROLE_CATALOG="$ROOT/templates/marketplace/catalog.json"
+
+# One role id per line, from the marketplace catalog (what pack-wearable equips).
+load_role_list() {
+  ROLE_LIST=()
+  if [ ! -s "$ROLE_LIST_FILE" ] || [ "$ROLE_CATALOG" -nt "$ROLE_LIST_FILE" ]; then
+    node -e 'const c=require(process.argv[1]);for(const p of (c.packs||[]))if(p&&p.id)console.log(p.id)' \
+      "$ROLE_CATALOG" 2>/dev/null | sort -u > "$ROLE_LIST_FILE.tmp" && mv "$ROLE_LIST_FILE.tmp" "$ROLE_LIST_FILE"
+  fi
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] && ROLE_LIST+=("$line")
+  done < "$ROLE_LIST_FILE"
+}
+
+modal_reset() {
+  MODAL_VIEW=card
+  MENU_SEL=0
+  ROLE_SEL=0
+  MODAL_MSG=""
+}
+
+# Equip the role through pack-wearable (also writes config/agent-roles.json),
+# then rebuild the roster so the card shows it.
+modal_assign_role() {
+  local role="$1" out
+  if [ -z "${SEL_ID:-}" ]; then
+    MODAL_MSG="no gotchi selected yet"
+    return 0
+  fi
+  if out="$(node "$ROOT/scripts/pack-wearable.mjs" equip "$SEL_ID" "$role" 2>&1)"; then
+    MODAL_MSG="assigned ${role//-/ }"
+    refresh_roster
+  else
+    MODAL_MSG="assign failed: $(printf '%s' "$out" | tail -n 1)"
+  fi
+}
+
+# 1:1 meeting with the selected gotchi. Runs detached: it relays out the desk.
+modal_open_chat() {
+  if [ -z "${SEL_ID:-}" ]; then
+    MODAL_MSG="no gotchi selected yet"
+    return 0
+  fi
+  ( cd "$ROOT" && ./scripts/gotchibot meet chat "$SEL_ID" > "$SESSIONS/.avatar-chat.log" 2>&1 \
+      || { MODAL=1
+           if grep -q "already open" "$SESSIONS/.avatar-chat.log"; then
+             MODAL_MSG="a meeting is open · end it first"
+           else
+             MODAL_MSG="chat failed · .avatar-chat.log"
+           fi
+           save_sel; sb_click_wake ""; } ) &
+  MODAL=0
+  modal_reset
+}
+
+# Keys while the modal is open. Returns 0 when state changed.
+modal_key() {
+  local key="$1" n_menu=${#MODAL_MENU[@]} n_roles
+  if [ "$MODAL_VIEW" = roles ]; then
+    load_role_list
+    n_roles=$(( ${#ROLE_LIST[@]} + 1 ))
+    case "$key" in
+      up|k) [ "$ROLE_SEL" -gt 0 ] && ROLE_SEL=$((ROLE_SEL - 1)) ;;
+      down|j) [ "$ROLE_SEL" -lt $((n_roles - 1)) ] && ROLE_SEL=$((ROLE_SEL + 1)) ;;
+      left|esc) MODAL_VIEW=card; MODAL_MSG="" ;;
+      enter|space|right)
+        if [ "$ROLE_SEL" -eq 0 ]; then
+          MODAL_VIEW=card
+          MODAL_MSG=""
+        else
+          modal_assign_role "${ROLE_LIST[$((ROLE_SEL - 1))]}"
+          MODAL_VIEW=card
+        fi
+        ;;
+      *) return 1 ;;
+    esac
+    save_sel
+    return 0
+  fi
+  case "$key" in
+    up|k) [ "$MENU_SEL" -gt 0 ] && MENU_SEL=$((MENU_SEL - 1)) ;;
+    down|j) [ "$MENU_SEL" -lt $((n_menu - 1)) ] && MENU_SEL=$((MENU_SEL + 1)) ;;
+    esc|space) MODAL=0; modal_reset ;;
+    enter|right)
+      case "${MODAL_MENU[$MENU_SEL]}" in
+        Chat) modal_open_chat ;;
+        "Assign role") MODAL_VIEW=roles; ROLE_SEL=0; MODAL_MSG="" ;;
+        *) MODAL=0; modal_reset ;;
+      esac
+      ;;
+    left) return 0 ;;
+    *) return 1 ;;
+  esac
+  save_sel
+  return 0
 }
 
 # Move the sub-agent cursor. Prints sel= and page=. Does not touch files.
@@ -499,19 +620,54 @@ select_move_pure() {
 
 # EXPANDED=1 only after a focused expanded paint. Otherwise return 1 so
 # ←/→ keep paging and space is not stolen.
+# force=1 (roster-nudge, any pane) also drives the collapsed column.
 apply_select_key() {
-  local key="$1"
+  local key="$1" force="${2:-0}"
   local prompt=0 moved sel_out page_out
   load_page
   load_page_env
   load_sel
-  if [ "${EXPANDED:-0}" != 1 ]; then
+  if [ "${EXPANDED:-0}" != 1 ] && [ "$force" != 1 ]; then
     return 1
   fi
   local n="${N_IDS:-0}" ps="${PAGE_SIZE:-12}" cols="${SEL_COLS:-4}"
   case "$n" in ''|*[!0-9]*) n=0 ;; esac
   case "$ps" in ''|0|*[!0-9]*) ps=12 ;; esac
   case "$cols" in ''|0|*[!0-9]*) cols=4 ;; esac
+  if [ "${MODAL:-0}" = 1 ]; then
+    modal_key "$key"
+    return $?
+  fi
+  # Orchestrator portrait sits left of the grid: right/down step into the grid,
+  # left from the first column or up from the very first card step back to it.
+  if [ "${SEL_ORCH:-1}" = 1 ]; then
+    case "$key" in
+      right|down)
+        [ "$n" -ge 1 ] || return 0
+        SEL_ORCH=0
+        SEL=$((PAGE * ps))
+        [ "$SEL" -ge "$n" ] && SEL=$((n - 1))
+        SEL_ID=""
+        SEL_NAME=""
+        save_sel
+        return 0
+        ;;
+      left|up) return 0 ;;
+    esac
+  else
+    case "$key" in
+      left|up)
+        if { [ "$key" = left ] && [ $(( (SEL % ps) % cols )) -eq 0 ]; } || \
+           { [ "$key" = up ] && [ "$SEL" -eq 0 ]; }; then
+          SEL_ORCH=1
+          SEL_ID=""
+          SEL_NAME=""
+          save_sel
+          return 0
+        fi
+        ;;
+    esac
+  fi
   case "$key" in
     left|right|up|down)
       [ "$n" -ge 1 ] || return 1
@@ -523,20 +679,20 @@ apply_select_key() {
       SEL="$sel_out"
       PAGE="$page_out"
       MODAL=0
+      # The paint fills SEL_ID for the new cursor; never act on the old hero.
+      SEL_ID=""
+      SEL_NAME=""
       save_sel
       save_page
       return 0
       ;;
-    space)
+    space|enter)
       prompt="$(avatar_prompt_len)"
       case "$prompt" in ''|*[!0-9]*) prompt=0 ;; esac
       [ "$prompt" -gt 0 ] && return 1
-      [ "$n" -ge 1 ] || return 1
-      if [ "${MODAL:-0}" = 1 ]; then
-        MODAL=0
-      else
-        MODAL=1
-      fi
+      [ "$n" -ge 1 ] || [ "${SEL_ORCH:-1}" = 1 ] || return 1
+      MODAL=1
+      modal_reset
       save_sel
       return 0
       ;;
@@ -560,6 +716,7 @@ settle_selection() {
   load_sel
   if [ "$SEL_SIG" != "$sig" ]; then
     SEL=0
+    SEL_ORCH=1
     MODAL=0
     SEL_SIG="$sig"
   fi
@@ -576,6 +733,14 @@ settle_selection() {
     [ "$SEL" -ge "$n_ids" ] && SEL=$((n_ids - 1))
     MODAL=0
   fi
+  if [ "${SEL_ORCH:-1}" = 1 ]; then
+    SEL_ID="${pin_id:-}"
+    SEL_NAME="${pin_name:-${pin_id:-}}"
+  else
+    SEL_ID="${ID_ARR[$SEL]:-}"
+    SEL_NAME="${NAME_ARR[$SEL]:-}"
+  fi
+  [ "${MODAL:-0}" = 1 ] || { MODAL_VIEW=card; MENU_SEL=0; ROLE_SEL=0; }
   save_sel
 }
 
@@ -648,8 +813,9 @@ pin_avatar_history() {
 watch_enter() {
   alt_screen_enter
   pin_avatar_history
-  # Pane open: selector starts on the first sub-agent.
+  # Pane open: selector starts on the orchestrator portrait.
   SEL=0
+  SEL_ORCH=1
   MODAL=0
   SEL_SIG=""
   save_sel
@@ -730,6 +896,9 @@ handle_esc() {
       F|*F) page_end; return 0 ;;
       1~|7~) page_home; return 0 ;;
       4~|8~) page_end; return 0 ;;
+      # PgUp/PgDn page even when the arrows drive the sub-agent selector.
+      5~) page_prev; return 0 ;;
+      6~) page_next; return 0 ;;
     esac
     return 1
   fi
@@ -757,14 +926,25 @@ handle_esc() {
 # Returns 0 if PAGE changed and we should redraw now.
 handle_key() {
   local key="$1"
+  # Enter arrives as "" (read's delimiter). j/k drive the modal menu while open.
+  case "$key" in
+    '') if apply_select_key enter; then return 0; fi; return 1 ;;
+    j|k)
+      load_sel
+      if [ "${MODAL:-0}" = 1 ]; then
+        if apply_select_key "$key" 1; then return 0; fi
+        return 1
+      fi
+      ;;
+  esac
   case "$key" in
     # No prompt in this pane: space opens or closes the sub-agent modal.
     ' ')
       if apply_select_key space; then return 0; fi
       return 1 ;;
-    # h/l aliases for ←/→; keep [ ]
-    l|']') page_next; return 0 ;;
-    h|'[') page_prev; return 0 ;;
+    # Pages: j/l/] next, k/h/[ prev. Arrows stay on the sub-agent selector.
+    j|l|']') page_next; return 0 ;;
+    k|h|'[') page_prev; return 0 ;;
     g) page_home; return 0 ;;
     G) page_end; return 0 ;;
     $'\033') handle_esc; return $? ;;
@@ -1475,16 +1655,45 @@ render() {
   fi
   RENDER_MAX_ROW=-1
   printf '\033[?2026h'
-  render_body "$status" || true
+  # Hotkey legend owns the last row. The body lays out in the rows above it.
   ph="$(pane_height)"
-  for ((r = RENDER_MAX_ROW + 1; r <= LAST_MAX_ROW && r < ph; r++)); do
+  local legend=0 body_h="$ph"
+  if [ -z "$(gallery_hero)" ] && [ "$ph" -ge 16 ]; then
+    legend=1
+    body_h=$((ph - 1))
+    PANE_H_CACHE="$body_h"
+  fi
+  render_body "$status" || true
+  for ((r = RENDER_MAX_ROW + 1; r <= LAST_MAX_ROW && r < body_h; r++)); do
     printf '\033[%d;1H\033[K' "$((r + 1))"
   done
   LAST_MAX_ROW="$RENDER_MAX_ROW"
+  if [ "$legend" = 1 ]; then
+    PANE_H_CACHE="$ph"
+    draw_key_legend "$((ph - 1))" "$(pane_width)"
+  fi
   printf '\033[1;1H\033[?2026l'
   if [ "$locked" = 1 ]; then
     pane_dims_unlock
   fi
+}
+
+# Bottom-row hotkey legend. Focused: in-pane keys. Elsewhere: the prefix keys
+# that reach the roster from any pane.
+draw_key_legend() {
+  local row="$1" cols="$2" text pad
+  case "$cols" in ''|*[!0-9]*) return 0 ;; esac
+  if [ "${EXPANDED:-0}" = 1 ]; then
+    text="j/k page · arrows select · space/⏎ card · esc close"
+    [ "${#text}" -gt "$cols" ] && text="j/k page · arrows · space card"
+  else
+    text="^Space j/k select · ^Space ⏎ card · ^Space P/N page"
+    [ "${#text}" -gt "$cols" ] && text="^Spc j/k sel · ⏎ card · P/N pg"
+  fi
+  [ "${#text}" -gt "$cols" ] && text="${text:0:$cols}"
+  pad=$(( (cols - ${#text}) / 2 ))
+  [ "$pad" -lt 0 ] && pad=0
+  printf '\033[%d;1H\033[K%*s%b%s%b' "$((row + 1))" "$pad" '' "$AV_MUTED" "$text" "$AV_RST"
 }
 
 # Framed orch block (art + caption lines), padded once per art/caption/width and
@@ -1678,9 +1887,6 @@ draw_sub_modal() {
   local width=$((inner + 2))
   local left=$(( (cols - width) / 2 ))
   [ "$left" -lt 0 ] && left=0
-  local box_h=6
-  local top=$(( (pane_h - box_h) / 2 ))
-  [ "$top" -lt 0 ] && top=0
   local bg="${AV_SEL_BG:-}" fg="" rst="$AV_RST"
   if [ -n "$bg" ]; then
     case "${TUI_COLOR}" in
@@ -1689,14 +1895,72 @@ draw_sub_modal() {
       *) fg=$'\033[38;5;255m' ;;
     esac
   fi
-  local bar
+  # Body rows: "text" plain, ">text" selected (reverse video), "~text" dim.
+  local -a ROWS=()
+  local i
+  if [ "${MODAL_VIEW:-card}" = roles ]; then
+    load_role_list
+    local n=$(( ${#ROLE_LIST[@]} + 1 )) win top_i label cur="${role:-}"
+    ROWS+=(" assign role · ${name}" "")
+    win=$(( pane_h - 8 ))
+    [ "$win" -gt 12 ] && win=12
+    [ "$win" -lt 3 ] && win=3
+    top_i=$(( ROLE_SEL - win / 2 ))
+    [ "$top_i" -gt $(( n - win )) ] && top_i=$(( n - win ))
+    [ "$top_i" -lt 0 ] && top_i=0
+    for ((i = top_i; i < n && i < top_i + win; i++)); do
+      if [ "$i" -eq 0 ]; then
+        label="← back"
+      else
+        label="${ROLE_LIST[$((i - 1))]//-/ }"
+        [ "${ROLE_LIST[$((i - 1))]}" = "$cur" ] && label="$label  (current)"
+      fi
+      if [ "$i" -eq "${ROLE_SEL:-0}" ]; then ROWS+=("> ▸ $label"); else ROWS+=("   $label"); fi
+    done
+    ROWS+=("" "~ ↑↓ move · ⏎ assign · esc back")
+  else
+    ROWS+=(" ${name}" " ${role_show}" " ${status}" "")
+    for ((i = 0; i < ${#MODAL_MENU[@]}; i++)); do
+      if [ "$i" -eq "${MENU_SEL:-0}" ]; then ROWS+=("> ▸ ${MODAL_MENU[i]}"); else ROWS+=("   ${MODAL_MENU[i]}"); fi
+    done
+    [ -n "${MODAL_MSG:-}" ] && ROWS+=("" " ${MODAL_MSG}")
+    ROWS+=("" "~ ↑↓ move · ⏎ choose · esc close")
+  fi
+  local box_h=$(( ${#ROWS[@]} + 2 ))
+  local top=$(( (pane_h - box_h) / 2 ))
+  [ "$top" -lt 0 ] && top=0
+  local bar r text sel_on=$'\033[7m' dim_on="$AV_MUTED"
   bar="$(repeat_char "$hz" "$inner")"
   modal_put "$top" "$left" "${bg}${fg}${tl}${bar}${tr}${rst}"
-  modal_put $((top + 1)) "$left" "$(modal_row " ${name}" "$inner" "$bg" "$fg" "$vt" "$rst")"
-  modal_put $((top + 2)) "$left" "$(modal_row " ${role_show}" "$inner" "$bg" "$fg" "$vt" "$rst")"
-  modal_put $((top + 3)) "$left" "$(modal_row " ${status}" "$inner" "$bg" "$fg" "$vt" "$rst")"
-  modal_put $((top + 4)) "$left" "$(modal_row " esc / space closes" "$inner" "$bg" "$fg" "$vt" "$rst")"
-  modal_put $((top + 5)) "$left" "${bg}${fg}${bl}${bar}${br}${rst}"
+  for ((i = 0; i < ${#ROWS[@]}; i++)); do
+    r="${ROWS[i]}"
+    case "$r" in
+      ">"*)
+        text="${r:1}"
+        text="${text:0:$inner}"
+        modal_put $((top + 1 + i)) "$left" "${bg}${fg}${vt}${sel_on}${text}$(printf '%*s' "$((inner - ${#text}))" '')${rst}${bg}${fg}${vt}${rst}"
+        ;;
+      "~"*)
+        modal_put $((top + 1 + i)) "$left" "$(modal_row "${r:1}" "$inner" "$bg" "${fg}${dim_on}" "$vt" "$rst")"
+        ;;
+      *)
+        modal_put $((top + 1 + i)) "$left" "$(modal_row "$r" "$inner" "$bg" "$fg" "$vt" "$rst")"
+        ;;
+    esac
+  done
+  modal_put $((top + 1 + ${#ROWS[@]})) "$left" "${bg}${fg}${bl}${bar}${br}${rst}"
+}
+
+# Card for whatever the selector is on: the orch portrait or a grid card.
+# Uses render_body's locals (pin_id, pin_name, status, *_ARR).
+draw_selected_modal() {
+  local cols="$1" pane_h="$2" orch_role
+  if [ "${SEL_ORCH:-1}" = 1 ]; then
+    orch_role="$(node -e 'try{const r=require(process.argv[1]);console.log(r[process.argv[2]]||"")}catch{}' "$ROOT/config/agent-roles.json" "${pin_id:-}" 2>/dev/null)"
+    draw_sub_modal "${pin_name:-${pin_id:-}}" "$orch_role" "${status:-}" "$cols" "$pane_h" "${pin_id:-}"
+  else
+    draw_sub_modal "${NAME_ARR[$SEL]:-}" "${ROLE_ARR[$SEL]:-}" "${ST_ARR[$SEL]:-}" "$cols" "$pane_h" "${ID_ARR[$SEL]:-}"
+  fi
 }
 
 modal_row() {
@@ -1793,10 +2057,25 @@ render_body() {
   fi
   # Same stack as a roster tile: status, name, role — then the shared workflow line.
   local caption
-  caption="$(printf '%b%s%b\n%b%s%b\n%b%s%b' \
-    "$status_color" "$status" "$AV_RST" \
-    "$AV_ROSTER" "${pin_name:-$pin_id}" "$AV_RST" \
-    "$role_color" "$role" "$AV_RST")"
+  load_sel
+  if [ "${SEL_ORCH:-1}" = 1 ]; then
+    # Selector on the orch: bracket and shade the caption like a selected card.
+    local cw=${#status} ml="[" mr="]" sb="${AV_SEL_BG:-}"
+    [ ${#pin_name} -gt "$cw" ] && cw=${#pin_name}
+    [ -z "$pin_name" ] && [ ${#pin_id} -gt "$cw" ] && cw=${#pin_id}
+    [ ${#role} -gt "$cw" ] && cw=${#role}
+    cw=$((cw + 2))
+    [ "${TUI_GLYPHS}" != "ascii" ] && ml="▌" && mr="▐"
+    caption="$(printf '%s%b%s%b%s%b%s%b\n%s%b%s%b%s%b%s%b\n%s%b%s%b%s%b%s%b' \
+      "$sb" "$AV_LIT" "$ml" "$status_color" "$(center_pad "$status" "$cw")" "$AV_LIT" "$mr" "$AV_RST" \
+      "$sb" "$AV_LIT" "$ml" "$AV_ROSTER" "$(center_pad "${pin_name:-$pin_id}" "$cw")" "$AV_LIT" "$mr" "$AV_RST" \
+      "$sb" "$AV_LIT" "$ml" "$role_color" "$(center_pad "$role" "$cw")" "$AV_LIT" "$mr" "$AV_RST")"
+  else
+    caption="$(printf '%b%s%b\n%b%s%b\n%b%s%b' \
+      "$status_color" "$status" "$AV_RST" \
+      "$AV_ROSTER" "${pin_name:-$pin_id}" "$AV_RST" \
+      "$role_color" "$role" "$AV_RST")"
+  fi
   if [ -n "$active_line" ]; then
     caption="${caption}"$'\n'"$(printf '%b%s%b' "$AV_MUTED" "$active_line" "$AV_RST")"
   fi
@@ -1811,7 +2090,7 @@ render_body() {
       [ "$LEFT_W" -lt 38 ] && LEFT_W=38
       hdr_cols=$LEFT_W
     fi
-    memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$hdr_cols|$main_budget|$role|$pin_show|$active_line|$expanded|$side" \
+    memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$hdr_cols|$main_budget|$role|$pin_show|$active_line|$expanded|$side|${SEL_ORCH:-1}" \
       render_header_block "$main" "$caption" "$hdr_cols" "$main_budget"
     if [ "$side" = 1 ]; then
       LEFT_BLOCK="$hdr"
@@ -1933,7 +2212,7 @@ render_body() {
         vi=$((i + slot))
         [ "$vi" -ge "$n_ids" ] && continue
         sel_flag=0
-        [ "$vi" -eq "${SEL:-0}" ] && sel_flag=1
+        [ "${SEL_ORCH:-1}" != 1 ] && [ "$vi" -eq "${SEL:-0}" ] && sel_flag=1
         k1="g|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[vi]}|${ST_ARR[vi]}|${COL_ARR[vi]}|${HAUNT_ARR[vi]}|${NAME_ARR[vi]}|${ROLE_ARR[vi]}|${LOAD_ARR[vi]}|$cell_w|$cell_h|$face|$sel_flag"
         memo_call left "$k1" \
           cell_block "${ID_ARR[vi]}" "${ST_ARR[vi]}" "${SVG_ARR[vi]}" "$cell_w" "$cell_h" "${COL_ARR[vi]}" "${HAUNT_ARR[vi]}" "${NAME_ARR[vi]}" "${ROLE_ARR[vi]}" "${LOAD_ARR[vi]}" "$face" "$sel_flag"
@@ -2013,8 +2292,8 @@ render_body() {
       fi
     fi
     save_page_env
-    if [ "${MODAL:-0}" = 1 ] && [ "$n_ids" -gt 0 ] && [ "$SEL" -lt "$n_ids" ]; then
-      draw_sub_modal "${NAME_ARR[$SEL]:-}" "${ROLE_ARR[$SEL]:-}" "${ST_ARR[$SEL]:-}" "$cols" "$pane_h" "${ID_ARR[$SEL]:-}"
+    if [ "${MODAL:-0}" = 1 ] && { [ "${SEL_ORCH:-1}" = 1 ] || { [ "$n_ids" -gt 0 ] && [ "$SEL" -lt "$n_ids" ]; }; }; then
+      draw_selected_modal "$cols" "$pane_h"
     fi
     printf '\033[1;1H'
     return
@@ -2022,9 +2301,12 @@ render_body() {
   if [ "${ROSTER_COLS:-1}" != 4 ]; then
   for ((i = base; i < end; i++)); do
     [ "$row" -ge "$pane_h" ] && break
-    k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h"
+    # Collapsed column shows the selector too, so the any-pane keys have a target.
+    sel_flag=0
+    [ "${SEL_ORCH:-1}" != 1 ] && [ "$i" -eq "${SEL:-0}" ] && sel_flag=1
+    k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h|$sel_flag"
     memo_call left "$k1" \
-      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}"
+      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}" mini "$sel_flag"
     while IFS= read -r line || [ -n "$line" ]; do
       [ -z "$line" ] && continue
       put_line "$row" "$line"
@@ -2076,6 +2358,9 @@ render_body() {
   fi
   if [ "$row" -lt "$pane_h" ]; then
     put_line "$row" "$ctrl"
+  fi
+  if [ "${MODAL:-0}" = 1 ] && { [ "${SEL_ORCH:-1}" = 1 ] || { [ "$n_ids" -gt 0 ] && [ "$SEL" -lt "$n_ids" ]; }; }; then
+    draw_selected_modal "$cols" "$pane_h"
   fi
 
   printf '\033[1;1H'
@@ -2179,7 +2464,7 @@ case "${1:-watch}" in
     # tmux gotchi-avatar table. Expanded focus moves the sub-agent selector.
     mkdir -p "$SESSIONS"
     case "${2:-}" in
-      left|right|up|down|space|esc) ;;
+      left|right|up|down|space|esc|enter) ;;
       *)
         echo "usage: avatar-pane.sh select-arrow left|right|up|down|space|esc [pid]" >&2
         exit 2
@@ -2193,6 +2478,20 @@ case "${1:-watch}" in
       left) page_prev; sb_click_wake "${3:-}" ;;
       right) page_next; sb_click_wake "${3:-}" ;;
     esac
+    ;;
+  roster-nudge)
+    # Any-pane keys (tmux root/prefix). Moves the sub-agent selector across
+    # pages or toggles its modal, whether or not the avatar pane is focused.
+    mkdir -p "$SESSIONS"
+    case "${2:-}" in
+      up|down|left|right|space|esc|enter) ;;
+      *)
+        echo "usage: avatar-pane.sh roster-nudge up|down|left|right|space|esc" >&2
+        exit 2
+        ;;
+    esac
+    apply_select_key "$2" 1 || true
+    sb_click_wake ""
     ;;
   select-apply)
     # Pure probe. No files. focused=0 leaves sel/page/modal unchanged.
@@ -2342,7 +2641,9 @@ case "${1:-watch}" in
       key=""
       tick_t="$read_t"
       [ "$LOADING_VISIBLE" = 1 ] && tick_t="$spin_t"
-      if read -rsn1 -t "$tick_t" key; then
+      # IFS= keeps a typed space. Default IFS strips it to "" and space never
+      # reached the sub-agent modal.
+      if IFS= read -rsn1 -t "$tick_t" key; then
         if handle_key "$key"; then
           safe_render
         fi
@@ -2383,7 +2684,7 @@ case "${1:-watch}" in
     done
     ;;
   *)
-    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|roster-origin [cols]|roster-rows <pane-height>|block-origin <pane-h> <block-h>|select-apply ...|select-arrow left|right|up|down|space|esc [pid]|sb-click <x> <y> [pid]|sb-wheel up|down [pid]]" >&2
+    echo "usage: avatar-pane.sh [watch|once|pin <agentId>|roster-origin [cols]|roster-rows <pane-height>|block-origin <pane-h> <block-h>|select-apply ...|select-arrow left|right|up|down|space|esc [pid]|roster-nudge up|down|space|esc|sb-click <x> <y> [pid]|sb-wheel up|down [pid]]" >&2
     exit 2
     ;;
 esac

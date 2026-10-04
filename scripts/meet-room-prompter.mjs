@@ -31,6 +31,8 @@ import {
   renderMeetChannel,
   maxScrollFromBottom,
   getMini,
+  listMeetings,
+  listMeetThreads,
 } from "./meet-channel.mjs";
 import {
   stripPardonPrefix,
@@ -56,9 +58,11 @@ const LEAVE = `${ROOT}/sessions/.meet-leave`;
 const PENDING = `${ROOT}/sessions/.meet-pending.json`;
 const EDIT_REQUEST = `${ROOT}/sessions/.meet-edit-request.json`;
 const STATUS_FILE = `${ROOT}/sessions/.meet-status.json`;
-const PROMPT_INPUT_ROWS = 3;
+const PROMPT_INPUT_ROWS = 6;
 const PROMPT_FOOTER_ROWS = 1;
 const PROMPT_PANEL_ROWS = PROMPT_INPUT_ROWS + PROMPT_FOOTER_ROWS;
+/** Blank row above and below the input panel (dropped on short panes). */
+const PROMPT_PAD_Y = 1;
 /** Gutter bar + one space before text (matches OpenCode prompt). */
 const INPUT_LEFT = 2;
 /** Purple input bar inset so it does not touch the pane edges. */
@@ -67,9 +71,18 @@ const INPUT_PAD_X = 2;
 export const MEET_SIDEBAR_COLS = 28;
 /** Lines per sidebar card: 4 of the round head, then a blank row. */
 export const SIDEBAR_CARD_ROWS = 6;
-/** Which meet surface j/k moves. m focuses the sidebar, n the transcript. */
+/** Which meet surface keys drive. Tab (empty prompt) / m / n switch it. */
 let meetPaneFocus = "chat";
 let sideScroll = 0;
+/** Sidebar selector: index into listMeetThreads(). */
+let sideSel = 0;
+/** Thread shown in the chat column ("group" / "direct:<ids>"). null = the one with the open meeting. */
+let viewMeetingId = null;
+/**
+ * /chat picker. null when closed. step "mode" (single/multi) → "agents".
+ * sel = cursor, picked = ids toggled in multi mode.
+ */
+let chatPick = null;
 
 /** Single-terminal mode: no tmux gallery / poke / leave-file. */
 const INLINE =
@@ -159,10 +172,15 @@ export function inlineLayout(cols, rows) {
   const c = Math.max(1, Math.floor(Number(cols) || 80));
   const r = Math.max(1, Math.floor(Number(rows) || 24));
   const stripRow = 1;
-  const promptRows = Math.min(PROMPT_PANEL_ROWS, Math.max(1, r - 2));
-  const promptTop = r - promptRows + 1;
+  // Short panes drop the padding first, then input rows; the transcript keeps
+  // at least a third of the pane.
+  const pad = r >= 20 ? PROMPT_PAD_Y : 0;
+  const budget = Math.max(1, Math.min(PROMPT_PANEL_ROWS, r - 2 - pad * 2, Math.floor((r * 2) / 3) - pad * 2));
+  const promptRows = Math.max(1, budget);
+  const inputRows = Math.max(1, promptRows - PROMPT_FOOTER_ROWS);
+  const promptTop = r - pad - promptRows + 1;
   const transcriptTop = Math.min(stripRow + 1, promptTop);
-  const transcriptRows = Math.max(1, promptTop - transcriptTop);
+  const transcriptRows = Math.max(1, promptTop - pad - transcriptTop);
   const mentionRow = Math.max(transcriptTop, promptTop - 1);
   return {
     cols: c,
@@ -172,6 +190,8 @@ export function inlineLayout(cols, rows) {
     transcriptRows,
     promptTop,
     promptRows,
+    inputRows,
+    padY: pad,
     mentionRow,
   };
 }
@@ -221,40 +241,215 @@ function clipSide(text, width) {
 }
 
 /**
- * Meet-room chat list. Each card is the mini roster head (5 rows) plus a blank
- * row. Not the tall iMessage thumb and not the 3×2 seat grid.
- * `scroll` skips that many cards. `focused` is unused here; the divider shows it.
+ * Thread shown in the chat column: the picked one, else the thread holding the
+ * open meeting, else the newest. Group meetings are one combined log.
+ */
+export function viewedMeeting() {
+  const threads = listMeetThreads();
+  if (viewMeetingId) {
+    const t = threads.find((x) => x.id === viewMeetingId);
+    if (t) return t;
+    viewMeetingId = null;
+  }
+  return threads.find((x) => x.isCurrent) || threads[0] || null;
+}
+
+function shortDate(iso) {
+  const d = new Date(iso || 0);
+  if (Number.isNaN(d.getTime()) || !d.getTime()) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** Every gotchi on the desk roster (orch first): { id, name, role }. */
+export function chatRoster() {
+  let r = null;
+  try {
+    r = JSON.parse(readFileSync(`${ROOT}/sessions/.avatar-roster.json`, "utf8"));
+  } catch {
+    return [];
+  }
+  const out = [];
+  if (r?.pinned) out.push({ id: r.pinned, name: r.pinnedName || r.pinned, role: "orchestrator" });
+  for (const h of r?.others || []) {
+    if (h?.id && !out.some((x) => x.id === h.id)) out.push({ id: h.id, name: h.name || h.id, role: h.role || "" });
+  }
+  return out;
+}
+
+export function openChatPicker() {
+  chatPick = { step: "mode", mode: "single", sel: 0, picked: [] };
+}
+
+/** Test hook. */
+export function chatPickerState() {
+  return chatPick ? { ...chatPick, picked: [...chatPick.picked] } : null;
+}
+
+/**
+ * Picker keys: up/down/toggle/enter/back. Returns "redraw" when handled.
+ * Enter on the gotchi list opens the chat with that set (gotchi-meet.mjs chat).
+ */
+export function chatPickerKey(key, { start = startDirectChat } = {}) {
+  if (!chatPick) return "";
+  const p = chatPick;
+  if (p.step === "mode") {
+    if (key === "up" || key === "down") p.sel = p.sel === 0 ? 1 : 0;
+    else if (key === "enter" || key === "toggle") {
+      p.mode = p.sel === 0 ? "single" : "multi";
+      p.step = "agents";
+      p.sel = 0;
+      p.picked = [];
+    } else if (key === "back") chatPick = null;
+    return "redraw";
+  }
+  const roster = chatRoster();
+  const n = roster.length;
+  if (key === "up") p.sel = Math.max(0, p.sel - 1);
+  else if (key === "down") p.sel = Math.min(Math.max(0, n - 1), p.sel + 1);
+  else if (key === "back") {
+    p.step = "mode";
+    p.sel = p.mode === "multi" ? 1 : 0;
+  } else if (key === "toggle" && p.mode === "multi") {
+    const id = roster[p.sel]?.id;
+    if (id) p.picked = p.picked.includes(id) ? p.picked.filter((x) => x !== id) : [...p.picked, id];
+  } else if (key === "enter" || (key === "toggle" && p.mode === "single")) {
+    const ids = p.mode === "multi" && p.picked.length ? p.picked : [roster[p.sel]?.id].filter(Boolean);
+    if (!ids.length) return "redraw";
+    chatPick = null;
+    start(ids);
+  }
+  return "redraw";
+}
+
+function startDirectChat(ids) {
+  viewMeetingId = null;
+  scrollFromBottom = 0;
+  runMeetHelper(["chat", ...ids], {
+    failLabel: "could not open that chat",
+    env: { GOTCHIBOT_MEET_LAYOUT_SKIP: "1" },
+    onDone() {
+      viewMeetingId = null;
+      sideSel = 0;
+      sideScroll = 0;
+    },
+  });
+}
+
+/** Box over the chat column. Plain overwrite — no clear-to-EOL past the box. */
+function drawChatPicker(left, width, top, height) {
+  if (!chatPick) return;
+  const p = chatPick;
+  const rows = [];
+  if (p.step === "mode") {
+    rows.push(["title", "chat with…"], ["", ""]);
+    rows.push([p.sel === 0 ? "sel" : "", "Single · one gotchi"]);
+    rows.push([p.sel === 1 ? "sel" : "", "Multi · pick several"]);
+    rows.push(["", ""], ["dim", "↑↓ move · ⏎ choose · esc cancel"]);
+  } else {
+    const roster = chatRoster();
+    rows.push(["title", p.mode === "multi" ? `pick gotchis (${p.picked.length} picked)` : "pick a gotchi"], ["", ""]);
+    const win = Math.max(3, Math.min(14, height - 8));
+    let topI = Math.max(0, p.sel - Math.floor(win / 2));
+    topI = Math.min(topI, Math.max(0, roster.length - win));
+    for (let i = topI; i < roster.length && i < topI + win; i++) {
+      const h = roster[i];
+      const box = p.mode === "multi" ? (p.picked.includes(h.id) ? "[x] " : "[ ] ") : "";
+      const role = h.role ? ` · ${String(h.role).replace(/-/g, " ")}` : "";
+      rows.push([i === p.sel ? "sel" : "", `${box}${h.name}${role}`]);
+    }
+    if (!roster.length) rows.push(["dim", "no roster yet"]);
+    rows.push(["", ""]);
+    rows.push([
+      "dim",
+      p.mode === "multi" ? "space toggle · ⏎ start chat · esc back" : "↑↓ move · ⏎ chat · esc back",
+    ]);
+  }
+  const inner = Math.max(20, Math.min(54, width - 6));
+  const boxW = inner + 2;
+  const x = left + Math.max(0, Math.floor((width - boxW) / 2));
+  const y = top + Math.max(0, Math.floor((height - (rows.length + 2)) / 2));
+  const put = (row, text) => stdout.write(`\x1b[${row};${x}H${text}`);
+  const bar = "─".repeat(inner);
+  put(y, `${T.panel}${T.muted}┌${bar}┐${T.reset}`);
+  rows.forEach(([kind, text], i) => {
+    const lead = kind === "sel" ? " ▸ " : kind === "title" || kind === "dim" ? " " : "   ";
+    const t = clipSide(String(text), inner - lead.length);
+    const cell = `${lead}${t}${" ".repeat(Math.max(0, inner - lead.length - t.length))}`;
+    const edge = `${T.panel}${T.muted}│${T.reset}`;
+    let body;
+    if (kind === "sel") body = `${edge}\x1b[7m${cell}\x1b[27m${edge}`;
+    else if (kind === "title") body = `${edge}${T.panel}${T.brand}${cell}${T.reset}${edge}`;
+    else if (kind === "dim") body = `${edge}${T.panel}${T.muted}${cell}${T.reset}${edge}`;
+    else body = `${edge}${T.panel}${T.text}${cell}${T.reset}${edge}`;
+    put(y + 1 + i, body);
+  });
+  put(y + 1 + rows.length, `${T.panel}${T.muted}└${bar}┘${T.reset}`);
+}
+
+/** Sidebar card title + kind for one thread. */
+function meetCardLabels(t) {
+  const n = t.segments?.length || 1;
+  if (t.direct || t.solo) {
+    const agents = (t.participants || []).filter((p) => p.role !== "user");
+    const chats = `${n} chat${n === 1 ? "" : "s"}`;
+    return {
+      title: agents.map((p) => p.name || p.id).join(", ") || t.chairId || "gotchi",
+      kind: agents.length > 1 ? `${agents.length} gotchis · ${chats}` : `1:1 · ${chats}`,
+      faceId: agents[0]?.id || t.chairId,
+    };
+  }
+  return { title: "Group meetings", kind: `${n} meeting${n === 1 ? "" : "s"}`, faceId: t.chairId };
+}
+
+/**
+ * Meet list. One card per saved meet (group or 1:1), newest first: the chair's
+ * (or 1:1 partner's) mini head, title, kind, date. ▸ marks the selector; the
+ * open meet carries ●. `scroll` skips that many cards.
  */
 export function renderMeetSidebar(rows, width = MEET_SIDEBAR_COLS - 1, scroll = sideScroll) {
   const blank = " ".repeat(Math.max(0, width));
   if (rows <= 0 || width < 16) return Array(Math.max(0, rows)).fill(blank);
-  const members = listMeetMembers();
-  const status = loadMeetStatus();
-  const maxStart = Math.max(0, members.length - 1);
+  const meets = listMeetThreads();
+  const maxStart = Math.max(0, meets.length - 1);
   const start = Math.max(0, Math.min(maxStart, Number(scroll) || 0));
+  const viewing = viewedMeeting()?.id || null;
   const lines = [];
-  for (const m of members.slice(start)) {
-    if (lines.length + SIDEBAR_CARD_ROWS > rows && lines.length > 0) break;
-    const face = getMini(m.id);
-    const st = statusFor(m.id, status);
-    const sub =
-      st.status && st.status !== "idle" ? statusLabel(st.status, st.since) : m.role || "";
-    const row = (i, extra) => {
-      const faceLine = face[i] || "";
-      let body = faceLine;
+  if (!meets.length) {
+    lines.push(padVis(`${T.muted}no saved meets${T.reset}`, width));
+  }
+  meets.slice(start).forEach((m, k) => {
+    if (lines.length + SIDEBAR_CARD_ROWS > rows && lines.length > 0) return;
+    if (lines.length >= rows) return;
+    const i = start + k;
+    const { title, kind, faceId } = meetCardLabels(m);
+    const face = getMini(faceId);
+    const selected = i === sideSel;
+    // Selector: a bar down the card, bright while the list has focus.
+    const mark = selected ? (meetPaneFocus === "sidebar" ? `${T.brand}▌${T.reset}` : `${T.muted}▌${T.reset}`) : " ";
+    // Clip plain text, then color it — clipping through an escape code breaks it.
+    const row = (fi, extra = "", color = T.text, prefix = "", prefixLen = 0) => {
+      const faceLine = face[fi] || "";
+      let body = `${mark}${faceLine}`;
       if (extra) {
-        const room = width - visLen(faceLine) - 1;
-        if (room > 0) body += " " + clipSide(extra, room);
+        const room = width - visLen(body) - 1 - prefixLen;
+        if (room > 0) body += ` ${prefix}${color}${clipSide(extra, room)}${T.reset}`;
       }
       return padVis(body, width);
     };
-    lines.push(row(0, m.label));
-    lines.push(row(1, ""));
-    lines.push(row(2, sub));
-    lines.push(row(3, ""));
-    lines.push(row(4, ""));
+    const titleColor = m.id === viewing ? T.brand : T.text;
+    lines.push(row(0, title, titleColor));
+    lines.push(row(1));
+    lines.push(
+      m.isCurrent
+        ? row(2, kind, T.muted, `${T.brand}●${T.reset} `, 2)
+        : m.status === "paused"
+          ? row(2, kind, T.muted, `${T.muted}‖${T.reset} `, 2)
+          : row(2, kind, T.muted),
+    );
+    lines.push(row(3, shortDate(m.createdAt), T.muted));
+    lines.push(row(4));
     lines.push(blank);
-  }
+  });
   while (lines.length < rows) lines.push(blank);
   return lines.slice(0, rows);
 }
@@ -273,27 +468,79 @@ export function renderInlineFrame({
   scrollFromBottom = 0,
 } = {}) {
   const layout = inlineLayout(cols, rows);
-  const m = meeting || loadCurrentMeeting();
-  const strip = renderRoomStripLine(layout.cols, m);
+  const m = meeting || viewedMeeting();
+  const saved = Boolean(m && m.status !== "open");
+  const strip = saved
+    ? truncatePlain(`viewing saved · ${m.topic || m.id} · last ${shortDate(m.createdAt)} · read-only · Tab meets`, layout.cols)
+    : renderRoomStripLine(layout.cols, m?.combined ? loadCurrentMeeting() : m);
   const stripStyled = `${T.brand}${strip}${T.reset}`;
   const foldedStrip =
     _tui.glyphs === "ascii" ? toAsciiGlyphs(stripStyled) : stripStyled;
-  const useSide = Boolean(m) && layout.cols >= 64;
-  const sideW = useSide ? Math.min(MEET_SIDEBAR_COLS, layout.cols - 36) : 0;
+  const sideW = meetSideWidth(layout.cols, m);
+  const useSide = sideW > 0;
   const channel = renderMeetChannel({
     cols: layout.cols - sideW,
     rows: layout.transcriptRows,
     scrollFromBottom,
+    meeting: m || null,
   });
   const pad = Math.max(0, layout.cols - stripAnsi(foldedStrip).length);
   const stripLine = `${foldedStrip}${" ".repeat(pad)}`;
   if (!useSide) return `${stripLine}\n${channel}`;
-  const side = renderMeetSidebar(layout.transcriptRows, sideW - 1, sideScroll);
+  // Sidebar runs the full height; the chat column below the transcript is left
+  // blank for the input panel, which drawInputPanel paints beside it.
+  const bodyRows = Math.max(1, layout.rows - layout.stripRow);
+  const side = renderMeetSidebar(bodyRows, sideW - 1, sideScroll);
   const ruleColor = meetPaneFocus === "sidebar" ? T.brand : T.muted;
   const rule = `${ruleColor}│${T.reset}`;
   const right = channel.split("\n");
   const zipped = side.map((line, i) => `${padVis(line, sideW - 1)}${rule}${right[i] || ""}`);
   return `${stripLine}\n${zipped.join("\n")}`;
+}
+
+/** Sidebar width (0 = no sidebar). Shown whenever there is a meet to list. */
+export function meetSideWidth(cols, meeting = undefined) {
+  const has = meeting !== undefined ? Boolean(meeting) || listMeetings().length > 0 : listMeetings().length > 0;
+  if (!has || cols < 64) return 0;
+  return Math.min(MEET_SIDEBAR_COLS, cols - 36);
+}
+
+/** Keep the selector on screen: scroll the card list to it. */
+function revealSideSel(rows) {
+  const per = SIDEBAR_CARD_ROWS;
+  const visible = Math.max(1, Math.floor(Math.max(per, rows) / per));
+  if (sideSel < sideScroll) sideScroll = sideSel;
+  if (sideSel >= sideScroll + visible) sideScroll = sideSel - visible + 1;
+  sideScroll = Math.max(0, sideScroll);
+}
+
+/** Sidebar keys. Returns "redraw" when handled, "" to fall through. */
+export function sidebarKey(key) {
+  const meets = listMeetThreads();
+  const n = meets.length;
+  if (key === "down") {
+    if (n) sideSel = Math.min(n - 1, sideSel + 1);
+  } else if (key === "up") {
+    sideSel = Math.max(0, sideSel - 1);
+  } else if (key === "open") {
+    const m = meets[sideSel];
+    if (!m) return "redraw";
+    viewMeetingId = m.id;
+    scrollFromBottom = 0;
+    meetPaneFocus = "chat";
+  } else if (key === "leave") {
+    meetPaneFocus = "chat";
+  } else {
+    return "";
+  }
+  const { rows } = paneSize();
+  revealSideSel(Math.max(1, rows - 1));
+  return "redraw";
+}
+
+/** Test hook: sidebar / viewer state. */
+export function meetSidebarState() {
+  return { focus: meetPaneFocus, sideSel, sideScroll, viewMeetingId };
 }
 
 function mentionTags() {
@@ -328,7 +575,8 @@ function matchingMentions(query) {
 /** Slash cmds shown in the live `/` menu (Tab cycles / completes). */
 const SLASH_COMMANDS = [
   { tag: "/cockpit", hint: "fleet menu", needsArg: false },
-  { tag: "/chat", hint: "back to chat", needsArg: false },
+  { tag: "/chat", hint: "pick gotchis to chat", needsArg: false },
+  { tag: "/desk", hint: "back to OpenCode", needsArg: false },
   { tag: "/edit", hint: "edit last msg", needsArg: true },
   { tag: "/start", hint: "start recording", needsArg: true },
   { tag: "/end", hint: "stop recording", needsArg: false },
@@ -339,7 +587,7 @@ const SLASH_COMMANDS = [
   { tag: "/pardon", hint: "interrupt round", needsArg: true },
   { tag: "/continue", hint: "resume parked", needsArg: false },
   { tag: "/menu", hint: "alias /cockpit", needsArg: false },
-  { tag: "/leave", hint: "alias /chat", needsArg: false },
+  { tag: "/leave", hint: "alias /desk", needsArg: false },
 ];
 
 /** Active when the whole buffer is a slash stub: `/` or `/coc…`. */
@@ -731,7 +979,7 @@ function sayToRoom(msg) {
 }
 
 /** morning-recap / colabo helpers (async, redraw on finish). */
-function runMeetHelper(argv, { pending = null, failLabel = "helper failed" } = {}) {
+function runMeetHelper(argv, { pending = null, failLabel = "helper failed", env = {}, onDone = null } = {}) {
   if (sendBusy) return;
   sendBusy = true;
   sendError = null;
@@ -741,7 +989,7 @@ function runMeetHelper(argv, { pending = null, failLabel = "helper failed" } = {
   const child = spawn(process.execPath, [`${ROOT}/scripts/gotchi-meet.mjs`, ...argv], {
     cwd: ROOT,
     stdio: "ignore",
-    env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1" },
+    env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1", ...env },
   });
   activeChild = child;
   child.on("error", () => {
@@ -760,6 +1008,7 @@ function runMeetHelper(argv, { pending = null, failLabel = "helper failed" } = {
     stopSendTimer();
     pokeChannel();
     if (code !== 0) sendError = failLabel;
+    else if (onDone) onDone();
     draw();
   });
 }
@@ -834,6 +1083,27 @@ function backToCockpit() {
 }
 
 /** Scroll the iMessage transcript toward older turns. */
+/** Half a transcript page; dir 1 = older (up), -1 = newer (down). */
+function scrollHalf(dir) {
+  const { cols, rows } = paneSize();
+  const layout = inlineLayout(cols, rows);
+  const step = Math.max(1, Math.floor(layout.transcriptRows / 2));
+  scrollFromBottom = Math.max(0, scrollFromBottom + dir * step);
+  clampInlineScroll(layout.cols, layout.transcriptRows);
+  return true;
+}
+
+/** Open sidebar on the meet in view, so ⏎ right away re-opens it. */
+function focusSidebar() {
+  meetPaneFocus = "sidebar";
+  const meets = listMeetThreads();
+  const viewing = viewedMeeting()?.id;
+  const at = meets.findIndex((m) => m.id === viewing);
+  if (at >= 0) sideSel = at;
+  const { rows } = paneSize();
+  revealSideSel(Math.max(1, rows - 1));
+}
+
 function pagePrev() {
   const { cols, rows } = paneSize();
   const layout = inlineLayout(cols, rows);
@@ -913,11 +1183,11 @@ function footerTicks(cols, used) {
 }
 
 /** Split buffer across input rows (OpenCode-style — no meet › prefix). */
-function layoutInput(buffer, cursor, cols) {
+function layoutInput(buffer, cursor, cols, inputRows = PROMPT_INPUT_ROWS) {
   const width = Math.max(1, cols - INPUT_LEFT - INPUT_PAD_X * 2);
   const segments = [];
   let pos = 0;
-  for (let i = 0; i < PROMPT_INPUT_ROWS; i++) {
+  for (let i = 0; i < inputRows; i++) {
     const text = buffer.slice(pos, pos + width);
     segments.push({ text, start: pos });
     pos += text.length;
@@ -937,10 +1207,19 @@ function layoutInput(buffer, cursor, cols) {
   return { segments, cursorRow, cursorCol };
 }
 
-function drawInputPanel(top, cols) {
-  const { segments, cursorRow, cursorCol } = layoutInput(editor.buffer, editor.cursor, cols);
+/**
+ * Input panel inside the chat column: `left` is its first pane column (1-based),
+ * `cols` its width. With the sidebar up it never runs under the meet list.
+ */
+function drawInputPanel(top, cols, left = 1, inputRows = PROMPT_INPUT_ROWS, padY = 0) {
+  const { segments, cursorRow, cursorCol } = layoutInput(editor.buffer, editor.cursor, cols, inputRows);
+  // Padding rows above and below the panel, chat column only.
+  for (let p = 1; p <= padY; p++) {
+    writeAt(top - p, left, "");
+    writeAt(top + inputRows + PROMPT_FOOTER_ROWS - 1 + p, left, "");
+  }
 
-  for (let i = 0; i < PROMPT_INPUT_ROWS; i++) {
+  for (let i = 0; i < inputRows; i++) {
     const seg = segments[i];
     const off = Math.max(0, editor.cursor - seg.start);
     const before = seg.text.slice(0, off);
@@ -955,7 +1234,7 @@ function drawInputPanel(top, cols) {
       body = seg.text ? `${T.text}${seg.text}${T.reset}` : "";
     }
     const line = `${T.accentBar}${T.panel} ${body}`;
-    writeAt(top + i, 1, padPanelLine(line, cols));
+    writeAt(top + i, left, padPanelLine(line, cols));
   }
 
   const model = loadModelFooterLabel();
@@ -975,12 +1254,12 @@ function drawInputPanel(top, cols) {
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
       (INLINE
-        ? `${T.panel}${T.muted} · j/k scroll · m sidebar · n chat · PgUp/PgDn · q quit · /edit · /end · /help${T.reset}`
-        : `${T.panel}${T.muted} · j/k scroll · m sidebar · n chat · ←→ page · /edit · /cockpit · /start · /end · /help${T.reset}`);
+        ? `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab chat" : "Tab meets · j/k ^U/^D PgUp/PgDn scroll"} · q quit · /help${T.reset}`
+        : `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab/Esc chat" : "Tab meets · j/k ^U/^D PgUp/PgDn scroll · Home/End"} · /help${T.reset}`);
   }
-  writeAt(top + PROMPT_INPUT_ROWS, 1, padPanelLine(footerCore + footerTicks(cols - INPUT_PAD_X * 2, visLen(footerCore)), cols));
+  writeAt(top + inputRows, left, padPanelLine(footerCore + footerTicks(cols - INPUT_PAD_X * 2, visLen(footerCore)), cols));
 
-  stdout.write(`\x1b[${top + cursorRow};${Math.min(cols, cursorCol + 1)}H`);
+  stdout.write(`\x1b[${top + cursorRow};${Math.min(left - 1 + cols, left - 1 + cursorCol + 1)}H`);
 }
 
 function writeAt(row, col, text) {
@@ -1124,7 +1403,7 @@ class Prompter {
         // No match — show help instead of saying.
         this.clear();
         sendError =
-          "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
+          "/chat pick gotchis · /prev /next · /edit · /start · /end · /desk · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
         return "redraw";
       }
     }
@@ -1146,7 +1425,12 @@ class Prompter {
       runMeetHelper(["end"]);
       return "redraw";
     }
-    if (line === "/quit" || line === "/leave" || line === "/chat" || line === "/opencode" || line === "/desk") {
+    if (line === "/chat") {
+      editTargetTs = null;
+      openChatPicker();
+      return "redraw";
+    }
+    if (line === "/quit" || line === "/leave" || line === "/opencode" || line === "/desk") {
       editTargetTs = null;
       return "chat";
     }
@@ -1161,7 +1445,7 @@ class Prompter {
     if (line === "/help" || line === "/?") {
       editTargetTs = null;
       sendError =
-        "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
+        "/chat pick gotchis · /prev /next · /edit · /start · /end · /desk · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
       return "redraw";
     }
     if (line === "/edit") {
@@ -1231,7 +1515,7 @@ class Prompter {
       const cmd = line.split(/\s+/)[0];
       sendError =
         line === "/" || line === "/?"
-          ? "/prev /next · /edit · /start · /end · /chat · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave"
+          ? "/chat pick gotchis · /prev /next · /edit · /start · /end · /desk · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave"
           : `unknown ${cmd} · /help`;
       return "redraw";
     }
@@ -1244,6 +1528,23 @@ class Prompter {
       editToRoom(ts, line);
       return "redraw";
     }
+    const v = viewedMeeting();
+    if (v && v.status === "paused" && v.parkedId) {
+      // Typing in a paused meet resumes it (parks the current one), then sends.
+      const r = spawnSync(process.execPath, [`${ROOT}/scripts/gotchi-meet.mjs`, "switch", v.parkedId], {
+        cwd: ROOT,
+        stdio: "ignore",
+        env: { ...process.env, GOTCHIBOT_MEET_QUIET: "1" },
+      });
+      if (r.status !== 0) {
+        sendError = "could not resume that meet";
+        return "redraw";
+      }
+      viewMeetingId = null;
+    } else if (v && v.status !== "open") {
+      sendError = "ended log is read-only · /chat or /start to talk";
+      return "redraw";
+    }
     sayToRoom(line);
     return "redraw";
   }
@@ -1252,7 +1553,10 @@ class Prompter {
 const editor = new Prompter();
 
 function clampInlineScroll(cols, transcriptRows) {
-  const max = maxScrollFromBottom({ cols, rows: transcriptRows });
+  const meeting = viewedMeeting();
+  const max = meeting
+    ? maxScrollFromBottom({ cols: cols - meetSideWidth(cols, meeting), rows: transcriptRows, meeting })
+    : 0;
   scrollFromBottom = Math.max(0, Math.min(max, scrollFromBottom));
 }
 
@@ -1262,7 +1566,8 @@ function drawBodyInline() {
   const layout = inlineLayout(cols, rows);
   clampInlineScroll(layout.cols, layout.transcriptRows);
 
-  const meeting = loadCurrentMeeting();
+  const meeting = viewedMeeting();
+  const sideW = meetSideWidth(layout.cols, meeting);
   const frame = renderInlineFrame({
     cols: layout.cols,
     rows: layout.rows,
@@ -1271,7 +1576,10 @@ function drawBodyInline() {
   });
   const frameLines = String(frame).split("\n");
   // Home + clear-to-EOL per line (same flash-free pattern as gallery draw).
-  stdout.write(`\x1b[H${frameLines.map((l) => `${l}\x1b[K`).join("\n")}\n\x1b[J`);
+  // A full-height frame (sidebar down to the last row) must not end in "\n":
+  // that would scroll the whole pane up a line.
+  const tail = frameLines.length < layout.rows ? "\n\x1b[J" : "";
+  stdout.write(`\x1b[H${frameLines.map((l) => `${l}\x1b[K`).join("\n")}${tail}`);
 
   const slashQ = activeSlashQuery(editor.buffer);
   const slashMatches = slashQ != null ? matchingSlashCmds(slashQ) : [];
@@ -1292,8 +1600,8 @@ function drawBodyInline() {
       .join(`${T.muted} · ${T.reset}`);
     writeAt(
       Math.max(1, mentionRow),
-      1,
-      padPanelLine(`${T.accentBar}${T.panel} ${menu}`, cols),
+      sideW + 1,
+      padPanelLine(`${T.accentBar}${T.panel} ${menu}`, cols - sideW),
     );
   } else if (mentionMatches.length && mentionQ != null) {
     const menu = mentionMatches
@@ -1302,12 +1610,19 @@ function drawBodyInline() {
       .join(`${T.muted}  ${T.reset}`);
     writeAt(
       Math.max(1, mentionRow),
-      1,
-      padPanelLine(`${T.accentBar}${T.panel} ${T.muted}${menu}${T.reset}`, cols),
+      sideW + 1,
+      padPanelLine(`${T.accentBar}${T.panel} ${T.muted}${menu}${T.reset}`, cols - sideW),
     );
   }
 
-  drawInputPanel(layout.promptTop, cols);
+  // Chat column only: start past the sidebar rule.
+  drawInputPanel(layout.promptTop, cols - sideW, sideW + 1, layout.inputRows, layout.padY);
+  if (chatPick) {
+    drawChatPicker(sideW + 1, cols - sideW, layout.transcriptTop, layout.transcriptRows);
+    stdout.write("\x1b[?25l");
+  } else {
+    stdout.write("\x1b[?25h");
+  }
 }
 
 function drawBody() {
@@ -1453,12 +1768,44 @@ function handleKey(chunk) {
     return;
   }
 
+  // /chat picker owns the keyboard while open.
+  if (chatPick) {
+    if (chunk === "j" || chunk === "J") return chatPickerKey("down");
+    if (chunk === "k" || chunk === "K") return chatPickerKey("up");
+    if (chunk === " ") return chatPickerKey("toggle");
+    if (chunk === "\r" || chunk === "\n") return chatPickerKey("enter");
+    if (chunk === "\x03") return handleCtrlC();
+    return "noop";
+  }
+
+  // Sidebar focus: j/k pick a meet, Enter opens its log, Tab goes back to chat.
+  // Any other typing returns to the chat and lands in the prompt.
+  if (meetPaneFocus === "sidebar") {
+    if (chunk === "j" || chunk === "J") return sidebarKey("down");
+    if (chunk === "k" || chunk === "K") return sidebarKey("up");
+    if (chunk === "\r" || chunk === "\n") return sidebarKey("open");
+    if (chunk === "\t") return sidebarKey("leave");
+    if (chunk === "m" || chunk === "M") return "noop";
+    if (chunk.length === 1 && chunk >= " ") meetPaneFocus = "chat";
+  }
+
+  // Scroll the transcript while typing: Ctrl+U up / Ctrl+D down, half a page.
+  if (chunk === "\x15") {
+    scrollHalf(1);
+    return "redraw";
+  }
+  if (chunk === "\x04" && !(INLINE && bufferEmpty() && !editTargetTs)) {
+    scrollHalf(-1);
+    return "redraw";
+  }
+
   // Immediate scroll keys when the prompt is empty (no Enter needed).
   // j/k match the channel and factory panes: j down (newer), k up (older), one line.
   if (bufferEmpty() && !editTargetTs) {
     const focus = meetFocusTarget(chunk);
     if (focus) {
-      meetPaneFocus = focus;
+      if (focus === "sidebar") focusSidebar();
+      else meetPaneFocus = focus;
       return "redraw";
     }
     const line = meetScrollDelta(chunk);
@@ -1490,6 +1837,11 @@ function handleKey(chunk) {
       return "redraw";
     case "\t":
       if (editor.completeMenu()) return "redraw";
+      // Tab on an empty prompt: jump to the meet list.
+      if (bufferEmpty() && !editTargetTs) {
+        focusSidebar();
+        return "redraw";
+      }
       return "noop";
     case "\x03":
       return handleCtrlC();
@@ -1512,6 +1864,44 @@ function handleKey(chunk) {
 }
 
 function handleEsc(seq) {
+  if (chatPick) {
+    if (seq === "\x1b[A" || seq === "\x1bOA") return chatPickerKey("up");
+    if (seq === "\x1b[B" || seq === "\x1bOB") return chatPickerKey("down");
+    if (seq === "\x1b[D" || seq === "\x1bOD") return chatPickerKey("back");
+    if (seq === "\x1b[C" || seq === "\x1bOC") return chatPickerKey("enter");
+    return "noop";
+  }
+  if (meetPaneFocus === "sidebar") {
+    if (seq === "\x1b[A" || seq === "\x1bOA") return sidebarKey("up");
+    if (seq === "\x1b[B" || seq === "\x1bOB") return sidebarKey("down");
+    if (seq === "\x1b[C" || seq === "\x1bOC") return sidebarKey("open");
+    if (seq === "\x1b[D" || seq === "\x1bOD") return "noop";
+  }
+  // Shift+↑/↓ one line; End jumps to the latest turn (empty prompt).
+  if (seq === "\x1b[1;2A") {
+    scrollFromBottom += 1;
+    return "redraw";
+  }
+  if (seq === "\x1b[1;2B") {
+    scrollFromBottom = Math.max(0, scrollFromBottom - 1);
+    return "redraw";
+  }
+  if ((seq === "\x1b[F" || seq === "\x1b[4~" || seq === "\x1bOF") && bufferEmpty() && !editTargetTs) {
+    scrollFromBottom = 0;
+    return "redraw";
+  }
+  // Home jumps to the oldest line (the first meeting's start marker).
+  if ((seq === "\x1b[H" || seq === "\x1b[1~" || seq === "\x1bOH") && bufferEmpty() && !editTargetTs) {
+    const { cols, rows } = paneSize();
+    const layout = inlineLayout(cols, rows);
+    scrollFromBottom = Number.MAX_SAFE_INTEGER;
+    clampInlineScroll(layout.cols, layout.transcriptRows);
+    return "redraw";
+  }
+  if (seq === "\x1b[5~" || seq === "\x1b[6~") {
+    scrollHalf(seq === "\x1b[5~" ? 1 : -1);
+    return "redraw";
+  }
   // Inline: PgUp/PgDn (and Shift+Up/Down) scroll the transcript.
   if (INLINE) {
     if (seq === "\x1b[5~" || seq === "\x1b[1;2A") {
@@ -1762,6 +2152,18 @@ function main() {
         // Lone Esc cancels edit mode (before it accumulates into a CSI sequence).
         if (!escBuf && ch === "\x1b" && editTargetTs && text.length === 1) {
           editTargetTs = null;
+          draw();
+          return;
+        }
+        // Lone Esc in the /chat picker: step back, then close.
+        if (!escBuf && ch === "\x1b" && chatPick && text.length === 1) {
+          chatPickerKey("back");
+          draw();
+          return;
+        }
+        // Lone Esc in the meet list goes back to the chat.
+        if (!escBuf && ch === "\x1b" && meetPaneFocus === "sidebar" && text.length === 1) {
+          meetPaneFocus = "chat";
           draw();
           return;
         }
