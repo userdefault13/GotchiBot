@@ -96,7 +96,7 @@ function deskPath(slug) {
 
 async function openDesk(argv) {
   const { hubRequest } = await import("./chat-hub-client.mjs");
-  const { currentProjectSlug } = await import("./project-context.mjs");
+  const { currentProjectSlug, reconnectProjectDb } = await import("./project-context.mjs");
   const slug = slugArg(argv) || currentProjectSlug();
   if (!slug) {
     console.error("which project? gotchibot hub desk open <slug>   (or pick one: gotchibot project use <slug>)");
@@ -125,9 +125,10 @@ async function openDesk(argv) {
   if (flagValue(argv, "--ssh")) writePrefs({ ssh: target });
 
   const syncEnv = follow ? deskSyncEnv(slug) : {};
+  const localDir = reconnectProjectDb(slug) || desk.repoDir;
   console.log(`${desk.title} · session ${desk.sessionId}${follow ? " · sessions sync with every device" : ""}`);
   const child = local
-    ? spawn("opencode", ["attach", desk.opencodeUrl, "--session", desk.sessionId, "--dir", desk.repoDir], {
+    ? spawn("opencode", ["attach", desk.opencodeUrl, "--session", desk.sessionId, "--dir", localDir], {
         stdio: "inherit",
         env: { ...process.env, ...syncEnv },
       })

@@ -571,6 +571,12 @@ if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
   fi
 fi
 
+OC_DIR=""
+if command -v node >/dev/null 2>&1; then
+  OC_DIR="$(node --input-type=module -e 'import { currentProjectSlug, reconnectProjectDb } from "./scripts/project-context.mjs"; const slug = currentProjectSlug(); process.stdout.write((slug && reconnectProjectDb(slug)) || "");' 2>/dev/null || true)"
+fi
+[ -n "$OC_DIR" ] || OC_DIR="$ROOT"
+
 # Inject NVIDIA/OpenRouter/etc via abracadabra when keys aren't already in env.
 # Without this, NIM models fail with "Missing Authentication header".
 # If abra fails (keychain / no GUI), fall through to bare opencode — never
@@ -595,7 +601,7 @@ if [ "$skip_abra" != "1" ] && command -v abra >/dev/null 2>&1; then
   boot_mark "opencode launch (abra)"
   if [ -z "${SSH_CONNECTION:-}" ]; then
     set +e
-    abra_exec_once opencode "${args[@]}" "$ROOT"
+    abra_exec_once opencode "${args[@]}" "$OC_DIR"
     oc_st=$?
     set -e
     [ "$oc_st" -eq 0 ] && quit_to_terminal
@@ -618,7 +624,7 @@ if [ "$skip_abra" != "1" ] && command -v abra >/dev/null 2>&1; then
     if [ "$abra_unlocked" = "1" ]; then
       # No alarm: interactive TUI must own the process for the whole session.
       # Keep stdout/stderr on the TTY — OpenCode Ink needs them.
-      if abra run gotchibot -- opencode "${args[@]}" "$ROOT"; then
+      if abra run gotchibot -- opencode "${args[@]}" "$OC_DIR"; then
         quit_to_terminal
       fi
     fi
@@ -637,5 +643,5 @@ progress_pulse "GotchiCode · starting…" 12
 progress_end
 printf '\033[2J\033[H\033[3J' 2>/dev/null || true
 boot_mark "opencode launch (no vault keys)"
-opencode "${args[@]}" "$ROOT" || true
+opencode "${args[@]}" "$OC_DIR" || true
 quit_to_terminal

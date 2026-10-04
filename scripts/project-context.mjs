@@ -125,6 +125,35 @@ function readPointerAt(paths) {
   return null;
 }
 
+function readJsonFile(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export function reconnectProjectDb(slug, { sessionsDir = null, deskRoot = ROOT } = {}) {
+  if (!slugOk(slug)) return null;
+  const paths = sessionPaths(sessionsDir);
+  const root = join(paths.pstack, slug);
+
+  const db = readJsonFile(join(root, "db.json"));
+  if (typeof db?.directory === "string") {
+    const dir = db.directory.trim();
+    if (dir && dir !== deskRoot) return dir;
+  }
+
+  const repo = readJsonFile(join(root, "repo.json"));
+  if (repo?.project && repo.project !== slug) return null;
+  if (typeof repo?.path === "string") {
+    const repoDir = repo.path.trim();
+    if (repoDir && repoDir !== deskRoot) return repoDir;
+  }
+
+  return null;
+}
+
 /** True when sessions/.hub.json (or GOTCHIBOT_HUB_PIN) is a pin object. */
 export function deskHubPinPresent(env = process.env) {
   try {
@@ -290,6 +319,7 @@ export function setCurrentProject(slug, { ensureDirs = true, sessionsDir = null 
     if (sessionsDir) throw new Error("refusing to create a project room outside the desk sessions directory");
     ensureProjectDirs(slug);
   }
+  reconnectProjectDb(slug, { sessionsDir });
   return slug;
 }
 

@@ -43,10 +43,10 @@ export function loadRoutes(root = ROOT) {
   };
 }
 
-/** First hero seated in a role, never the orchestrator seat. */
+/** First hero seated in a role. Skip the alias key "orchestrator"; a seated hero may hold that role. */
 export function heroForRole(role, root = ROOT) {
   const roles = readJson(`${root}/config/agent-roles.json`, {});
-  return Object.keys(roles).find((id) => roles[id] === role && roles[id] !== "orchestrator") || null;
+  return Object.keys(roles).find((id) => id !== "orchestrator" && roles[id] === role) || null;
 }
 
 export function classifyOrchRoute(prompt, { root = ROOT } = {}) {
