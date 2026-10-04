@@ -235,7 +235,25 @@ state_fingerprint() {
   else
     live=0
   fi
-  printf '%s|%s|%s|%s|%s\n' "$sig" "$live" "$(pane_width)" "$(pane_height)" "${GOTCHIBOT_AVATAR_HERO:-}"
+  printf '%s|%s|%s|%s|%s|%s\n' "$sig" "$live" "$(pane_width)" "$(pane_height)" "${GOTCHIBOT_AVATAR_HERO:-}" "$(avatar_pane_focused && printf 1 || printf 0)"
+}
+
+# 0 when this pane is the focused tmux pane. Moving through chat, cockpit, or
+# the other desks leaves it collapsed. GOTCHIBOT_AVATAR_FOCUSED overrides tmux
+# so a test can force either layout without a session.
+avatar_pane_focused() {
+  case "${GOTCHIBOT_AVATAR_FOCUSED:-}" in
+    1|yes|true) return 0 ;;
+    0|no|false) return 1 ;;
+  esac
+  [ -n "${TMUX:-}" ] || return 1
+  local tgt="${TMUX_PANE:-}" active=0
+  if [ -n "$tgt" ]; then
+    active="$(tmux display -p -t "$tgt" '#{pane_active}' 2>/dev/null || echo 0)"
+  else
+    active="$(tmux display -p '#{pane_active}' 2>/dev/null || echo 0)"
+  fi
+  [ "$active" = "1" ]
 }
 
 PAGE=0
@@ -708,12 +726,22 @@ refresh_roster_async() {
 # Roster JSON -> "id␟status␟svg␟collateral␟haunt␟name␟role␟loading" rows (US-separated:
 # `read` collapses runs of tab, so an empty tab field shifts every later one).
 roster_ids() {
-  printf '%s' "${1:-}" | node -e '
+  # $2=1 includes the pinned gotchi as a mini. Used when the pane is not focused,
+  # so the selected face is not a chooser sitting above the column.
+  local include_pinned="${2:-0}"
+  printf '%s' "${1:-}" | GOTCHI_INCLUDE_PINNED="$include_pinned" node -e '
     let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
       try {
         const j=JSON.parse(d);
+        const row = (id, status, svg, collateral, haunt, name, role, loading) => {
+          if (!id) return;
+          console.log([id, status||"", svg||"", collateral||"", haunt||"", name||"", role||"", loading?"1":"0"].join("\x1f"));
+        };
+        if (process.env.GOTCHI_INCLUDE_PINNED === "1" && j.pinned) {
+          row(j.pinned, j.pinnedStatus, j.pinnedSvg, "", "", j.pinnedName, j.role, 0);
+        }
         for (const o of (j.others||[])) {
-          console.log([o.id, o.status, o.svg||"", o.collateral||"", o.hauntId||"", o.name||"", o.role||"", o.loading?"1":"0"].join("\x1f"));
+          row(o.id, o.status, o.svg, o.collateral, o.hauntId, o.name, o.role, o.loading);
         }
       } catch {}
     });
@@ -841,6 +869,39 @@ center_pad() {
   fi
   lp=$(( (width - vis) / 2 ))
   printf '%*s%s%*s' "$lp" '' "$text" "$((width - vis - lp))" ''
+}
+
+# Keep the middle `width` visible columns. SGR sequences stay so color survives
+# the cut. Wider than the pane must not spill into the next desk pane.
+crop_center_line() {
+  local text="${1:-}" width="${2:-0}"
+  vislen_set "$text"
+  if [ "$width" -le 0 ] || [ "$VIS" -le "$width" ]; then
+    printf '%s' "$text"
+    return 0
+  fi
+  printf '%s' "$text" | node -e '
+    const width = Number(process.argv[1]);
+    let d = "";
+    process.stdin.on("data", (c) => { d += c; });
+    process.stdin.on("end", () => {
+      const line = d.replace(/\n$/, "");
+      const plain = line.replace(/\x1b\[[0-9;]*m/g, "");
+      const skip = Math.floor((plain.length - width) / 2);
+      let vis = 0, out = "", i = 0;
+      while (i < line.length) {
+        if (line[i] === "\x1b") {
+          const m = line.slice(i).match(/^\x1b\[[0-9;]*m/);
+          if (m) { out += m[0]; i += m[0].length; continue; }
+        }
+        if (vis >= skip && vis < skip + width) out += line[i];
+        vis += 1;
+        i += 1;
+      }
+      if (line.includes("\x1b")) out += "\x1b[0m";
+      process.stdout.write(out);
+    });
+  ' "$width"
 }
 
 # Pad one line of a framed block: SAME left pad on every line, then right-pad to
@@ -1132,9 +1193,14 @@ render_header_block() {
     block_lp=$(( (cols - max_vis) / 2 ))
   fi
   local art_n=${#ART_LINES[@]}
+  local line_out
   for ((i = 0; i < art_n; i++)); do
     [ "$n" -ge "$max_rows" ] && break
-    block_pad_line "${ART_LINES[i]}" "$cols" "$block_lp"
+    line_out="${ART_LINES[i]}"
+    if [ "$cols" -gt 0 ] && [ "$max_vis" -gt "$cols" ]; then
+      line_out="$(crop_center_line "$line_out" "$cols")"
+    fi
+    block_pad_line "$line_out" "$cols" "$block_lp"
     printf '\n'
     n=$((n + 1))
   done
@@ -1186,16 +1252,19 @@ render_now() {
 }
 
 
-# Single column under the mid-size selected avatar.
-# ROSTER_ROWS is always 1. ROSTER_PAGE is how many mini faces fit under it.
-# ROSTER_GRID is the strip those minis occupy.
+# Single column of minis. ROSTER_ROWS is always 1.
+# collapsed (default): no selected header, the whole pane is minis.
+# focused: reserve the framed portrait plus its status/name/role caption.
+# ROSTER_PAGE is how many mini faces fit. ROSTER_GRID is the strip they occupy.
 roster_budget() {
-  local pane_h="${1:-0}" mid=16 mini=6 remain
+  local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 reserve=0 remain
   case "$pane_h" in
     ''|*[!0-9]*) pane_h=0 ;;
   esac
+  # 26-line portrait + status, name, role, and the roster label.
+  [ "$mode" = "focused" ] && reserve=33
   ROSTER_ROWS=1
-  remain=$((pane_h - mid))
+  remain=$((pane_h - reserve))
   [ "$remain" -lt "$mini" ] && remain=$mini
   ROSTER_PAGE=$((remain / mini))
   [ "$ROSTER_PAGE" -lt 1 ] && ROSTER_PAGE=1
@@ -1248,7 +1317,17 @@ render_body() {
   local gallery=0
   [ -n "$(gallery_hero)" ] && gallery=1
 
-  roster_budget "$pane_h"
+  local expanded=0
+  # Gallery is its own large-face mode. The desk column expands only while
+  # this pane is focused; every other pane keeps the collapsed minis.
+  if [ "$gallery" = 1 ] || avatar_pane_focused; then
+    expanded=1
+  fi
+  if [ "$expanded" = 1 ] && [ "$gallery" != 1 ]; then
+    roster_budget "$pane_h" focused
+  else
+    roster_budget "$pane_h" collapsed
+  fi
   local grid_budget="$ROSTER_GRID"
   local roster_rows="$ROSTER_ROWS"
   # -7: the 3-line caption (status · name · role) plus room for the roster's prev/next row.
@@ -1261,11 +1340,11 @@ render_body() {
     grid_budget=0
   fi
 
-  # Gallery keeps the large face. The desk avatar column uses the mid thumb,
-  # filled in once pin_id is known below.
+  # Gallery, and the desk column while this pane is focused, use the framed
+  # portrait. Unfocused, the header stays empty so the column is only minis.
   local main=""
-  if [ "$gallery" = 1 ]; then
-    memo_call main "art|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget" \
+  if [ "$gallery" = 1 ] || [ "$expanded" = 1 ]; then
+    memo_call main "art|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$expanded" \
       render_main_art "$status" "$cols" "$main_budget"
   fi
 
@@ -1304,41 +1383,38 @@ render_body() {
     caption="${caption}"$'\n'"$(printf '%b%s%b' "$AV_MUTED" "$active_line" "$AV_RST")"
   fi
 
-  # Selected avatar is the mid thumb (not the framed portrait). Unselected
-  # roster faces below are minis. Selecting another gotchi expands that one.
-  if [ "$gallery" != 1 ]; then
-    main_budget=12
-    memo_call main "mid|${TUI_COLOR}/${TUI_GLYPHS}|$pin_id" \
-      thumb_art "" "$pin_id" "" mid
-  fi
+  # Focused: framed portrait plus the status / name / role stack.
+  # Unfocused: no selected face. The pinned gotchi joins the mini column.
+  if [ "$expanded" = 1 ]; then
+    local hdr
+    memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_show|$active_line|$expanded" \
+      render_header_block "$main" "$caption" "$cols" "$main_budget"
+    while IFS= read -r line || [ -n "$line" ]; do
+      put_line "$row" "$line"
+      row=$((row + 1))
+    done < <(printf '%s\n' "$hdr")
 
-  # Art + caption padded once per (art, caption, width). Do not clip the face.
-  local hdr
-  memo_call hdr "hdr|${TUI_COLOR}/${TUI_GLYPHS}|${MEMO_FOCUS_HERO:-}|${MEMO_ORCH_ID:-}|$status|$cols|$main_budget|$role|$pin_show|$active_line" \
-    render_header_block "$main" "$caption" "$cols" "$main_budget"
-  while IFS= read -r line || [ -n "$line" ]; do
-    put_line "$row" "$line"
+    if [ "$gallery" = 1 ]; then
+      printf '\033[1;1H'
+      return
+    fi
+
+    put_line "$row" ""
     row=$((row + 1))
-  done < <(printf '%s\n' "$hdr")
 
-  if [ "$gallery" = 1 ]; then
-    printf '\033[1;1H'
-    return
+    put_line "$row" "$(roster_pad_line "$(printf '%broster%b' "$AV_ROSTER" "$AV_RST")")"
+    row=$((row + 1))
   fi
-
-  put_line "$row" ""
-  row=$((row + 1))
-
-  put_line "$row" "$(roster_pad_line "$(printf '%broster%b' "$AV_ROSTER" "$AV_RST")")"
-  row=$((row + 1))
 
   roster_raw="$(load_roster_json)"
 
   local ids ids_key
   # Key on the payload, not a bare "ids". A refresh that rewrote the cache
   # must not replay the previous strip order from the memo.
-  ids_key="ids|$(printf '%s' "$roster_raw" | cksum | awk '{print $1}')"
-  memo_call ids "$ids_key" roster_ids "$roster_raw"
+  local include_pinned=0
+  [ "$expanded" != 1 ] && include_pinned=1
+  ids_key="ids|$include_pinned|$(printf '%s' "$roster_raw" | cksum | awk '{print $1}')"
+  memo_call ids "$ids_key" roster_ids "$roster_raw" "$include_pinned"
 
   if [ -z "$(printf '%s' "$ids" | tr -d '[:space:]')" ]; then
     put_line "$row" "$(printf '%b(none else on cartridge)%b' "$AV_MUTED" "$AV_RST")"
@@ -1349,7 +1425,8 @@ render_body() {
   roster_geometry "$cols"
   local gap=2
   local cell_w="$ROSTER_CELL_W"
-  # Mini face is 5 rows. The selected avatar above is the mid thumb.
+  # Mini face is 5 rows. Unselected stay minis. The framed portrait is only
+  # the header, and only while this pane is focused.
   local cell_h=5
 
   # LOAD_ARR holds the spinner frame for a loading tile, empty once it resolved.
@@ -1579,10 +1656,15 @@ case "${1:-watch}" in
     # usage: avatar-pane.sh roster-rows <pane-height>
     # Pure: how many roster rows and how much grid a pane of that height gets.
     h="${2:-}"
+    mode="${3:-collapsed}"
     case "$h" in
-      ''|*[!0-9]*) echo "usage: avatar-pane.sh roster-rows <pane-height>" >&2; exit 2 ;;
+      ''|*[!0-9]*) echo "usage: avatar-pane.sh roster-rows <pane-height> [collapsed|focused]" >&2; exit 2 ;;
     esac
-    roster_budget "$h"
+    case "$mode" in
+      collapsed|focused) ;;
+      *) echo "usage: avatar-pane.sh roster-rows <pane-height> [collapsed|focused]" >&2; exit 2 ;;
+    esac
+    roster_budget "$h" "$mode"
     printf 'rows=%s\n' "$ROSTER_ROWS"
     printf 'page=%s\n' "$ROSTER_PAGE"
     printf 'grid=%s\n' "$ROSTER_GRID"

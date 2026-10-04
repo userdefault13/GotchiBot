@@ -4,6 +4,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Repaint the avatar column when focus moves. Focused: framed portrait.
+# Anywhere else: collapsed minis. Do not rebuild the roster.
+poke_avatar_focus() {
+  local pidf="$ROOT/sessions/.avatar-pane.pid" pid
+  [ -f "$pidf" ] || return 0
+  pid="$(tr -d '[:space:]' < "$pidf" 2>/dev/null || true)"
+  [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true
+}
+trap poke_avatar_focus EXIT
 sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
 sess="${sess#=}"
 name="$(tmux display -p "#{session_name}" 2>/dev/null || echo "")"

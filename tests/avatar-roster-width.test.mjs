@@ -266,29 +266,54 @@ describe("avatar roster width", () => {
     assert.equal(canvasHeight(120), "119");
   });
 
-  it("keeps the roster a single column and fits more minis as the pane grows", () => {
+  function rosterRowsMode(paneH, mode) {
+    const out = execFileSync("bash", ["scripts/avatar-pane.sh", "roster-rows", String(paneH), mode], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    return Object.fromEntries(
+      out.trim().split("\n").map((line) => line.split("=")),
+    );
+  }
+
+  it("keeps the unfocused roster a single column of minis with no selected header", () => {
     const laptop = rosterRows(46);
     assert.equal(laptop.rows, "1");
-    assert.equal(laptop.page, "5");
-    assert.equal(laptop.grid, "30");
+    assert.equal(laptop.page, "7");
+    assert.equal(laptop.grid, "46");
     const almost = rosterRows(69);
     assert.equal(almost.rows, "1");
-    assert.equal(almost.page, "8");
-    assert.equal(almost.grid, "53");
+    assert.equal(almost.page, "11");
+    assert.equal(almost.grid, "69");
     const desk = rosterRows(70);
     assert.equal(desk.rows, "1");
-    assert.equal(desk.page, "9");
-    assert.equal(desk.grid, "54");
+    assert.equal(desk.page, "11");
+    assert.equal(desk.grid, "70");
     const tall = rosterRows(119);
     assert.equal(tall.rows, "1");
-    assert.equal(tall.page, "17");
-    assert.equal(tall.grid, "103");
-    assert.equal(rosterRows(27).grid, "11");
+    assert.equal(tall.page, "19");
+    assert.equal(tall.grid, "119");
+    assert.equal(rosterRows(27).grid, "27");
     assert.equal(rosterRows(27).rows, "1");
-    assert.equal(rosterRows(27).page, "1");
-    assert.equal(rosterRows(40).grid, "24");
+    assert.equal(rosterRows(27).page, "4");
+    assert.equal(rosterRows(40).grid, "40");
     assert.equal(rosterRows(40).rows, "1");
-    assert.equal(rosterRows(40).page, "4");
+    assert.equal(rosterRows(40).page, "6");
+  });
+
+  it("reserves the framed portrait only while the avatar pane is focused", () => {
+    const laptop = rosterRowsMode(46, "focused");
+    assert.equal(laptop.rows, "1");
+    assert.equal(laptop.page, "2");
+    assert.equal(laptop.grid, "13");
+    assert.equal(rosterRowsMode(27, "focused").grid, "6");
+    assert.equal(rosterRowsMode(27, "focused").page, "1");
+    const pane = read(path.join(root, "scripts/avatar-pane.sh"));
+    const body = pane.slice(pane.indexOf("render_body()"), pane.indexOf("rerender()"));
+    assert.match(body, /avatar_pane_focused/);
+    assert.match(body, /render_main_art/);
+    assert.doesNotMatch(body, /thumb_art "" "\$pin_id" "" mid/);
+    assert.match(pane, /GOTCHI_INCLUDE_PINNED/);
   });
 
   it("puts the project name where the tab subtitle used to lead with the orchestrator", () => {
