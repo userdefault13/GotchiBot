@@ -1199,6 +1199,17 @@ export async function statusGatewayReachable(opts = {}) {
   if (hubHost && shortHostName(name) === shortHostName(hubHost)) return false;
   if (!hubHost) return null;
 
+  // The gateway answers over the tailnet directly. Ask it before SSH: an SSH
+  // probe needs Tailscale SSH approval, and a pending approval left this "OC?"
+  // even with the gateway up. Only a healthy answer is final; else fall back.
+  const probeTailnet = opts.probeTailnet || probeLoopbackHealth;
+  try {
+    const host = hubHost.includes(":") && !hubHost.startsWith("[") ? `[${hubHost}]` : hubHost;
+    if ((await probeTailnet(`http://${host}:${port}/healthz`)) === true) return true;
+  } catch {
+    /* fall back to SSH */
+  }
+
   const execRemote = opts.execRemote || execHubHealth;
   try {
     return parseHubHealthMarker(await execRemote(port));

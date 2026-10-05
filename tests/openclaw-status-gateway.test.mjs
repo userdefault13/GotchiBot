@@ -61,6 +61,7 @@ describe("statusGatewayReachable", () => {
       hubHost: "imacomarchy",
       hostname: "Mac.lan",
       probeLocal: async () => null,
+      probeTailnet: async () => null,
       execRemote: async (p) => {
         port = p;
         return "OC_HEALTHZ:200\n";
@@ -77,6 +78,7 @@ describe("statusGatewayReachable", () => {
         hubHost: "imacomarchy",
         hostname: "Mac.lan",
         probeLocal: async () => null,
+        probeTailnet: async () => null,
         execRemote: async () => marker,
       });
       assert.equal(ok, false, marker);
@@ -89,6 +91,7 @@ describe("statusGatewayReachable", () => {
       hubHost: "imacomarchy",
       hostname: "Mac.lan",
       probeLocal: async () => null,
+      probeTailnet: async () => null,
       execRemote: async () => {
         throw new Error("ssh failed");
       },
@@ -99,6 +102,7 @@ describe("statusGatewayReachable", () => {
       hubHost: "imacomarchy",
       hostname: "Mac.lan",
       probeLocal: async () => null,
+      probeTailnet: async () => null,
       execRemote: async () => "ssh: connect to host: Operation timed out\n",
     });
     assert.equal(bare, null);
@@ -111,6 +115,7 @@ describe("statusGatewayReachable", () => {
       hubHost: "",
       hostname: "Mac.lan",
       probeLocal: async () => null,
+      probeTailnet: async () => null,
       execRemote: async () => {
         called = true;
         return "OC_HEALTHZ:200\n";
@@ -139,5 +144,22 @@ describe("statusGatewayReachable", () => {
     assert.equal(ok, null);
     assert.equal(local, false);
     assert.equal(remote, false);
+  });
+
+  it("on a desk, a healthy gateway over the tailnet is up without SSH", async () => {
+    let url = null;
+    const ok = await statusGatewayReachable({
+      port: "18789",
+      hubHost: "imacomarchy.tail4120f5.ts.net",
+      hostname: "Mac.lan",
+      probeLocal: async () => null,
+      probeTailnet: async (u) => {
+        url = u;
+        return true;
+      },
+      execRemote: boom,
+    });
+    assert.equal(ok, true);
+    assert.equal(url, "http://imacomarchy.tail4120f5.ts.net:18789/healthz");
   });
 });
