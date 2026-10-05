@@ -1,6 +1,6 @@
 ---
 name: hub-sop
-description: Hub (iMac) standard operating procedures — OpenClaw gateway down, restart remotely, VS Code/Claude bridge, tunnel, status. Load when OC✗, gateway-unreachable, or UserDefault asks to restart Hub/OpenClaw.
+description: Hub (iMac) standard operating procedures — OpenClaw gateway down, restart remotely, VS Code/Claude bridge, tunnel, status, the Tailscale SSH check, and deploying a commit to the Hub. Load when OC✗, gateway-unreachable, Hub SSH hangs or asks for a Tailscale check, a Hub deploy, or UserDefault asks to restart Hub/OpenClaw.
 license: MIT
 compatibility: opencode
 metadata:
@@ -39,6 +39,8 @@ Bar line: `OC✗` = OpenClaw gateway unreachable. `tun✓`/`tun✗` = subgraph t
 | Sync code to Hub | `abra run gotchibot -- ./scripts/gotchibot remote-push` | — |
 | Desk says agents running but Hub Claude pane idle | `./scripts/gotchibot hub dashboard` then `bridge-ensure` | Tiled board: `./scripts/gotchibot hub monitor --force` → `tmux attach -t gotchibot-hubmon` |
 | Full OpenClaw redeploy | `abra run gotchibot -- ./scripts/gotchibot remote-openclaw` | Heavy; prefer `restart-gateway` first |
+| SSH to the Hub hangs with no output, or prints `# Tailscale SSH requires an additional check` | Stop. See **Tailscale SSH check** below — UserDefault must approve it | Retry the original command once they say it is approved |
+| Ship a pushed commit to the Hub (Hub API / desk runner code) | See **Deploy a commit to the Hub** below | `./scripts/gotchibot hub status` |
 | Hub totally unreachable (SSH itself down, not just the gateway) | `abra run gotchibot -- ./scripts/gotchibot hub status --json` (look for `"ssh":{"ok":false}`) | Nothing else in this SOP can run without SSH — every command here goes over `abra run gotchibot -- …`. Tell UserDefault: check the iMac is powered on and Tailscale is connected. Do not attempt `restart-gateway` / `bridge-ensure` / `doctor` until SSH is back |
 
 ## Who is where (roster)
@@ -68,6 +70,65 @@ Read it this way:
 
 Cached by default (sub-second, no SSH). Use `--live` when the numbers look
 stale — the footer says so when the last remote scan failed.
+
+## Tailscale SSH check (needs UserDefault)
+
+The tailnet runs Tailscale SSH in **check mode**: every so often (and after a
+Hub reboot) a new SSH session must be re-approved in a browser by UserDefault.
+Until then, any SSH to the Hub — including every `abra run gotchibot -- …hub…`
+command — **hangs with no output**, or prints:
+
+```
+# Tailscale SSH requires an additional check.
+# To authenticate, visit: https://login.tailscale.com/a/<one-time id>
+```
+
+1. Do not retry in a loop, raise timeouts, or call the Hub "down" — it is up and
+   waiting for a human. `hub status` showing `"ssh":{"ok":false}` while the
+   gateway and tunnel are fine is this case.
+2. Tell UserDefault, in one line: "Hub SSH needs a Tailscale check — run
+   `! ssh <user>@<hub> true` and approve the link it prints." (`<hub>` is
+   `tailscaleHost` in `sessions/.hub.json`.) If you already have the
+   `login.tailscale.com/a/…` link, give it to them; it is single-use and only
+   works for their tailnet login, so give it to nobody else.
+3. You cannot approve it yourself — it needs their Tailscale login in a browser.
+4. When they reply `# Authentication checked with Tailscale SSH.` (or "done"),
+   re-run the command that hung, once. A command still running in the
+   background usually completes on its own after the approval — check its output
+   before re-running so you do not do the work twice.
+
+Chat and desk recovery do not need SSH, so keep working on anything that is not
+Hub ops while you wait.
+
+## Deploy a commit to the Hub
+
+After a commit that changes Hub code (`services/gotchibot-api/`, the desk
+runner, scripts they import) is pushed to `origin/main`. The Hub clone is the
+service `WorkingDirectory` — read it, do not guess the path:
+
+```bash
+ssh <user>@<hub> 'bash -lc "systemctl --user show -p WorkingDirectory gotchibot-api"'
+```
+
+(Non-interactive SSH needs `bash -lc` so mise puts `node` on PATH.) Then in that
+directory:
+
+1. `git fetch -q origin && git merge -q --ff-only origin/main` — the clone has
+   `pull.rebase` on, so never `git pull`.
+2. If the merge refuses because **local changes would be overwritten**: the Hub
+   carries its own live edits (fleet roster, re-rendered workspaces, hand-added
+   template rows, untracked scripts). Never `reset --hard`, `checkout --`, or
+   `stash` everything. Stash **only the files git named**, merge, then pop:
+   `git stash push -m pre-deploy -- <files git named>` →
+   `git merge -q --ff-only origin/main` → `git stash pop`.
+   If the pop conflicts, stop and show UserDefault the conflicted files — the
+   stash is kept, nothing is lost.
+3. `systemctl --user restart gotchibot-api gotchibot-desk-runner`, then
+   `systemctl --user is-active gotchibot-api gotchibot-desk-runner` → both `active`.
+4. Verify from the Desk with the feature you shipped (e.g. `./scripts/gotchibot graph sync`
+   no longer says "Hub unreachable").
+
+If any step hangs with no output, it is the Tailscale SSH check above.
 
 ## Hub dashboard (OpenClaw + VS Code bridge)
 
@@ -307,5 +368,7 @@ Prefer named MCP tools when available; otherwise Bash the commands above.
 - Kill random Docker containers without **infra-recover**
 - Say "open VS Code manually" before trying `vscode-open`
 - DIY raw `ssh` when `abra run gotchibot -- ./scripts/gotchibot hub …` exists
+- Loop or retry SSH that is waiting on a Tailscale check — ask UserDefault to approve it
+- `git reset --hard` / `checkout --` / stash-all on the Hub clone — it holds live edits
 - Edit `~/.openclaw/openclaw.json` inside the container (it is a host mount;
   edits inside are lost on recreate — edit on the host or use `restart-gateway`)
