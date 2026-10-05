@@ -87,6 +87,8 @@ export function createGraphHooks({ record, host = hostname(), now = () => Date.n
   const runTokens = new Map(); // runId → usage
   const runModel = new Map(); // runId → provider/model
   const spawns = new Map(); // childSessionKey → { edgeId, tokens }
+  const ended = new Map(); // runId → edgeId, for usage that arrives after agent_end
+  const runEdgeId = (runId) => `run:${gw}.${slug(runId)}`;
 
   const write = (edge) => {
     const fail = (e) => trace(`record-error ${edge.edgeId}: ${String(e?.message || e).slice(0, 200)}`);
@@ -104,9 +106,16 @@ export function createGraphHooks({ record, host = hostname(), now = () => Date.n
       const runId = event.runId || ctx.runId;
       seen("llm_output", { runId, usage: event.usage });
       if (!runId) return;
-      remember(runTokens, runId, addUsage(runTokens.get(runId), event.usage));
+      const tokens = addUsage(runTokens.get(runId), event.usage);
+      remember(runTokens, runId, tokens);
       const model = event.resolvedRef || [event.provider, event.model].filter(Boolean).join("/");
       if (model) remember(runModel, runId, model);
+      // A native sub-agent's usage rolls up into its spawn edge (closed at subagent_ended).
+      const sub = ctx.sessionKey && spawns.get(ctx.sessionKey);
+      if (sub && event.usage) sub.tokens = addUsage(sub.tokens, event.usage);
+      // OpenClaw can fire agent_end before the run's last llm_output: update the
+      // already-written run edge (same edgeId) with the running total.
+      if (ended.has(runId) && event.usage) write({ edgeId: ended.get(runId), tokens, ...(model ? { model } : {}) });
     },
 
     agent_end(event = {}, ctx = {}) {
@@ -116,12 +125,11 @@ export function createGraphHooks({ record, host = hostname(), now = () => Date.n
       if (!runId || !agent) return;
       const tokens = runTokens.get(runId);
       const model = runModel.get(runId) || [ctx.modelProviderId, ctx.modelId].filter(Boolean).join("/") || undefined;
-      runTokens.delete(runId);
-      runModel.delete(runId);
+      remember(ended, runId, runEdgeId(runId));
       const end = now();
       const ms = Number(event.durationMs) || 0;
       write({
-        edgeId: `run:${gw}.${slug(runId)}`,
+        edgeId: runEdgeId(runId),
         kind: "run",
         from: runSource(ctx),
         fromRole: runSource(ctx),
@@ -135,9 +143,6 @@ export function createGraphHooks({ record, host = hostname(), now = () => Date.n
         tokens,
         model,
       });
-      // A native sub-agent's runs roll up into its spawn edge.
-      const sub = ctx.sessionKey && spawns.get(ctx.sessionKey);
-      if (sub && tokens) sub.tokens = addUsage(sub.tokens, tokens);
     },
 
     subagent_spawned(event = {}, ctx = {}) {

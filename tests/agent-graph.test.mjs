@@ -224,6 +224,15 @@ describe("OpenClaw gateway hooks", () => {
     assert.equal(Date.parse(e.answeredAt) - Date.parse(e.sentAt), 90_000);
   });
 
+  it("adds tokens to the run edge when llm_output arrives after agent_end (the Hub's order)", () => {
+    const { edges, hooks } = setup();
+    hooks.agent_end({ runId: "r3", success: true, durationMs: 7000 }, { agentId: "owned-3033", sessionKey: "agent:owned-3033:graph-check", trigger: "user" });
+    hooks.llm_output({ runId: "r3", provider: "opencode-go", model: "kimi-k3", usage: { input: 900, output: 3, total: 903 } }, { sessionKey: "agent:owned-3033:graph-check" });
+    assert.equal(edges.length, 2);
+    assert.equal(edges[0].tokens, undefined);
+    assert.deepEqual(edges[1], { edgeId: edges[0].edgeId, tokens: { input: 900, output: 3, cacheRead: 0, cacheWrite: 0, total: 903 }, model: "opencode-go/kimi-k3" });
+  });
+
   it("labels the run source and marks failed runs", () => {
     const { edges, hooks } = setup();
     hooks.agent_end({ runId: "r2", success: false, error: "quota" }, { agentId: "orchestrator", trigger: "cron" });
@@ -237,7 +246,7 @@ describe("OpenClaw gateway hooks", () => {
   it("opens a spawn edge, rolls the child's tokens in, and closes it with the outcome", () => {
     const { edges, hooks } = setup();
     hooks.subagent_spawned({ childSessionKey: "agent:owned-23965:sub:abc", agentId: "owned-23965", label: "audit", mode: "run", threadRequested: false, runId: "p1" }, { requesterSessionKey: "agent:owned-22899:main" });
-    hooks.llm_output({ runId: "c1", usage: { input: 50, output: 50, total: 100 } }, {});
+    hooks.llm_output({ runId: "c1", usage: { input: 50, output: 50, total: 100 } }, { sessionKey: "agent:owned-23965:sub:abc" });
     hooks.agent_end({ runId: "c1", success: true }, { agentId: "owned-23965", sessionKey: "agent:owned-23965:sub:abc" });
     hooks.subagent_ended({ targetSessionKey: "agent:owned-23965:sub:abc", targetKind: "subagent", reason: "done", outcome: "timeout" });
     const open = edges.find((e) => e.kind === "spawn");
