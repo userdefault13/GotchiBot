@@ -300,7 +300,7 @@ describe("gateway plugin install", () => {
     };
     const r = installGraphPlugin({ root: "/repo", run });
     assert.equal(r.ok, true);
-    assert.match(calls[0], /^plugins install --link \/repo\/openclaw-plugins\/gotchibot-graph$/);
+    assert.match(calls[0], /^plugins install --link --force \/repo\/openclaw-plugins\/gotchibot-graph$/);
     assert.ok(calls.includes(`config set plugins.allow ${JSON.stringify(["slack", "opencode-go", GRAPH_PLUGIN_ID])} --strict-json`));
     assert.ok(calls.includes(`config set plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess true --strict-json`));
   });

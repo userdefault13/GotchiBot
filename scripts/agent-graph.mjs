@@ -503,7 +503,10 @@ function ocJson(text) {
 export function installGraphPlugin({ root = ROOT, run = oc } = {}) {
   const dir = join(root, "openclaw-plugins", GRAPH_PLUGIN_ID);
   const steps = [];
-  const inst = run(["plugins", "install", "--link", dir], { quiet: true });
+  // --force: OpenClaw cancels any local-path install without it (outside ClawHub
+  // review). The source is this repo, and this runs only from the explicit
+  // `gotchibot graph plugin install` an operator types.
+  const inst = run(["plugins", "install", "--link", "--force", dir], { quiet: true });
   if (inst.missing) return { ok: false, steps, error: "openclaw is not installed on this machine" };
   const already = /already|exists/i.test(`${inst.err} ${inst.out}`);
   steps.push({ step: "link", ok: inst.ok || already, note: inst.ok ? "linked" : already ? "already linked" : inst.err.split("\n").pop() });
