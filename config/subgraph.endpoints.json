@@ -1,6 +1,8 @@
 {
-  "$comment": "Gotchi data layer — reuses AarcadeGh-t's home Cloudflare tunnel (UserDefaultTunnel on the iMac). No local indexers needed.",
+  "$comment": "Gotchi data layer \u2014 reuses AarcadeGh-t's home Cloudflare tunnel (UserDefaultTunnel on the iMac). No local indexers needed.",
   "gateway": "https://subgraph.aarcadeghst.com",
+  "tunnelHealth": "https://mongo-api.aarcadeghst.com/health",
+  "$tunnelNote": "tun (status bar) = the home tunnel answering tunnelHealth. The mainnet subgraphs below are retired (Base Sepolia only); tunnel-health reports them as information only.",
   "subgraphs": {
     "aavegotchi-core-base": {
       "url": "https://subgraph.aarcadeghst.com/subgraphs/name/aavegotchi-core-base",
@@ -23,7 +25,7 @@
     "header": "X-Subgraph-Proxy-Key",
     "installTokenHeader": "X-GotchiBot-Install-Token",
     "soloApiBase": "https://www.aarcadeghst.com",
-    "note": "Solo: GOTCHIBOT_INFRA_TOKEN → www /api/subgraph/* (see config/infra.auth.json). Legacy operator: GOTCHIBOT_SUBGRAPH_PROXY_KEY / AARCADE_GOTCHIBOT_SERVICE_SECRET in abra. Tunnel subgraph.aarcadeghst.com rejects anonymous GraphQL when SUBGRAPH_PROXY_ENFORCE=hard."
+    "note": "Solo: GOTCHIBOT_INFRA_TOKEN \u2192 www /api/subgraph/* (see config/infra.auth.json). Legacy operator: GOTCHIBOT_SUBGRAPH_PROXY_KEY / AARCADE_GOTCHIBOT_SERVICE_SECRET in abra. Tunnel subgraph.aarcadeghst.com rejects anonymous GraphQL when SUBGRAPH_PROXY_ENFORCE=hard."
   },
   "health": {
     "status": "verified 2026-08-25",
@@ -34,5 +36,5 @@
     "mongoProxy": "https://mongo-api.aarcadeghst.com",
     "homeCdn": "https://cdn.aarcadeghst.com"
   },
-  "lanNote": "Hub LAN ports are often unreachable from the desk client (firewall/AP isolation) — always go through the tunnel hostnames, never raw LAN IPs."
+  "lanNote": "Hub LAN ports are often unreachable from the desk client (firewall/AP isolation) \u2014 always go through the tunnel hostnames, never raw LAN IPs."
 }

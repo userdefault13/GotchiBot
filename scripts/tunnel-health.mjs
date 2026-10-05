@@ -105,15 +105,39 @@ function probeRemoteLocal() {
   }
 }
 
+/** The home tunnel itself: a plain health URL it serves (default: the Mongo proxy). */
+function homeTunnelUrl(c = cfg) {
+  if (c?.tunnelHealth) return String(c.tunnelHealth);
+  const mongo = c?.identityLayer?.mongoProxy;
+  return mongo ? `${String(mongo).replace(/\/+$/, "")}/health` : null;
+}
+
+async function probeHome(url) {
+  if (!url) return { ok: false, url: null, status: null, error: "no tunnelHealth / identityLayer.mongoProxy in config" };
+  const t0 = Date.now();
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    return { ok: res.ok, url, status: res.status, latencyMs: Date.now() - t0 };
+  } catch (e) {
+    return { ok: false, url, status: null, latencyMs: Date.now() - t0, error: String(e?.cause?.code || e?.message || e).slice(0, 120) };
+  }
+}
+
 async function main() {
-  const coreUrl = cfg.subgraphs["aavegotchi-core-base"].url;
-  const publicProbe = await probeUrl("aavegotchi-core-base", coreUrl);
-  const tunnelOk = publicProbe.ok || (publicProbe.authRequired && !publicProbe.keySent);
+  // "tun" is the home Cloudflare tunnel. It used to be judged by the mainnet
+  // core subgraph, which is retired (Base Sepolia only) — its 502 marked a
+  // healthy tunnel down. The subgraph probe stays as information only.
+  const home = await probeHome(homeTunnelUrl());
+  const coreUrl = cfg.subgraphs?.["aavegotchi-core-base"]?.url;
+  const publicProbe = coreUrl ? await probeUrl("aavegotchi-core-base", coreUrl) : null;
+  const tunnelOk = home.ok;
   const out = {
     checkedAt: new Date().toISOString(),
     gateway: cfg.gateway,
     ok: Boolean(tunnelOk),
+    home,
     public: publicProbe,
+    subgraphNote: "mainnet subgraph (retired) — informational",
     localImac: null,
   };
 
@@ -129,13 +153,11 @@ async function main() {
   if (json) {
     console.log(JSON.stringify(out, null, 2));
   } else {
-    const tag = publicProbe.ok ? "ok" : tunnelOk ? "up (auth required)" : "DOWN";
-    console.log(`subgraph tunnel: ${tag}  HTTP ${publicProbe.status ?? "?"}  ${publicProbe.latencyMs}ms`);
-    if (publicProbe.block != null) console.log(`  core block: ${publicProbe.block}`);
-    if (!publicProbe.ok && tunnelOk) {
-      console.log("  proxy wants a key and none is in env — run under abra to read data");
-    } else if (publicProbe.error) {
-      console.log(`  error: ${publicProbe.error}`);
+    console.log(`home tunnel: ${home.ok ? "ok" : "DOWN"}  HTTP ${home.status ?? "?"}  ${home.latencyMs ?? "?"}ms  ${home.url || ""}`);
+    if (home.error) console.log(`  error: ${home.error}`);
+    if (publicProbe) {
+      const tag = publicProbe.ok ? "ok" : publicProbe.authRequired && !publicProbe.keySent ? "up (auth required)" : "down";
+      console.log(`mainnet subgraph (retired, info only): ${tag}  HTTP ${publicProbe.status ?? "?"}`);
     }
     if (out.localImac) {
       console.log(`iMac localhost:8787: ${out.localImac.ok ? "ok" : "DOWN"}`);
