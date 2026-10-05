@@ -305,6 +305,18 @@ describe("gateway plugin install", () => {
     assert.ok(calls.includes(`config set plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess true --strict-json`));
   });
 
+  it("counts a set that failed on unrelated invalid config as done when the value is already there", () => {
+    const run = (args) => {
+      if (args[0] === "config" && args[1] === "set" && args[2] !== "plugins.allow") return { ok: false, out: "", err: "Config validation failed.\n- agents.ownership" };
+      if (args[0] === "config" && args[1] === "get" && args[2] === `plugins.entries.${GRAPH_PLUGIN_ID}`) return { ok: true, out: JSON.stringify({ enabled: true, hooks: { allowConversationAccess: true } }), err: "" };
+      if (args[0] === "config" && args[1] === "get") return { ok: true, out: JSON.stringify([GRAPH_PLUGIN_ID]), err: "" };
+      return { ok: true, out: "", err: "" };
+    };
+    const r = installGraphPlugin({ root: "/repo", run });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.steps.map((s) => s.note), ["linked", "already allowed", "already set", "already set"]);
+  });
+
   it("treats an existing link as installed and reports a missing openclaw", () => {
     const again = installGraphPlugin({ root: "/repo", run: (args) => (args[0] === "plugins" ? { ok: false, out: "", err: "plugin already exists" } : { ok: true, out: "", err: "" }) });
     assert.equal(again.ok, true);

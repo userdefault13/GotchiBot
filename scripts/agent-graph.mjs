@@ -516,12 +516,16 @@ export function installGraphPlugin({ root = ROOT, run = oc } = {}) {
     const r = run(["config", "set", "plugins.allow", JSON.stringify([...allow, GRAPH_PLUGIN_ID]), "--strict-json"]);
     steps.push({ step: "allow", ok: r.ok });
   } else steps.push({ step: "allow", ok: true, note: Array.isArray(allow) ? "already allowed" : "no allowlist" });
-  for (const [path, note] of [
-    [`plugins.entries.${GRAPH_PLUGIN_ID}.enabled`, "enabled"],
-    [`plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess`, "token hooks allowed"],
+  // A set can fail on unrelated invalid config (e.g. agents.ownership) even
+  // when the value is already right — read the entry back to decide.
+  const readEntry = () => ocJson(run(["config", "get", `plugins.entries.${GRAPH_PLUGIN_ID}`, "--json"], { quiet: true }).out) || {};
+  for (const [path, note, has] of [
+    [`plugins.entries.${GRAPH_PLUGIN_ID}.enabled`, "enabled", (e) => e.enabled === true],
+    [`plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess`, "token hooks allowed", (e) => e.hooks?.allowConversationAccess === true],
   ]) {
-    const r = run(["config", "set", path, "true", "--strict-json"]);
-    steps.push({ step: note, ok: r.ok });
+    const r = run(["config", "set", path, "true", "--strict-json"], { quiet: true });
+    const ok = r.ok || has(readEntry());
+    steps.push({ step: note, ok, note: !r.ok && ok ? "already set" : !ok ? (r.err || r.out).split("\n").find((l) => l.trim()) : undefined });
   }
   return { ok: steps.every((s) => s.ok), steps };
 }
@@ -565,7 +569,7 @@ async function main(argv) {
       if (json) console.log(JSON.stringify(r, null, 2));
       else {
         for (const s of r.steps) console.log(`${s.ok ? "✓" : "✗"} ${s.step}${s.note ? ` — ${s.note}` : ""}`);
-        console.log(r.ok ? "Restart the OpenClaw gateway to load it (Hub: systemctl --user restart openclaw-gateway)." : r.error || "install incomplete");
+        console.log(r.ok ? "A running gateway hot-loads it — check with: gotchibot graph plugin status" : r.error || "install incomplete");
       }
       return r.ok ? 0 : 1;
     }
