@@ -1,7 +1,7 @@
 {
-  "version": "0.3.1",
-  "publishedAt": "2026-10-05T04:37:08.062Z",
+  "version": "0.3.2",
+  "publishedAt": "2026-10-05T18:01:53.135Z",
   "product": "gotchibot",
   "url": "https://github.com/userdefault13/GotchiBot",
-  "notes": "Fast, crash-safe pane switching with parked apps; Terminal pane with on-demand root; hire sheets with probation and CoS promotion reviews; Hub falls back to the next available model; link a phone from Hub… (QR)"
+  "notes": "Agent graph: every handoff logged on the Hub, gotchibot graph + Factory Graph view, kanban → PM alerts on stalled or failed handoffs; Hub phone QR link; meet room fixes"
 }
