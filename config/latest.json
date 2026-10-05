@@ -1,7 +1,7 @@
 {
-  "version": "0.2.2",
-  "publishedAt": "2026-09-17T05:35:00.000Z",
+  "version": "0.3.1",
+  "publishedAt": "2026-10-05T01:17:46.711Z",
   "product": "gotchibot",
   "url": "https://github.com/userdefault13/GotchiBot",
-  "notes": "Avatar cheek traits + doubled collateral; plain kanban/iMessage thumbs; project tickets and desk mailboxes"
+  "notes": "Fast, crash-safe pane switching with parked apps; Terminal pane with on-demand root; direct meet chats; hire sheets with probation and CoS promotion reviews"
 }
