@@ -80,13 +80,16 @@ export function reportSubFinish(sessionId, status = "done") {
   // later pass, so the orchestrator stands in as the sender).
   if (hero !== "unknown-hero") {
     const started = field(dir, "started");
+    // Where a sandbox job actually ran, and why auto fell back (desk VM → docker).
+    const backend = field(dir, "sandbox") === "1" ? field(dir, "sandboxBackend") || "docker" : "";
+    const fallback = field(dir, "sandboxFallback");
     void recordEdge({
       edgeId: `spawn:${id}`,
       kind: "spawn",
       from: "orchestrator",
       to: hero,
       ref: id,
-      title: subject,
+      title: backend ? `${subject} · ${backend}${fallback ? ` (${fallback})` : ""}` : subject,
       ...(started ? { sentAt: started } : {}),
       answeredAt: field(dir, "ended") || new Date().toISOString(),
       outcome: st === "failed" ? "failed" : "done",

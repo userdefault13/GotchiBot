@@ -7,6 +7,8 @@ KNOWLEDGE.md
 sandboxes/
 # VM sandbox state (vms/<id>/): disks, seeds, pidfiles, work — never source
 vms/
+# Desk VM job copies (desk-vms/<id>/work) — scripts/desk-vm.mjs
+desk-vms/
 node_modules/
 
 var/

@@ -33,6 +33,7 @@ gotchibot — GotchiBot orchestrator CLI
                                   # --sandbox = Docker box; hero must be available; never auto-mint
   gotchibot sandbox up|exec|status|promote|rm|ensure-image   Docker sandbox ops
   gotchibot vm up|exec|status|models|promote|rm|ensure-image   QEMU VM sandbox ops (2020 iMac only)
+  gotchibot desk-vm check|enable|disable|ensure-image|up|exec|status|promote|rm   sandbox VM on a powerful desk (Lima)
   gotchibot new [--model t] "P"   spawn a sub-agent
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
   gotchibot multitask run "…"   parallel sub-agents (Cursor-style /multitask)
@@ -815,6 +816,9 @@ case "$cmd" in
     ;;
   vm)
     exec node "$ROOT/scripts/gotchibot-vm.mjs" "$@"
+    ;;
+  desk-vm)
+    exec node "$ROOT/scripts/desk-vm.mjs" "$@"
     ;;
   new) "$DISPATCH" new "$@" ;;
   list) exec "$DISPATCH" list ;;

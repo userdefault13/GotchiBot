@@ -124,7 +124,12 @@ async function cmdGate() {
 
 async function cmdSpawn(argv) {
   const { host: wantHost, sandbox, fallbackLocal, rest: argv2 } = parseHostAndRest(argv);
-  const host = await resolveHost(wantHost);
+  let host = await resolveHost(wantHost);
+  // A desk that offers its own VM keeps sandbox work on its own CPU, not the Hub's.
+  if (sandbox && wantHost === "auto" && host === "imac") {
+    const { available } = await import("./desk-vm.mjs");
+    if (available().ok) host = "local";
+  }
 
   if (sandbox) {
     const heroCheck = await assertSandboxHeroAvailable(process.env.GOTCHIBOT_HERO_ID || "");

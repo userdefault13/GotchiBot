@@ -143,7 +143,7 @@ describe("job end and operator stop", () => {
   it("the bot attaches with up <sessionId> and exec <sessionId> against gbvm-shared", () => {
     assert.equal(SHARED_GUEST_ID, "shared");
     assert.match(dispatchSrc, /printf 'gbvm-shared\\n'/);
-    assert.match(dispatchSrc, /gotchibot-vm\.mjs" exec "\$id"/);
+    assert.match(dispatchSrc, /(gotchibot-vm\.mjs|\$SANDBOX_CLI)" exec "\$id"/);
     assert.match(dispatchSrc, /node "\$SANDBOX_CLI" up "\$id"/);
     assert.match(vmSrc, /planGuestUp\(/);
     assert.match(vmSrc, /attached \$\{sid\} to/);

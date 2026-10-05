@@ -40,6 +40,7 @@
     "config/aseprite.json.example",
     "config/browser.allowlist.json",
     "config/claude-bridge-ui.json",
+    "config/desk-vm.json",
     "config/gotchiverse-regions.json",
     "config/hub-bridge.json.example",
     "config/infra.auth.json",

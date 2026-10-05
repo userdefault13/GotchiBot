@@ -1,0 +1,10 @@
+{
+  "$comment": "Desk VM floor (scripts/desk-vm.mjs). A desk offers sandbox VMs only when it meets minCores and minMemGB AND its owner runs `gotchibot desk-vm enable`. The guest gets cpuShare of the cores (≤ maxCpus) and memShare of the RAM (≤ maxMemGB).",
+  "minCores": 12,
+  "minMemGB": 32,
+  "cpuShare": 0.5,
+  "maxCpus": 8,
+  "memShare": 0.25,
+  "maxMemGB": 16,
+  "diskGB": 40
+}

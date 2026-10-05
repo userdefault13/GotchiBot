@@ -27,6 +27,7 @@ teardown_sandbox() {
   # docker still removes its container. Operator stop: gotchibot-vm.mjs rm shared.
   case "$(field sandboxBackend "$dir")" in
     vm) cli="$ROOT/scripts/gotchibot-vm.mjs"; node "$cli" detach "$id" >/dev/null 2>&1 || true ;;
+    desk-vm) cli="$ROOT/scripts/desk-vm.mjs"; node "$cli" detach "$id" >/dev/null 2>&1 || true ;;
     *) cli="$ROOT/scripts/sandbox.mjs"; node "$cli" rm "$id" >/dev/null 2>&1 || true ;;
   esac
 }
@@ -44,18 +45,35 @@ SESSIONS="$ROOT/sessions"
 PROGRESS="$ROOT/scripts/progress-bar.sh"
 mkdir -p "$SESSIONS"
 
-# Sandbox backend: docker (today's box) or vm (QEMU guest, 2020 iMac only). Validated once,
-# here, so a typo fails on every entry point with exit 2 instead of surfacing mid-spawn
-# after a session dir already exists.
-GOTCHIBOT_SANDBOX_BACKEND="${GOTCHIBOT_SANDBOX_BACKEND:-docker}"
-case "$GOTCHIBOT_SANDBOX_BACKEND" in
-  docker) SANDBOX_CLI="$ROOT/scripts/sandbox.mjs" ;;
-  vm) SANDBOX_CLI="$ROOT/scripts/gotchibot-vm.mjs" ;;
-  *)
-    echo "GOTCHIBOT_SANDBOX_BACKEND must be 'docker' or 'vm' (got '$GOTCHIBOT_SANDBOX_BACKEND')" >&2
-    exit 2
-    ;;
-esac
+# Sandbox backend: auto (default), docker (today's box), vm (QEMU guest, 2020 iMac only) or
+# desk-vm (Lima guest on a qualifying, opted-in desk — scripts/desk-vm.mjs). auto picks
+# desk-vm when this desk offers one, else docker; it never picks the Hub's vm. Validated
+# once, here, so a typo fails on every entry point with exit 2 instead of surfacing
+# mid-spawn after a session dir already exists. auto resolves in spawn (sandbox jobs only).
+GOTCHIBOT_SANDBOX_BACKEND="${GOTCHIBOT_SANDBOX_BACKEND:-auto}"
+SANDBOX_FALLBACK=""
+set_sandbox_cli() {
+  case "$GOTCHIBOT_SANDBOX_BACKEND" in
+    docker|auto) SANDBOX_CLI="$ROOT/scripts/sandbox.mjs" ;;
+    vm) SANDBOX_CLI="$ROOT/scripts/gotchibot-vm.mjs" ;;
+    desk-vm) SANDBOX_CLI="$ROOT/scripts/desk-vm.mjs" ;;
+    *)
+      echo "GOTCHIBOT_SANDBOX_BACKEND must be 'auto', 'docker', 'vm' or 'desk-vm' (got '$GOTCHIBOT_SANDBOX_BACKEND')" >&2
+      exit 2
+      ;;
+  esac
+}
+set_sandbox_cli
+# auto → desk-vm | docker (+ why it fell back). Only called for a sandbox spawn.
+resolve_sandbox_backend() {
+  [ "$GOTCHIBOT_SANDBOX_BACKEND" = "auto" ] || return 0
+  local out
+  out="$(node "$ROOT/scripts/desk-vm.mjs" backend auto 2>/dev/null || echo docker)"
+  GOTCHIBOT_SANDBOX_BACKEND="$(printf '%s\n' "$out" | sed -n 1p)"
+  SANDBOX_FALLBACK="$(printf '%s\n' "$out" | sed -n 2p)"
+  case "$GOTCHIBOT_SANDBOX_BACKEND" in docker|desk-vm) ;; *) GOTCHIBOT_SANDBOX_BACKEND=docker ;; esac
+  set_sandbox_cli
+}
 
 usage() {
   cat >&2 <<'EOF'
@@ -74,9 +92,10 @@ usage:
   opencode-dispatch.sh requests   show pending skill requests
 
 Sandbox (GOTCHIBOT_SANDBOX=1 or --sandbox): Docker box; cwd /work; abra only in-box via ABRA_KEY.
-Sandbox backend: GOTCHIBOT_SANDBOX_BACKEND=vm runs the job in one shared QEMU guest (2020 iMac only).
-The guest stays up between jobs. A bot attaches with: node scripts/gotchibot-vm.mjs up <sessionId>
-Operator stop: node scripts/gotchibot-vm.mjs rm shared. Default backend: docker.
+Sandbox backend (GOTCHIBOT_SANDBOX_BACKEND): auto (default) uses this desk's VM when it qualifies
+and is enabled (scripts/desk-vm.mjs check), else docker. vm runs the job in one shared QEMU guest
+(2020 iMac only); desk-vm forces the desk VM. The guests stay up between jobs.
+Operator stop: node scripts/gotchibot-vm.mjs rm shared · node scripts/desk-vm.mjs rm shared.
 EOF
   exit 2
 }
@@ -112,6 +131,7 @@ sandbox_model_for() {
 sandbox_name() {
   case "$GOTCHIBOT_SANDBOX_BACKEND" in
     vm) printf 'gbvm-shared\n' ;;
+    desk-vm) printf 'gbdesk\n' ;;
     *) printf 'gotchibot-sandbox-%s\n' "$1" ;;
   esac
 }
@@ -190,6 +210,7 @@ spawn() {
   done
   [ -n "${prompt:-}" ] || usage
   if [ "${GOTCHIBOT_SANDBOX:-}" = "1" ]; then sandbox=1; fi
+  if [ "$sandbox" = "1" ]; then resolve_sandbox_backend; fi
 
   if [ "${GOTCHIBOT_SKIP_GATE:-}" != "1" ]; then
     if ! node "$ROOT/scripts/wallet-gate.mjs" >/dev/null 2>&1; then
@@ -216,9 +237,25 @@ spawn() {
     echo "pid="
     echo "sandbox=$sandbox"
     if [ "$sandbox" = "1" ]; then echo "sandboxBackend=$GOTCHIBOT_SANDBOX_BACKEND"; fi
+    if [ "$sandbox" = "1" ] && [ -n "$SANDBOX_FALLBACK" ]; then echo "sandboxFallback=$SANDBOX_FALLBACK"; fi
   } > "$dir/state.env"
 
-  if [ "$sandbox" = "1" ] && [ "$GOTCHIBOT_SANDBOX_BACKEND" = "vm" ]; then
+  if [ "$sandbox" = "1" ] && [ "$GOTCHIBOT_SANDBOX_BACKEND" = "desk-vm" ]; then
+    cat > "$dir/bootstrap.txt" <<EOF
+
+--- session bootstrap (DESK VM SANDBOX) ---
+You are this cAavegotchi, session $id in an isolated virtual machine on this desk (own kernel).
+Speak in first person (I, me, my). You are not the orchestrator.
+Work ONLY under /jobs/$id/work. Session files are under /jobs/$id/session.
+Write your deliverable to /jobs/$id/session/output.md.
+Do NOT touch other /jobs/* directories — they belong to other sessions.
+The desk's files are not mounted in this VM at all.
+Secrets: use sandbox-abra-fetch / ABRA_KEY → host.lima.internal:7331 only. Never abra run. Never print secrets.
+Do NOT call cursor-cli / cursor-agent (there is no way out of the guest). Coding = opencode in this VM.
+Never mint / bind / steal assigned desks. Never install tools on the host.
+If you need a skill not in /rules/skills-registry.json, append JSON to /jobs/$id/session/skill-requests.jsonl.
+EOF
+  elif [ "$sandbox" = "1" ] && [ "$GOTCHIBOT_SANDBOX_BACKEND" = "vm" ]; then
     cat > "$dir/bootstrap.txt" <<EOF
 
 --- session bootstrap (VM SANDBOX) ---
@@ -303,7 +340,8 @@ EOF
 
   runner="$dir/runner.sh"
   RUNTIME="$(dispatch_runtime)"
-  if [ "$sandbox" = "1" ] && [ "$GOTCHIBOT_SANDBOX_BACKEND" = "vm" ]; then
+  if [ "$sandbox" = "1" ] && { [ "$GOTCHIBOT_SANDBOX_BACKEND" = "vm" ] || [ "$GOTCHIBOT_SANDBOX_BACKEND" = "desk-vm" ]; }; then
+    if [ "$GOTCHIBOT_SANDBOX_BACKEND" = "desk-vm" ]; then GUEST_WORK="/jobs/$id/work"; else GUEST_WORK="/work"; fi
     cat > "$runner" <<RUNNER
 #!/usr/bin/env bash
 set -euo pipefail
@@ -329,8 +367,8 @@ fi
 run_opencode() {
   local m="\$1"
   # Secrets were piped into the guest's /etc/gotchibot/sandbox.env at up; exec
-  # sources it and cd's to /work itself. Never abra run / cursor-cli from here.
-  node "$ROOT/scripts/gotchibot-vm.mjs" exec "$id" -- opencode run -m "\$m" --title "gotchibot:$id" --dir /work "\${AUTO_FLAGS[@]}" "\$PROMPT" \
+  # sources it and cd's to the job's work dir itself. Never abra run / cursor-cli from here.
+  node "$SANDBOX_CLI" exec "$id" -- opencode run -m "\$m" --title "gotchibot:$id" --dir $GUEST_WORK "\${AUTO_FLAGS[@]}" "\$PROMPT" \
     > "$dir/output.md" 2> "$dir/output.log"
 }
 run_opencode "\$MODEL"
