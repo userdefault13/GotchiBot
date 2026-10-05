@@ -33,6 +33,7 @@
     "config/claude-pane-proxy/",
     "config/infra-verify-workspace/",
     "config/trader-verify-workspace/",
+    "config/agent-graph.json",
     "config/agent-role-playbooks.json",
     "config/agent-roles.json",
     "config/aseprite.json.example",
