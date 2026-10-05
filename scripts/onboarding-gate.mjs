@@ -2638,7 +2638,7 @@ function cockpitMenuLeafCount(rows) {
  * Cockpit "What next?" rows. Related actions sit under a parent; Enter on that
  * row opens the group, Esc returns here. Leaf labels and relative order match
  * the old flat list, so 1..n inside a group still picks those siblings.
- * Top-level is 8 rows. Leaves are 20 (Hub SSH down) or 21 (Hub SSH up).
+ * Top-level is 8 rows. Leaves are 21 (Hub SSH down) or 22 (Hub SSH up).
  * The second Hub… row is the full dashboard only when this computer is the
  * Hub (sessions/.hub-api.json). Every other desk gets the lite view instead.
  */
@@ -2654,6 +2654,7 @@ function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
           ? "Hub network (this computer is the Hub)"
           : "Set up Hub network (Tailscale)",
     ),
+    item("hub-phone", "Link a phone (QR code)"),
     net.hubInstalled
       ? item("hub-dashboard", "Hub dashboard (desks · db · projects · logs · VM)")
       : item("hub-lite", "Hub lite view (not the hub dashboard)"),
@@ -2959,6 +2960,13 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "hub-network") {
       await runHubNetworkSetup();
+      continue;
+    }
+
+    if (pick.key === "hub-phone") {
+      spawnSync(process.execPath, [`${ROOT}/scripts/hub-phone-link.mjs`], { cwd: ROOT, stdio: "inherit" });
+      await pause();
+      openGroup = "group:hub";
       continue;
     }
 

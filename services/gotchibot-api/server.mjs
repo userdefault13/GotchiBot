@@ -542,6 +542,23 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
           });
         }
 
+        // POST /api/gotchibot/hub/pair/phone — a paired desk mints a one-time
+        // phone pairing code (the cockpit "Link a phone" QR). Phones cannot.
+        if (req.method === "POST" && path === "/api/gotchibot/hub/pair/phone") {
+          if (deskKind !== "desk") {
+            return json(res, 403, { ok: false, error: "only a desk can link a phone" });
+          }
+          const body = await readBody(req);
+          const name = String(body.name || "iPhone").trim().slice(0, 60) || "iPhone";
+          const pair = await store.mintPairingCode({ name, kind: "phone" });
+          return json(res, 200, {
+            ok: true,
+            code: pair.code,
+            expiresAt: pair.expiresAt,
+            appUrl: config?.appUrl || null,
+          });
+        }
+
         // POST /api/gotchibot/hub/wallet/verify-request — one-time link code the
         // phone opens inside its wallet browser (see wallet/verify).
         if (req.method === "POST" && path === "/api/gotchibot/hub/wallet/verify-request") {

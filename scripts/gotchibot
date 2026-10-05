@@ -93,6 +93,7 @@ gotchibot — GotchiBot orchestrator CLI
                                   BYO Mongo (local Docker / Atlas / skip) → sessions/.mongo.json
   gotchibot hub setup [--status [--json]]         guided: one computer or Desk + Hub over Tailscale (sign-in, install, find, pair)
   gotchibot hub install [--dry-run|--uninstall]   set up THIS computer as your Hub (gotchibot-api + Mongo + tailscale serve)
+  gotchibot hub phone [--name NAME]               link a phone: one-time pairing QR (works from any paired desk)
   gotchibot hub pair|desks|revoke|share|unshare|shares
                                   on the Hub: pairing codes, desks, thread shares
   gotchibot hub runner [--once|--check]           Hub phone-reply runner (prefer: abra run gotchibot -- node scripts/hub-runner.mjs)
@@ -957,6 +958,10 @@ case "$cmd" in
     case "$sub" in
       pair|join|desks|revoke|share|unshare|shares)
         exec node "$ROOT/scripts/hub-pair.mjs" "$@"
+        ;;
+      phone|link-phone)
+        shift || true
+        exec node "$ROOT/scripts/hub-phone-link.mjs" "$@"
         ;;
       runner)
         shift || true
