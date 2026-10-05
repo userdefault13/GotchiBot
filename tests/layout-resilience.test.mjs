@@ -119,3 +119,13 @@ describe("kanban Enter", () => {
     assert.doesNotMatch(k, /agent-focus\.mjs/, "Enter no longer re-seats the OpenCode chat");
   });
 });
+
+describe("chat recovery gate", () => {
+  it("gives Hub recovery a bounded head start, then opens chat anyway", () => {
+    const chat = read("scripts/chat-pane.sh");
+    assert.doesNotMatch(chat, /until node "\$ROOT\/scripts\/hub-desk-recovery\.mjs" once/, "no unbounded wait before chat");
+    assert.match(chat, /desk_recovery_gate\(\) \{[\s\S]*GOTCHIBOT_RECOVERY_WAIT_SEC:-20/);
+    assert.match(chat, /desk_recovery_gate \|\| true/);
+    assert.match(chat, /Tailscale SSH may need a browser approval/);
+  });
+});
