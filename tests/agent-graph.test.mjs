@@ -272,6 +272,23 @@ describe("OpenClaw gateway hooks", () => {
     assert.doesNotMatch(lines.join(), /secret/);
   });
 
+  it("loads agent-graph from config.root and traces there, not from the capture copy", async (t) => {
+    const root = mkdtempSync(path.join(tmpdir(), "gb-oc-root-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    mkdirSync(path.join(root, "scripts"));
+    writeFileSync(path.join(root, "scripts", "agent-graph.mjs"), "export async function recordEdge(e, o) { globalThis.__gbRecorded = { e, o }; return e; }\n");
+    const handlers = {};
+    registerGraphHooks({ on: (n, fn) => (handlers[n] = fn), pluginConfig: { root } });
+    handlers.agent_end({ runId: "rr", success: true }, { agentId: "owned-1" });
+    for (let i = 0; i < 50 && !globalThis.__gbRecorded; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(globalThis.__gbRecorded.e.edgeId.startsWith("run:"), true);
+    assert.equal(globalThis.__gbRecorded.o.root, root);
+    const log = readFileSync(path.join(root, "sessions", "graph", "plugin.log"), "utf8");
+    assert.ok(log.includes(`registered root=${root}`), log);
+    assert.match(log, /agent_end runId=y agentId=y/);
+    delete globalThis.__gbRecorded;
+  });
+
   it("registers its four hooks on the plugin api", () => {
     const names = [];
     registerGraphHooks({ on: (n) => names.push(n) }, { record: () => {} });
@@ -319,18 +336,20 @@ describe("gateway plugin install", () => {
     assert.match(calls[0], /^plugins install --link --force \/repo\/openclaw-plugins\/gotchibot-graph$/);
     assert.ok(calls.includes(`config set plugins.allow ${JSON.stringify(["slack", "opencode-go", GRAPH_PLUGIN_ID])} --strict-json`));
     assert.ok(calls.includes(`config set plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess true --strict-json`));
+    // The gateway runs a capture copy: the plugin is told where the live repo is.
+    assert.ok(calls.includes(`config set plugins.entries.${GRAPH_PLUGIN_ID}.config.root "/repo" --strict-json`));
   });
 
   it("counts a set that failed on unrelated invalid config as done when the value is already there", () => {
     const run = (args) => {
       if (args[0] === "config" && args[1] === "set" && args[2] !== "plugins.allow") return { ok: false, out: "", err: "Config validation failed.\n- agents.ownership" };
-      if (args[0] === "config" && args[1] === "get" && args[2] === `plugins.entries.${GRAPH_PLUGIN_ID}`) return { ok: true, out: JSON.stringify({ enabled: true, hooks: { allowConversationAccess: true } }), err: "" };
+      if (args[0] === "config" && args[1] === "get" && args[2] === `plugins.entries.${GRAPH_PLUGIN_ID}`) return { ok: true, out: JSON.stringify({ enabled: true, hooks: { allowConversationAccess: true }, config: { root: "/repo" } }), err: "" };
       if (args[0] === "config" && args[1] === "get") return { ok: true, out: JSON.stringify([GRAPH_PLUGIN_ID]), err: "" };
       return { ok: true, out: "", err: "" };
     };
     const r = installGraphPlugin({ root: "/repo", run });
     assert.equal(r.ok, true);
-    assert.deepEqual(r.steps.map((s) => s.note), ["linked", "already allowed", "already set", "already set"]);
+    assert.deepEqual(r.steps.map((s) => s.note), ["linked", "already allowed", "already set", "already set", "already set"]);
   });
 
   it("treats an existing link as installed and reports a missing openclaw", () => {

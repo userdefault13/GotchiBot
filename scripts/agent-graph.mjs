@@ -519,11 +519,13 @@ export function installGraphPlugin({ root = ROOT, run = oc } = {}) {
   // A set can fail on unrelated invalid config (e.g. agents.ownership) even
   // when the value is already right — read the entry back to decide.
   const readEntry = () => ocJson(run(["config", "get", `plugins.entries.${GRAPH_PLUGIN_ID}`, "--json"], { quiet: true }).out) || {};
-  for (const [path, note, has] of [
-    [`plugins.entries.${GRAPH_PLUGIN_ID}.enabled`, "enabled", (e) => e.enabled === true],
-    [`plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess`, "token hooks allowed", (e) => e.hooks?.allowConversationAccess === true],
+  for (const [path, note, has, value] of [
+    [`plugins.entries.${GRAPH_PLUGIN_ID}.enabled`, "enabled", (e) => e.enabled === true, "true"],
+    [`plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess`, "token hooks allowed", (e) => e.hooks?.allowConversationAccess === true, "true"],
+    // OpenClaw runs linked plugins from a capture copy; root points the plugin at the live repo.
+    [`plugins.entries.${GRAPH_PLUGIN_ID}.config.root`, "repo root", (e) => e.config?.root === root, JSON.stringify(root)],
   ]) {
-    const r = run(["config", "set", path, "true", "--strict-json"], { quiet: true });
+    const r = run(["config", "set", path, value, "--strict-json"], { quiet: true });
     const ok = r.ok || has(readEntry());
     steps.push({ step: note, ok, note: !r.ok && ok ? "already set" : !ok ? (r.err || r.out).split("\n").find((l) => l.trim()) : undefined });
   }

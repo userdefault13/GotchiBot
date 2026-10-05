@@ -15,10 +15,15 @@
 import { hostname } from "node:os";
 import { appendFileSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const MAX_TRACKED = 500;
-const TRACE = join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "sessions", "graph", "plugin.log");
+// Module-relative root. Inside a gateway this is NOT the repo: OpenClaw runs a
+// linked plugin from a capture copy (~/.openclaw/tmp/plugin-captures/…), so the
+// plugin passes the real repo root from its config (plugins.entries.gotchibot-graph.config.root).
+const HERE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const tracePath = (root) => join(root, "sessions", "graph", "plugin.log");
+const TRACE = tracePath(HERE_ROOT);
 const TRACE_MAX = 512 * 1024;
 
 /**
@@ -171,17 +176,18 @@ export function createGraphHooks({ record, host = hostname(), now = () => Date.n
 
 /**
  * Plugin wiring: register every handler on the OpenClaw plugin api. Synchronous
- * (register() is not awaited); agent-graph.mjs loads on the first edge.
+ * (register() is not awaited); agent-graph.mjs loads on the first edge — from the
+ * live repo at `root` (absolute path), never from the gateway's capture copy.
  */
 export function registerGraphHooks(api, opts = {}) {
+  const root = opts.root || api?.pluginConfig?.root || null;
   let graph;
-  const record =
-    opts.record ||
-    ((edge) => (graph ||= import("./agent-graph.mjs")).then((m) => m.recordEdge(edge, { warn: false })));
-  // Tests inject their own recorder; only a real gateway traces to sessions/graph/plugin.log.
-  const trace = opts.trace || (opts.record ? () => {} : traceLine());
+  const load = () => (graph ||= import(root ? pathToFileURL(join(root, "scripts", "agent-graph.mjs")).href : "./agent-graph.mjs"));
+  const record = opts.record || ((edge) => load().then((m) => m.recordEdge(edge, { warn: false, ...(root ? { root } : {}) })));
+  // Tests inject their own recorder; only a real gateway traces to <root>/sessions/graph/plugin.log.
+  const trace = opts.trace || (opts.record ? () => {} : traceLine(root ? tracePath(root) : TRACE));
   const hooks = createGraphHooks({ ...opts, record, trace });
-  trace("registered");
+  trace(root ? `registered root=${root}` : "registered WITHOUT config.root — edges land in the capture copy; run: gotchibot graph plugin install");
   for (const [name, fn] of Object.entries(hooks)) api.on(name, fn, { timeoutMs: 2000 });
   return hooks;
 }

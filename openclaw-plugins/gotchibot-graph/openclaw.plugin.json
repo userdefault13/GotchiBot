@@ -7,6 +7,12 @@
   },
   "configSchema": {
     "type": "object",
-    "additionalProperties": false
+    "additionalProperties": false,
+    "properties": {
+      "root": {
+        "type": "string",
+        "description": "GotchiBot repo path (set by gotchibot graph plugin install)"
+      }
+    }
   }
 }
