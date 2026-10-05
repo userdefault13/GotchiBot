@@ -555,7 +555,7 @@ if [ -n "${TMUX:-}" ]; then
     plan) border=" Plan " ;;
     build) border=" Build " ;;
     verse) border=" Verse " ;;
-    sandbox) border=" Sandbox " ;;
+    sandbox) border=" Sandbox · local " ;;
     *) border=" Gotchi " ;;
   esac
   if [ "$AGENT" = "gotchi" ] && [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" = "openclaw-gateway" ]; then
@@ -597,6 +597,37 @@ if command -v node >/dev/null 2>&1; then
   OC_DIR="$(node --input-type=module -e 'import { currentProjectSlug, reconnectProjectDb } from "./scripts/project-context.mjs"; const slug = currentProjectSlug(); process.stdout.write((slug && reconnectProjectDb(slug)) || "");' 2>/dev/null || true)"
 fi
 [ -n "$OC_DIR" ] || OC_DIR="$ROOT"
+
+# Sandbox mode on a desk that offers its own VM (scripts/desk-vm.mjs: qualifies +
+# enabled + guest created): the chat attaches to opencode running INSIDE the guest,
+# on a copy of the project. Nothing reaches the real files until
+# `gotchibot desk-vm mode-promote --yes`. Anything failing → the local playground.
+# GOTCHIBOT_SANDBOX_LOCAL=1 forces local.
+if [ "$AGENT" = "sandbox" ] && [ "${GOTCHIBOT_SANDBOX_LOCAL:-}" != "1" ] \
+  && node "$ROOT/scripts/desk-vm.mjs" available >/dev/null 2>&1; then
+  [ -n "${TMUX:-}" ] && set_chat_border " Sandbox · VM (starting…) "
+  printf '  Sandbox · starting the desk VM…\n' >&2
+  vm_up=(node "$ROOT/scripts/desk-vm.mjs" mode-up --project "$OC_DIR" --json)
+  # The guest's model calls need keys: forward them from the vault when not in env.
+  if [ -z "${NVIDIA_API_KEY:-}${OPENROUTER_API_KEY:-}${DEEPSEEK_API_KEY:-}${OPENCODE_API_KEY:-}${OPENCODE_ZEN_API_KEY:-}" ] \
+    && command -v abra >/dev/null 2>&1; then
+    vm_up=(abra run gotchibot -- "${vm_up[@]}")
+  fi
+  vm_err="$ROOT/sessions/.desk-vm-mode.err"
+  vm_json="$("${vm_up[@]}" 2>"$vm_err" | tail -1 || true)"
+  vm_url="$(printf '%s' "$vm_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).url||"")}catch{}})' 2>/dev/null || true)"
+  vm_pass_file="$(printf '%s' "$vm_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).passwordFile||"")}catch{}})' 2>/dev/null || true)"
+  if [ -n "$vm_url" ] && [ -f "$vm_pass_file" ]; then
+    [ -n "${TMUX:-}" ] && set_chat_border " Sandbox · VM "
+    boot_mark "opencode attach (desk VM)"
+    if OPENCODE_SERVER_PASSWORD="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).password||"")' "$vm_pass_file")" \
+      opencode attach "$vm_url"; then
+      quit_to_terminal
+    fi
+  fi
+  printf '  desk VM unavailable (%s) — local sandbox\n' "$(tail -1 "$vm_err" 2>/dev/null || echo "attach failed")" >&2
+  [ -n "${TMUX:-}" ] && set_chat_border " Sandbox · local "
+fi
 
 # Inject NVIDIA/OpenRouter/etc via abracadabra when keys aren't already in env.
 # Without this, NIM models fail with "Missing Authentication header".

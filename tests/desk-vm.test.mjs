@@ -22,7 +22,11 @@ import {
   safeId,
   readFloor,
   DEFAULT_FLOOR,
+  SEED_EXCLUDES,
+  BASELINE_SCRIPT,
+  GUEST_SERVE_PORT,
 } from "../scripts/desk-vm.mjs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const mac = (o = {}) => ({ platform: "darwin", arch: "arm64", cores: 16, memGB: 64, freeGB: 40, macos: 26, limactl: "limactl version 2.2.0", ...o });
@@ -80,6 +84,10 @@ describe("Lima config", () => {
     assert.match(yaml, /loadDotSSHPubKeys: false/);
     assert.match(yaml, /forwardAgent: false/);
     assert.equal((yaml.match(/ignore: true/g) || []).length, 2);
+    // The one forward: the guest's sandbox-mode opencode server → the desk's loopback, listed first.
+    const fwd = yaml.split("portForwards:")[1];
+    assert.ok(fwd.indexOf(`guestPort: ${GUEST_SERVE_PORT}`) < fwd.indexOf("ignore: true"));
+    assert.match(fwd, /guestPort: 4097\n  hostIP: "127\.0\.0\.1"\n  hostPort: 41097/);
     assert.match(yaml, /cpus: 4\nmemory: "8GiB"\ndisk: "40GiB"/);
   });
 
@@ -153,5 +161,61 @@ describe("dispatch backend", () => {
     const r = spawnSync(process.execPath, [path.join(repo, "scripts", "desk-vm.mjs"), "backend", "auto"], { encoding: "utf8" });
     assert.equal(r.status, 0);
     assert.ok(["docker", "desk-vm"].includes(r.stdout.split("\n")[0]));
+  });
+});
+
+describe("sandbox mode in the desk VM", () => {
+  const sh = (cmd, cwd) => spawnSync("bash", ["-c", cmd], { cwd, encoding: "utf8" });
+
+  it("never seeds secrets, the Hub desk token, or bulk into the guest", (t) => {
+    const dir = mkdtempSync(path.join(tmpdir(), "gb-seed-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    for (const [p, body] of [["src/a.js", "x"], [".env", "K=1"], [".env.local", "K=2"], ["sessions/.hub.json", "{}"], ["node_modules/m/i.js", ""], ["certs/k.pem", ""], ["id.key", ""], ["README.md", "r"]]) {
+      mkdirSync(path.join(dir, path.dirname(p)), { recursive: true });
+      writeFileSync(path.join(dir, p), body);
+    }
+    const r = spawnSync("tar", [...SEED_EXCLUDES.flatMap((x) => ["--exclude", x]), "-C", dir, "-cf", "-", "."], { maxBuffer: 2 ** 26 });
+    const list = spawnSync("tar", ["-tf", "-"], { input: r.stdout, encoding: "utf8" }).stdout.split("\n").filter((l) => /[^/]$/.test(l) && l !== ".");
+    assert.deepEqual(list.sort(), ["./README.md", "./src/a.js"]);
+  });
+
+  it("promotes exactly the changes made after the baseline, and refuses a stale patch", (t) => {
+    const base = mkdtempSync(path.join(tmpdir(), "gb-promote-"));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+    const project = path.join(base, "project");
+    const guest = path.join(base, "guest");
+    mkdirSync(project);
+    writeFileSync(path.join(project, "a.txt"), "one\n");
+    writeFileSync(path.join(project, "dirty.txt"), "uncommitted\n");
+    sh("git init -q && git add a.txt && git -c user.email=t@t -c user.name=t commit -qm init", project);
+    sh(`cp -R "${project}" "${guest}"`, base);
+    // In the guest: the user's uncommitted file is part of the baseline, not the patch.
+    const ident = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+    const b = spawnSync("bash", ["-c", BASELINE_SCRIPT], { cwd: guest, env: ident, encoding: "utf8" });
+    assert.equal(b.status, 0, b.stderr);
+    writeFileSync(path.join(guest, "a.txt"), "one\ntwo\n");
+    writeFileSync(path.join(guest, "new.txt"), "fresh\n");
+    const patch = sh("git add -A && git diff --cached --binary gotchibot-baseline", guest).stdout;
+    assert.match(patch, /\+two/);
+    assert.match(patch, /new\.txt/);
+    assert.doesNotMatch(patch, /dirty\.txt/);
+    const pf = path.join(base, "p.patch");
+    writeFileSync(pf, patch);
+    assert.equal(spawnSync("git", ["apply", "--check", pf], { cwd: project }).status, 0);
+    assert.equal(spawnSync("git", ["apply", pf], { cwd: project }).status, 0);
+    assert.equal(readFileSync(path.join(project, "a.txt"), "utf8"), "one\ntwo\n");
+    // The project moved on meanwhile → the same patch no longer applies cleanly.
+    writeFileSync(path.join(project, "a.txt"), "changed on the desk\n");
+    assert.notEqual(spawnSync("git", ["apply", "--check", pf], { cwd: project }).status, 0);
+  });
+
+  it("the chat pane attaches only on an available desk VM and labels local otherwise", () => {
+    const pane = readFileSync(path.join(repo, "scripts", "chat-pane.sh"), "utf8");
+    assert.match(pane, /sandbox\) border=" Sandbox · local " ;;/);
+    assert.match(pane, /\[ "\$AGENT" = "sandbox" \] && \[ "\$\{GOTCHIBOT_SANDBOX_LOCAL:-\}" != "1" \]/);
+    assert.match(pane, /desk-vm\.mjs" available >\/dev\/null/);
+    assert.match(pane, /OPENCODE_SERVER_PASSWORD="\$\(node -e/);
+    assert.match(pane, /opencode attach "\$vm_url"/);
+    assert.doesNotMatch(pane, /opencode attach[^\n]*-p /, "password never on argv");
   });
 });
