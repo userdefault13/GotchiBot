@@ -180,20 +180,25 @@ if [ -n "${TMUX:-}" ]; then
   fi
 fi
 
+# USR1 the desk pane running `pattern`. Never by slot: on the 9-pane desk work.2
+# is the cockpit, which has no USR1 trap, so a chat start used to kill it.
+signal_desk_pane() {
+  local pattern="$1" sess pid cmd
+  [ -n "${TMUX:-}" ] || return 0
+  sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
+  sess="${sess#=}"
+  while read -r pid cmd; do
+    [[ "$cmd" == *"$pattern"* ]] || continue
+    kill -USR1 "$pid" 2>/dev/null || true
+  done < <(tmux list-panes -t "$sess:work" -F '#{pane_pid} #{pane_start_command}' 2>/dev/null || true)
+}
+
 refresh_avatar_pane() {
-  if [ -n "${TMUX:-}" ]; then
-    local pid
-    pid="$(tmux display -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.2" '#{pane_pid}' 2>/dev/null || true)"
-    [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true
-  fi
+  signal_desk_pane avatar-pane
 }
 
 poke_meet_channel_pane() {
-  if [ -n "${TMUX:-}" ]; then
-    local pid
-    pid="$(tmux display -p -t "${GOTCHIBOT_TMUX_SESSION:-gotchibot}:work.2" '#{pane_pid}' 2>/dev/null || true)"
-    [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true
-  fi
+  signal_desk_pane meet-channel-pane
 }
 
 onboarding_complete() {
@@ -311,6 +316,11 @@ ensure_desk_after_cockpit() {
   c1="$(tmux display -p -t "$sess:work.1" '#{pane_start_command}' 2>/dev/null || true)"
   c2="$(tmux display -p -t "$sess:work.2" '#{pane_start_command}' 2>/dev/null || true)"
   mode="$(tr -d '[:space:]' < "$ROOT/sessions/.layout-mode" 2>/dev/null || echo normal)"
+  # The 9-pane desk is owned by focus_desk; a refresh from here used to run the
+  # 3-pane rebuild over it (chat into the avatar slot, avatar into the cockpit's).
+  if [ "${count:-0}" -ge 7 ]; then
+    return 0
+  fi
   if [ "${count:-0}" -eq 3 ] && [[ "$c1" == *chat-pane* ]] && [[ "$c2" == *avatar-pane* ]]; then
     return 0
   fi

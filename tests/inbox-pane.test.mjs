@@ -125,7 +125,7 @@ describe("project mail.json", () => {
 describe("inbox desk pane wiring", () => {
   it("places the pane and a desk-active collapsed bar", () => {
     const layout = readFileSync(join(root, "scripts/orchestrator-layout.sh"), "utf8");
-    assert.match(layout, /DESK_PANE_COUNT=9/);
+    assert.match(layout, /DESK_PANE_COUNT=10/);
     assert.match(layout, /enter-inbox\|inbox\)/);
     assert.match(layout, /toggle-inbox\)/);
     assert.match(layout, /label-bar-pane\.sh Inbox/);

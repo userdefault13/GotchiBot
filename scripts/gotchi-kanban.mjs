@@ -770,8 +770,12 @@ function buildDetailLines(card, board, rightW) {
   }
   detailLines.push("");
   detailLines.push(`${c.bold}ACTIONS${c.reset}`);
+  // The OpenCode chat is the orchestrator's; other gotchis get a meet chat.
+  const isOrch = card.kind === "hero" && (card.id || card.hero) === board.orchId;
   detailLines.push(
-    `  ${c.dim}Enter: open this agent's chat · PgUp/PgDn · q${c.reset}`,
+    isOrch
+      ? `  ${c.dim}Enter: open the orchestrator chat · PgUp/PgDn · q${c.reset}`
+      : `  ${c.dim}Enter: open a meet chat with this agent · PgUp/PgDn · q${c.reset}`,
   );
   return detailLines;
 }
@@ -1194,7 +1198,10 @@ async function runTui() {
       }
       if (key.name === "return" || key.name === "enter") {
         const card = selectedCard(rows, sel);
-        // Hero seat → leave kanban and open that agent's chat (switch + respawn pane).
+        // Hero seat. The OpenCode chat is reserved for the orchestrator: Enter on
+        // the orch widens it; Enter on any other gotchi opens (or reuses) the 1:1
+        // meet chat with it and brings the meet room forward. Kanban stays alive
+        // (parked) so coming back keeps its place.
         if (card?.kind === "hero") {
           const heroId = card.id || card.hero;
           if (!heroId) {
@@ -1202,18 +1209,34 @@ async function runTui() {
             paint();
             return;
           }
-          setStatus(`opening chat → ${heroId}…`);
+          if (heroId === orchId) {
+            setStatus("opening the orchestrator chat…");
+            paint();
+            leaveKanbanPane("leave-kanban-chat");
+            return;
+          }
+          setStatus(`opening meet chat → ${card.name || heroId}…`);
           paint();
-          cleanup();
           const r = spawnSync(
             process.execPath,
-            [join(ROOT, "scripts/agent-focus.mjs"), "switch", String(heroId), "--respawn"],
-            { cwd: ROOT, stdio: "inherit", env: process.env },
+            [join(ROOT, "scripts/gotchi-meet.mjs"), "chat", String(heroId)],
+            {
+              cwd: ROOT,
+              encoding: "utf8",
+              env: { ...process.env, GOTCHIBOT_MEET_LAYOUT_SKIP: "1", GOTCHIBOT_MEET_QUIET: "1" },
+            },
           );
-          // 10 = opened a seat chat (cockpit should not keep looping the menu).
-          // From the kanban pane, widen chat and collapse this pane to its bar.
-          if (r.status === 0 && leaveKanbanPane("leave-kanban-chat")) process.exit(0);
-          process.exit(r.status === 0 ? 10 : r.status ?? 1);
+          if (r.status !== 0) {
+            const why = String(r.stderr || r.stdout || "").trim().split("\n").pop();
+            setStatus(`meet chat failed: ${why || `exit ${r.status}`}`);
+            paint();
+            return;
+          }
+          if (!leaveKanbanPane("toggle-meet")) {
+            setStatus(`meet chat ready with ${card.name || heroId} · open the Meeting pane`);
+          }
+          paint();
+          return;
         }
         enterCardAction(card, {
           setStatus,

@@ -18,4 +18,7 @@ tmux list-panes -t "=$sess" -F '#{pane_pid}' 2>/dev/null | while read -r pid; do
 done
 sleep 0.05
 
+# Parked chat and parked apps live in their own hidden sessions.
+tmux kill-session -t "=gbpark-$sess" 2>/dev/null || true
+tmux kill-session -t "=gbapps-$sess" 2>/dev/null || true
 tmux kill-session -t "=$sess" 2>/dev/null || tmux kill-session -t "$sess" 2>/dev/null || true

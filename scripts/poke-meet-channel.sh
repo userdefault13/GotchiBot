@@ -13,11 +13,15 @@ if command -v pgrep >/dev/null 2>&1; then
   done || true
 fi
 
+# Signal the channel pane by what it runs, never by slot: on the 9-pane desk
+# work.2 is the cockpit, and USR1 with no trap kills it.
 sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
-if tmux has-session -t "$sess" 2>/dev/null; then
-  pid="$(tmux display -p -t "${sess}:work.2" '#{pane_pid}' 2>/dev/null || true)"
-  if [ -n "${pid:-}" ]; then
-    kill -USR1 "$pid" 2>/dev/null || true
-  fi
+sess="${sess#=}"
+if tmux has-session -t "=$sess" 2>/dev/null; then
+  tmux list-panes -t "$sess:work" -F '#{pane_pid} #{pane_start_command}' 2>/dev/null | \
+    while read -r pid cmd; do
+      [[ "$cmd" == *meet-channel-pane* ]] || continue
+      kill -USR1 "$pid" 2>/dev/null || true
+    done || true
 fi
 exit 0

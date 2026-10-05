@@ -15,6 +15,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = `${ROOT}/scripts/orchestrator-layout.sh`;
 
 const ALLOWED = new Set([
+  "enter-terminal",
+  "terminal",
+  "toggle-terminal",
+  "root-shell",
   "ensure",
   "refresh",
   "refresh-soft",

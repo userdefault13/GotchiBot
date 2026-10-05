@@ -112,6 +112,7 @@ layout_safe_reexec() {
     # Soft / idempotent — safe to run in-pane (no kill-pane -a).
     fit|install-mouse) return 0 ;;
   esac
+  layout_unlock
   tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$ROOT/scripts/orchestrator-layout.sh\" $*"
   exit 0
 }
@@ -125,7 +126,10 @@ require_three_panes() {
   fi
   layout_ready && return 0
   if layout_caller_is_side_pane && [ "${GOTCHIBOT_LAYOUT_SAFE:-}" != "1" ]; then
+    local relock="$LAYOUT_LOCK_HELD"
+    layout_unlock
     tmux run-shell "cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=\"$sess_name\" \"$ROOT/scripts/orchestrator-layout.sh\" require-three"
+    [ "$relock" = 1 ] && layout_lock
     layout_ready || return 1
     return 0
   fi
@@ -136,18 +140,99 @@ require_three_panes() {
   }
 }
 
+# One list-panes per layout pass instead of a display per pane. Only focus_desk
+# turns the cache on; every pane mutation inside it reloads or drops it.
+PANE_CACHE=""
+PANE_CACHE_OK=0
+pane_cache_load() {
+  PANE_CACHE="$(tmux list-panes -t "$sess:work" -F '#{pane_index}	#{pane_dead}	#{pane_start_command}' 2>/dev/null || true)"
+  PANE_CACHE_OK=1
+}
+pane_cache_drop() {
+  PANE_CACHE=""
+  PANE_CACHE_OK=0
+}
+pane_cache_field() {
+  local want="$1" field="$2" i d c
+  while IFS=$'\t' read -r i d c; do
+    [ "$i" = "$want" ] || continue
+    if [ "$field" = dead ]; then printf '%s\n' "$d"; else printf '%s\n' "$c"; fi
+    return 0
+  done <<<"$PANE_CACHE"
+  printf '\n'
+}
+
 pane_start_cmd() {
+  if [ "$PANE_CACHE_OK" = 1 ]; then
+    pane_cache_field "$1" cmd
+    return 0
+  fi
   tmux display -p -t "$sess:work.$1" '#{pane_start_command}' 2>/dev/null || echo ""
+}
+
+pane_dead_flag() {
+  if [ "$PANE_CACHE_OK" = 1 ]; then
+    pane_cache_field "$1" dead
+    return 0
+  fi
+  tmux display -p -t "$sess:work.$1" '#{pane_dead}' 2>/dev/null || echo ""
+}
+
+# One layout change at a time. Apps (the meet room on start, panes that exit)
+# call this script too; two passes interleaving swaps and index respawns used to
+# respawn the wrong pane (avatar became a second cockpit). mkdir is atomic.
+LAYOUT_LOCK="$ROOT/sessions/.layout.lock"
+LAYOUT_WANT="$ROOT/sessions/.layout.want"
+LAYOUT_LOCK_HELD=0
+# Waits while the holder is alive (a dead holder's lock is taken over). With
+# $1=latest, a newer queued request supersedes this one: the waiter exits so a
+# burst of focus keys does the work once, for where you landed.
+layout_lock() {
+  local mode="${1:-}" tries=0 owner
+  mkdir -p "$ROOT/sessions"
+  [ "$mode" = latest ] && printf '%s\n' "$$" > "$LAYOUT_WANT"
+  while ! mkdir "$LAYOUT_LOCK" 2>/dev/null; do
+    owner="$(cat "$LAYOUT_LOCK/pid" 2>/dev/null || true)"
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -rf "$LAYOUT_LOCK"
+      continue
+    fi
+    if [ "$mode" = latest ] && [ "$(cat "$LAYOUT_WANT" 2>/dev/null)" != "$$" ]; then
+      exit 0
+    fi
+    tries=$((tries + 1))
+    # A holder that never wrote its pid (killed between mkdir and write) is stale after ~3s.
+    if [ -z "$owner" ] && [ "$tries" -ge 30 ]; then
+      rm -rf "$LAYOUT_LOCK"
+      continue
+    fi
+    # Hard ceiling (~2 min) so a wedged holder cannot block the desk forever.
+    [ "$tries" -ge 1200 ] && return 0
+    sleep 0.1
+  done
+  printf '%s\n' "$$" > "$LAYOUT_LOCK/pid"
+  LAYOUT_LOCK_HELD=1
+  # Superseded while we waited? Release and let the newer request run.
+  if [ "$mode" = latest ] && [ "$(cat "$LAYOUT_WANT" 2>/dev/null)" != "$$" ]; then
+    layout_unlock
+    exit 0
+  fi
+}
+layout_unlock() {
+  [ "$LAYOUT_LOCK_HELD" = 1 ] || return 0
+  rm -rf "$LAYOUT_LOCK"
+  LAYOUT_LOCK_HELD=0
 }
 
 # Respawn work.N only when it is dead or runs something else, so a live pane keeps its state.
 respawn_unless() {
   local n="$1" want="$2" cmd="$3"
-  if [[ "$(pane_start_cmd "$n")" == *"$want"* ]] && \
-     [ "$(tmux display -p -t "$sess:work.$n" '#{pane_dead}' 2>/dev/null)" = "0" ]; then
+  if [[ "$(pane_start_cmd "$n")" == *"$want"* ]] && [ "$(pane_dead_flag "$n")" = "0" ]; then
     return 0
   fi
   tmux respawn-pane -t "$sess:work.$n" -k "$cmd" 2>/dev/null || true
+  [ "$PANE_CACHE_OK" = 1 ] && pane_cache_load
+  return 0
 }
 
 # A chat app is running under the pane: OpenCode, the OpenClaw TUI, or the Hub desk
@@ -304,7 +389,10 @@ rebuild_panes() {
 }
 
 refresh_desk_borders() {
-  node "$ROOT/scripts/desk-active.mjs" publish --force >/dev/null 2>&1 || true
+  [ "${BORDERS_QUEUED:-0}" = 1 ] && return 0
+  BORDERS_QUEUED=1
+  # Cosmetic, and node starts in ~250ms: never block a pane switch on it.
+  ( node "$ROOT/scripts/desk-active.mjs" publish --force >/dev/null 2>&1 || true ) </dev/null >/dev/null 2>&1 &
 }
 
 save_layout() {
@@ -327,6 +415,17 @@ apply_window_policy() {
   own_pane_numbering
   tmux set-option -t "$sess" window-size manual 2>/dev/null || true
   tmux set-option -t "$sess" aggressive-resize off 2>/dev/null || true
+  install_revive_hook
+}
+
+# A pane whose app exits (or crashes) used to close, and every slot after it
+# shifted left — index-based respawns then hit the wrong pane. Dead panes now
+# keep their slot and the pane-died hook revives them (focus_desk respawns any
+# dead slot with what belongs there).
+install_revive_hook() {
+  local revive="cd \"$ROOT\" && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION='$sess_name' '$ROOT/scripts/orchestrator-layout.sh' revive"
+  tmux set-option -w -t "=$sess_name:work" remain-on-exit on 2>/dev/null || true
+  tmux set-hook -t "$sess" pane-died "run-shell -b \"$revive\"" 2>/dev/null || true
 }
 
 ensure_panes() {
@@ -477,9 +576,35 @@ install_avatar_page_keys() {
   # prefix b (lowercase) stays chat-max. Shift+B is the kanban toggle.
   local rkb="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-kanban"
   tmux bind-key -T prefix B if-shell -F "$sess_if" "run-shell -b \"$rkb\"" 2>/dev/null || true
+  # Terminal pane: Ctrl+Space then Shift+T (again returns to chat). Shift+R opens
+  # a root shell in it (Touch ID via sudo; scripts/root-shell.sh).
+  local rtm="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh toggle-terminal"
+  local rrt="cd $ROOT && GOTCHIBOT_LAYOUT_SAFE=1 GOTCHIBOT_TMUX_SESSION=$sess_name $ROOT/scripts/orchestrator-layout.sh root-shell"
+  tmux bind-key -T prefix T if-shell -F "$sess_if" "run-shell -b \"$rtm\"" 2>/dev/null || true
+  tmux bind-key -T prefix R if-shell -F "$sess_if" "run-shell -b \"$rrt\"" 2>/dev/null || true
+}
+
+# The 9-pane desk (files · avatar · cockpit · chat · factory · dossier · inbox ·
+# meeting · kanban). The 3-pane rebuild below respawns work.1/work.2 as chat and
+# avatar — on this desk that is the avatar and cockpit slots, so callers that
+# still ask for refresh/ensure get the current focus re-applied instead.
+nine_pane_desk() {
+  [ "$(pane_count)" -ge 7 ] || return 1
+  pane_is_kind "$(pane_start_cmd 0)" files
+}
+
+desk_focus_from_mode() {
+  case "$(layout_mode)" in
+    chat|avatar|cockpit|factory|pstack|inbox|meet|kanban|terminal) layout_mode ;;
+    *) echo chat ;;
+  esac
 }
 
 start_pane_commands() {
+  if nine_pane_desk; then
+    focus_desk "$(desk_focus_from_mode)"
+    return 0
+  fi
   require_three_panes || return 1
   tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || \
     tmux send-keys -t "$sess:work.0" C-c Enter "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" Enter
@@ -699,6 +824,12 @@ enter_meet_gallery() {
 
 refresh_meet_gallery() {
   if [ "$(layout_mode)" != "meet" ] && [ "$(layout_mode)" != "meet-gallery" ]; then
+    return 0
+  fi
+  # The meet room asks for this on every start. When focus_desk meet already
+  # put it in place, a second full pass only raced the next switch.
+  if [ "$(layout_mode)" = "meet" ] && [ "$(pane_count)" -eq "$DESK_PANE_COUNT" ] && \
+     [[ "$(pane_start_cmd "$(focus_index meet)")" == *meet-room-pane* ]]; then
     return 0
   fi
   focus_desk meet
@@ -926,7 +1057,7 @@ leave_pstack_orch() {
 # files · avatar · cockpit · chat · factory · dossier · inbox · meeting · kanban
 # Avatar stays open. One of cockpit/chat/factory/dossier/inbox/meeting/kanban is the wide pane.
 # Kanban is index 8 so factory(4) dossier(5) inbox(6) meet(7) stay put.
-DESK_PANE_COUNT=9
+DESK_PANE_COUNT=10
 
 focus_index() {
   case "$1" in
@@ -938,6 +1069,7 @@ focus_index() {
     inbox) echo 6 ;;
     meet) echo 7 ;;
     kanban) echo 8 ;;
+    terminal) echo 9 ;;
     *) echo 3 ;;
   esac
 }
@@ -954,13 +1086,14 @@ pane_is_kind() {
     inbox) [[ "$cmd" == *inbox-pane* || "$cmd" == *"label-bar-pane.sh Inbox"* ]] ;;
     meet) [[ "$cmd" == *meet-room* || "$cmd" == *"label-bar-pane.sh Meeting"* ]] ;;
     kanban) [[ "$cmd" == *kanban-pane* || "$cmd" == *"label-bar-pane.sh Kanban"* ]] ;;
+    terminal) [[ "$cmd" == *terminal-pane* || "$cmd" == *"label-bar-pane.sh Terminal"* ]] ;;
     *) return 1 ;;
   esac
 }
 
 # tmux apply widths in pane-index order, so the indexes have to be the screen order.
 arrange_visual_order() {
-  local -a kinds=(files avatar cockpit chat factory dossier inbox meet kanban)
+  local -a kinds=(files avatar cockpit chat factory dossier inbox meet kanban terminal)
   local i j kind last
   last=$((DESK_PANE_COUNT - 1))
   for ((i = 0; i <= last; i++)); do
@@ -969,6 +1102,7 @@ arrange_visual_order() {
     for ((j = i + 1; j <= last; j++)); do
       if pane_is_kind "$(pane_start_cmd "$j")" "$kind"; then
         tmux swap-pane -d -s "$sess:work.$i" -t "$sess:work.$j" 2>/dev/null || true
+        [ "$PANE_CACHE_OK" = 1 ] && pane_cache_load
         break
       fi
     done
@@ -997,7 +1131,8 @@ collapse_chat_to_bar() {
   local p
   park_chat_pane || true
   p="$(chat_pane_index)"
-  if [[ "$(pane_start_cmd "$p")" != *chat-bar-pane* ]]; then
+  if [[ "$(pane_start_cmd "$p")" != *chat-bar-pane* ]] || \
+     [ "$(tmux display -p -t "$sess:work.$p" '#{pane_dead}' 2>/dev/null)" = 1 ]; then
     tmux respawn-pane -t "$sess:work.$p" -k "cd \"$ROOT\" && exec ./scripts/chat-bar-pane.sh watch" 2>/dev/null || true
   fi
   tmux set-option -p -t "$sess:work.$p" -u @gotchibot-chat 2>/dev/null || true
@@ -1061,43 +1196,118 @@ label_w_dossier=3
 label_w_inbox=3
 label_w_meet=3
 label_w_kanban=3
+label_w_terminal=3
+
+# Tool apps (cockpit, factory, dossier, inbox, meeting, kanban) are parked, not
+# killed, when another app takes focus: the live pane swaps into a hidden
+# session and a label bar takes its slot. Focusing it again swaps it back —
+# no cold start, and it keeps its scroll and selection. Chat parks the same way.
+apps_park_session() {
+  echo "gbapps-$sess_name"
+}
+
+ensure_apps_park() {
+  local park sid
+  park="$(apps_park_session)"
+  tmux has-session -t "=$park" 2>/dev/null && return 0
+  sid="$(tmux new-session -d -P -F '#{session_id}' -s "$park" -n _keep -x 200 -y 50 "exec tail -f /dev/null" 2>/dev/null)" || return 1
+  tmux set-option -t "$sid" base-index 0 2>/dev/null || true
+  tmux set-option -t "$sid" window-size manual 2>/dev/null || true
+  tmux set-option -t "$sid" remain-on-exit off 2>/dev/null || true
+}
+
+# Pane id of the parked app for `kind` whose start command contains `match`.
+parked_app_pane() {
+  local kind="$1" match="$2" park line name id dead cmd
+  park="$(apps_park_session)"
+  tmux has-session -t "=$park" 2>/dev/null || return 1
+  while IFS=$'\t' read -r name id dead cmd; do
+    [ "$name" = "$kind" ] || continue
+    if [ "$dead" = 0 ] && [[ "$cmd" == *"$match"* ]]; then
+      printf '%s\n' "$id"
+      return 0
+    fi
+  done < <(tmux list-panes -s -t "=$park" -F '#{window_name}	#{pane_id}	#{pane_dead}	#{pane_start_command}' 2>/dev/null)
+  return 1
+}
+
+drop_parked() {
+  local kind="$1" park
+  park="$(apps_park_session)"
+  while tmux kill-window -t "=$park:$kind" 2>/dev/null; do :; done
+}
+
+# Slot idx holds the live app: move it into the park, leave a placeholder.
+park_slot_app() {
+  local idx="$1" kind="$2" park hold w h
+  ensure_apps_park || return 1
+  park="$(apps_park_session)"
+  drop_parked "$kind"
+  w="$(tmux display -p -t "$sess:work" '#{window_width}' 2>/dev/null || echo 200)"
+  h="$(tmux display -p -t "$sess:work" '#{window_height}' 2>/dev/null || echo 50)"
+  tmux resize-window -t "=$park:_keep" -x "$w" -y "$h" 2>/dev/null || true
+  hold="$(tmux new-window -d -P -F '#{pane_id}' -t "=$park:" -n "$kind" "exec tail -f /dev/null" 2>/dev/null)" || return 1
+  tmux swap-pane -d -s "$sess:work.$idx" -t "$hold" 2>/dev/null || {
+    tmux kill-pane -t "$hold" 2>/dev/null || true
+    return 1
+  }
+}
+
+# Bring the parked app back into slot idx. The bar it replaces is killed.
+unpark_slot_app() {
+  local idx="$1" kind="$2" match="$3" id park
+  id="$(parked_app_pane "$kind" "$match")" || return 1
+  park="$(apps_park_session)"
+  tmux swap-pane -d -s "$id" -t "$sess:work.$idx" 2>/dev/null || return 1
+  tmux kill-window -t "=$park:$kind" 2>/dev/null || true
+}
+
+# One tool slot: focused → app (unparked if it is waiting), else a label bar.
+place_slot() {
+  local idx="$1" kind="$2" focused="$3" match="$4" app_cmd="$5" label="$6" cur
+  cur="$(pane_start_cmd "$idx")"
+  if [ "$focused" = 1 ]; then
+    if [[ "$cur" == *"$match"* ]] && [ "$(pane_dead_flag "$idx")" = 0 ]; then
+      return 0
+    fi
+    if unpark_slot_app "$idx" "$kind" "$match"; then
+      [ "$PANE_CACHE_OK" = 1 ] && pane_cache_load
+      return 0
+    fi
+    tmux respawn-pane -t "$sess:work.$idx" -k "$app_cmd" 2>/dev/null || true
+    [ "$PANE_CACHE_OK" = 1 ] && pane_cache_load
+    return 0
+  fi
+  if [[ "$cur" == *"$match"* ]] && [ "$(pane_dead_flag "$idx")" = 0 ] && \
+     [ "${GOTCHIBOT_PARK_APPS:-1}" != 0 ] && park_slot_app "$idx" "$kind"; then
+    [ "$PANE_CACHE_OK" = 1 ] && pane_cache_load
+  fi
+  respawn_unless "$idx" "label-bar-pane.sh $label" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh $label"
+}
 
 place_focus_apps() {
   local focus="$1" view
   view="$(tmux show-options -qv -t "$sess" @gotchibot-factory-view 2>/dev/null || true)"
   view="${view:-tree}"
-  if [ "$focus" = "cockpit" ]; then
-    respawn_unless 2 cockpit-pane "cd \"$ROOT\" && exec ./scripts/cockpit-pane.sh"
-  else
-    respawn_unless 2 "label-bar-pane.sh Cockpit" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Cockpit"
-  fi
-  if [ "$focus" = "factory" ]; then
-    if [[ "$(pane_start_cmd 4)" != *factory-window* ]] || [[ "$(pane_start_cmd 4)" != *"VIEW='$view'"* ]]; then
-      tmux respawn-pane -t "$sess:work.4" -k "cd \"$ROOT\" && GOTCHIBOT_FACTORY_VIEW='$view' exec ./scripts/factory-window-pane.sh watch" 2>/dev/null || true
+  place_slot 2 cockpit "$([ "$focus" = cockpit ] && echo 1 || echo 0)" cockpit-pane "cd \"$ROOT\" && exec ./scripts/cockpit-pane.sh" Cockpit
+  # Factory restarts when its view changed; a parked one in another view is dropped.
+  if [ "$focus" = factory ]; then
+    local fcur
+    fcur="$(pane_start_cmd 4)"
+    if [[ "$fcur" == *factory-window* ]] && [[ "$fcur" != *"VIEW='$view'"* ]]; then
+      tmux respawn-pane -t "$sess:work.4" -k "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Factory" 2>/dev/null || true
+      [ "$PANE_CACHE_OK" = 1 ] && pane_cache_load
     fi
-  else
-    respawn_unless 4 "label-bar-pane.sh Factory" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Factory"
+    parked_app_pane factory "VIEW='$view'" >/dev/null || drop_parked factory
   fi
-  if [ "$focus" = "pstack" ]; then
-    respawn_unless 5 pstack-window "cd \"$ROOT\" && exec ./scripts/pstack-window.mjs watch"
-  else
-    respawn_unless 5 "label-bar-pane.sh Dossier" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Dossier"
-  fi
-  if [ "$focus" = "inbox" ]; then
-    respawn_unless 6 inbox-pane "cd \"$ROOT\" && exec ./scripts/inbox-pane.sh"
-  else
-    respawn_unless 6 "label-bar-pane.sh Inbox" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Inbox"
-  fi
-  if [ "$focus" = "meet" ]; then
-    respawn_unless 7 meet-room-pane "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh"
-  else
-    respawn_unless 7 "label-bar-pane.sh Meeting" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Meeting"
-  fi
-  if [ "$focus" = "kanban" ]; then
-    respawn_unless 8 kanban-pane "cd \"$ROOT\" && exec ./scripts/kanban-pane.sh"
-  else
-    respawn_unless 8 "label-bar-pane.sh Kanban" "cd \"$ROOT\" && exec ./scripts/label-bar-pane.sh Kanban"
-  fi
+  place_slot 4 factory "$([ "$focus" = factory ] && echo 1 || echo 0)" "factory-window" \
+    "cd \"$ROOT\" && GOTCHIBOT_FACTORY_VIEW='$view' exec ./scripts/factory-window-pane.sh watch" Factory
+  place_slot 5 dossier "$([ "$focus" = pstack ] && echo 1 || echo 0)" pstack-window "cd \"$ROOT\" && exec ./scripts/pstack-window.mjs watch" Dossier
+  place_slot 6 inbox "$([ "$focus" = inbox ] && echo 1 || echo 0)" inbox-pane "cd \"$ROOT\" && exec ./scripts/inbox-pane.sh" Inbox
+  place_slot 7 meet "$([ "$focus" = meet ] && echo 1 || echo 0)" meet-room-pane "cd \"$ROOT\" && exec ./scripts/meet-room-pane.sh" Meeting
+  place_slot 8 kanban "$([ "$focus" = kanban ] && echo 1 || echo 0)" kanban-pane "cd \"$ROOT\" && exec ./scripts/kanban-pane.sh" Kanban
+  # Parked like the other apps, so the shell (and its history) survives switches.
+  place_slot 9 terminal "$([ "$focus" = terminal ] && echo 1 || echo 0)" terminal-pane "cd \"$ROOT\" && exec ./scripts/terminal-pane.sh" Terminal
 }
 
 # Pure widths for one focus at a window width. No tmux.
@@ -1105,7 +1315,7 @@ place_focus_apps() {
 focus_pane_widths() {
   local focus="$1" win="$2"
   local bar sep content
-  local w0 w1 w2 w3 w4 w5 w6 w7 w8 used budget
+  local w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 used budget
   local name cur progressed guard
   bar="$chat_collapsed"
   sep=$((DESK_PANE_COUNT - 1))
@@ -1119,6 +1329,7 @@ focus_pane_widths() {
   w6="$label_w_inbox"
   w7="$label_w_meet"
   w8="$label_w_kanban"
+  w9="$label_w_terminal"
   case "$focus" in
     # Collapsed label bars stay at label_w (3): one space, the glyph, one space.
     # Do not shrink them to 1. Files stays 3. Avatar is not a donor.
@@ -1132,16 +1343,17 @@ focus_pane_widths() {
     meet) w7=0 ;;
     cockpit) w2=0 ;;
     kanban) w8=0 ;;
+    terminal) w9=0 ;;
     *) w3=0 ;;
   esac
-  used=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8))
+  used=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8 + w9))
   budget=$((content - used))
   # Avatar stays open. If the terminal is tight, shrink the label panes first.
   guard=0
   while [ "$budget" -lt 36 ] && [ "$guard" -lt 40 ]; do
     guard=$((guard + 1))
     progressed=0
-    for name in w8 w7 w6 w5 w4 w3 w2; do
+    for name in w9 w8 w7 w6 w5 w4 w3 w2; do
       cur="${!name}"
       if [ "$cur" -gt "$bar" ]; then
         printf -v "$name" '%s' "$((cur - 1))"
@@ -1162,16 +1374,17 @@ focus_pane_widths() {
     inbox) w6="$budget" ;;
     meet) w7="$budget" ;;
     kanban) w8="$budget" ;;
+    terminal) w9="$budget" ;;
     *) w3="$budget" ;;
   esac
-  printf '%s %s %s %s %s %s %s %s %s\n' "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8"
+  printf '%s %s %s %s %s %s %s %s %s %s\n' "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8" "$w9"
 }
 
 apply_focus_sizes() {
   local focus="$1"
   local win client_w
   apply_window_height
-  local w0 w1 w2 w3 w4 w5 w6 w7 w8
+  local w0 w1 w2 w3 w4 w5 w6 w7 w8 w9
   client_w="$(tmux display -p -t "$sess" '#{client_width}' 2>/dev/null || true)"
   client_w="${client_w:-0}"
   win="$(window_width)"
@@ -1181,10 +1394,10 @@ apply_focus_sizes() {
     win="$client_w"
   fi
   # shellcheck disable=SC2162
-  read -r w0 w1 w2 w3 w4 w5 w6 w7 w8 <<EOF
+  read -r w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 <<EOF
 $(focus_pane_widths "$focus" "$win")
 EOF
-  apply_focus_layout "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8" || true
+  apply_focus_layout "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8" "$w9" || true
 }
 
 label_desk_panes() {
@@ -1204,6 +1417,7 @@ pane_kind_of() {
   if pane_is_kind "$cmd" inbox; then echo inbox; return; fi
   if pane_is_kind "$cmd" meet; then echo meet; return; fi
   if pane_is_kind "$cmd" kanban; then echo kanban; return; fi
+  if pane_is_kind "$cmd" terminal; then echo terminal; return; fi
   echo other
 }
 
@@ -1239,11 +1453,17 @@ pane_step() {
     inbox) focus_desk inbox ;;
     meet) focus_desk meet ;;
     kanban) focus_desk kanban ;;
+    terminal) focus_desk terminal ;;
   esac
 }
 
 install_pane_step_keys() {
-  local table step
+  local table step stamp
+  # 33 bind/set calls: skip when this server already has them for this root.
+  stamp="steps-v2:$ROOT:$sess_name"
+  if [ "${1:-}" != force ] && [ "$(tmux show-options -gqv @gotchibot-step-keys 2>/dev/null)" = "$stamp" ]; then
+    return 0
+  fi
   tmux set-option -t "$sess" extended-keys always 2>/dev/null || \
     tmux set-option -t "$sess" extended-keys on 2>/dev/null || true
   # Terminal.app does not emit Ctrl+Shift+Arrow unless the profile sends it.
@@ -1266,6 +1486,9 @@ install_pane_step_keys() {
     tmux bind-key -T "$table" User20 run-shell "$step pane-left" 2>/dev/null || true
     tmux bind-key -T "$table" User21 run-shell "$step pane-right" 2>/dev/null || true
   done
+  # A desk booted before the revive hook existed gets it on its first switch.
+  install_revive_hook
+  tmux set-option -g @gotchibot-step-keys "$stamp" 2>/dev/null || true
 }
 
 # Widen one app. The others stay as panes, collapsed to bars. Chat is parked, not killed.
@@ -1273,8 +1496,20 @@ focus_desk() {
   local focus="$1" idx view
   session_exists || return 1
   ensure_app_panes || return 1
+  pane_cache_load
   arrange_visual_order
+  # Files and avatar have no focus state of their own; bring them back if they died.
+  if [ "$(pane_dead_flag 0)" = 1 ]; then
+    tmux respawn-pane -t "$sess:work.0" -k "cd \"$ROOT\" && exec ./scripts/sidebar-pane.sh watch" 2>/dev/null || true
+  fi
+  if [ "$(pane_dead_flag 1)" = 1 ]; then
+    tmux respawn-pane -t "$sess:work.1" -k "cd \"$ROOT\" && exec ./scripts/avatar-pane.sh watch" 2>/dev/null || true
+    tmux set-option -p -t "$sess:work.1" @gotchibot-avatar 1 2>/dev/null || true
+    pane_cache_load
+  fi
   place_focus_apps "$focus"
+  # Chat park/unpark swaps panes outside this cache's bookkeeping.
+  pane_cache_drop
   if [ "$focus" = "chat" ]; then
     expand_chat
   else
@@ -1652,7 +1887,7 @@ install_agent_keys() {
   install_layout_keys gotchi-chat
   install_layout_keys gotchi-files
   install_layout_keys gotchi-avatar
-  install_pane_step_keys
+  install_pane_step_keys force
   # Mouse off. Keyboard still pages the avatar roster.
   if [ "$(layout_mode)" = "meet-gallery" ]; then
     install_meet_gallery_mouse 2>/dev/null || true
@@ -1811,12 +2046,12 @@ if [ "$cmd" = "sizes" ]; then
     ''|*[!0-9]*) echo "usage: orchestrator-layout.sh sizes <width> [focus]" >&2; exit 2 ;;
   esac
   # shellcheck disable=SC2162
-  read -r w0 w1 w2 w3 w4 w5 w6 w7 w8 <<EOF
+  read -r w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 <<EOF
 $(focus_pane_widths "$focus" "$win")
 EOF
-  sum=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8))
-  printf 'files=%s avatar=%s cockpit=%s chat=%s factory=%s dossier=%s inbox=%s meet=%s kanban=%s sum=%s\n' \
-    "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8" "$sum"
+  sum=$((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8 + w9))
+  printf 'files=%s avatar=%s cockpit=%s chat=%s factory=%s dossier=%s inbox=%s meet=%s kanban=%s terminal=%s sum=%s\n' \
+    "$w0" "$w1" "$w2" "$w3" "$w4" "$w5" "$w6" "$w7" "$w8" "$w9" "$sum"
   exit 0
 fi
 # Client lines → window rows. No tmux.
@@ -1832,6 +2067,14 @@ fi
 # apply_window_policy (refresh-soft, sidebar, enter-*-max, fit, …) all resolve indices.
 own_pane_numbering
 layout_safe_reexec "$cmd" ${2:+"$2"}
+trap layout_unlock EXIT
+# Absolute focus requests coalesce (latest wins); everything else queues in order.
+case "$cmd" in
+  enter-cockpit|boot-cockpit|enter-inbox|inbox|enter-kanban|kanban|enter-terminal|terminal|toggle-*|enter-factory|factory|enter-pstack-dossier|pstack-dossier|leave-*)
+    layout_lock latest ;;
+  *)
+    layout_lock ;;
+esac
 
 case "$cmd" in
   ensure)
@@ -1843,7 +2086,9 @@ case "$cmd" in
     finish_ensure
     ;;
   refresh-soft)
-    if [ "$(layout_mode)" = "meet-gallery" ]; then
+    if nine_pane_desk; then
+      focus_desk "$(desk_focus_from_mode)"
+    elif [ "$(layout_mode)" = "meet-gallery" ]; then
       refresh_meet_gallery
     elif [ "$(layout_mode)" = "pstack-dossier" ]; then
       refresh_pstack_dossier
@@ -1867,6 +2112,10 @@ case "$cmd" in
     fit_quiet
     ;;
   refresh)
+    if nine_pane_desk; then
+      focus_desk "$(desk_focus_from_mode)"
+      exit 0
+    fi
     if [ "$(layout_mode)" = "meet-gallery" ] || [ "$(layout_mode)" = "pstack-dossier" ] || [ "$(layout_mode)" = "cockpit" ]; then
       boot_cockpit_desk
       exit 0
@@ -1986,6 +2235,21 @@ case "$cmd" in
   enter-kanban|kanban)
     focus_desk kanban
     ;;
+  enter-terminal|terminal)
+    focus_desk terminal
+    ;;
+  toggle-terminal)
+    if [ "$(layout_mode)" = "terminal" ]; then
+      focus_desk chat
+    else
+      focus_desk terminal
+    fi
+    ;;
+  root-shell)
+    # Ctrl+Space R: focus the Terminal and start scripts/root-shell.sh in it.
+    focus_desk terminal
+    tmux send-keys -t "$sess:work.$(focus_index terminal)" C-u "./scripts/root-shell.sh" Enter 2>/dev/null || true
+    ;;
   toggle-kanban)
     if [ "$(layout_mode)" = "kanban" ]; then
       focus_desk cockpit
@@ -2007,6 +2271,19 @@ case "$cmd" in
     ;;
   leave-cockpit)
     leave_cockpit_desk
+    ;;
+  revive)
+    # pane-died hook. Re-apply the current focus (respawns dead slots) and put
+    # the cursor back where it was. At most once per 5s so a crash loop idles.
+    nine_pane_desk || exit 0
+    now="$(date +%s)"
+    last="$(cat "$ROOT/sessions/.layout-revive" 2>/dev/null || echo 0)"
+    case "$last" in ''|*[!0-9]*) last=0 ;; esac
+    [ $((now - last)) -lt 5 ] && exit 0
+    printf '%s\n' "$now" > "$ROOT/sessions/.layout-revive"
+    was="$(tmux display -p -t "$sess:work" '#{pane_id}' 2>/dev/null || true)"
+    focus_desk "$(desk_focus_from_mode)"
+    [ -n "$was" ] && tmux select-pane -t "$was" 2>/dev/null || true
     ;;
   require-three)
     # Invoked via run-shell from a side pane so rebuild is not aborted mid-flight.

@@ -136,9 +136,11 @@ describe("update-check git network", () => {
     }
   });
 
-  it("local 0.2.2 vs published 0.2.1 is not an update and does not spawn git", async () => {
+  it("a local version ahead of published 0.2.1 is not an update and does not spawn git", async () => {
+    // Any release after 0.2.1 — the check is about not downgrading, not one version.
     const local = JSON.parse(readFileSync(path.join(root, "config/version.json"), "utf8")).version;
-    assert.equal(local, "0.2.2");
+    const [a, b, c] = local.split(".").map(Number);
+    assert.ok(a > 0 || b > 2 || (b === 2 && c > 1), `local ${local} must be newer than 0.2.1`);
     const dir = mkdtempSync(path.join(tmpdir(), "gb-upd-"));
     const manifest = {
       version: "0.2.1",
@@ -153,7 +155,7 @@ describe("update-check git network", () => {
       assert.equal(r.status, 0, `status ${r.status} signal ${r.signal} stderr ${r.stderr}`);
       assert.ok(r.elapsed < 7000, `launch check hung for ${r.elapsed}ms`);
       assert.doesNotMatch(r.stdout || "", /update available/);
-      assert.doesNotMatch(r.stdout || "", /0\.2\.2\s*→\s*0\.2\.1/);
+      assert.doesNotMatch(r.stdout || "", new RegExp(`${local.replace(/\./g, "\\.")}\\s*→\\s*0\\.2\\.1`));
       assert.equal(existsSync(path.join(dir, "git-args")), false, "git was spawned for a downgrade");
     } finally {
       served.child.kill();
