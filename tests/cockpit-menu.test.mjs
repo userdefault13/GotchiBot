@@ -47,8 +47,8 @@ const LEAVES_DOWN = [
   "select-project",
   "checkpoint-project",
   "hub-network",
-  "hub-phone",
   "hub-lite",
+  "hub-phone",
   "hub-implement",
   "meet",
   "kanban",
@@ -86,8 +86,8 @@ describe("cockpit menu nesting", () => {
       "Settings…",
     ]);
     assert.deepEqual(down.groups["group:project"], ["select-project", "checkpoint-project"]);
-    assert.deepEqual(down.groups["group:hub"], ["hub-network", "hub-phone", "hub-lite", "hub-implement"]);
-    assert.deepEqual(up.groups["group:hub"], ["hub-network", "hub-phone", "hub-lite", "hub", "hub-infra"]);
+    assert.deepEqual(down.groups["group:hub"], ["hub-network", "hub-lite", "hub-phone", "hub-implement"]);
+    assert.deepEqual(up.groups["group:hub"], ["hub-network", "hub-lite", "hub-phone", "hub", "hub-infra"]);
     assert.deepEqual(down.groups["group:desk"], ["kanban", "inbox", "pstack", "factory"]);
     assert.deepEqual(down.groups["group:view"], ["roster", "export-roster", "import", "marketplace"]);
     assert.deepEqual(down.groups["group:mint"], ["mint", "mint-collateral"]);

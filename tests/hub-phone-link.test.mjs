@@ -46,7 +46,7 @@ describe("hub phone link", () => {
       };
       assert.equal(await main(["--name", "Pixel"], { root: dir, request }), 0);
       assert.deepEqual(seen[0], ["POST", "/api/gotchibot/hub/pair/phone", { name: "Pixel" }]);
-      assert.match(logs.join("\n"), /\/app\/#pair=WXYZ-1234/);
+      assert.match(logs.join("\n"), /code {5}WXYZ-1234/);
     } finally {
       console.log = orig;
       console.error = origErr;

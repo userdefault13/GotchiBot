@@ -2654,10 +2654,10 @@ function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
           ? "Hub network (this computer is the Hub)"
           : "Set up Hub network (Tailscale)",
     ),
-    item("hub-phone", "Link a phone (QR code)"),
     net.hubInstalled
       ? item("hub-dashboard", "Hub dashboard (desks · db · projects · logs · VM)")
       : item("hub-lite", "Hub lite view (not the hub dashboard)"),
+    item("hub-phone", "Link a phone (QR code)"),
     ...(sshHubUp
       ? [
           item("hub", "Hub status (iMac OpenClaw · tunnel · Docker)"),
