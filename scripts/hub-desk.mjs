@@ -79,6 +79,16 @@ export function deskSyncEnv(slug, env = process.env) {
   return { GOTCHIBOT_DESK_SLUG: slug, GOTCHIBOT_DESK_DEVICE: deskDeviceLabel(env) };
 }
 
+/**
+ * Reuse hub-desk-recovery's SSH master (~/.ssh/gb-%C, same user@host): an
+ * attach then rides a connection that already passed Tailscale SSH's check, so
+ * it neither waits on a handshake nor hits a check prompt and falls back to local
+ * chat. ControlMaster=no: with no master running, ssh just connects normally.
+ */
+export function sshMasterOpts(home = homedir()) {
+  return ["-o", `ControlPath=${join(home, ".ssh", "gb-%C")}`, "-o", "ControlMaster=no"];
+}
+
 /** `open` exit codes the desk chat pane uses to pick its local fallback. */
 export const OPEN_EXIT = { ok: 0, error: 1, hubDown: 3, noSsh: 4 };
 const SSH_TARGET_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/;
@@ -135,7 +145,7 @@ async function openDesk(argv) {
         stdio: "inherit",
         env: { ...process.env, ...syncEnv },
       })
-    : spawn("ssh", ["-t", target, remoteAttachCommand(desk, syncEnv)], { stdio: "inherit" });
+    : spawn("ssh", [...sshMasterOpts(), "-t", target, remoteAttachCommand(desk, syncEnv)], { stdio: "inherit" });
 
   // Keystrokes belong to the TUI; a stray SIGINT must not kill this wrapper.
   const ignore = () => {};

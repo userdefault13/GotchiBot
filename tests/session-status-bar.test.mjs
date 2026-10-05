@@ -5,12 +5,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { formatSessionModel, resolveLiveChatModel } from "../scripts/live-chat-model.mjs";
+import { formatSessionModel, resolveLiveChatModel, chatBackend, lastKnownHubModel } from "../scripts/live-chat-model.mjs";
+import { sshMasterOpts } from "../scripts/hub-desk.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bar = join(root, "scripts/session-status-bar.sh");
@@ -142,5 +143,59 @@ describe("session-status-bar.sh --print-chat-model", () => {
       GOTCHIBOT_OPENCODE_MODEL: "openrouter/stealth/space-bunny-alpha",
     });
     assert.equal(out, "widget-preview:free");
+  });
+});
+
+describe("desk ↔ Hub model sync", () => {
+  it("does not report the Hub session's model while the chat pane runs local OpenCode", async () => {
+    const dir = tree();
+    writeFileSync(join(dir, "sessions/.project-current"), "proj\n");
+    writeFileSync(join(dir, "sessions/.chat-backend"), "local\n");
+    let called = false;
+    const model = await resolveLiveChatModel({
+      root: dir,
+      env: {},
+      hubRequest: async () => {
+        called = true;
+        return { sessionId: "ses_x", opencodeUrl: "http://127.0.0.1:4096" };
+      },
+      readSession: async () => ({ providerID: "opencode-go", id: "glm-5.3" }),
+    });
+    assert.equal(model, "");
+    assert.equal(called, false);
+  });
+
+  it("reads the Hub session while the chat is the Hub's", async () => {
+    const dir = tree();
+    writeFileSync(join(dir, "sessions/.project-current"), "proj\n");
+    writeFileSync(join(dir, "sessions/.chat-backend"), "hub proj\n");
+    const model = await resolveLiveChatModel({
+      root: dir,
+      env: {},
+      hubRequest: async () => ({ sessionId: "ses_x", opencodeUrl: "http://127.0.0.1:4096" }),
+      readSession: async () => ({ providerID: "opencode-go", id: "glm-5.3" }),
+    });
+    assert.equal(model, "opencode-go/glm-5.3");
+    assert.deepEqual(chatBackend(dir), { mode: "hub", slug: "proj" });
+    // …and remembers it, so a later local fallback starts on the Hub's model.
+    assert.equal(lastKnownHubModel(dir), "opencode-go/glm-5.3");
+  });
+
+  it("marks a paired desk's local fallback chat in the status bar", () => {
+    const dir = tree();
+    writeFileSync(join(dir, "sessions/.hub.json"), "{}");
+    writeFileSync(join(dir, "sessions/.chat-backend"), "local\n");
+    writeFileSync(join(dir, "sessions/.chat-model"), "opencode-go/glm-5.3\n");
+    const out = execFileSync("bash", [bar, "--print-chat-model"], { encoding: "utf8", env: { ...process.env, GOTCHIBOT_STATUS_ROOT: dir } });
+    assert.match(out, /glm-5\.3 \(local\)/);
+  });
+
+  it("attaches over recovery's SSH master and falls back on the Hub's model in a fresh session", () => {
+    assert.deepEqual(sshMasterOpts("/home/u"), ["-o", "ControlPath=/home/u/.ssh/gb-%C", "-o", "ControlMaster=no"]);
+    const pane = readFileSync(join(root, "scripts/chat-pane.sh"), "utf8");
+    assert.match(pane, /printf 'hub %s\\n' "\$hub_slug" > "\$ROOT\/sessions\/\.chat-backend"/);
+    assert.match(pane, /printf 'local\\n' > "\$ROOT\/sessions\/\.chat-backend"/);
+    assert.match(pane, /live-chat-model\.mjs" --last-known/);
+    assert.match(pane, /if \[ "\$a" = "--session" \]; then skip_next=1/);
   });
 });

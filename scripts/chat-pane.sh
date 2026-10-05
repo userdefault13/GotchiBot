@@ -575,6 +575,8 @@ if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
     set_chat_border " Gotchi · ${hub_slug} (Hub) "
     progress_end 2>/dev/null || true
     printf '\r\033[K' >&2
+    # The status bar reads the Hub session's model only while the chat really is the Hub's.
+    printf 'hub %s\n' "$hub_slug" > "$ROOT/sessions/.chat-backend"
     set +e
     node "$ROOT/scripts/hub-desk.mjs" open "$hub_slug" --follow
     hub_st=$?
@@ -589,6 +591,27 @@ if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
     esac
     printf '  %s — local chat, not synced\n' "$hub_reason" >&2
     set_chat_border " Gotchi (offline · local, not synced) "
+    # The Hub is the source of truth for the model: the local chat starts on the
+    # model the Hub's session last used, in a FRESH local session — resuming an old
+    # one makes OpenCode restore that session's own model over -m.
+    hub_model="$(node "$ROOT/scripts/live-chat-model.mjs" --last-known 2>/dev/null || true)"
+    if [ -n "$hub_model" ]; then
+      MODEL="$hub_model"
+      export GOTCHIBOT_OPENCODE_MODEL="$MODEL"
+      printf '%s\n' "$MODEL" > "$ROOT/sessions/.chat-model"
+      printf 'export GOTCHIBOT_OPENCODE_MODEL=%q\n' "$MODEL" > "$ROOT/sessions/.gotchi-model.env"
+    fi
+    fallback_args=()
+    skip_next=0
+    prev=""
+    for a in "${args[@]}"; do
+      if [ "$skip_next" = 1 ]; then skip_next=0; prev="$a"; continue; fi
+      if [ "$a" = "--session" ]; then skip_next=1; prev="$a"; continue; fi
+      if [ "$prev" = "-m" ]; then a="$MODEL"; fi
+      fallback_args+=("$a")
+      prev="$a"
+    done
+    args=("${fallback_args[@]}")
   fi
 fi
 
@@ -597,6 +620,8 @@ if command -v node >/dev/null 2>&1; then
   OC_DIR="$(node --input-type=module -e 'import { currentProjectSlug, reconnectProjectDb } from "./scripts/project-context.mjs"; const slug = currentProjectSlug(); process.stdout.write((slug && reconnectProjectDb(slug)) || "");' 2>/dev/null || true)"
 fi
 [ -n "$OC_DIR" ] || OC_DIR="$ROOT"
+# Everything from here runs OpenCode on this desk (a Hub chat exited above).
+printf 'local\n' > "$ROOT/sessions/.chat-backend"
 
 # Sandbox mode on a desk that offers its own VM (scripts/desk-vm.mjs: qualifies +
 # enabled + guest created): the chat attaches to opencode running INSIDE the guest,

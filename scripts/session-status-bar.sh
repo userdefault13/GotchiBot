@@ -41,6 +41,11 @@ chat_model() {
   # (and the chat pane's own shell). The status command is a child of the tmux
   # server, so it still sees the model from when the server started.
   if [ -f "$CHAT_MODEL_FILE" ]; then
+    # A paired desk whose chat fell back to local OpenCode: say so, the Hub is not answering.
+    if [ -f "$SESSIONS/.hub.json" ] && [ "$(cut -d' ' -f1 "$SESSIONS/.chat-backend" 2>/dev/null)" = "local" ]; then
+      printf '%s (local)' "$(short_model "$(tr -d '[:space:]' < "$CHAT_MODEL_FILE")")"
+      return
+    fi
     short_model "$(tr -d '[:space:]' < "$CHAT_MODEL_FILE")"
     return
   fi

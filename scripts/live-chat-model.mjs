@@ -7,6 +7,11 @@
  *   node scripts/live-chat-model.mjs
  *   GOTCHIBOT_STATUS_ROOT=/tmp/tree node scripts/live-chat-model.mjs
  *   GOTCHIBOT_LIVE_MODEL_JSON='{"providerID":"p","id":"m"}' node scripts/live-chat-model.mjs
+ *   node scripts/live-chat-model.mjs --last-known   # last model the Hub's session reported (any age)
+ *
+ * The chat pane records what it actually launched in sessions/.chat-backend
+ * ("hub <slug>" or "local"). In a local chat the Hub session's model is not the
+ * chat's model, so nothing is printed and the status bar shows the local pin.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -107,6 +112,25 @@ function cachePath(root) {
   return resolve(root, "sessions/.live-chat-model.json");
 }
 
+/** What the chat pane launched: { mode: "hub" | "local", slug } or null (unknown/older pane). */
+export function chatBackend(root = SCRIPT_ROOT) {
+  try {
+    const [mode, slug = ""] = readFileSync(resolve(root, "sessions/.chat-backend"), "utf8").trim().split(/\s+/);
+    return mode === "hub" || mode === "local" ? { mode, slug } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The model the Hub's desk session last reported, however old — the Hub is the
+ * source of truth for the model, so a local fallback chat starts on it.
+ */
+export function lastKnownHubModel(root = SCRIPT_ROOT) {
+  const cache = readJson(cachePath(root));
+  return cache?.model ? formatSessionModel(cache.model) : "";
+}
+
 function cachedModel(cache, sessionId, maxAge) {
   if (!cache?.model) return "";
   if (sessionId && cache.sessionId !== sessionId) return "";
@@ -148,6 +172,8 @@ export async function resolveLiveChatModel({
     if (existsSync(raw)) return formatSessionModel(readFileSync(raw, "utf8"));
     return formatSessionModel(raw);
   }
+
+  if (chatBackend(root)?.mode === "local") return "";
 
   let slug = "";
   try {
@@ -200,6 +226,8 @@ function rootFromEnv(env = process.env) {
 }
 
 if (isMainModule(import.meta.url)) {
-  const model = await resolveLiveChatModel({ root: rootFromEnv() });
+  const model = process.argv.includes("--last-known")
+    ? lastKnownHubModel(rootFromEnv())
+    : await resolveLiveChatModel({ root: rootFromEnv() });
   if (model) process.stdout.write(model);
 }
