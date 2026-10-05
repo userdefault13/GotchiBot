@@ -6,6 +6,14 @@
  * that session back into the thread so all devices read one conversation.
  */
 import { stripReasoningContent, sanitizeRunnerError } from "./runner.mjs";
+import {
+  classifyModelError,
+  hubModelChain,
+  hubPrefer,
+  loadCooldowns,
+  markModelFailed,
+  splitModel,
+} from "../../scripts/hub-model-chain.mjs";
 
 export const DEFAULT_OPENCODE_URL = "http://127.0.0.1:4096";
 export const DEFAULT_DESK_AGENT = "gotchi";
@@ -70,16 +78,28 @@ export function createOpencodeClient({
     async getSession(sessionId) {
       return call("GET", `/session/${encodeURIComponent(sessionId)}`);
     },
-    /** Blocks until the assistant turn finishes. */
-    async sendMessage(sessionId, { text, agent, system }, { timeoutMs = 10 * 60_000 } = {}) {
+    /** Blocks until the assistant turn finishes. `model` = "provider/model" (else OpenCode's default). */
+    async sendMessage(sessionId, { text, agent, system, model }, { timeoutMs = 10 * 60_000 } = {}) {
+      const pick = model ? splitModel(model) : null;
       return call("POST", `/session/${encodeURIComponent(sessionId)}/message`, {
         body: {
           parts: [{ type: "text", text }],
           ...(agent ? { agent } : {}),
           ...(system ? { system } : {}),
+          ...(pick ? { model: pick } : {}),
         },
         timeoutMs,
       });
+    },
+    /** Providers + models this OpenCode can use (keys configured). */
+    async providers() {
+      const r = await call("GET", "/config/providers", { timeoutMs: 5_000 });
+      return Array.isArray(r?.providers) ? r.providers : [];
+    },
+    /** OpenCode's configured default model ("provider/model"). */
+    async configModel() {
+      const r = await call("GET", "/config", { timeoutMs: 5_000 });
+      return r?.model || null;
     },
     /** Custom commands and skills OpenCode can run by name (`/name args`). */
     async listCommands() {
@@ -103,6 +123,50 @@ export function createOpencodeClient({
       await call("POST", `/session/${encodeURIComponent(sessionId)}/abort`, { body: {} });
     },
   };
+}
+
+/**
+ * Walk the Hub model chain for one turn. A model failure (quota, auth, rate
+ * limit, stuck) cools that model or its provider down and tries the next one;
+ * any other error ends the turn. Returns which model answered.
+ */
+export async function turnWithModelFallback(client, sessionId, attempt, { log = () => {}, root, now } = {}) {
+  let providers = [];
+  let configModel = null;
+  try {
+    [providers, configModel] = await Promise.all([client.providers(), client.configModel()]);
+  } catch {
+    /* OpenCode listing failed: let it use its default */
+  }
+  const chain = providers.length || configModel
+    ? hubModelChain({ configModel, providers, prefer: hubPrefer(root), state: loadCooldowns(root), now })
+    : [];
+  if (!chain.length) {
+    await attempt(undefined);
+    return { model: null, fellBack: false };
+  }
+  const skipped = [];
+  let lastErr = null;
+  for (const model of chain) {
+    try {
+      await attempt(model);
+      const fellBack = model !== chain[0] || skipped.length > 0;
+      return {
+        model,
+        fellBack,
+        note: fellBack ? `answered by ${model} · ${skipped.map((s) => `${s.model} ${s.reason}`).join(" · ")}` : null,
+      };
+    } catch (err) {
+      const cls = classifyModelError(err?.message || err);
+      if (!cls) throw err;
+      const key = markModelFailed(model, cls, { root });
+      skipped.push({ model, reason: cls.reason });
+      log("model-fallback", { from: model, cooled: key, reason: cls.reason });
+      lastErr = err;
+      await client.abort(sessionId).catch(() => {});
+    }
+  }
+  throw new Error(`no model available — ${skipped.map((s) => `${s.model}: ${s.reason}`).join(" · ")}${lastErr ? ` (last: ${String(lastErr.message || lastErr).slice(0, 80)})` : ""}`);
 }
 
 /** One line from an OpenCode assistant `info.error` (e.g. "Go usage limit exceeded"). */
@@ -480,16 +544,27 @@ export function createDeskRunner({
       await store.linkDeskThread(slug, threadId);
       await mirrorDeskSession({ store, client, slug, threadId, sessionId, heroId });
       const slash = await resolveSlashCommand(claimed.text);
+      let fallbackNote = null;
       try {
-        await turnWithModelWatch(client, sessionId, () =>
-          slash
-            ? client.runCommand(sessionId, { ...slash, agent }, { timeoutMs: turnTimeoutMs })
-            : client.sendMessage(
+        if (slash) {
+          await turnWithModelWatch(client, sessionId, () =>
+            client.runCommand(sessionId, { ...slash, agent }, { timeoutMs: turnTimeoutMs }),
+          );
+        } else {
+          // The Hub picks the model: its configured one first, then the next
+          // available model when a provider is out of quota or failing.
+          const r = await turnWithModelFallback(client, sessionId, (model) =>
+            turnWithModelWatch(client, sessionId, () =>
+              client.sendMessage(
                 sessionId,
-                { text: claimed.text, agent, system: PHONE_TURN_SYSTEM },
+                { text: claimed.text, agent, system: PHONE_TURN_SYSTEM, model },
                 { timeoutMs: turnTimeoutMs },
               ),
-        );
+            ),
+          { log },
+          );
+          if (r.fellBack) fallbackNote = r.note;
+        }
       } catch (err) {
         if (err?.name === "TimeoutError" || err?.name === "AbortError") {
           await client.abort(sessionId).catch(() => {});
@@ -535,6 +610,13 @@ export function createDeskRunner({
         });
       }
       if (!reply) throw new Error("the orchestrator finished without a text reply");
+      if (fallbackNote) {
+        await store.pushMessages({
+          threadId,
+          deskId: HUB_DESK_RUNNER_ID,
+          messages: [{ messageId: `model-${messageId}`, role: "system", text: fallbackNote, op: "message", ts: new Date().toISOString() }],
+        });
+      }
       await store.completeReply({ threadId, messageId, replyMessageId: reply.messageId, model: reply.model });
       log("replied", { project: slug, messageId, ...(slash ? { command: slash.command } : {}) });
     } catch (err) {
