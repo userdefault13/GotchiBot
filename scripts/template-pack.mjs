@@ -441,18 +441,27 @@ function cronHintsFromPlaybook(playbook) {
 
 function buildPack(roleId) {
   const playbooks = loadPlaybooks();
-  const playbook = playbooks[roleId];
+  // A public pack may have portable source separate from this fleet's live role.
+  const sourceDir = join(MARKET, "sources", roleId);
+  const sourcePlaybook = join(sourceDir, "playbook.json");
+  const playbook = existsSync(sourcePlaybook)
+    ? readJson(sourcePlaybook, null)
+    : playbooks[roleId];
   if (!playbook) {
     console.error(`pack: no playbook for role "${roleId}" in config/agent-role-playbooks.json`);
     process.exit(2);
   }
-  const templateFile = join(TEMPLATE_DIR, `AGENTS.${roleId}.md`);
+  const sourceAgents = join(sourceDir, "AGENTS.md");
+  const templateFile = existsSync(sourceAgents)
+    ? sourceAgents
+    : join(TEMPLATE_DIR, `AGENTS.${roleId}.md`);
   if (!existsSync(templateFile)) {
     console.error(`pack: no template config/openclaw/templates/AGENTS.${roleId}.md`);
     process.exit(2);
   }
 
   const packDir = join(PACKS, roleId);
+  const previousPack = readJson(join(packDir, "pack.json"), null);
   const skillsDir = join(packDir, "skills");
   const standingDir = join(packDir, "standing-duties");
   rmSync(packDir, { recursive: true, force: true });
@@ -490,8 +499,7 @@ function buildPack(roleId) {
   writeFileSync(join(packDir, "cron-hints.md"), `# cron-hints — ${roleId}\n\n${cronHintsFromPlaybook(playbook).map((h) => `- ${h}`).join("\n")}\n`);
 
   // pack.json
-  const prev = readJson(join(packDir, "pack.json"), null);
-  const version = prev?.version || VERSION;
+  const version = playbook.version || previousPack?.version || VERSION;
   const wearable = wearableForRole(roleId);
   const packJson = {
     id: roleId,
@@ -512,7 +520,7 @@ function buildPack(roleId) {
     skillsExternal: external,
     standingDuties,
     cronHints: cronHintsFromPlaybook(playbook),
-    tags: TAG_MAP[roleId] || ["marketplace"],
+    tags: playbook.tags || TAG_MAP[roleId] || ["marketplace"],
     downloadPath: `packs/${roleId}`,
     files: listFiles(packDir),
     ...(wearable ? { wearable } : {}),

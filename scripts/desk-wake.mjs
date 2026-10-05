@@ -154,15 +154,19 @@ function appendLog(heroId, entry) {
   appendFileSync(join(LOG_DIR, `${heroId}.jsonl`), `${JSON.stringify(entry)}\n`);
 }
 
-function buildPrompt(target) {
-  const custom = String(target.wake.prompt || "").trim();
+export function buildPrompt(target) {
+  const clientScoped = target.playbook?.audience === "workspace_owner";
+  const custom = String(clientScoped ? target.playbook?.wakePrompt || "" : target.wake.prompt || "").trim();
+  const trailer = clientScoped
+    ? " One bounded cycle only. Keep all work and reporting in the authorized workspace. Never invent results or take an external action beyond the workspace policy."
+    : TRAILER;
   let prompt;
   if (custom) {
-    prompt = custom.includes("UserDefault") ? custom : custom + TRAILER;
+    prompt = !clientScoped && custom.includes("UserDefault") ? custom : custom + trailer;
   } else {
     const title = target.playbook?.title || target.roleId;
     const auto = String(target.playbook?.autonomy || "").split(/(?<=\.)\s+/)[0] || title;
-    prompt = `Scheduled desk wake (${title}). One bounded cycle of your desk work: ${auto}${TRAILER}`;
+    prompt = `Scheduled desk wake (${title}). One bounded cycle of your desk work: ${auto}${trailer}`;
   }
   return prompt
     .replaceAll("{{HERO}}", target.heroId)

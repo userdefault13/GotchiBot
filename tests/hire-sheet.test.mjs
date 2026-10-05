@@ -25,7 +25,9 @@ describe("hire sheet content", () => {
       const p = path.join(packs, id, "pack.json");
       if (!existsSync(p)) continue;
       const pack = JSON.parse(readFileSync(p, "utf8"));
-      assert.deepEqual(pack.hire, playbooks[pack.roleId || id]?.hire, `${id} pack mirrors playbook hire`);
+      const source = path.join(root, "templates/marketplace/sources", id, "playbook.json");
+      const playbook = existsSync(source) ? JSON.parse(readFileSync(source, "utf8")) : playbooks[pack.roleId || id];
+      assert.deepEqual(pack.hire, playbook?.hire, `${id} pack mirrors playbook hire`);
     }
   });
 

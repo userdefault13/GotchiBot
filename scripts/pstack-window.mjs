@@ -26,6 +26,7 @@ import { renderKanbanAscii } from "./gotchi-art.mjs";
 import { loadRoster, currentProjectSlug } from "./project-context.mjs";
 import { loadBox, listMessages } from "./bot-inbox.mjs";
 import { factoryModel, factoryBand } from "./gotchi-factory.mjs";
+import { loadWondrStack } from "./pstack-wondrstack.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PSTACK_ROOT = join(ROOT, "sessions", "pstack");
@@ -1270,6 +1271,45 @@ function buildDossierContentRows({
   return { stickyRows: [], rows, sectionStarts };
 }
 
+function moneyLabel(value, currency) {
+  if (!Number.isSafeInteger(value)) return "—";
+  return `${currency} ${(value / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Read-only view of the last project-scoped MCP goal snapshot. */
+export function buildWondrStackRows(binding) {
+  if (!binding) return [];
+  const rows = ["__MID_WONDRSTACK__"];
+  const kv = (key, value) => `  ${c.dim}${padVis(key, 12)}${c.reset}${value}`;
+  rows.push(kv("workspace", binding.name || binding.workspace));
+  rows.push(kv("slug", binding.workspace));
+  if (binding.appUrl) rows.push(kv("site", binding.appUrl));
+  if (binding.repoUrl) rows.push(kv("repo", binding.repoUrl));
+  rows.push(kv("MCP", binding.endpoint || "https://wondrstack.xyz/mcp"));
+  rows.push(kv("linked", binding.verifiedAt ? `get_status · ${formatPt(binding.verifiedAt)}` : "unverified"));
+  rows.push(kv("OAuth", "probe in client runtime to confirm current access"));
+  rows.push(kv("synced", binding.syncedAt ? formatPt(binding.syncedAt) : "never"));
+  rows.push("");
+  rows.push("__MID_GOALS__");
+  if (!Array.isArray(binding.goals)) {
+    rows.push(`  ${c.dim}No goal snapshot yet. Sync list_business_goals output.${c.reset}`);
+    return rows;
+  }
+  if (!binding.goals.length) rows.push(`  ${c.dim}No monetary goals in the last snapshot.${c.reset}`);
+  for (const goal of binding.goals) {
+    rows.push(`  ${c.bold}${goal.title || "Untitled goal"}${c.reset} ${c.dim}· ${goal.status || "—"}${c.reset}`);
+    rows.push(kv("target", `${moneyLabel(goal.targetCents, goal.currency)} · ${goal.metric || "—"}`));
+    rows.push(kv("period", `${goal.periodStart || "—"} → ${goal.periodEnd || "—"}`));
+    rows.push(kv("actual", goal.latestActual
+      ? `${moneyLabel(goal.latestActual.amountCents, goal.currency)} · ${goal.latestActual.source || "unverified"} · through ${goal.latestActual.periodEnd || "—"}`
+      : "—"));
+    rows.push(kv("plan", goal.planRoute || "not recorded"));
+    rows.push(kv("review", goal.latestReviewAt ? formatPt(goal.latestReviewAt) : "not recorded"));
+    rows.push("");
+  }
+  return rows;
+}
+
 /** How many scrollable expanded rows `rows` produce (mirrors packDossierPanel scroll body). */
 function countDossierExpanded(rows) {
   let n = 0;
@@ -1303,6 +1343,8 @@ function expandDossierItem(row) {
   if (row === "__MID_INBOX__") return { mid: "INBOX" };
   if (row === "__MID_PROGRAM__") return { mid: "PROGRAM" };
   if (row === "__MID_UNITS__") return { mid: "UNITS" };
+  if (row === "__MID_WONDRSTACK__") return { mid: "WONDRSTACK" };
+  if (row === "__MID_GOALS__") return { mid: "MONETARY GOALS · LAST SYNC" };
   if (typeof row === "string" && row.startsWith("__MID_UNIT__:")) {
     const parts = row.split(":");
     const id = parts[1] || "unit";
@@ -1495,7 +1537,7 @@ function pickGridHeroes(units, cartridgeRoster, projectRoster) {
 
 /* ---------- render ---------- */
 
-function render({
+export function render({
   dossier,
   slug,
   units,
@@ -1513,6 +1555,8 @@ function render({
   cronAgents = [],
   inboxMessages = [],
   milestones = [],
+  wondrstack = null,
+  detailTab = "overview",
 }) {
   const cols = Math.max(30, term.cols);
   const rowsN = Math.max(14, term.rows);
@@ -1597,7 +1641,8 @@ function render({
       });
   const opsLines = packOpsPanel(opsBody, leftW, opsH);
 
-  const dossierBuilt = buildDossierContentRows({
+  const showWondrStack = Boolean(wondrstack && detailTab === "wondrstack");
+  const dossierBuilt = showWondrStack ? { rows: buildWondrStackRows(wondrstack), sectionStarts: [], stickyRows: [] } : buildDossierContentRows({
     empty,
     slug,
     dossier,
@@ -1610,8 +1655,9 @@ function render({
     selIndex: sel || 0,
   });
   const nOps = (unitList || []).length;
-  const titleBase =
-    `DOSSIER · ${nOps ? `${nOps} ops` : unitId}` +
+  const titleBase = wondrstack
+    ? `DOSSIER · ${showWondrStack ? "[d Overview] ▸ [w WondrStack]" : "▸ [d Overview] [w WondrStack]"}`
+    : `DOSSIER · ${nOps ? `${nOps} ops` : unitId}` +
     (selUnit ? ` · ▸ ${selUnit.id}` : "") +
     (dossier?.fields?.pmHero ? ` · PM ${shortId(dossier.fields.pmHero)}` : "");
   // followSel (-1): snap scroll so the selected op's section is in view
@@ -1719,7 +1765,7 @@ function render({
   while (lines.length < rowsN - footerH) lines.push(pad("", cols));
   lines.push(
     pad(
-      `${c.dim}j/k select op · h/l page · PgUp/PgDn (b/f) scroll dossier · TEAM→MILESTONES→INBOX→AI-CRON→Gotchis · [c][o][u] · wheel · q${c.reset}`,
+      `${c.dim}j/k select op · h/l page · PgUp/PgDn (b/f) scroll dossier${wondrstack ? " · d/w dossier tabs" : ""} · [c][o][u] · wheel · q${c.reset}`,
       cols,
     ),
   );
@@ -1792,6 +1838,7 @@ function buildState() {
   const hasDossier = dossierExists(slug);
   const empty = !hasDossier;
   const dossier = hasDossier ? loadDossier(slug) : null;
+  const wondrstack = slug ? loadWondrStack(slug) : null;
   const cronAgents = loadCronAgents(slug, dossier);
   const inboxMessages = loadInboxMessages(slug);
   const units = hasDossier ? loadUnits(slug) : [];
@@ -1809,6 +1856,7 @@ function buildState() {
   return {
     slug,
     dossier,
+    wondrstack,
     units,
     desks,
     ledger,
@@ -1857,6 +1905,7 @@ function runWatch() {
   let sel = 0;
   let page = 0;
   let detailScroll = 0; // start at PROGRAM section; j/k jumps to selected op
+  let detailTab = "overview";
   let lastFp = fingerprint(state);
   let lastRosterTick = Date.now();
   const term = termSize();
@@ -1864,11 +1913,12 @@ function runWatch() {
   const paint = () => {
     const selectables = buildSelectables(state.units || []);
     const selIdx = selectables.length ? Math.min(sel, selectables.length - 1) : -1;
-    render({ ...state, sel: selIdx, page, detailScroll, term });
+    render({ ...state, sel: selIdx, page, detailScroll, detailTab, term });
   };
 
   const refresh = () => {
     state = buildState();
+    if (!state.wondrstack) detailTab = "overview";
     const selectables = buildSelectables(state.units || []);
     if (selectables.length) sel = Math.min(sel, selectables.length - 1);
     else sel = 0;
@@ -1986,6 +2036,12 @@ function runWatch() {
       if (key.name === "q") {
         cleanup();
         process.exit(0);
+      }
+      if (state.wondrstack && (key.name === "w" || key.name === "d")) {
+        detailTab = key.name === "w" ? "wondrstack" : "overview";
+        detailScroll = 0;
+        paint();
+        return;
       }
       const n = (state.units || []).length;
       if (key.name === "j" || key.name === "down") {

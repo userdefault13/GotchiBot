@@ -38,6 +38,16 @@ const BASE_SET = [
 ];
 
 describe("marketplace Base set", () => {
+  it("keeps the public CoS portable without changing the operator's live role", () => {
+    const pack = JSON.parse(readFileSync(join(root, "templates/marketplace/packs/chief-of-staff/pack.json"), "utf8"));
+    const publicAgents = readFileSync(join(root, "templates/marketplace/packs/chief-of-staff/AGENTS.md"), "utf8");
+    const liveAgents = readFileSync(join(root, "config/openclaw/templates/AGENTS.chief-of-staff.md"), "utf8");
+    assert.equal(pack.version, "1.2.0");
+    assert.match(publicAgents, /workspace owner/);
+    assert.doesNotMatch(publicAgents, /AarcadeGh-t|UserDefault|LINK \/ YFI \/ WBTC/);
+    assert.match(liveAgents, /AarcadeGh-t/);
+  });
+
   it("labels the public set Base set and lists the roster", () => {
     assert.equal(scopeLabel("starter"), "Base set");
     assert.deepEqual([...STARTER_PACK_IDS].sort(), BASE_SET);

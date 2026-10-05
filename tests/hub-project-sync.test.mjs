@@ -30,6 +30,7 @@ describe("project sync paths", () => {
       "sessions/pstack/alpha/roster.json",
       "sessions/pstack/alpha/kanban.json",
       "sessions/pstack/alpha/mail.json",
+      "sessions/pstack/alpha/wondrstack.json",
       "sessions/pstack/alpha/inbox/inbox.json",
       "sessions/pstack/alpha/desks/owned-1/kanban.json",
       "sessions/pstack/alpha/meetings/.current",

@@ -153,7 +153,7 @@ const MEET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
 export function projectSyncPathOk(path) {
   const p = String(path || "");
   let m = p.match(/^sessions\/pstack\/([^/]+)\/([^/]+)$/);
-  if (m) return projectSlugOk(m[1]) && (PROJECT_FILES.includes(m[2]) || m[2] === "mail.json");
+  if (m) return projectSlugOk(m[1]) && (PROJECT_FILES.includes(m[2]) || m[2] === "mail.json" || m[2] === "wondrstack.json");
   m = p.match(/^sessions\/pstack\/([^/]+)\/inbox\/inbox\.json$/);
   if (m) return projectSlugOk(m[1]);
   m = p.match(/^sessions\/pstack\/([^/]+)\/desks\/([^/]+)\/kanban\.json$/);
@@ -193,7 +193,7 @@ export function listProjectSyncRels(root, slug) {
   const add = (rel) => {
     if (projectSyncPathOk(rel) && existsSync(join(root, rel))) rels.push(rel);
   };
-  for (const name of [...PROJECT_FILES, "mail.json"]) add(`sessions/pstack/${slug}/${name}`);
+  for (const name of [...PROJECT_FILES, "mail.json", "wondrstack.json"]) add(`sessions/pstack/${slug}/${name}`);
   add(`sessions/pstack/${slug}/inbox/inbox.json`);
   add(`sessions/pstack/${slug}/meetings/.current`);
   try {

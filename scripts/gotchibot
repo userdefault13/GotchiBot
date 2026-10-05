@@ -917,6 +917,10 @@ case "$cmd" in
       shift
       exec node "$ROOT/scripts/pstack-dossier.mjs" "$@"
     fi
+    if [ "${1:-}" = "wondrstack" ]; then
+      shift
+      exec node "$ROOT/scripts/pstack-wondrstack.mjs" "$@"
+    fi
     exec node "$ROOT/scripts/pstack-orch.mjs" "$@" ;;
   ralph) exec node "$ROOT/scripts/ralph-orch.mjs" "$@" ;;
   add-dir) exec node "$ROOT/scripts/add-dir.mjs" "$@" ;;

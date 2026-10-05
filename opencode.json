@@ -184,6 +184,12 @@
       "enabled": true,
       "timeout": 600000
     },
+    "wondrstack": {
+      "type": "remote",
+      "url": "https://wondrstack.xyz/mcp",
+      "enabled": false,
+      "$comment": "Enable only in a client-scoped GotchiBot runtime. The client completes WondrStack OAuth; never share one grant across client workspaces."
+    },
     "wisp": {
       "type": "remote",
       "url": "https://api.gotchicloset.com/mcp",

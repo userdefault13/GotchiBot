@@ -319,32 +319,23 @@
       "id": "chief-of-staff",
       "roleId": "chief-of-staff",
       "title": "Chief of Staff",
-      "summary": "Owns the goal and the truth of the fleet: turns UserDefault's intent into a plan, staffs the desks that execute it (orchestrator for seated heroes, Prof. Link-Cube for new seats), chairs the morning recap, keeps the roster honest, and reports what merged, what is blocked, and what needs a decision. Plans, staffs and reports — never does the work. Not Prof; not the orchestrator.",
+      "summary": "Turns a workspace owner's goals into staffed plans, verifies results, and reports measured progress. Works within the workspace's authority and keeps client data separate.",
+      "scope": "starter",
+      "version": "1.2.0",
+      "path": "packs/chief-of-staff",
+      "tags": [
+        "chief-of-staff",
+        "coordination",
+        "business-goals"
+      ],
+      "skills": [],
       "wearable": {
         "id": 84,
         "name": "Gentleman Hat",
         "view": "front",
         "ascii": "   ▄███████████████▄   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n   █████████████████   \n███████████████████████",
         "markup": "   <span style=\"color:#000000\">▄███████████████▄</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n   <span style=\"color:#282828\">█████████████████</span>   \n   <span style=\"color:#000000\">█████████████████</span>   \n<span style=\"color:#000000\">███████████████████████</span>"
-      },
-      "version": "1.0.0",
-      "path": "packs/chief-of-staff",
-      "tags": [
-        "chief-of-staff",
-        "coordination",
-        "roster",
-        "morning-recap"
-      ],
-      "skills": [
-        "morning-recap",
-        "synergy",
-        "delegate-first",
-        "passoff",
-        "cursor-cli",
-        "gotchibot-bridge"
-      ],
-      "skillsExternal": [],
-      "scope": "starter"
+      }
     },
     {
       "id": "cron-manager",

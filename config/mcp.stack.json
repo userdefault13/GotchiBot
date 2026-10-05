@@ -95,6 +95,13 @@
       "project": "aavegotchi-game-sprites",
       "note": "Pixel art generation — key in abracadabra only"
     },
+    "wondrstack": {
+      "url": "https://wondrstack.xyz/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "project": "WondrStack",
+      "note": "Client-scoped business goals and app setup. OAuth sign-in by each client; use the generic marketplace chief-of-staff pack in that client's isolated runtime."
+    },
     "gotchibot-claude": {
       "command": "./scripts/mcp/gotchibot-claude.sh",
       "cwd": ".",
@@ -127,8 +134,9 @@
     }
   },
   "projects": {
-    "AarcadeGh-t": ["aarcade-cartridge-schema", "aarcade-hackathon-ideas", "base-mcp", "vercel", "snapshot", "reown-docs", "mongodb"],
+    "AarcadeGh-t": ["aarcade-cartridge-schema", "aarcade-hackathon-ideas", "base-mcp", "vercel", "snapshot", "reown-docs", "mongodb", "wondrstack"],
     "Aarcade-AIBot": ["mongodb", "reown-docs"],
+    "WondrStack": ["wondrstack"],
     "GotchiBot": [
       "abracadabra",
       "aarcade-cartridge-schema",
