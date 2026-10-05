@@ -768,3 +768,31 @@ describe("desk threads on the Hub (Mongo)", async () => {
     assert.equal((await get("/api/gotchibot/projects/nope/desk/commands", phone)).status, 404);
   });
 });
+
+describe("model error watchdog", () => {
+  it("aborts the turn with the model's own error instead of waiting for fetch to fail", async () => {
+    const { turnWithModelWatch } = await import("../services/gotchibot-api/desk-runner.mjs");
+    let aborted = false;
+    const client = {
+      listMessages: async () => [
+        { info: { role: "assistant", time: { created: Date.now() }, error: { name: "APIError", data: { message: "Go usage limit exceeded" } } } },
+      ],
+      abort: async () => {
+        aborted = true;
+      },
+    };
+    const never = () => new Promise(() => {});
+    await assert.rejects(
+      turnWithModelWatch(client, "ses_1", never, { pollMs: 1, sleepFn: async () => {} }),
+      /model error: Go usage limit exceeded/,
+    );
+    assert.equal(aborted, true);
+  });
+
+  it("returns the turn result when the model is fine", async () => {
+    const { turnWithModelWatch } = await import("../services/gotchibot-api/desk-runner.mjs");
+    const client = { listMessages: async () => [], abort: async () => {} };
+    const out = await turnWithModelWatch(client, "ses_1", async () => "done", { pollMs: 1, sleepFn: async () => {} });
+    assert.equal(out, "done");
+  });
+});

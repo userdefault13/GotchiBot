@@ -105,6 +105,49 @@ export function createOpencodeClient({
   };
 }
 
+/** One line from an OpenCode assistant `info.error` (e.g. "Go usage limit exceeded"). */
+export function modelErrorText(error) {
+  if (!error) return "";
+  const msg = error?.data?.message || error?.message || error?.name || String(error);
+  return String(msg).replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
+/**
+ * Run one turn, but stop early when the model has already failed. OpenCode
+ * records a provider error (quota, auth, 5xx) on the assistant message yet can
+ * keep the /message request open; the phone used to wait 5 minutes for a bare
+ * "fetch failed". Polls the session and aborts with the model's own error.
+ */
+export async function turnWithModelWatch(client, sessionId, run, { pollMs = 4000, sleepFn } = {}) {
+  const since = Date.now() - 2000;
+  const wait = sleepFn || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  let stop = false;
+  const watch = (async () => {
+    while (!stop) {
+      await wait(pollMs);
+      if (stop) return null;
+      const rows = await client.listMessages(sessionId, { limit: 5 }).catch(() => []);
+      const mine = rows.filter((m) => m?.info?.role === "assistant" && (m.info.time?.created || 0) >= since);
+      const failed = mine.findLast((m) => m.info.error);
+      if (failed) return modelErrorText(failed.info.error) || "model error";
+    }
+    return null;
+  })();
+  try {
+    const outcome = await Promise.race([
+      run().then((result) => ({ result })),
+      watch.then((error) => (error ? { error } : new Promise(() => {}))),
+    ]);
+    if (outcome.error) {
+      await client.abort(sessionId).catch(() => {});
+      throw new Error(`model error: ${outcome.error}`);
+    }
+    return outcome.result;
+  } finally {
+    stop = true;
+  }
+}
+
 /** Visible text of one OpenCode message (no reasoning, tool or synthetic parts). */
 export function messageText(msg) {
   const parts = Array.isArray(msg?.parts) ? msg.parts : [];
@@ -438,19 +481,30 @@ export function createDeskRunner({
       await mirrorDeskSession({ store, client, slug, threadId, sessionId, heroId });
       const slash = await resolveSlashCommand(claimed.text);
       try {
-        if (slash) {
-          await client.runCommand(sessionId, { ...slash, agent }, { timeoutMs: turnTimeoutMs });
-        } else {
-          await client.sendMessage(
-            sessionId,
-            { text: claimed.text, agent, system: PHONE_TURN_SYSTEM },
-            { timeoutMs: turnTimeoutMs },
-          );
-        }
+        await turnWithModelWatch(client, sessionId, () =>
+          slash
+            ? client.runCommand(sessionId, { ...slash, agent }, { timeoutMs: turnTimeoutMs })
+            : client.sendMessage(
+                sessionId,
+                { text: claimed.text, agent, system: PHONE_TURN_SYSTEM },
+                { timeoutMs: turnTimeoutMs },
+              ),
+        );
       } catch (err) {
         if (err?.name === "TimeoutError" || err?.name === "AbortError") {
           await client.abort(sessionId).catch(() => {});
           throw new Error("timed out — open the desk on a terminal (gotchibot hub desk open) to see what it was waiting on");
+        }
+        // Node's fetch gives up after 5 min without response headers and only
+        // says "fetch failed"; OpenCode answers /message when the turn ends.
+        if (err?.message === "fetch failed") {
+          await client.abort(sessionId).catch(() => {});
+          const code = err?.cause?.code || "";
+          throw new Error(
+            code === "UND_ERR_HEADERS_TIMEOUT"
+              ? "no reply from the model for 5 minutes — it may be stuck or out of quota (check the Hub's opencode log)"
+              : `could not reach the Hub's OpenCode${code ? ` (${code})` : ""}`,
+          );
         }
         throw err;
       }
