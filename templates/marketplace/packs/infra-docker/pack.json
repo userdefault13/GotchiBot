@@ -28,5 +28,39 @@
     "skills/infra-recover/SKILL.md",
     "standing-duties/infra-docker.md"
   ],
-  "scope": "aarcade"
+  "scope": "aarcade",
+  "hire": {
+    "job": "Own Docker watched containers and the infra watcher/verifier loop. Paper recover on DEGRADED. Subset of home infra for operators who only run the container stack.",
+    "owns": "Owns watched Docker/aarcade/envio containers only.",
+    "definitionOfDone": [
+      "The deliverable is written where my brief says (default sessions/<id>/output.md) — not just described in chat.",
+      "It says what I checked and how (a command, a file, a source). No guessed numbers.",
+      "Anything unfinished or blocked is listed with the next step and who owns it."
+    ],
+    "reportsTo": "orchestrator",
+    "cadence": "After each scheduled run, and whenever I am blocked: one line to the orchestrator.",
+    "probation": {
+      "allowed": [
+        "Read the repo and my workspace.",
+        "Run status, list, and report commands.",
+        "Draft changes as a proposal in my session output for review."
+      ],
+      "notYet": [
+        "Edit or write files outside my session directory.",
+        "Spend, sign, or move funds; create orders or transactions.",
+        "Post publicly or message anyone outside the desk.",
+        "Delete anything.",
+        "Use abra secrets."
+      ],
+      "trialTask": "Dry run of my job: the first three concrete steps I would take, what I would need, and how I would show it is done. Change nothing.",
+      "promoteWhen": "UserDefault reviews my trial work and runs `./scripts/gotchibot pack-wearable trust <my id> trusted`."
+    },
+    "trusted": {
+      "allowed": [
+        "My role skills and the work tools (Cursor → Codex → Claude).",
+        "Edits that my job needs, inside the repo."
+      ],
+      "stillNever": "Everything on the Never list below still applies: money, public posts, and deletes need UserDefault's yes in this conversation."
+    }
+  }
 }

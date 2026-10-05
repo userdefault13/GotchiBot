@@ -15,6 +15,7 @@
  *   node scripts/pack-wearable.mjs nest <packId>
  *   node scripts/pack-wearable.mjs equip <hero> <packId> [--slot 15]
  *   node scripts/pack-wearable.mjs unequip <hero>
+ *   node scripts/pack-wearable.mjs trust <hero> probation|trusted   # hire sheet trust ramp
  *   node scripts/pack-wearable.mjs status [<hero>] [--json]
  *   node scripts/pack-wearable.mjs clear-all [--reason transfer]
  */
@@ -26,6 +27,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn, spawnSync } from "node:child_process";
 import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -155,10 +157,16 @@ export function equipPack(heroId, packId, { slot = ASSIGNMENT_SLOT } = {}) {
   const slotIndex = Number.isFinite(slot) ? Number(slot) : ASSIGNMENT_SLOT;
   // One assignment pack per hero — replace prior equip.
   state = loadPackWearables();
+  const prior = state.equipped[String(heroId)] || null;
+  // A new role is a new hire: probation until UserDefault promotes it.
+  // Re-equipping the same pack keeps the trust it already earned.
+  const trust = prior?.packId === id && prior?.trust ? prior.trust : "probation";
   state.equipped[String(heroId)] = {
     packId: id,
     slot: slotIndex,
     equippedAt: new Date().toISOString(),
+    trust,
+    ...(trust === "probation" ? { hiredAt: new Date().toISOString() } : prior?.hiredAt ? { hiredAt: prior.hiredAt } : {}),
   };
   savePackWearables(state);
   syncAgentRole(heroId, id);
@@ -193,6 +201,35 @@ export function clearAllPackWearables(reason = "transfer") {
   return empty;
 }
 
+/** Set a hero's trust on its current assignment (probation | trusted). */
+export function setTrust(heroId, level) {
+  if (!heroId) throw new Error("hero id required");
+  if (!["probation", "trusted"].includes(level)) throw new Error('trust must be "probation" or "trusted"');
+  const state = loadPackWearables();
+  const eq = state.equipped[String(heroId)];
+  if (!eq) throw new Error(`${heroId} has no assigned role — equip a pack first`);
+  eq.trust = level;
+  if (level === "trusted") eq.promotedAt = new Date().toISOString();
+  savePackWearables(state);
+  return eq;
+}
+
+/** Re-render hero workspaces (AGENTS.md hire sheets). */
+function refreshWorkspaces({ background = false } = {}) {
+  const args = [join(ROOT, "scripts", "openclaw-fleet.mjs"), "refresh-workspaces", "--quiet"];
+  if (background) {
+    try {
+      const child = spawn(process.execPath, args, { cwd: ROOT, stdio: "ignore", detached: true });
+      child.unref();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const r = spawnSync(process.execPath, args, { cwd: ROOT, stdio: "ignore", timeout: 60000 });
+  return r.status === 0;
+}
+
 export function getEquipped(heroId) {
   const state = loadPackWearables();
   return state.equipped[String(heroId)] || null;
@@ -225,6 +262,7 @@ function usage() {
   pack-wearable nest <packId>
   pack-wearable equip <hero> <packId> [--slot 15]
   pack-wearable unequip <hero>
+  pack-wearable trust <hero> probation|trusted
   pack-wearable status [<hero>] [--json]
   pack-wearable clear-all [--reason transfer]`);
   process.exit(2);
@@ -271,8 +309,22 @@ async function main() {
     const si = args.indexOf("--slot");
     if (si >= 0 && args[si + 1]) slot = Number(args[si + 1]);
     const eq = equipPack(hero, packId, { slot });
-    console.log(`equipped ${hero} → ${eq.packId}  (slot ${eq.slot})`);
+    console.log(`equipped ${hero} → ${eq.packId}  (slot ${eq.slot})  trust ${eq.trust}`);
     console.log("  agent-roles.json synced (assignment label)");
+    // Re-render workspaces so the hero's AGENTS.md carries the new hire sheet.
+    // Background: the avatar's Assign role waits on this command.
+    refreshWorkspaces({ background: true });
+    return;
+  }
+
+  if (cmd === "trust") {
+    const hero = args[0];
+    const level = args[1];
+    if (!hero || !level) usage();
+    const eq = setTrust(hero, level);
+    console.log(`${hero} → ${eq.packId}  trust ${eq.trust}`);
+    const ok = refreshWorkspaces({ background: false });
+    console.log(ok ? "  workspaces re-rendered (hire sheet updated)" : "  re-render failed — run: node scripts/openclaw-fleet.mjs refresh-workspaces");
     return;
   }
 

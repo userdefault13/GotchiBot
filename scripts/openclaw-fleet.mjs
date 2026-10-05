@@ -58,6 +58,7 @@ import {
   SESSIONS,
 } from "./onboarding-lib.mjs";
 import { buildPersonaLine } from "./gotchi-persona.mjs";
+import { renderHireSheet, heroTrust } from "./hire-sheet.mjs";
 
 const __DIR = dirname(fileURLToPath(import.meta.url));
 export { ROOT, SESSIONS };
@@ -379,6 +380,13 @@ export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orch
       ? `## ${standing.label || "Standing duty"}\n\n${standing.markdown}`
       : "",
   };
+  vars.HIRE = renderHireSheet({
+    roleId: role,
+    playbook,
+    trust: heroTrust(id),
+    isOrchestrator: orchSkills,
+    orchId,
+  });
   vars.COMMON = renderTemplate("AGENTS.common.md", vars).trim();
 
   const stamp = (tpl) =>

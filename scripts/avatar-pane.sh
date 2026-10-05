@@ -145,8 +145,9 @@ dbg() {
 }
 
 memo_reset() {
-  local v
-  for v in $MEMO_KEYS; do unset "$v"; done
+  # Default word splitting even when a trap fired inside `IFS= read`.
+  local v IFS=$' \t\n'
+  for v in $MEMO_KEYS; do unset "$v" 2>/dev/null || true; done
   MEMO_KEYS=""
   unset MEMO_ORCH_ID MEMO_FOCUS_HERO
   WARM_DONE=0
@@ -395,6 +396,7 @@ load_sel() {
   SEL_ID=""
   SEL_NAME=""
   MODAL_MSG=""
+  MODAL_TRUST=""
   # 1 = selector on the orchestrator portrait (the default on load).
   SEL_ORCH=1
   if [ -f "$SEL_FILE" ]; then
@@ -425,6 +427,7 @@ save_sel() {
     printf 'SEL_ID=%q\n' "${SEL_ID:-}"
     printf 'SEL_NAME=%q\n' "${SEL_NAME:-}"
     printf 'MODAL_MSG=%q\n' "${MODAL_MSG:-}"
+    printf 'MODAL_TRUST=%q\n' "${MODAL_TRUST:-}"
   } > "$tmp"
   mv "$tmp" "$SEL_FILE"
 }
@@ -435,8 +438,45 @@ avatar_prompt_len() {
   printf '0'
 }
 
-# Sub-agent modal menu. Card: Chat / Assign role / Close. Roles: Back + catalog.
+# Sub-agent modal menu. Card: Chat / Assign role / [Promote] / Close. Roles: Back + catalog.
+# Promote shows only for a gotchi on probation (hire sheet trust ramp).
 MODAL_MENU=("Chat" "Assign role" "Close")
+modal_menu_build() {
+  MODAL_MENU=("Chat" "Assign role")
+  [ "${MODAL_TRUST:-}" = probation ] && MODAL_MENU+=("Promote")
+  MODAL_MENU+=("Close")
+}
+
+# Hire-sheet trust for the selected gotchi (empty for the orchestrator portrait).
+modal_load_trust() {
+  MODAL_TRUST=""
+  [ "${SEL_ORCH:-1}" = 1 ] && return 0
+  [ -n "${SEL_ID:-}" ] || return 0
+  MODAL_TRUST="$(node "$ROOT/scripts/hire-sheet.mjs" trust "$SEL_ID" 2>/dev/null || true)"
+  case "$MODAL_TRUST" in probation|trusted) ;; *) MODAL_TRUST="" ;; esac
+}
+
+# Probation → trusted. setTrust is instant; the workspace re-render that follows
+# can take a while, so it runs detached and reports back on the card.
+modal_promote() {
+  if [ -z "${SEL_ID:-}" ]; then
+    MODAL_MSG="no gotchi selected yet"
+    return 0
+  fi
+  local hero="$SEL_ID"
+  MODAL_TRUST=trusted
+  MODAL_MSG="promoting ${SEL_NAME:-$hero} to trusted…"
+  MENU_SEL=0
+  ( if node "$ROOT/scripts/pack-wearable.mjs" trust "$hero" trusted > "$SESSIONS/.avatar-promote.log" 2>&1; then
+      load_sel
+      [ "$SEL_ID" = "$hero" ] && { MODAL_TRUST=trusted; MODAL_MSG="promoted · trusted"; }
+    else
+      load_sel
+      [ "$SEL_ID" = "$hero" ] && { MODAL_TRUST=probation; MODAL_MSG="promote failed · .avatar-promote.log"; }
+    fi
+    save_sel
+    sb_click_wake "" ) &
+}
 ROLE_LIST_FILE="$SESSIONS/.avatar-role-list"
 ROLE_CATALOG="$ROOT/templates/marketplace/catalog.json"
 
@@ -469,7 +509,8 @@ modal_assign_role() {
     return 0
   fi
   if out="$(node "$ROOT/scripts/pack-wearable.mjs" equip "$SEL_ID" "$role" 2>&1)"; then
-    MODAL_MSG="assigned ${role//-/ }"
+    MODAL_MSG="assigned ${role//-/ } · on probation"
+    MODAL_TRUST=probation
     refresh_roster
   else
     MODAL_MSG="assign failed: $(printf '%s' "$out" | tail -n 1)"
@@ -496,7 +537,9 @@ modal_open_chat() {
 
 # Keys while the modal is open. Returns 0 when state changed.
 modal_key() {
-  local key="$1" n_menu=${#MODAL_MENU[@]} n_roles
+  local key="$1" n_menu n_roles
+  modal_menu_build
+  n_menu=${#MODAL_MENU[@]}
   if [ "$MODAL_VIEW" = roles ]; then
     load_role_list
     n_roles=$(( ${#ROLE_LIST[@]} + 1 ))
@@ -526,6 +569,7 @@ modal_key() {
       case "${MODAL_MENU[$MENU_SEL]}" in
         Chat) modal_open_chat ;;
         "Assign role") MODAL_VIEW=roles; ROLE_SEL=0; MODAL_MSG="" ;;
+        Promote) modal_promote ;;
         *) MODAL=0; modal_reset ;;
       esac
       ;;
@@ -693,6 +737,7 @@ apply_select_key() {
       [ "$n" -ge 1 ] || [ "${SEL_ORCH:-1}" = 1 ] || return 1
       MODAL=1
       modal_reset
+      modal_load_trust
       save_sel
       return 0
       ;;
@@ -926,6 +971,8 @@ handle_esc() {
 # Returns 0 if PAGE changed and we should redraw now.
 handle_key() {
   local key="$1"
+  # Ctrl+] is sb_click_wake's repaint poke (state already written by the sender).
+  [ "$key" = $'\x1d' ] && return 0
   # Enter arrives as "" (read's delimiter). j/k drive the modal menu while open.
   case "$key" in
     '') if apply_select_key enter; then return 0; fi; return 1 ;;
@@ -1919,7 +1966,10 @@ draw_sub_modal() {
     done
     ROWS+=("" "~ ↑↓ move · ⏎ assign · esc back")
   else
-    ROWS+=(" ${name}" " ${role_show}" " ${status}" "")
+    modal_menu_build
+    local status_row=" ${status}"
+    [ -n "${MODAL_TRUST:-}" ] && status_row=" ${status} · ${MODAL_TRUST}"
+    ROWS+=(" ${name}" " ${role_show}" "$status_row" "")
     for ((i = 0; i < ${#MODAL_MENU[@]}; i++)); do
       if [ "$i" -eq "${MENU_SEL:-0}" ]; then ROWS+=("> ▸ ${MODAL_MENU[i]}"); else ROWS+=("   ${MODAL_MENU[i]}"); fi
     done
@@ -2382,9 +2432,16 @@ sb_click_wake() {
     local sess="${GOTCHIBOT_TMUX_SESSION:-gotchibot}"
     pid="$(tmux list-panes -t "$sess:work" -F '#{pane_pid} #{@gotchibot-avatar}' 2>/dev/null | awk '$2==1{print $1; exit}')"
   fi
-  if [ -n "${pid:-}" ]; then
-    kill -USR1 "$pid" 2>/dev/null || true
+  [ -n "${pid:-}" ] || return 0
+  # Wake with a key, not a signal: the watch loop sits in `read -t 8`, and bash
+  # 3.2 only runs a USR1 trap once that read returns — nudges from other panes
+  # showed up to 8s late. A private key byte (Ctrl+]) returns read at once.
+  local pane
+  pane="$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null | awk -v p="$pid" '$1==p{print $2; exit}')"
+  if [ -n "$pane" ] && tmux send-keys -t "$pane" C-] 2>/dev/null; then
+    return 0
   fi
+  kill -USR1 "$pid" 2>/dev/null || true
 }
 
 RENDERING=0
@@ -2438,10 +2495,19 @@ safe_render() {
 }
 
 on_usr1() {
+  # Traps run inside whatever was executing — usually the watch loop's
+  # `IFS= read`, so IFS is empty here. Restore it for everything this repaints
+  # (an empty IFS made memo_reset unset one bogus name and set -e killed the pane).
+  local IFS=$' \t\n'
   # Page click already wrote PAGE; poke already wrote the roster cache.
   dbg "usr1"
   safe_render
   dbg "usr1 painted"
+}
+
+on_winch() {
+  local IFS=$' \t\n'
+  safe_render
 }
 
 case "${1:-watch}" in
@@ -2616,7 +2682,7 @@ case "${1:-watch}" in
   watch)
     trap 'watch_leave' EXIT
     trap on_usr1 USR1
-    trap safe_render WINCH
+    trap on_winch WINCH
     read_t="${INTERVAL%%.*}"
     [ -n "$read_t" ] || read_t=8
     dbg "watch: start"

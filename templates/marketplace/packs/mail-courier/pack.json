@@ -37,5 +37,39 @@
     "skills/agentmail/SKILL.md",
     "skills/project-mailbox/SKILL.md"
   ],
-  "scope": "starter"
+  "scope": "starter",
+  "hire": {
+    "job": "Own one AgentMail inbox per GotchiBot project: accept outbound from agents, send via AgentMail (abra AGENT_MAIL_API_KEY), monitor inbox/outbox, relay replies, track owed agent responses, remind after 24h, keep the orchestrator informed.",
+    "owns": "Owns the project mail courier desk: exactly one AgentMail inbox per GotchiBot pstack project.",
+    "definitionOfDone": [
+      "The deliverable is written where my brief says (default sessions/<id>/output.md) — not just described in chat.",
+      "It says what I checked and how (a command, a file, a source). No guessed numbers.",
+      "Anything unfinished or blocked is listed with the next step and who owns it."
+    ],
+    "reportsTo": "orchestrator",
+    "cadence": "When the job is done or blocked: one line to the orchestrator.",
+    "probation": {
+      "allowed": [
+        "Read the repo and my workspace.",
+        "Run status, list, and report commands.",
+        "Draft changes as a proposal in my session output for review."
+      ],
+      "notYet": [
+        "Edit or write files outside my session directory.",
+        "Spend, sign, or move funds; create orders or transactions.",
+        "Post publicly or message anyone outside the desk.",
+        "Delete anything.",
+        "Use abra secrets."
+      ],
+      "trialTask": "Dry run of my job: the first three concrete steps I would take, what I would need, and how I would show it is done. Change nothing.",
+      "promoteWhen": "UserDefault reviews my trial work and runs `./scripts/gotchibot pack-wearable trust <my id> trusted`."
+    },
+    "trusted": {
+      "allowed": [
+        "My role skills and the work tools (Cursor → Codex → Claude).",
+        "Edits that my job needs, inside the repo."
+      ],
+      "stillNever": "Everything on the Never list below still applies: money, public posts, and deletes need UserDefault's yes in this conversation."
+    }
+  }
 }

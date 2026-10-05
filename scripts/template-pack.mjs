@@ -516,6 +516,8 @@ function buildPack(roleId) {
     downloadPath: `packs/${roleId}`,
     files: listFiles(packDir),
     ...(wearable ? { wearable } : {}),
+    // Hire sheet (job, done, trust ramp) lives in the playbook; the pack carries a copy.
+    ...(playbook.hire ? { hire: playbook.hire } : {}),
   };
   writeJson(join(packDir, "pack.json"), packJson);
 

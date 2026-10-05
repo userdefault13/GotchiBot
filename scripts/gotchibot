@@ -42,6 +42,7 @@ gotchibot — GotchiBot orchestrator CLI
                                   # note: mode sandbox = pink TUI playground; gotchibot sandbox = Docker
   gotchibot marketplace               native Marketplace TUI (CDN → local fallback)
   gotchibot templates …               marketplace packs (list|menu|show|install|apply|equip|cdn)
+  gotchibot hire show|trust|probation …   hire sheets: job, done, probation → trusted (CoS reviews probation)
   gotchibot pack-wearable …           nest/equip marketplace packs on cGotchi slot 15 (assignment label)
   gotchibot gotchi-mode [status|env|model|ensure] [--json]  OpenCode TUI → iMac orchestrator session
   gotchibot cursor run|resume|launch|context|list  Cursor CLI (orchestrator context)
@@ -1126,6 +1127,9 @@ case "$cmd" in
     ;;
   templates)
     exec node "$ROOT/scripts/template-pack.mjs" "$@"
+    ;;
+  hire|hire-sheet)
+    exec node "$ROOT/scripts/hire-sheet.mjs" "$@"
     ;;
   pack-wearable|pack-wearables|wearable-pack)
     exec node "$ROOT/scripts/pack-wearable.mjs" "$@"

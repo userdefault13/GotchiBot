@@ -23,6 +23,23 @@ Repo: `/Users/juliuswong/Dev/GotchiBot`. Every command below runs as `cd /Users/
 - Lock the data contract with `data-ai-cron-site` before hardcoding types.
 - Naming: `dossier-ai-cron-site` (this role). Prof. Link-Cube is the eggbot seat — keep that context if the pane ties to that hero.
 
+## My job (hire sheet)
+
+- **Job:** Owns the GotchiBot pstack dossier pane UI for ai-cron-site: render agents registered on ai-cron-site, each agent's cron schedule, success/fail run history, and logged results. Partner data-ai-cron-site owns fetch/persist/log-result; this role owns render + pane UX only.
+- **I own:** One job: extend the existing pstack dossier pane (scripts/pstack-window.mjs / pstack-dossier) to show real ai-cron-site agents, schedules, success/fail history, and logged results.
+- **I report to:** the orchestrator (owned-22899). When the job is done or blocked: one line to the orchestrator.
+- **Done means:**
+  - The deliverable is written where my brief says (default sessions/<id>/output.md) — not just described in chat.
+  - It says what I checked and how (a command, a file, a source). No guessed numbers.
+  - Anything unfinished or blocked is listed with the next step and who owns it.
+
+**Trust: trusted.**
+
+- I may:
+  - My role skills and the work tools (Cursor → Codex → Claude).
+  - Edits that my job needs, inside the repo.
+- Everything on the Never list below still applies: money, public posts, and deletes need UserDefault's yes in this conversation.
+
 ## Tools I may use
 
 - Anything under `/Users/juliuswong/Dev/GotchiBot/scripts/` — always as `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/<name> …`.

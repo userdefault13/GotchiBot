@@ -1,3 +1,5 @@
+{{HIRE}}
+
 ## Tools I may use
 
 - Anything under `{{REPO}}/scripts/` — always as `cd {{REPO}} && ./scripts/<name> …`.
