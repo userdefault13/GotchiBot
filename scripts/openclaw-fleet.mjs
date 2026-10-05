@@ -539,7 +539,9 @@ function entriesForConfig(entries) {
   const out = {};
   for (const [id, entry] of Object.entries(entries)) {
     const { systemPrompt: _drop, ...rest } = entry;
-    if (rest.default === false) delete rest.default;
+    // Explicit multi-agent ownership is configured on the fleet fragment;
+    // keep the legacy default marker out of agents.entries.
+    delete rest.default;
     out[id] = rest;
   }
   return out;
@@ -606,7 +608,10 @@ function writeFleetArtifacts({ entries, map, orchId }) {
     "//": "Drop-in OpenClaw config fragment for GotchiBot fleet agents (2026.8+ uses agents.entries).",
     agents: {
       ownership: "explicit",
-      defaults: { $include: `${ROOT}/config/openclaw.gotchi.json5` },
+      defaults: {
+        $include: `${ROOT}/config/openclaw.gotchi.json5`,
+        systemAgent: { agentId: orchId },
+      },
       entries: { $include: FLEET_ENTRIES },
     },
   };

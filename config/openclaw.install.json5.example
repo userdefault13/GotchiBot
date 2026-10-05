@@ -1,8 +1,10 @@
 {
   "//": "Copy to config/openclaw.install.json5 after clone/npm install. Replace ROOT with your GotchiBot checkout (absolute path). Or run ./scripts/openclaw-fleet.mjs sync which regenerates includes.",
   "agents": {
+    "ownership": "explicit",
     "defaults": {
-      "$include": "ROOT/config/openclaw.gotchi.json5"
+      "$include": "ROOT/config/openclaw.gotchi.json5",
+      "systemAgent": { "agentId": "ORCHESTRATOR_AGENT_ID" }
     },
     "entries": {
       "$include": "ROOT/config/openclaw.fleet.generated.json5"
