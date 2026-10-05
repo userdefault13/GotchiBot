@@ -794,10 +794,27 @@ function editToRoom(ts, msg) {
   });
 }
 
+/**
+ * Where the input panel sits: the chat column (right of the meet list), padded.
+ * The full draw and the send-timer footer redraw both use this — the footer
+ * redraw used to paint a second, full-width panel over the sidebar.
+ */
+export function inputPanelGeometry(cols, rows, meeting = viewedMeeting()) {
+  const layout = inlineLayout(cols, rows);
+  const sideW = meetSideWidth(layout.cols, meeting);
+  return {
+    top: layout.promptTop,
+    cols: cols - sideW,
+    left: sideW + 1,
+    inputRows: layout.inputRows,
+    padY: layout.padY,
+  };
+}
+
 function drawFooterOnly() {
   const { cols, rows } = paneSize();
-  const top = rows - PROMPT_PANEL_ROWS + 1;
-  drawInputPanel(top, cols);
+  const g = inputPanelGeometry(cols, rows);
+  drawInputPanel(g.top, g.cols, g.left, g.inputRows, g.padY);
 }
 
 function startSendTimer() {
@@ -1254,8 +1271,8 @@ function drawInputPanel(top, cols, left = 1, inputRows = PROMPT_INPUT_ROWS, padY
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
       (INLINE
-        ? `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab chat" : "Tab meets · j/k ^U/^D PgUp/PgDn scroll"} · q quit · /help${T.reset}`
-        : `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab/Esc chat" : "Tab meets · j/k ^U/^D PgUp/PgDn scroll · Home/End"} · /help${T.reset}`);
+        ? `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab chat" : "Tab meets · ↑↓/wheel ^U/^D scroll · ^P/^N history"} · q quit · /help${T.reset}`
+        : `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab/Esc chat" : "Tab meets · ↑↓/wheel ^U/^D PgUp/PgDn scroll · ^P/^N history · Home/End"} · /help${T.reset}`);
   }
   writeAt(top + inputRows, left, padPanelLine(footerCore + footerTicks(cols - INPUT_PAD_X * 2, visLen(footerCore)), cols));
 
@@ -1616,7 +1633,8 @@ function drawBodyInline() {
   }
 
   // Chat column only: start past the sidebar rule.
-  drawInputPanel(layout.promptTop, cols - sideW, sideW + 1, layout.inputRows, layout.padY);
+  const g = inputPanelGeometry(cols, rows, meeting);
+  drawInputPanel(g.top, g.cols, g.left, g.inputRows, g.padY);
   if (chatPick) {
     drawChatPicker(sideW + 1, cols - sideW, layout.transcriptTop, layout.transcriptRows);
     stdout.write("\x1b[?25l");
@@ -1851,6 +1869,14 @@ function handleKey(chunk) {
         return "chat";
       }
       return "noop";
+    case "\x10": // Ctrl+P — prompt history back (↑ scrolls the messages)
+      if (editor.cycleMenu(-1)) return "redraw";
+      editor.historyUp();
+      return "redraw";
+    case "\x0e": // Ctrl+N — prompt history forward
+      if (editor.cycleMenu(1)) return "redraw";
+      editor.historyDown();
+      return "redraw";
     case "\x0c":
       return "redraw";
     default:
@@ -1936,16 +1962,17 @@ function handleEsc(seq) {
     editor.move(-1);
     return "redraw";
   }
-  if (seq === "\x1b[A") {
+  // ↑/↓ scroll the messages, never the prompt. With tmux mouse off, Terminal
+  // turns the mouse wheel into arrow keys, so arrows recalling history used to
+  // make the wheel rewrite the prompt. History is Ctrl+P / Ctrl+N; /edit edits.
+  if (seq === "\x1b[A" || seq === "\x1bOA") {
     if (editor.cycleMenu(-1)) return "redraw";
-    // ↑ on an empty buffer: pull the last user line into edit mode.
-    if (!editor.buffer && !editTargetTs && loadEditTarget(null)) return "redraw";
-    editor.historyUp();
+    scrollFromBottom += 1;
     return "redraw";
   }
-  if (seq === "\x1b[B") {
+  if (seq === "\x1b[B" || seq === "\x1bOB") {
     if (editor.cycleMenu(1)) return "redraw";
-    editor.historyDown();
+    scrollFromBottom = Math.max(0, scrollFromBottom - 1);
     return "redraw";
   }
   if (seq === "\x1b[H" || seq === "\x1b[1~" || seq === "\x1bOH") {

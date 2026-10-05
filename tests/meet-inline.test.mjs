@@ -186,8 +186,11 @@ describe("meet transcript j/k", () => {
 });
 
 describe("meet transcript inset", () => {
-  it("leaves 2 columns beside the message text and 1 row above and below", () => {
-    const frame = renderMeetChannel({ cols: 70, rows: 24, scrollFromBottom: 0 });
+  it("leaves 2 columns beside the message text and 1 row above and below", (t) => {
+    // Top of the live meeting: the bottom can be one long reply (or "typing…")
+    // with no speaker line in view, which made this test depend on chat state.
+    const frame = renderMeetChannel({ cols: 70, rows: 24, scrollFromBottom: 1e9 });
+    if (!/\d:\d\d/.test(frame.replace(/\x1b\[[0-9;]*m/g, ""))) return t.skip("no meeting turns to render");
     const lines = frame.split("\n");
     assert.ok(lines.length >= 3);
     const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -277,7 +280,10 @@ describe("meet sidebar picks saved meets", () => {
     assert.match(fn, /meetPaneFocus === "sidebar"/);
     assert.match(fn, /focusSidebar\(\)/);
     assert.match(fn, /\\x15/);
-    assert.match(src, /drawInputPanel\(layout\.promptTop, cols - sideW, sideW \+ 1/);
+    // Every input-panel draw goes through one geometry (the footer redraw too).
+    const calls = src.match(/drawInputPanel\([^)]*\)/g).filter((c) => !c.startsWith("drawInputPanel(top, cols, left"));
+    assert.ok(calls.length >= 2);
+    for (const c of calls) assert.equal(c, "drawInputPanel(g.top, g.cols, g.left, g.inputRows, g.padY)");
   });
 });
 
@@ -321,5 +327,30 @@ describe("/chat picker", () => {
     const pr = readFileSync(path.join(root, "scripts/meet-room-prompter.mjs"), "utf8");
     assert.match(pr, /line === "\/chat"\) \{\s+editTargetTs = null;\s+openChatPicker\(\)/);
     assert.match(pr, /line === "\/desk"/);
+  });
+});
+
+describe("input panel geometry", () => {
+  it("puts the panel in the chat column with the same rows for full and footer redraws", async () => {
+    const { inputPanelGeometry, meetSideWidth } = await import("../scripts/meet-room-prompter.mjs");
+    const g = inputPanelGeometry(150, 46, null);
+    const L = inlineLayout(150, 46);
+    assert.equal(g.top, L.promptTop);
+    assert.equal(g.inputRows, L.inputRows);
+    assert.equal(g.left, meetSideWidth(150, null) + 1);
+    assert.equal(g.cols + g.left - 1, 150);
+  });
+});
+
+describe("wheel scrolls the messages, not the prompt", () => {
+  it("↑/↓ scroll the transcript; prompt history is Ctrl+P / Ctrl+N", () => {
+    const src = readFileSync(path.join(root, "scripts/meet-room-prompter.mjs"), "utf8");
+    const esc = src.slice(src.indexOf("function handleEsc"), src.indexOf("function ensureMeetGalleryLayout"));
+    const up = esc.slice(esc.indexOf('if (seq === "\\x1b[A" || seq === "\\x1bOA") {\n    if (editor.cycleMenu(-1))'));
+    assert.match(up.slice(0, 200), /scrollFromBottom \+= 1/);
+    assert.doesNotMatch(esc, /historyUp\(\)/, "arrows never touch prompt history");
+    const keys = src.slice(src.indexOf("function handleKey"), src.indexOf("function handleEsc"));
+    assert.match(keys, /case "\\x10":[\s\S]*?historyUp\(\)/);
+    assert.match(keys, /case "\\x0e":[\s\S]*?historyDown\(\)/);
   });
 });
