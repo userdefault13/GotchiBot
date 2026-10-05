@@ -108,11 +108,35 @@ export function heroTrust(heroId, { wearables = readJson(WEARABLES, {}) } = {}) 
 }
 
 /** Markdown section for a hero's AGENTS.md (the {{HIRE}} slot in AGENTS.common.md). */
-export function renderHireSheet({ roleId, playbook, trust = "trusted", isOrchestrator = false, orchId = "" } = {}) {
+/** OpenClaw reads only this many chars of AGENTS.md; the tail (shared rules) is cut. */
+export const AGENTS_MD_LIMIT = 20000;
+
+export function renderHireSheet({ roleId, playbook, trust = "trusted", isOrchestrator = false, orchId = "", compact = false } = {}) {
   if (!roleId) return "";
+  // OpenClaw truncates AGENTS.md at 20000 chars, and the cut lands on the shared
+  // rules at the end. The orchestrator reports to UserDefault and is never on
+  // probation: no sheet. Trusted desks get one compact paragraph (their role
+  // template already states the job); only probation gets the full sheet.
+  if (isOrchestrator) return "";
   const h = hireFor(roleId, playbook || {});
-  const boss = isOrchestrator ? "UserDefault" : h.reportsTo === "orchestrator" ? `the orchestrator${orchId ? ` (${orchId})` : ""}` : h.reportsTo;
-  const level = isOrchestrator ? "trusted" : trust;
+  const boss = h.reportsTo === "orchestrator" ? `the orchestrator${orchId ? ` (${orchId})` : ""}` : h.reportsTo;
+  const level = trust;
+  if (level !== "probation") {
+    const done = h.definitionOfDone.map((d) => d.replace(/\.$/, "")).join("; ");
+    return [
+      "## My job (hire sheet)",
+      "",
+      `**Trust: trusted.** I report to ${boss}: ${h.cadence.charAt(0).toLowerCase()}${h.cadence.slice(1)} Done means: ${done}. ${h.trusted.stillNever}`,
+    ].join("\n");
+  }
+  if (compact) {
+    // Probation, squeezed for a desk whose AGENTS.md is near the limit.
+    return [
+      "## My job (hire sheet)",
+      "",
+      `**Trust: probation.** I report to ${boss}. Until UserDefault promotes me I only read, run status/report commands, and draft changes for review — no writes outside my session dir, no money, posts, deletes, or secrets. Trial task: ${h.probation.trialTask} Done means: ${h.definitionOfDone.map((d) => d.replace(/\.$/, "")).join("; ")}.`,
+    ].join("\n");
+  }
   const lines = [
     "## My job (hire sheet)",
     "",

@@ -67,9 +67,9 @@ describe("trust ramp", () => {
     const trusted = renderHireSheet({ roleId: "accountant", playbook: pb, trust: "trusted" });
     assert.match(trusted, /Trust: trusted/);
     assert.doesNotMatch(trusted, /Trial task:/);
+    assert.ok(trusted.length < 700, `trusted sheet stays compact (${trusted.length})`);
     const orch = renderHireSheet({ roleId: "orchestrator", playbook: playbooks.orchestrator, trust: "probation", isOrchestrator: true });
-    assert.match(orch, /Trust: trusted/, "the orchestrator is never on probation");
-    assert.match(orch, /I report to:\*\* UserDefault/);
+    assert.equal(orch, "", "the orchestrator has no hire sheet (never on probation, reports to UserDefault)");
   });
 
   it("starts new assignments on probation and keeps earned trust on a re-equip", () => {
@@ -127,7 +127,31 @@ describe("chief of staff probation review", () => {
   it("tells the chief of staff to recommend, never to promote", () => {
     const cos = read("config/openclaw/templates/AGENTS.chief-of-staff.md");
     assert.match(cos, /gotchibot hire probation/);
-    assert.match(cos, /recommend promote/);
+    assert.match(cos, /\*\*promote\*\*, \*\*hold\*\*/);
+    assert.match(cos, /I recommend; UserDefault decides/);
     assert.match(cos, /I never run `pack-wearable trust`/);
+  });
+});
+
+describe("AGENTS.md size", () => {
+  it("every rendered hero AGENTS.md fits OpenClaw's 20000-char read", async () => {
+    const { AGENTS_MD_LIMIT } = await import("../scripts/hire-sheet.mjs");
+    const ws = path.join(root, "config/openclaw/workspaces");
+    for (const id of readdirSync(ws)) {
+      const f = path.join(ws, id, "AGENTS.md");
+      if (!existsSync(f)) continue;
+      const n = readFileSync(f, "utf8").length;
+      assert.ok(n <= AGENTS_MD_LIMIT, `${id} AGENTS.md is ${n} chars (limit ${AGENTS_MD_LIMIT})`);
+    }
+  });
+
+  it("puts the hard rules first in the shared section and skips the orchestrator's sheet", () => {
+    const common = read("config/openclaw/templates/AGENTS.common.md");
+    assert.ok(common.indexOf("## Never") < common.indexOf("## Memory"));
+    assert.ok(common.indexOf("## Messaging policy") < common.indexOf("## Memory"));
+    assert.equal(renderHireSheet({ roleId: "orchestrator", playbook: playbooks.orchestrator, isOrchestrator: true }), "");
+    const compact = renderHireSheet({ roleId: "accountant", playbook: playbooks.accountant, trust: "probation", compact: true });
+    assert.match(compact, /Trust: probation/);
+    assert.ok(compact.length < 900, `compact probation is ${compact.length} chars`);
   });
 });
