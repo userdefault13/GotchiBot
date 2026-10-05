@@ -20,24 +20,40 @@
  *   gotchibot graph build                 regenerate config/agent-graph.json
  *   gotchibot graph sync                  drain the outbox to the Hub
  *   gotchibot graph watch [--json]        fire alerts for stalled / failed handoffs
+ *   gotchibot graph plugin install        link the OpenClaw gateway plugin (bot runs + tokens)
+ *   gotchibot graph plugin status         is it loaded, which hooks
+ *
+ * Gateway plugin (openclaw-plugins/gotchibot-graph → scripts/oc-graph-hooks.mjs):
+ * one `run` edge per bot run with its tokens, and `spawn` edges for native
+ * sub-agents. Runs are work, not handoffs: they feed the TOKENS section and
+ * fire only on a token overrun.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
 import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const GRAPH_KINDS = ["passoff", "consult", "job", "ticket", "inbox", "spawn"];
-/** Time budget per kind before an open edge is "stalled". Tokens come later. */
+export const GRAPH_KINDS = ["passoff", "consult", "job", "ticket", "inbox", "spawn", "run"];
+/**
+ * Budgets per kind: an open edge past `minutes` is stalled; an edge whose
+ * tokens.total passes `tokens` fires too. Tokens come from the gotchibot-graph
+ * OpenClaw plugin (run and spawn edges); script-only kinds carry none yet.
+ */
 export const DEFAULT_BUDGETS = {
   consult: { minutes: 10, tokens: null },
   passoff: { minutes: 120, tokens: null },
   ticket: { minutes: 1440, tokens: null },
   job: { minutes: 1440, tokens: null },
   inbox: { minutes: 240, tokens: null },
-  spawn: { minutes: 30, tokens: null },
+  spawn: { minutes: 30, tokens: 1_000_000 },
+  run: { minutes: 30, tokens: 400_000 },
 };
+/** Kinds that are work a bot did, not a handoff between two bots. */
+const WORK_KINDS = new Set(["run"]);
 const FAILED_OUTCOMES = new Set(["failed", "dropped", "rework"]);
 
 function readJson(path, fallback) {
@@ -279,14 +295,20 @@ function pct(sorted, p) {
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 }
 
+function budgetFor(kind, graph) {
+  return (graph?.budgets || DEFAULT_BUDGETS)[kind] || DEFAULT_BUDGETS[kind] || {};
+}
 function budgetMs(kind, graph) {
-  const b = (graph?.budgets || DEFAULT_BUDGETS)[kind] || DEFAULT_BUDGETS[kind];
-  return (b?.minutes ?? 60) * 60_000;
+  return (budgetFor(kind, graph).minutes ?? 60) * 60_000;
 }
 
 /** Why an edge fires (stalled / failed), or null. */
 export function fireReason(e, { now = Date.now(), graph = loadGraph() } = {}) {
-  if (e.outcome && FAILED_OUTCOMES.has(e.outcome)) return `${e.outcome}`;
+  // A failed bot run is a model/tool error the bot already saw; only its token
+  // overrun is a kanban → PM matter. Failed handoffs and sub-agents fire.
+  if (e.outcome && FAILED_OUTCOMES.has(e.outcome) && !WORK_KINDS.has(e.kind)) return `${e.outcome}`;
+  const tokenBudget = budgetFor(e.kind, graph).tokens;
+  if (tokenBudget && Number(e.tokens?.total) > tokenBudget) return `used ${fmtTokens(e.tokens.total)} tokens (budget ${fmtTokens(tokenBudget)})`;
   if (!e.answeredAt && e.sentAt) {
     const age = now - Date.parse(e.sentAt);
     if (age > budgetMs(e.kind, graph)) return `open ${Math.round(age / 60000)}m (budget ${Math.round(budgetMs(e.kind, graph) / 60000)}m)`;
@@ -294,10 +316,41 @@ export function fireReason(e, { now = Date.now(), graph = loadGraph() } = {}) {
   return null;
 }
 
+export function fmtTokens(n) {
+  n = Number(n) || 0;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}k`;
+  return String(n);
+}
+
+/** Tokens per bot (run edges): runs, failed, total, median per run, top model. */
+export function tokenReport(edges) {
+  const byBot = new Map();
+  for (const e of edges) {
+    if (e.kind !== "run") continue;
+    const key = e.toRole || e.to || "?";
+    const b = byBot.get(key) || { bot: key, runs: 0, failed: 0, total: 0, per: [], models: new Map() };
+    b.runs++;
+    if (e.outcome === "failed") b.failed++;
+    const t = Number(e.tokens?.total) || 0;
+    b.total += t;
+    if (t) b.per.push(t);
+    if (e.model) b.models.set(e.model, (b.models.get(e.model) || 0) + 1);
+    byBot.set(key, b);
+  }
+  return [...byBot.values()]
+    .map((b) => {
+      const s = b.per.sort((x, y) => x - y);
+      const model = [...b.models.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+      return { bot: b.bot, runs: b.runs, failed: b.failed, tokens: b.total, medianTokens: s.length ? pct(s, 50) : null, model };
+    })
+    .sort((a, b) => b.tokens - a.tokens);
+}
+
 export function graphReport(edges, { now = Date.now(), graph = loadGraph() } = {}) {
   const pairs = new Map();
   for (const e of edges) {
-    if (!e.kind) continue;
+    if (!e.kind || WORK_KINDS.has(e.kind)) continue;
     const key = `${e.fromRole || e.from || "?"} → ${e.toRole || e.to || "?"}`;
     const p = pairs.get(key) || { pair: key, count: 0, open: 0, failed: 0, ms: [] };
     p.count++;
@@ -313,20 +366,24 @@ export function graphReport(edges, { now = Date.now(), graph = loadGraph() } = {
     })
     .sort((a, b) => b.count - a.count);
   const stalled = edges.filter((e) => !e.answeredAt && fireReason(e, { now, graph })).map((e) => ({ ...e, reason: fireReason(e, { now, graph }) }));
+  const overBudget = edges
+    .filter((e) => e.answeredAt && !FAILED_OUTCOMES.has(e.outcome) && /tokens/.test(fireReason(e, { now, graph }) || ""))
+    .map((e) => ({ ...e, reason: fireReason(e, { now, graph }) }));
   const reworkByRef = new Map();
   for (const e of edges) if (e.kind === "ticket" && e.outcome === "rework") reworkByRef.set(e.ref, (reworkByRef.get(e.ref) || 0) + 1);
   const rework = [...reworkByRef.entries()].filter(([, n]) => n >= 2).map(([ref, n]) => ({ ref, reworks: n }));
-  const offGraph = edges.filter((e) => e.declared === false);
+  const offGraph = edges.filter((e) => e.declared === false && !WORK_KINDS.has(e.kind));
   const open = edges
-    .filter((e) => e.kind && !e.answeredAt)
+    .filter((e) => e.kind && !e.answeredAt && !WORK_KINDS.has(e.kind))
     .sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)))
     .slice(0, 60)
     .map((e) => ({ ...e, stalled: Boolean(fireReason(e, { now, graph })), reason: fireReason(e, { now, graph }) }));
-  return { flows, stalled, rework, offGraph, open, total: edges.length };
+  const handoffs = edges.filter((e) => e.kind && !WORK_KINDS.has(e.kind)).length;
+  return { flows, stalled, rework, offGraph, open, tokens: tokenReport(edges), overBudget, total: handoffs, runs: edges.length - handoffs };
 }
 
 function fmtReport(r, { hubOk }) {
-  const out = [`agent graph — ${r.total} handoff(s)${hubOk ? "" : " · Hub unreachable: local outbox only"}`, ""];
+  const out = [`agent graph — ${r.total} handoff(s)${r.runs ? ` · ${r.runs} bot run(s)` : ""}${hubOk ? "" : " · Hub unreachable: local outbox only"}`, ""];
   out.push("FLOWS (count · open · failed · median / p90 min to answer)");
   for (const f of r.flows.slice(0, 20)) out.push(`  ${f.pair.padEnd(42)} ${String(f.count).padStart(3)} · ${f.open} open · ${f.failed} failed · ${f.medianMin ?? "—"} / ${f.p90Min ?? "—"}`);
   if (!r.flows.length) out.push("  (none yet)");
@@ -336,6 +393,10 @@ function fmtReport(r, { hubOk }) {
   out.push("", "REWORK LOOPS (ticket bounced ≥2×)");
   for (const x of r.rework) out.push(`  ${x.ref}  ${x.reworks}×`);
   if (!r.rework.length) out.push("  (none)");
+  out.push("", "TOKENS by bot (gateway runs · failed · total · median per run · model)");
+  for (const t of (r.tokens || []).slice(0, 15)) out.push(`  ${t.bot.padEnd(22)} ${String(t.runs).padStart(4)} runs · ${t.failed} failed · ${fmtTokens(t.tokens).padStart(6)} · ${t.medianTokens == null ? "—" : fmtTokens(t.medianTokens)}  ${t.model || ""}`);
+  if (!r.tokens?.length) out.push("  (none — install the gateway plugin: gotchibot graph plugin install)");
+  for (const e of (r.overBudget || []).slice(0, 10)) out.push(`  ! ${e.kind} ${e.fromRole || e.from} → ${e.toRole || e.to}  ${e.reason}`);
   out.push("", "OFF-GRAPH (not in config/agent-graph.json)");
   for (const e of r.offGraph.slice(0, 15)) out.push(`  ${e.kind} ${(e.fromRole || e.from)} → ${(e.toRole || e.to)}  ${e.title || e.ref || ""}`);
   if (!r.offGraph.length) out.push("  (none)");
@@ -409,6 +470,70 @@ async function defaultHandoffCard(e) {
 
 // ── CLI ───────────────────────────────────────────────────────────────────
 
+// ── gateway plugin (bot runs, tokens, native sub-agents) ─────────────────
+
+export const GRAPH_PLUGIN_ID = "gotchibot-graph";
+
+function openclawBin() {
+  const local = join(homedir(), ".openclaw", "bin", "openclaw");
+  return existsSync(local) ? local : "openclaw";
+}
+
+function oc(args, { quiet = false } = {}) {
+  const r = spawnSync(openclawBin(), args, { encoding: "utf8", timeout: 120_000 });
+  if (!quiet && r.status !== 0) process.stderr.write(r.stderr || r.stdout || "");
+  return { ok: r.status === 0, out: (r.stdout || "").trim(), err: (r.stderr || "").trim(), missing: r.error?.code === "ENOENT" };
+}
+
+/** JSON from an openclaw command that may print a banner line first. */
+function ocJson(text) {
+  const i = text.search(/[[{]/);
+  if (i < 0) return null;
+  try {
+    return JSON.parse(text.slice(i));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Install (link) the gotchibot-graph plugin into this machine's OpenClaw and
+ * allow it the conversation hooks (llm_output, agent_end) it needs for tokens.
+ */
+export function installGraphPlugin({ root = ROOT, run = oc } = {}) {
+  const dir = join(root, "openclaw-plugins", GRAPH_PLUGIN_ID);
+  const steps = [];
+  const inst = run(["plugins", "install", "--link", dir], { quiet: true });
+  if (inst.missing) return { ok: false, steps, error: "openclaw is not installed on this machine" };
+  const already = /already|exists/i.test(`${inst.err} ${inst.out}`);
+  steps.push({ step: "link", ok: inst.ok || already, note: inst.ok ? "linked" : already ? "already linked" : inst.err.split("\n").pop() });
+  if (!inst.ok && !already) return { ok: false, steps, error: `plugins install failed: ${inst.err || inst.out}` };
+  const allow = ocJson(run(["config", "get", "plugins.allow", "--json"], { quiet: true }).out);
+  if (Array.isArray(allow) && !allow.includes(GRAPH_PLUGIN_ID)) {
+    const r = run(["config", "set", "plugins.allow", JSON.stringify([...allow, GRAPH_PLUGIN_ID]), "--strict-json"]);
+    steps.push({ step: "allow", ok: r.ok });
+  } else steps.push({ step: "allow", ok: true, note: Array.isArray(allow) ? "already allowed" : "no allowlist" });
+  for (const [path, note] of [
+    [`plugins.entries.${GRAPH_PLUGIN_ID}.enabled`, "enabled"],
+    [`plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess`, "token hooks allowed"],
+  ]) {
+    const r = run(["config", "set", path, "true", "--strict-json"]);
+    steps.push({ step: note, ok: r.ok });
+  }
+  return { ok: steps.every((s) => s.ok), steps };
+}
+
+/** Is the plugin loaded with its hooks? (module-loaded inspection, no gateway needed) */
+export function graphPluginStatus({ run = oc } = {}) {
+  const r = run(["plugins", "inspect", GRAPH_PLUGIN_ID, "--runtime", "--json"], { quiet: true });
+  if (r.missing) return { installed: false, error: "openclaw is not installed on this machine" };
+  if (!r.ok) return { installed: false, error: (r.err || r.out).split("\n").find((l) => l.trim()) || "inspect failed" };
+  const j = ocJson(r.out) || {};
+  const text = JSON.stringify(j);
+  const hooks = ["llm_output", "agent_end", "subagent_spawned", "subagent_ended"].filter((h) => text.includes(h));
+  return { installed: true, hooks, raw: j };
+}
+
 async function main(argv) {
   const cmd = argv[0] && !argv[0].startsWith("-") ? argv[0] : "report";
   const json = argv.includes("--json");
@@ -430,6 +555,26 @@ async function main(argv) {
     console.log(json ? JSON.stringify(r, null, 2) : r.fired.length ? r.fired.map((f) => `fired ${f.edgeId}  ${f.reason}  → ${f.alerted || "(no alert target)"}`).join("\n") : "no stalled or failed handoffs");
     return 0;
   }
+  if (cmd === "plugin") {
+    const sub = argv[1] || "status";
+    if (sub === "install") {
+      const r = installGraphPlugin();
+      if (json) console.log(JSON.stringify(r, null, 2));
+      else {
+        for (const s of r.steps) console.log(`${s.ok ? "✓" : "✗"} ${s.step}${s.note ? ` — ${s.note}` : ""}`);
+        console.log(r.ok ? "Restart the OpenClaw gateway to load it (Hub: systemctl --user restart openclaw-gateway)." : r.error || "install incomplete");
+      }
+      return r.ok ? 0 : 1;
+    }
+    if (sub === "status") {
+      const r = graphPluginStatus();
+      if (json) console.log(JSON.stringify(r, null, 2));
+      else console.log(r.installed ? `${GRAPH_PLUGIN_ID}: installed · hooks ${r.hooks.join(", ") || "(none registered — check plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess)"}` : `${GRAPH_PLUGIN_ID}: not installed (${r.error}) — gotchibot graph plugin install`);
+      return r.installed ? 0 : 1;
+    }
+    console.error("usage: gotchibot graph plugin [status|install] [--json]");
+    return 2;
+  }
   if (cmd === "report") {
     await flushOutbox().catch(() => {});
     const { edges, hubOk } = await loadEdges({ days });
@@ -437,7 +582,7 @@ async function main(argv) {
     console.log(json ? JSON.stringify({ hubOk, ...r }, null, 2) : fmtReport(r, { hubOk }));
     return 0;
   }
-  console.error("usage: gotchibot graph [report] [--days N] [--json] | build | sync | watch [--json]");
+  console.error("usage: gotchibot graph [report] [--days N] [--json] | build | sync | watch [--json] | plugin [status|install]");
   return 2;
 }
 

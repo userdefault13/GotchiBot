@@ -63,6 +63,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot inbox send|list|read|archive|housekeep|digest|unread|tui   internal bot mail (not AgentMail)
   gotchibot graph [--days N] [--json]   agent graph: handoff flows, stalled, rework, off-graph
   gotchibot graph build|sync|watch      regenerate declared graph · drain outbox · kanban → PM alerts
+  gotchibot graph plugin install|status OpenClaw gateway plugin: bot runs, tokens, native sub-agents
   gotchibot graph init|get|set|next|stop|list   graph-state (sessions/graph)
   gotchibot jev ask|smoke|models    TypeSafe Jev System One decisions (not chat)
   gotchibot meet start|open|room [--inline]|invite|status|say|morning|colabo|end   persistent room (/meet); --inline = single terminal (no tmux)
@@ -662,7 +663,7 @@ cmd_inbox() {
 
 cmd_graph() {
   # graph-state's verbs keep working; anything else is the agent graph
-  # (handoff report, build, sync, watch — scripts/agent-graph.mjs).
+  # (handoff report, build, sync, watch, plugin — scripts/agent-graph.mjs).
   case "${1:-}" in
     init|get|set|next|stop|list) exec node "$ROOT/scripts/graph-state.mjs" "$@" ;;
   esac

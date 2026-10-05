@@ -600,7 +600,7 @@ function viewGraph(cols) {
     out.push(...panel("GRAPH", [`${c.gray}${probeState.graph.err || "loading handoffs…"}${c.reset}`], cols, { note: probeNote("graph") }));
     return out;
   }
-  const note = `${g.total} handoff(s)${g.hubOk ? "" : " · Hub offline: local only"} · ${probeNote("graph")}`;
+  const note = `${g.total} handoff(s)${g.runs ? ` · ${g.runs} run(s)` : ""}${g.hubOk ? "" : " · Hub offline: local only"} · ${probeNote("graph")}`;
   const flows = (g.flows || []).slice(0, 14).map((f) => {
     const t = f.medianMin == null ? "—" : `${f.medianMin}m / ${f.p90Min}m`;
     return `${cut(f.pair, Math.max(10, cols - 40)).padEnd(Math.max(10, cols - 40))} ${String(f.count).padStart(3)}  ${f.open ? `${c.yellow}${f.open} open${c.reset}` : `${c.dim}0 open${c.reset}`}  ${f.failed ? `${c.red}${f.failed} failed${c.reset}` : ""}  ${c.dim}${t}${c.reset}`;
@@ -610,6 +610,10 @@ function viewGraph(cols) {
   out.push(...panel("STALLED", stalled.length ? stalled : [`${c.green}none${c.reset}`], cols, { border: stalled.length ? c.yellow : c.rule }));
   const rework = (g.rework || []).map((x) => `${c.red}↺${c.reset} ${x.ref}  ${x.reworks}× rework`);
   out.push(...panel("REWORK LOOPS", rework.length ? rework : [`${c.green}none${c.reset}`], cols, { border: rework.length ? c.red : c.rule }));
+  const kTok = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n || 0));
+  const tok = (g.tokens || []).slice(0, 10).map((t) => `${cut(t.bot, 20).padEnd(20)} ${String(t.runs).padStart(4)} runs  ${t.failed ? `${c.red}${t.failed} failed${c.reset}  ` : ""}${kTok(t.tokens).padStart(6)}  ${c.dim}${t.medianTokens == null ? "—" : kTok(t.medianTokens)}/run  ${cut(t.model || "", 28)}${c.reset}`);
+  for (const e of (g.overBudget || []).slice(0, 5)) tok.push(`${c.yellow}!${c.reset} ${e.toRole || e.to}  ${c.dim}${e.reason}${e.alertedAt ? " · PM alerted" : ""}${c.reset}`);
+  out.push(...panel("TOKENS (gateway runs per bot)", tok.length ? tok : [`${c.gray}no runs yet — gotchibot graph plugin install${c.reset}`], cols, { border: (g.overBudget || []).length ? c.yellow : c.rule }));
   const off = (g.offGraph || []).slice(0, 8).map((e) => `${c.gray}?${c.reset} ${e.kind} ${e.fromRole || e.from} → ${e.toRole || e.to}  ${c.dim}${cut(e.title || e.ref || "", 40)}${c.reset}`);
   out.push(...panel("OFF-GRAPH (not declared in config/agent-graph.json)", off.length ? off : [`${c.green}none${c.reset}`], cols));
   return out;

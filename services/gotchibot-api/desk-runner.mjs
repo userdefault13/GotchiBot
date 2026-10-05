@@ -476,6 +476,7 @@ export function createDeskRunner({
   agent = DEFAULT_DESK_AGENT,
   pollMs = 2_000,
   graphWatchMs = 120_000,
+  drainGraphOutbox = true,
   mirrorMs = 5_000,
   turnTimeoutMs = 10 * 60_000,
   staleMs = 15 * 60_000,
@@ -638,7 +639,14 @@ export function createDeskRunner({
     if (Date.now() - lastGraphWatchAt < graphWatchMs) return;
     lastGraphWatchAt = Date.now();
     try {
-      const { watchEdges } = await import("../../scripts/agent-graph.mjs");
+      const { watchEdges, flushOutbox } = await import("../../scripts/agent-graph.mjs");
+      // The Hub's own gateway plugin queues run/spawn edges locally (the Hub
+      // is not a paired desk) — land them straight in the store.
+      if (drainGraphOutbox) {
+        const { validateEdges } = await import("./graph.mjs");
+        const d = await flushOutbox({ hubRequest: async (_m, _p, { body }) => store.putEdges(HUB_DESK_RUNNER_ID, validateEdges(body)) });
+        if (d.sent) log("graph-outbox", { sent: d.sent, left: d.left });
+      }
       const edges = await store.listEdges({});
       const r = await watchEdges({
         edges,

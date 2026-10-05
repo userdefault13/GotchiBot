@@ -1,0 +1,12 @@
+{
+  "id": "gotchibot-graph",
+  "name": "GotchiBot agent graph",
+  "description": "Records each bot run (duration, outcome, tokens) and each native sub-agent as an edge on the GotchiBot agent graph. Observation only.",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}

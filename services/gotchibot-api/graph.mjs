@@ -8,7 +8,7 @@
  * and outcome; the kanban watch sets alertedAt. Only the fields sent are
  * written, so each step is an idempotent upsert.
  */
-export const EDGE_KINDS = new Set(["passoff", "consult", "job", "ticket", "inbox", "spawn"]);
+export const EDGE_KINDS = new Set(["passoff", "consult", "job", "ticket", "inbox", "spawn", "run"]);
 export const EDGE_OUTCOMES = new Set(["answered", "accepted", "failed", "dropped", "rework", "done"]);
 export const EDGES_MAX_PER_PUSH = 200;
 
@@ -22,6 +22,17 @@ function str(v, max = 80) {
   if (v == null) return null;
   const s = String(v).replace(/\s+/g, " ").trim();
   return s ? s.slice(0, max) : null;
+}
+
+/** Token usage {input, output, cacheRead, cacheWrite, total} — non-negative integers only. */
+function tokens(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out = {};
+  for (const k of ["input", "output", "cacheRead", "cacheWrite", "total"]) {
+    const n = Number(v[k]);
+    if (Number.isFinite(n) && n >= 0) out[k] = Math.min(Math.round(n), 1e12);
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 function iso(v) {
@@ -53,6 +64,8 @@ export function validateEdge(e) {
     outcome,
     alertedAt: iso(e?.alertedAt),
     alertReason: str(e?.alertReason, 160),
+    model: str(e?.model, 120),
+    tokens: tokens(e?.tokens),
   };
   if (typeof e?.declared === "boolean") out.declared = e.declared;
   for (const k of Object.keys(out)) if (out[k] == null) delete out[k];

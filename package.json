@@ -27,6 +27,7 @@
     "assets/",
     "docs/",
     "mcp-servers/",
+    "openclaw-plugins/",
     "patches/",
     "docker/",
     "config/openclaw/templates/",

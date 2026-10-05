@@ -1187,12 +1187,12 @@ export async function connectStore({ mongoUri, dbName }) {
   }
 
   /** Edges sent within maxAgeMs (default 7 days), newest first, plus any still open. */
-  async function listEdges({ since = null, limit = 2000 } = {}) {
+  async function listEdges({ since = null, limit = 5000 } = {}) {
     const from = since ? new Date(since) : new Date(Date.now() - 7 * 86400_000);
     const docs = await agentEdges
       .find({ $or: [{ sentAt: { $gte: from.toISOString() } }, { answeredAt: { $exists: false } }] })
       .sort({ sentAt: -1 })
-      .limit(Math.max(1, Math.min(5000, Number(limit) || 2000)))
+      .limit(Math.max(1, Math.min(5000, Number(limit) || 5000)))
       .toArray();
     return docs.map(({ _id, createdAt, updatedAt, ...e }) => ({
       ...e,

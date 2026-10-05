@@ -24,7 +24,10 @@ import {
   watchEdges,
   roleOf,
   DEFAULT_BUDGETS,
+  installGraphPlugin,
+  GRAPH_PLUGIN_ID,
 } from "../scripts/agent-graph.mjs";
+import { createGraphHooks, registerGraphHooks, runSource, agentOfSessionKey } from "../scripts/oc-graph-hooks.mjs";
 import { validateEdges } from "../services/gotchibot-api/graph.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -195,6 +198,121 @@ describe("kanban → PM watch", () => {
   });
 });
 
+describe("OpenClaw gateway hooks", () => {
+  const T = Date.parse("2026-10-05T12:00:00Z");
+  const setup = () => {
+    const edges = [];
+    const hooks = createGraphHooks({ record: (e) => edges.push(e), host: "imacOmarchy.tail", now: () => T });
+    return { edges, hooks };
+  };
+
+  it("records one run edge per agent_end with the run's summed tokens", () => {
+    const { edges, hooks } = setup();
+    hooks.llm_output({ runId: "r1", provider: "opencode-go", model: "glm-5.3", usage: { input: 1000, output: 200, total: 1200 } }, {});
+    hooks.llm_output({ runId: "r1", provider: "opencode-go", model: "glm-5.3", usage: { input: 3000, output: 300 } }, {});
+    hooks.agent_end({ runId: "r1", success: true, durationMs: 90_000, messages: [] }, { agentId: "owned-954", sessionKey: "agent:owned-954:main", trigger: "user" });
+    assert.equal(edges.length, 1);
+    const e = edges[0];
+    assert.equal(e.edgeId, "run:imacOmarchy.r1");
+    assert.equal(e.kind, "run");
+    assert.equal(e.from, "chat");
+    assert.equal(e.to, "owned-954");
+    assert.equal(e.outcome, "done");
+    assert.equal(e.declared, true);
+    assert.equal(e.model, "opencode-go/glm-5.3");
+    assert.deepEqual(e.tokens, { input: 4000, output: 500, cacheRead: 0, cacheWrite: 0, total: 4500 });
+    assert.equal(Date.parse(e.answeredAt) - Date.parse(e.sentAt), 90_000);
+  });
+
+  it("labels the run source and marks failed runs", () => {
+    const { edges, hooks } = setup();
+    hooks.agent_end({ runId: "r2", success: false, error: "quota" }, { agentId: "orchestrator", trigger: "cron" });
+    assert.equal(edges[0].from, "cron");
+    assert.equal(edges[0].outcome, "failed");
+    assert.equal(edges[0].title, "quota");
+    assert.equal(runSource({}), "chat");
+    assert.equal(agentOfSessionKey("agent:owned-8532:sub:x"), "owned-8532");
+  });
+
+  it("opens a spawn edge, rolls the child's tokens in, and closes it with the outcome", () => {
+    const { edges, hooks } = setup();
+    hooks.subagent_spawned({ childSessionKey: "agent:owned-23965:sub:abc", agentId: "owned-23965", label: "audit", mode: "run", threadRequested: false, runId: "p1" }, { requesterSessionKey: "agent:owned-22899:main" });
+    hooks.llm_output({ runId: "c1", usage: { input: 50, output: 50, total: 100 } }, {});
+    hooks.agent_end({ runId: "c1", success: true }, { agentId: "owned-23965", sessionKey: "agent:owned-23965:sub:abc" });
+    hooks.subagent_ended({ targetSessionKey: "agent:owned-23965:sub:abc", targetKind: "subagent", reason: "done", outcome: "timeout" });
+    const open = edges.find((e) => e.kind === "spawn");
+    assert.equal(open.from, "owned-22899");
+    assert.equal(open.to, "owned-23965");
+    const close = edges.at(-1);
+    assert.equal(close.edgeId, open.edgeId);
+    assert.equal(close.outcome, "failed");
+    assert.equal(close.tokens.total, 100);
+  });
+
+  it("never throws into OpenClaw when recording fails", () => {
+    const hooks = createGraphHooks({ record: () => { throw new Error("disk full"); }, host: "h" });
+    assert.doesNotThrow(() => hooks.agent_end({ runId: "r" }, { agentId: "a" }));
+    const rejecting = createGraphHooks({ record: () => Promise.reject(new Error("nope")), host: "h" });
+    assert.doesNotThrow(() => rejecting.agent_end({ runId: "r" }, { agentId: "a" }));
+  });
+
+  it("registers its four hooks on the plugin api", () => {
+    const names = [];
+    registerGraphHooks({ on: (n) => names.push(n) }, { record: () => {} });
+    assert.deepEqual(names.sort(), ["agent_end", "llm_output", "subagent_ended", "subagent_spawned"]);
+  });
+});
+
+describe("token budgets", () => {
+  const now = Date.parse("2026-10-05T12:00:00Z");
+  const run = (o) => ({ kind: "run", fromRole: "chat", to: "owned-954", toRole: "dai", sentAt: new Date(now - 60000).toISOString(), answeredAt: new Date(now).toISOString(), outcome: "done", declared: true, ...o });
+
+  it("fires a run only on a token overrun, not on a failed run", () => {
+    assert.equal(fireReason(run({ outcome: "failed" }), { now, graph }), null);
+    assert.match(fireReason(run({ tokens: { total: 500_000 } }), { now, graph }), /used 500k tokens \(budget 400k\)/);
+    assert.equal(fireReason(run({ tokens: { total: 1000 } }), { now, graph }), null);
+    assert.match(fireReason({ kind: "spawn", outcome: "failed" }, { now, graph }), /failed/);
+  });
+
+  it("keeps runs out of handoff flows and rolls them up per bot", () => {
+    const edges = [
+      run({ edgeId: "a", tokens: { total: 1000 }, model: "m1" }),
+      run({ edgeId: "b", tokens: { total: 3000 }, model: "m1", outcome: "failed" }),
+      run({ edgeId: "c", tokens: { total: 450_000 }, model: "m2" }),
+      { edgeId: "h", kind: "consult", fromRole: "dai", toRole: "orchestrator", sentAt: new Date(now - 60000).toISOString(), answeredAt: new Date(now).toISOString(), outcome: "answered", declared: true },
+    ];
+    const r = graphReport(edges, { now, graph });
+    assert.deepEqual(r.flows.map((f) => f.pair), ["dai → orchestrator"]);
+    assert.equal(r.total, 1);
+    assert.equal(r.runs, 3);
+    assert.deepEqual(r.tokens[0], { bot: "dai", runs: 3, failed: 1, tokens: 454_000, medianTokens: 3000, model: "m1" });
+    assert.deepEqual(r.overBudget.map((e) => e.edgeId), ["c"]);
+  });
+});
+
+describe("gateway plugin install", () => {
+  it("links the plugin, adds it to an existing allowlist, and allows the token hooks", () => {
+    const calls = [];
+    const run = (args) => {
+      calls.push(args.join(" "));
+      if (args[0] === "config" && args[1] === "get") return { ok: true, out: 'banner\n["slack","opencode-go"]', err: "" };
+      return { ok: true, out: "", err: "" };
+    };
+    const r = installGraphPlugin({ root: "/repo", run });
+    assert.equal(r.ok, true);
+    assert.match(calls[0], /^plugins install --link \/repo\/openclaw-plugins\/gotchibot-graph$/);
+    assert.ok(calls.includes(`config set plugins.allow ${JSON.stringify(["slack", "opencode-go", GRAPH_PLUGIN_ID])} --strict-json`));
+    assert.ok(calls.includes(`config set plugins.entries.${GRAPH_PLUGIN_ID}.hooks.allowConversationAccess true --strict-json`));
+  });
+
+  it("treats an existing link as installed and reports a missing openclaw", () => {
+    const again = installGraphPlugin({ root: "/repo", run: (args) => (args[0] === "plugins" ? { ok: false, out: "", err: "plugin already exists" } : { ok: true, out: "", err: "" }) });
+    assert.equal(again.ok, true);
+    const none = installGraphPlugin({ root: "/repo", run: () => ({ ok: false, missing: true, out: "", err: "" }) });
+    assert.match(none.error, /not installed/);
+  });
+});
+
 describe("Hub edge validation", () => {
   it("allow-lists fields and rejects bad input", () => {
     const [e] = validateEdges({ edges: [{ edgeId: "consult:q1.0", kind: "consult", from: "a", to: "b", sentAt: "2026-10-05T00:00:00Z", junk: "x", declared: false }] });
@@ -203,6 +321,9 @@ describe("Hub edge validation", () => {
     assert.throws(() => validateEdges({ edges: [{ edgeId: "bad id!" }] }), /edgeId/);
     assert.throws(() => validateEdges({ edges: [{ edgeId: "x", kind: "nope" }] }), /unknown kind/);
     assert.throws(() => validateEdges({}), /array required/);
+    const [run] = validateEdges({ edges: [{ edgeId: "run:gw.r1", kind: "run", model: "opencode-go/glm-5.3", tokens: { input: 10, output: -5, total: "12", junk: 1 } }] });
+    assert.deepEqual(run.tokens, { input: 10, total: 12 });
+    assert.equal(run.model, "opencode-go/glm-5.3");
   });
 });
 
