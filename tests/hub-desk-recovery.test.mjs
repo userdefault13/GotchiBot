@@ -19,16 +19,18 @@ function fixture(t, role = 'desk') {
     runCommand: (bin, args) => { events.push([bin, ...args]); return true; },
     probeTcp: async () => true, probeHealth: async url => { events.push(['health', url]); return true; },
     probeBridge: () => true, request: async (_, path) => { events.push(['request', path]); return path.endsWith('whoami') ? { deskId: 'desk-1' } : { threads: [{ threadId: 'orch' }] }; },
-    pullProject: async () => { events.push(['project']); return { ok: true }; }, wait: async ms => events.push(['backoff', ms]), publish: state => states.push(state) };
+    pullProject: async () => { events.push(['project']); return { ok: true }; }, wait: async ms => events.push(['backoff', ms]), publish: state => states.push(state),
+    startProcess: (bin, args) => events.push(['start', bin, ...args]) };
   return { root, deps, events, states, spec: { role, sshUser: 'tester', attempts: 3, backoffMs: 10 } };
 }
 
-test('desk restart uses persisted pairing: SSH then API then auth/chat/project sync then ALL health', async t => {
+test('desk restart uses persisted pairing: API then auth/chat/project sync then ALL health (SSH only in checks)', async t => {
   const f = fixture(t);
   const state = await runtimeRecovery(f.spec, f.deps).run();
   assert.equal(state.ready, true);
   assert.deepEqual(f.states.map(s => s.phase), ['connecting', 'connecting', 'syncing', 'checking', 'ready']);
-  assert.equal(f.events[0][0], 'ssh');
+  assert.equal(f.events[0][0], 'health', 'connecting is the Hub API, not SSH');
+  assert.ok(f.events.findIndex(e => e[0] === 'ssh') > f.events.findIndex(e => e[0] === 'request'));
   assert.ok(f.events.findIndex(e => e[0] === 'project') < f.events.findIndex(e => e.at(-1)?.includes('4096')));
   assert.ok(f.events.some(e => e[0] === 'ssh' && e.at(-1).includes('127.0.0.1:4096')));
   assert.ok(f.events.some(e => e.includes('--thread') && e.includes('orch')));
@@ -37,7 +39,7 @@ test('desk restart uses persisted pairing: SSH then API then auth/chat/project s
 
 test('disconnect never syncs or becomes ready; reconnect repeats ordered sync and checks', async t => {
   const f = fixture(t); let connected = false;
-  f.deps.runCommand = (bin, args) => { f.events.push([bin, ...args]); return connected; };
+  f.deps.probeHealth = async url => { f.events.push(['health', url]); return connected; };
   const recovery = runtimeRecovery(f.spec, f.deps);
   assert.equal((await recovery.run()).ready, false);
   assert.equal(f.events.some(e => e[0] === 'request'), false);
@@ -128,7 +130,7 @@ test('startup service plans are boot/login scheduled, restart supervised, and co
   assert.match(mac, /RunAtLoad<\/key><true\/>/);
   assert.match(mac, /StartInterval<\/key><integer>30/);
   assert.match(mac, /hub-desk-recovery.mjs/);
-  assert.match(readFileSync(new URL('../scripts/chat-pane.sh', import.meta.url), 'utf8'), /hub-desk-recovery.mjs" once/);
+  assert.match(readFileSync(new URL('../scripts/chat-pane.sh', import.meta.url), 'utf8'), /hub-desk-recovery.mjs" run/);
 });
 
 test('a failed service is repaired then rechecked before readiness', async () => {
@@ -192,4 +194,24 @@ test('optional checks are reported but do not hold the desk back', async () => {
   const down = await createRecovery({ connect: async () => true, sync: async () => true, checks: { opencode: async () => false, bridge: async () => true }, optional: ['bridge'], attempts: 1 }).run();
   assert.equal(down.ready, false, 'a required check still blocks');
   assert.throws(() => createRecovery({ connect: async () => true, sync: async () => true, checks: { bridge: async () => true }, optional: ['bridge'] }), /at least one required check/);
+});
+
+test('a desk with SSH down (e.g. Tailscale approval pending) is still ready; SSH rides one master', async t => {
+  const f = fixture(t);
+  f.deps.runCommand = (bin, args) => { f.events.push([bin, ...args]); return bin !== 'ssh'; };
+  const state = await runtimeRecovery(f.spec, f.deps).run();
+  assert.equal(state.ready, true);
+  assert.deepEqual(state.optionalDown.sort(), ['bridge', 'opencode', 'ssh'], 'everything reached over SSH is optional on a desk');
+  const probes = f.events.filter(e => e[0] === 'ssh' && !e.includes('-O'));
+  assert.ok(probes.length && probes.every(e => e.includes('ControlMaster=no')), 'probes reuse the master');
+  assert.ok(f.events.some(e => e[0] === 'start' && e[1] === 'ssh' && e.includes('-M') && e.includes('ControlPersist=8h')), 'starts one master');
+  const masters = f.events.filter(e => e[0] === 'start').length;
+  await runtimeRecovery(f.spec, f.deps).run();
+  assert.equal(f.events.filter(e => e[0] === 'start').length, masters, 'a master already starting is not restarted');
+});
+
+test('chat-pane never waits on recovery before starting chat', () => {
+  const chat = readFileSync(new URL('../scripts/chat-pane.sh', import.meta.url), 'utf8');
+  assert.doesNotMatch(chat, /hub-desk-recovery\.mjs" once/);
+  assert.match(chat, /nohup node "\$ROOT\/scripts\/hub-desk-recovery\.mjs" run/);
 });

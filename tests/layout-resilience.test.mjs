@@ -121,11 +121,9 @@ describe("kanban Enter", () => {
 });
 
 describe("chat recovery gate", () => {
-  it("gives Hub recovery a bounded head start, then opens chat anyway", () => {
+  it("starts chat without waiting on Hub recovery", () => {
     const chat = read("scripts/chat-pane.sh");
-    assert.doesNotMatch(chat, /until node "\$ROOT\/scripts\/hub-desk-recovery\.mjs" once/, "no unbounded wait before chat");
-    assert.match(chat, /desk_recovery_gate\(\) \{[\s\S]*GOTCHIBOT_RECOVERY_WAIT_SEC:-20/);
-    assert.match(chat, /desk_recovery_gate \|\| true/);
-    assert.match(chat, /Tailscale SSH may need a browser approval/);
+    assert.doesNotMatch(chat, /hub-desk-recovery\.mjs" once/, "no wait before chat");
+    assert.doesNotMatch(chat, /desk_recovery_gate/);
   });
 });

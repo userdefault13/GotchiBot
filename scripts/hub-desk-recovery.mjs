@@ -5,6 +5,7 @@ import { readFileSync, mkdirSync, writeFileSync, renameSync, openSync, closeSync
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createConnection } from 'node:net';
+import { homedir } from 'node:os';
 import { assertTailnetHost, assertTailnetUrl } from './tailnet-transport.mjs';
 import { tailscaleBin, readTailscaleStatus } from './tailscale-cli.mjs';
 import { probeBridgeHttp } from './claude-bridge-role.mjs';
@@ -15,6 +16,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const readJson = path => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
 const lastRepairs = new Map();
+const sshMasterStarted = new Map();
 const REASONS = new Set(['SSH_APPROVAL_REQUIRED', 'SSH_TRUST_REQUIRED', 'SSH_AUTH_FAILED', 'TAILNET_REQUIRED', 'TAILSCALE_LOGIN_REQUIRED', 'TAILSCALE_APPROVAL_REQUIRED', 'PAIRING_INVALID']);
 
 export function recoveryStatus(root = ROOT, role = recoverySpec(root).role, now = Date.now()) {
@@ -79,7 +81,9 @@ export function createRecovery({ connect, sync, checks, optional = [], repair = 
 }
 
 function command(bin, args, { root = ROOT, env = process.env } = {}) {
-  const r = spawnSync(bin, args, { cwd: root, stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 15000, killSignal: 'SIGKILL', env });
+  // ssh: 6s — with the shared master a healthy probe returns in milliseconds; a
+  // pending Tailscale approval should fail fast, not stall the cycle for 15s.
+  const r = spawnSync(bin, args, { cwd: root, stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: bin === 'ssh' ? 6000 : 15000, killSignal: 'SIGKILL', env });
   if (bin === 'ssh' && r.status !== 0) {
     const err = String(r.stderr || '');
     const code = /additional check|authenticate, visit/i.test(err) ? 'SSH_APPROVAL_REQUIRED' : /host key verification|identification has changed/i.test(err) ? 'SSH_TRUST_REQUIRED' : /permission denied/i.test(err) ? 'SSH_AUTH_FAILED' : null;
@@ -130,7 +134,22 @@ export function runtimeRecovery(spec, { root = ROOT, env = process.env, readStat
   const transportEnv = { ...env, GOTCHIBOT_LEGACY_DIRECT_ROUTING: '0' };
   const user = spec.sshUser || prefs.ssh?.split('@')[0] || env.GOTCHIBOT_REMOTE_USER || env.REMOTE_USER;
   if (!onHub && !/^[a-zA-Z0-9._-]+$/.test(user || '')) throw new Error('Persist a hub desk SSH target or recovery sshUser');
-  const ssh = (remoteCommand = 'true') => command('ssh', ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=5', '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=1', ...(spec.sshIdentityFile ? ['-i', spec.sshIdentityFile, '-o', 'IdentitiesOnly=yes'] : []), `${user}@${host}`, remoteCommand]);
+  // One long-lived SSH master per Hub (ControlPersist 8h). Tailscale SSH "check"
+  // mode only asks for a browser approval when a NEW connection is made, so
+  // probes that ride the master never hit it — one approval lasts the day.
+  const controlPath = spec.sshControlPath || join(homedir(), '.ssh', 'gb-%C');
+  const sshOpts = () => ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=5', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', ...(spec.sshIdentityFile ? ['-i', spec.sshIdentityFile, '-o', 'IdentitiesOnly=yes'] : []), '-o', `ControlPath=${controlPath}`];
+  const ensureSshMaster = () => {
+    if (spec.sshMaster === false) return;
+    if (command('ssh', ['-O', 'check', ...sshOpts(), `${user}@${host}`])) return;
+    // A master already starting (waiting on an approval) is left alone.
+    const key = `${user}@${host}`;
+    if (Date.now() - (sshMasterStarted.get(key) || 0) < 5 * 60000) return;
+    sshMasterStarted.set(key, Date.now());
+    try { mkdirSync(join(homedir(), '.ssh'), { recursive: true, mode: 0o700 }); } catch { /* exists */ }
+    startProcess('ssh', ['-M', '-N', '-o', 'ControlPersist=8h', ...sshOpts(), key]);
+  };
+  const ssh = (remoteCommand = 'true') => command('ssh', [...sshOpts(), '-o', 'ControlMaster=no', `${user}@${host}`, remoteCommand]);
   const repairService = name => {
     const service = spec.repairServices?.[name];
     if (!service) return false;
@@ -183,7 +202,9 @@ export function runtimeRecovery(spec, { root = ROOT, env = process.env, readStat
       }
       return await health(base + '/health', true) && await health(hubHttp() + '/health', true);
     }
-    return ssh() && await health(base + '/health', true);
+    // Desk: Tailscale + the Hub API is "connected". SSH only reaches Hub-local
+    // runtimes for health checks; it never gated chat and must not gate this.
+    return await health(base + '/health', true);
   };
   const sync = async () => {
     if (onHub) return true; // desks reauthenticate and pull persisted Hub state; no reverse desk token store
@@ -222,7 +243,7 @@ export function runtimeRecovery(spec, { root = ROOT, env = process.env, readStat
   };
   const checks = {
     tailscale: async () => status()?.BackendState === 'Running',
-    ssh: onHub ? async () => await tcp('127.0.0.1', 22) && await tcp(host, 22) : async () => ssh(),
+    ssh: onHub ? async () => await tcp('127.0.0.1', 22) && await tcp(host, 22) : async () => { ensureSshMaster(); return ssh(); },
     apiDatabase: () => health(base + '/health', true),
     ...(onHub ? { tailnetApi: () => health(hubHttp() + '/health', true) } : {}),
   };
@@ -252,7 +273,10 @@ export function runtimeRecovery(spec, { root = ROOT, env = process.env, readStat
   const dir = join(root, 'sessions/recovery');
   mkdirSync(dir, { recursive: true });
   // The Hub Claude bridge is optional by default: desk chat (OpenCode) works without it.
-  const optional = (Array.isArray(spec.optionalChecks) ? spec.optionalChecks : ['bridge']).filter(name => Object.hasOwn(checks, name));
+  // Optional by default: the Hub Claude bridge, and on a desk everything reached
+  // over SSH (Hub-local OpenCode/gateway) — monitoring, not something the desk needs.
+  const defaultOptional = onHub ? ['bridge'] : ['bridge', 'ssh', 'opencode', 'gateway'];
+  const optional = (Array.isArray(spec.optionalChecks) ? spec.optionalChecks : defaultOptional).filter(name => Object.hasOwn(checks, name));
   return createRecovery({ connect, sync, checks, optional, repair, wait, attempts: spec.attempts, backoffMs: spec.backoffMs, publish: publish || function(state) {
     const path = join(dir, `${spec.role}.json`);
     writeFileSync(path + '.tmp', JSON.stringify({ ...state, validUntil: state.ready ? new Date(Date.now() + (spec.intervalMs || 30000) + 5000).toISOString() : null }) + '\n', { mode: 0o600 });

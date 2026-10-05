@@ -149,36 +149,11 @@ ensure_desk_receiver() {
 }
 ensure_desk_receiver
 
-# Paired desks: give one recovery cycle a short head start, then open chat
-# regardless. Chat used to wait in an until-loop, so a Tailscale SSH approval
-# prompt on the Hub left the pane blank for minutes. The supervisor below keeps
-# healing in the background; the line printed here says what is still wrong.
-desk_recovery_gate() {
-  local budget="${GOTCHIBOT_RECOVERY_WAIT_SEC:-20}" waited=0 pid state reason phase
-  case "$budget" in ''|*[!0-9]*) budget=20 ;; esac
-  node "$ROOT/scripts/hub-desk-recovery.mjs" once >/dev/null 2>&1 &
-  pid=$!
-  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt $((budget * 2)) ]; do
-    sleep 0.5
-    waited=$((waited + 1))
-  done
-  if ! kill -0 "$pid" 2>/dev/null && wait "$pid"; then
-    return 0
-  fi
-  kill "$pid" 2>/dev/null || true
-  state="$(cat "$ROOT/sessions/recovery/desk.json" 2>/dev/null || true)"
-  reason="$(printf '%s' "$state" | sed -n 's/.*"reason":"\([A-Z_]*\)".*/\1/p')"
-  phase="$(printf '%s' "$state" | sed -n 's/.*"failedPhase":"\([a-z]*\)".*/\1/p')"
-  [ -n "$phase" ] || phase="$(printf '%s' "$state" | sed -n 's/.*"phase":"\([a-z]*\)".*/\1/p')"
-  if [ "$reason" = SSH_APPROVAL_REQUIRED ] || { [ "$phase" = connecting ] && [ "$waited" -ge $((budget * 2)) ]; }; then
-    printf '%s\n' "UserDefault, the Hub is not answering yet (Tailscale SSH may need a browser approval: run \`ssh ${GOTCHIBOT_HUB_SSH:-user_default@imacomarchy} true\` and open the link). Chat is starting anyway; recovery keeps retrying."
-  else
-    printf '%s\n' "UserDefault, desk recovery is degraded (${phase:-unknown}). Chat is starting anyway; recovery keeps retrying in the background."
-  fi
-  return 1
-}
+# Paired desks: Hub recovery runs in the background only. Chat is OpenCode on
+# this computer — it needs neither SSH nor the Hub to start — so nothing here
+# waits on recovery. Its state shows in sessions/recovery/desk.json and the
+# status bar; the supervisor holds the SSH master and keeps healing.
 if [ -f "$ROOT/sessions/.hub.json" ] && [ ! -f "$ROOT/sessions/.hub-api.json" ]; then
-  desk_recovery_gate || true
   nohup node "$ROOT/scripts/hub-desk-recovery.mjs" run >>"$ROOT/sessions/.recovery.log" 2>&1 &
   disown 2>/dev/null || true
 fi
