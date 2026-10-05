@@ -256,6 +256,22 @@ describe("OpenClaw gateway hooks", () => {
     assert.doesNotThrow(() => rejecting.agent_end({ runId: "r" }, { agentId: "a" }));
   });
 
+  it("traces each hook call's ids and every record failure, never content", async () => {
+    const lines = [];
+    const hooks = createGraphHooks({ record: () => Promise.reject(new Error("EACCES outbox")), host: "h", trace: (m) => lines.push(m) });
+    hooks.llm_output({ runId: "r9", usage: { total: 5 }, assistantTexts: ["secret reply"] }, {});
+    hooks.agent_end({ runId: "r9", success: true }, { sessionKey: "agent:owned-1:main", trigger: "user" });
+    hooks.agent_end({}, {});
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(lines, [
+      "llm_output runId=y usage=y",
+      "agent_end runId=y agentId=- sessionKey=y trigger=y",
+      "agent_end runId=- agentId=- sessionKey=- trigger=-",
+      "record-error run:h.r9: EACCES outbox",
+    ]);
+    assert.doesNotMatch(lines.join(), /secret/);
+  });
+
   it("registers its four hooks on the plugin api", () => {
     const names = [];
     registerGraphHooks({ on: (n) => names.push(n) }, { record: () => {} });

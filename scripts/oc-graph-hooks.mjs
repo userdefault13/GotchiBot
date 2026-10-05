@@ -13,8 +13,32 @@
  * inbox), which record their own edges; OpenClaw's agentToAgent is off.
  */
 import { hostname } from "node:os";
+import { appendFileSync, mkdirSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MAX_TRACKED = 500;
+const TRACE = join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "sessions", "graph", "plugin.log");
+const TRACE_MAX = 512 * 1024;
+
+/**
+ * One line per hook call (which ids were present — never prompt/reply text) and
+ * every record error, so a run that leaves no edge can be explained. Capped.
+ */
+export function traceLine(path = TRACE) {
+  return (msg) => {
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+      let size = 0;
+      try {
+        size = statSync(path).size;
+      } catch {}
+      if (size < TRACE_MAX) appendFileSync(path, `${new Date().toISOString()} ${msg}\n`);
+    } catch {
+      /* tracing must never break a run */
+    }
+  };
+}
 
 function slug(s) {
   return String(s || "").replace(/[^A-Za-z0-9_.:-]+/g, "-").slice(0, 70);
@@ -53,24 +77,27 @@ function remember(map, key, value) {
  * Handlers keyed by OpenClaw hook name. `record(edge)` writes an edge (default:
  * recordEdge from agent-graph.mjs, fire-and-forget).
  */
-export function createGraphHooks({ record, host = hostname(), now = () => Date.now() } = {}) {
+export function createGraphHooks({ record, host = hostname(), now = () => Date.now(), trace = () => {} } = {}) {
   const gw = slug(host.split(".")[0]) || "gw";
   const runTokens = new Map(); // runId → usage
   const runModel = new Map(); // runId → provider/model
   const spawns = new Map(); // childSessionKey → { edgeId, tokens }
 
   const write = (edge) => {
+    const fail = (e) => trace(`record-error ${edge.edgeId}: ${String(e?.message || e).slice(0, 200)}`);
     try {
       const p = record(edge);
-      if (p && typeof p.catch === "function") p.catch(() => {});
-    } catch {
-      /* never break a run */
+      if (p && typeof p.then === "function") p.then((r) => (r == null ? trace(`record-null ${edge.edgeId}`) : null), fail);
+    } catch (e) {
+      fail(e);
     }
   };
+  const seen = (hook, ids) => trace(`${hook} ${Object.entries(ids).map(([k, v]) => `${k}=${v ? "y" : "-"}`).join(" ")}`);
 
   return {
     llm_output(event = {}, ctx = {}) {
       const runId = event.runId || ctx.runId;
+      seen("llm_output", { runId, usage: event.usage });
       if (!runId) return;
       remember(runTokens, runId, addUsage(runTokens.get(runId), event.usage));
       const model = event.resolvedRef || [event.provider, event.model].filter(Boolean).join("/");
@@ -80,6 +107,7 @@ export function createGraphHooks({ record, host = hostname(), now = () => Date.n
     agent_end(event = {}, ctx = {}) {
       const runId = event.runId || ctx.runId;
       const agent = ctx.agentId || agentOfSessionKey(ctx.sessionKey);
+      seen("agent_end", { runId, agentId: ctx.agentId, sessionKey: ctx.sessionKey, trigger: ctx.trigger });
       if (!runId || !agent) return;
       const tokens = runTokens.get(runId);
       const model = runModel.get(runId) || [ctx.modelProviderId, ctx.modelId].filter(Boolean).join("/") || undefined;
@@ -109,6 +137,7 @@ export function createGraphHooks({ record, host = hostname(), now = () => Date.n
 
     subagent_spawned(event = {}, ctx = {}) {
       const child = event.childSessionKey || ctx.childSessionKey;
+      seen("subagent_spawned", { child, agentId: event.agentId });
       if (!child || !event.agentId) return;
       const parent = agentOfSessionKey(ctx.requesterSessionKey) || "chat";
       const edgeId = `spawn:${gw}.${slug(child)}`;
@@ -149,7 +178,10 @@ export function registerGraphHooks(api, opts = {}) {
   const record =
     opts.record ||
     ((edge) => (graph ||= import("./agent-graph.mjs")).then((m) => m.recordEdge(edge, { warn: false })));
-  const hooks = createGraphHooks({ ...opts, record });
+  // Tests inject their own recorder; only a real gateway traces to sessions/graph/plugin.log.
+  const trace = opts.trace || (opts.record ? () => {} : traceLine());
+  const hooks = createGraphHooks({ ...opts, record, trace });
+  trace("registered");
   for (const [name, fn] of Object.entries(hooks)) api.on(name, fn, { timeoutMs: 2000 });
   return hooks;
 }
