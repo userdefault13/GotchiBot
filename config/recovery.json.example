@@ -6,5 +6,6 @@
   "backoffMs": 1000,
   "intervalMs": 30000,
   "healthUrls": {},
+  "optionalChecks": ["bridge"],
   "repairServices": {}
 }

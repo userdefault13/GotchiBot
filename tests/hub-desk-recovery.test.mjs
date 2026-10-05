@@ -181,3 +181,15 @@ test('expired saved readiness never reports a healthy desk', t => {
   assert.equal(recoveryStatus(f.root, 'desk', 2000).ready, false);
   assert.equal(recoveryStatus(f.root, 'desk', 2000).phase, 'stale');
 });
+
+test('optional checks are reported but do not hold the desk back', async () => {
+  const repaired = [];
+  const checks = { opencode: async () => true, bridge: async () => false };
+  const ok = await createRecovery({ connect: async () => true, sync: async () => true, checks, optional: ['bridge'], attempts: 1, repair: async f => repaired.push(...f) }).run();
+  assert.equal(ok.ready, true);
+  assert.deepEqual(ok.optionalDown, ['bridge']);
+  assert.deepEqual(repaired, ['bridge']);
+  const down = await createRecovery({ connect: async () => true, sync: async () => true, checks: { opencode: async () => false, bridge: async () => true }, optional: ['bridge'], attempts: 1 }).run();
+  assert.equal(down.ready, false, 'a required check still blocks');
+  assert.throws(() => createRecovery({ connect: async () => true, sync: async () => true, checks: { bridge: async () => true }, optional: ['bridge'] }), /at least one required check/);
+});

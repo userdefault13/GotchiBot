@@ -24,9 +24,16 @@ export function recoveryStatus(root = ROOT, role = recoverySpec(root).role, now 
 }
 
 /** All probes run even when one fails. Never persist arbitrary exception text or credentials. */
-export function createRecovery({ connect, sync, checks, repair = async () => {}, publish = () => {}, wait = sleep, attempts = 4, backoffMs = 1000 }) {
+/**
+ * `optional` checks still run and are reported (`optionalDown` on a ready state),
+ * but a failure there does not hold the desk back — e.g. the Hub Claude bridge,
+ * which chat does not need.
+ */
+export function createRecovery({ connect, sync, checks, optional = [], repair = async () => {}, publish = () => {}, wait = sleep, attempts = 4, backoffMs = 1000 }) {
   if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10 || !Number.isFinite(backoffMs) || backoffMs < 0 || backoffMs > 30000) throw new Error('Invalid retry policy');
   if (!checks || !Object.keys(checks).length) throw new Error('Recovery requires health checks');
+  const optionalSet = new Set(optional);
+  if (!Object.keys(checks).some(name => !optionalSet.has(name))) throw new Error('Recovery requires at least one required check');
   let inFlight;
   async function cycle() {
     let state;
@@ -49,8 +56,11 @@ export function createRecovery({ connect, sync, checks, repair = async () => {},
         for (const [name, probe] of Object.entries(checks)) {
           try { results[name] = await probe() === true; } catch { results[name] = false; }
         }
-        if (Object.values(results).every(Boolean)) {
-          await emit('ready', { ready: true, attempt, checks: results });
+        const failed = Object.keys(results).filter(name => !results[name]);
+        const requiredFailed = failed.filter(name => !optionalSet.has(name));
+        if (!requiredFailed.length) {
+          await emit('ready', { ready: true, attempt, checks: results, ...(failed.length ? { optionalDown: failed } : {}) });
+          if (failed.length) await repair(failed);
           return state;
         }
         await emit('degraded', { attempt, failedPhase: phase, checks: results });
@@ -241,7 +251,9 @@ export function runtimeRecovery(spec, { root = ROOT, env = process.env, readStat
   };
   const dir = join(root, 'sessions/recovery');
   mkdirSync(dir, { recursive: true });
-  return createRecovery({ connect, sync, checks, repair, wait, attempts: spec.attempts, backoffMs: spec.backoffMs, publish: publish || function(state) {
+  // The Hub Claude bridge is optional by default: desk chat (OpenCode) works without it.
+  const optional = (Array.isArray(spec.optionalChecks) ? spec.optionalChecks : ['bridge']).filter(name => Object.hasOwn(checks, name));
+  return createRecovery({ connect, sync, checks, optional, repair, wait, attempts: spec.attempts, backoffMs: spec.backoffMs, publish: publish || function(state) {
     const path = join(dir, `${spec.role}.json`);
     writeFileSync(path + '.tmp', JSON.stringify({ ...state, validUntil: state.ready ? new Date(Date.now() + (spec.intervalMs || 30000) + 5000).toISOString() : null }) + '\n', { mode: 0o600 });
     renameSync(path + '.tmp', path);
