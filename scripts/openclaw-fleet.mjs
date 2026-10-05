@@ -605,6 +605,7 @@ function writeFleetArtifacts({ entries, map, orchId }) {
   const install = {
     "//": "Drop-in OpenClaw config fragment for GotchiBot fleet agents (2026.8+ uses agents.entries).",
     agents: {
+      ownership: "explicit",
       defaults: { $include: `${ROOT}/config/openclaw.gotchi.json5` },
       entries: { $include: FLEET_ENTRIES },
     },
