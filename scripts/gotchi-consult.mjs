@@ -29,6 +29,7 @@ import {
   chatViaOpenClaw,
 } from "./openclaw-fleet.mjs";
 import { heroForRole } from "./orch-route.mjs";
+import { recordEdge, closeEdge } from "./agent-graph.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STORE = `${ROOT}/sessions/consults`;
@@ -174,7 +175,18 @@ function parseArgs(argv) {
 
 async function ask(t, question, args) {
   process.stderr.write(`→ asking ${label(t.to)} (thread ${t.id}) — waiting for the reply…\n`);
+  // Agent graph: one edge per question (thread + turn), sent now, closed on reply.
+  const edgeId = `consult:${t.id}.${(t.turns || []).length}`;
+  await recordEdge({
+    edgeId,
+    kind: "consult",
+    from: t.from?.id,
+    to: t.to?.id,
+    ref: t.id,
+    title: String(question || "").replace(/\s+/g, " ").slice(0, 120),
+  });
   const r = await deliver(t, question, args);
+  await closeEdge(edgeId, r.ok ? "answered" : "failed");
   if (!r.ok) {
     if (args.json) console.log(JSON.stringify({ ok: false, thread: t.id, to: t.to, reason: r.reason }));
     else console.error(`consult ${t.id}: no reply from ${label(t.to)} — ${r.reason}`);

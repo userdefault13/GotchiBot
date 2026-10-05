@@ -64,6 +64,7 @@ const CATEGORIES = [
   { key: "assigned", title: "ASSIGNED", match: (x) => x.column === "assigned" },
   { key: "idle", title: "IDLE", match: (x) => x.column === "idle" },
   { key: "rework", title: "NEED REWORK", match: (x) => x.column === "rework" },
+  { key: "handoffs", title: "HANDOFFS", match: (x) => x.column === "handoff" },
 ];
 
 function fetchRoster() {
@@ -428,6 +429,10 @@ function buildBoard(roster, orchId) {
   const seatsFree = seatCards.filter((c) => c.column === "available").length;
   const seatsUsed = seatsTotal - seatsFree;
 
+  // Agent graph: open handoffs (kanban-manager watches these; stalled ones alert the PM).
+  refreshHandoffs();
+  for (const e of handoffCache.open) cards.push(handoffCard(e));
+
   const categories = CATEGORIES.map((cat) => {
     const items = cards.filter(cat.match);
     return { ...cat, items, collapsed: false };
@@ -441,6 +446,51 @@ function buildBoard(roster, orchId) {
     categories,
     cards,
     at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Open handoffs from `agent-graph.mjs --json`, refreshed in the background so
+ * painting never waits on the Hub.
+ */
+const handoffCache = { open: [], at: 0, busy: false };
+function refreshHandoffs() {
+  if (handoffCache.busy || Date.now() - handoffCache.at < 30_000) return;
+  handoffCache.busy = true;
+  let out = "";
+  try {
+    const child = spawn(process.execPath, [join(ROOT, "scripts/agent-graph.mjs"), "--json"], { cwd: ROOT, stdio: ["ignore", "pipe", "ignore"] });
+    child.stdout.on("data", (d) => {
+      out += d;
+    });
+    child.on("close", () => {
+      try {
+        handoffCache.open = JSON.parse(out).open || [];
+      } catch {
+        /* keep last */
+      }
+      handoffCache.at = Date.now();
+      handoffCache.busy = false;
+    });
+    child.on("error", () => {
+      handoffCache.busy = false;
+      handoffCache.at = Date.now();
+    });
+  } catch {
+    handoffCache.busy = false;
+  }
+}
+
+function handoffCard(e) {
+  const mins = e.sentAt ? Math.round((Date.now() - Date.parse(e.sentAt)) / 60000) : null;
+  const age = mins == null ? "" : mins >= 120 ? `${Math.round(mins / 60)}h` : `${mins}m`;
+  return {
+    kind: "handoff",
+    id: `${e.fromRole || e.from}→${e.toRole || e.to}`,
+    column: "handoff",
+    status: e.stalled ? "stalled" : "open",
+    task: `${e.kind}: ${e.title || e.ref || e.edgeId}${age ? ` · ${age}` : ""}`,
+    edge: e,
   };
 }
 
@@ -490,7 +540,7 @@ function padVis(str, width) {
 const artCache = new Map();
 
 function artForCard(card) {
-  if (!card || card.kind === "session") return null;
+  if (!card || card.kind === "session" || card.kind === "handoff") return null;
   const traits = Array.isArray(card.traits) ? card.traits : null;
   const traitsKey = traits ? traits.join(",") : "";
   const key = `${card.id}|${card.collateral || ""}|${traitsKey}`;
@@ -644,6 +694,20 @@ function buildDetailLines(card, board, rightW) {
   const detailLines = [];
   if (!card) {
     detailLines.push(`${c.dim}(select a card)${c.reset}`);
+    return detailLines;
+  }
+  if (card.kind === "handoff") {
+    const e = card.edge || {};
+    detailLines.push(`${c.bold}HANDOFF${c.reset}`);
+    detailLines.push(`  ${e.kind || "?"}  ${e.fromRole || e.from} → ${e.toRole || e.to}`);
+    detailLines.push(`  Ref      ${trunc(e.ref || e.edgeId || "—", rightW - 12)}`);
+    detailLines.push(`  Title    ${trunc(e.title || "—", rightW - 12)}`);
+    detailLines.push(`  Sent     ${e.sentAt || "—"}`);
+    detailLines.push(`  State    ${e.stalled ? `${c.yellow}stalled — ${e.reason}${c.reset}` : "open"}${e.alertedAt ? ` · PM alerted ${e.alertedAt}` : ""}`);
+    if (e.declared === false) detailLines.push(`  ${c.gray}off-graph: not declared in config/agent-graph.json${c.reset}`);
+    detailLines.push("");
+    detailLines.push(`${c.bold}ACTIONS${c.reset}`);
+    detailLines.push(`  ${c.dim}PM: nudge the owner, re-route (passoff/consult), or escalate to chief-of-staff${c.reset}`);
     return detailLines;
   }
   const title =
@@ -956,6 +1020,10 @@ function focusHeroSeat(heroId, { onDone } = {}) {
 function enterCardAction(card, { setStatus, onFocusDone } = {}) {
   if (!card) {
     setStatus?.("no card selected");
+    return;
+  }
+  if (card.kind === "handoff") {
+    setStatus?.(`handoff ${card.edge?.edgeId || ""} — the PM acts on stalled ones (gotchibot graph for the full picture)`);
     return;
   }
   if (card.kind === "hero") {

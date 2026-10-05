@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sendMessage } from "./bot-inbox.mjs";
+import { recordEdge } from "./agent-graph.mjs";
 import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -74,6 +75,23 @@ export function reportSubFinish(sessionId, status = "done") {
     "",
     `Collect: ./scripts/gotchi-orchestrate.mjs output ${id}`,
   ].join("\n");
+
+  // Agent graph: the sub session as one closed edge (spawn parent tracking is a
+  // later pass, so the orchestrator stands in as the sender).
+  if (hero !== "unknown-hero") {
+    const started = field(dir, "started");
+    void recordEdge({
+      edgeId: `spawn:${id}`,
+      kind: "spawn",
+      from: "orchestrator",
+      to: hero,
+      ref: id,
+      title: subject,
+      ...(started ? { sentAt: started } : {}),
+      answeredAt: field(dir, "ended") || new Date().toISOString(),
+      outcome: st === "failed" ? "failed" : "done",
+    });
+  }
 
   const orchRestore = restoreOrch();
   const results = { sessionId: id, status: st, hero, orchRestore: orchRestore.ok };

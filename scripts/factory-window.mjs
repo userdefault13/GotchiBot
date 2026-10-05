@@ -2,7 +2,7 @@
 /**
  * factory-window — the Factory pane (tmux work.1 center, same slot as the pstack dossier).
  *
- * Four views, switched with 1-4, Tab, or ← → (z zooms the pane to the whole window):
+ * Five views, switched with 1-5, Tab, or ← → (z zooms the pane to the whole window):
  *   Tree        the agent tree: orchestrator → Jev fork layer → work-tool dispatcher
  *               → the project's working bots, with the GLM on-call advisor beside it
  *   Bots        every bot assigned to the current project and its workflow —
@@ -13,6 +13,7 @@
  *               Docker, sessions, and every desk on the tailnet with its bots
  *   Desk infra  this desk: doctor checks, tmux panes, local dispatch sessions,
  *               public subgraph tunnel
+ *   Graph       agent handoffs (agent-graph.mjs): flows, stalled, rework loops, off-graph
  *
  * Reads project-room files (sessions/pstack/<slug>/). A unit with a session id
  * uses that session's state.env status, not the stale units.tsv state. Also reads
@@ -48,6 +49,7 @@ const VIEWS = [
   { key: "factory", label: "Bots" },
   { key: "hub", label: "Hub" },
   { key: "infra", label: "Desk infra" },
+  { key: "graph", label: "Graph" },
 ];
 const LANES = ["backlog", "todo", "doing", "review", "done"];
 const LANE_TAG = { backlog: "b", todo: "t", doing: "d", review: "r", done: "✓" };
@@ -339,8 +341,9 @@ const PROBES = {
   doctor: { argv: ["doctor.mjs"], every: 60_000, timeout: 30_000, json: false },
   mesh: { argv: ["mesh-status.mjs", "--json"], every: 30_000, timeout: 15_000, json: true },
   tunnel: { argv: ["tunnel-health.mjs", "--json"], every: 60_000, timeout: 15_000, json: true },
+  graph: { argv: ["agent-graph.mjs", "--json"], every: 30_000, timeout: 20_000, json: true },
 };
-const VIEW_PROBES = { tree: [], factory: [], hub: ["hub", "desks"], infra: ["doctor", "mesh", "tunnel"] };
+const VIEW_PROBES = { tree: [], factory: [], hub: ["hub", "desks"], infra: ["doctor", "mesh", "tunnel"], graph: ["graph"] };
 const probeState = Object.fromEntries(Object.keys(PROBES).map((k) => [k, { data: null, at: 0, busy: false, err: null }]));
 let onProbe = () => {};
 
@@ -587,6 +590,29 @@ function tmuxPanes() {
       const script = (String(cmd).match(/\.\/scripts\/([\w.-]+)/) || [])[1] || trunc(cmd, 40);
       return { idx, size, dead: dead === "1", script };
     });
+}
+
+/** Agent graph: handoff flows, stalled edges, rework loops, off-graph (agent-graph.mjs --json). */
+function viewGraph(cols) {
+  const g = probeState.graph.data;
+  const out = [];
+  if (!g) {
+    out.push(...panel("GRAPH", [`${c.gray}${probeState.graph.err || "loading handoffs…"}${c.reset}`], cols, { note: probeNote("graph") }));
+    return out;
+  }
+  const note = `${g.total} handoff(s)${g.hubOk ? "" : " · Hub offline: local only"} · ${probeNote("graph")}`;
+  const flows = (g.flows || []).slice(0, 14).map((f) => {
+    const t = f.medianMin == null ? "—" : `${f.medianMin}m / ${f.p90Min}m`;
+    return `${cut(f.pair, Math.max(10, cols - 40)).padEnd(Math.max(10, cols - 40))} ${String(f.count).padStart(3)}  ${f.open ? `${c.yellow}${f.open} open${c.reset}` : `${c.dim}0 open${c.reset}`}  ${f.failed ? `${c.red}${f.failed} failed${c.reset}` : ""}  ${c.dim}${t}${c.reset}`;
+  });
+  out.push(...panel("FLOWS (count · open · failed · median / p90 to answer)", flows.length ? flows : [`${c.gray}no handoffs yet${c.reset}`], cols, { note }));
+  const stalled = (g.stalled || []).slice(0, 10).map((e) => `${c.yellow}!${c.reset} ${e.kind} ${e.fromRole || e.from} → ${e.toRole || e.to}  ${c.dim}${e.reason}${c.reset}  ${cut(e.title || e.ref || e.edgeId, 40)}${e.alertedAt ? `${c.dim} · PM alerted${c.reset}` : ""}`);
+  out.push(...panel("STALLED", stalled.length ? stalled : [`${c.green}none${c.reset}`], cols, { border: stalled.length ? c.yellow : c.rule }));
+  const rework = (g.rework || []).map((x) => `${c.red}↺${c.reset} ${x.ref}  ${x.reworks}× rework`);
+  out.push(...panel("REWORK LOOPS", rework.length ? rework : [`${c.green}none${c.reset}`], cols, { border: rework.length ? c.red : c.rule }));
+  const off = (g.offGraph || []).slice(0, 8).map((e) => `${c.gray}?${c.reset} ${e.kind} ${e.fromRole || e.from} → ${e.toRole || e.to}  ${c.dim}${cut(e.title || e.ref || "", 40)}${c.reset}`);
+  out.push(...panel("OFF-GRAPH (not declared in config/agent-graph.json)", off.length ? off : [`${c.green}none${c.reset}`], cols));
+  return out;
 }
 
 function viewInfra(cols) {
@@ -1050,7 +1076,7 @@ function header(view, cols, slug) {
   return gap > 1 ? ` ${tabs}${" ".repeat(gap)}${title}` : ` ${tabs}`;
 }
 
-const FOOTER = "1-4 Tab ←→ view · j/k scroll · z zoom · r refresh · c cockpit";
+const FOOTER = "1-5 Tab ←→ view · j/k scroll · z zoom · r refresh · c cockpit";
 
 function render(state) {
   const cols = process.stdout.columns || Number(process.env.COLUMNS) || 80;
@@ -1062,6 +1088,8 @@ function render(state) {
         ? viewHub(cols)
         : state.view === "infra"
           ? viewInfra(cols)
+          : state.view === "graph"
+            ? viewGraph(cols)
           : viewFactory(state.factory, cols, state.tick, deskHero());
   const bodyH = Math.max(1, rows - 3);
   const maxScroll = Math.max(0, body.length - bodyH);
@@ -1283,7 +1311,7 @@ function runWatch() {
 
 if (isMainModule(import.meta.url)) {
   if (args.includes("-h") || args.includes("--help")) {
-    console.log("usage: factory-window.mjs [watch|once] [--view tree|factory|hub|infra]");
+    console.log("usage: factory-window.mjs [watch|once] [--view tree|factory|hub|infra|graph]");
   } else if (wantOnce) {
     runOnce();
   } else {

@@ -11,6 +11,7 @@ Skills: `project-kanban`, `project-tickets`, plus `passoff` from common. Fleet s
 
 | Asked, or event | I run exactly | I reply with |
 |---|---|---|
+| every wake, "handoffs", "what's stuck" | `./scripts/gotchibot graph watch` (stalled / failed handoffs fire once → PM alert + Handoffs card), then `./scripts/gotchibot graph` | fired handoffs and who was alerted; move a Handoffs card to done when its edge closes |
 | "project board", "kanban", "show the board", "what's in progress" | `./scripts/project-kanban.mjs show` (or `--json`) | columns + cards, cited path |
 | "desk board", "mini kanban for X", "what's on merch's board" | `./scripts/project-kanban.mjs desk show <hero>` | that desk’s mini board |
 | "ensure desk boards", "spin minis for roster" | for each roster hero: `./scripts/project-kanban.mjs desk ensure <hero>` | paths created / card counts |

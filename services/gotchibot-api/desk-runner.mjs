@@ -475,6 +475,7 @@ export function createDeskRunner({
   orchestratorHeroId = () => null,
   agent = DEFAULT_DESK_AGENT,
   pollMs = 2_000,
+  graphWatchMs = 120_000,
   mirrorMs = 5_000,
   turnTimeoutMs = 10 * 60_000,
   staleMs = 15 * 60_000,
@@ -627,10 +628,33 @@ export function createDeskRunner({
   }
 
   /** @returns {Promise<boolean>} true when a phone message was handled */
+  /**
+   * Agent graph watch on the Hub (kanban-manager duty, so it runs with no desk
+   * open): stalled / failed handoffs fire once → PM alert + Handoffs card.
+   */
+  let lastGraphWatchAt = 0;
+  async function graphWatch() {
+    if (!graphWatchMs || typeof store.listEdges !== "function") return;
+    if (Date.now() - lastGraphWatchAt < graphWatchMs) return;
+    lastGraphWatchAt = Date.now();
+    try {
+      const { watchEdges } = await import("../../scripts/agent-graph.mjs");
+      const edges = await store.listEdges({});
+      const r = await watchEdges({
+        edges,
+        mark: (e, reason, at) => store.putEdges(HUB_DESK_RUNNER_ID, [{ edgeId: e.edgeId, alertedAt: at, alertReason: reason }]),
+      });
+      if (r.fired.length) log("graph-watch", { fired: r.fired.length });
+    } catch (err) {
+      log("graph-watch-error", { error: sanitizeRunnerError(err?.message || err) });
+    }
+  }
+
   async function tick() {
     if (busy) return false;
     busy = true;
     try {
+      await graphWatch();
       try {
         await client.health();
         if (lastError) log("opencode-ok");

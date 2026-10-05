@@ -11,6 +11,7 @@ A job lives at `sessions/pstack/<slug>/jobs/<jobId>.json`. Stages move only thro
 
 | Asked, or event | I run exactly | I reply with |
 |---|---|---|
+| bot-inbox `alert` "Handoff …" from kanban-manager (stalled or failed handoff) | `./scripts/gotchibot graph` for context; then nudge the owner, re-route (`./scripts/gotchibot passoff send <hero>` / `consult <role>`) to another seated desk, or `consult chief-of-staff`; `./scripts/pkm-record.mjs --event reviewed --from owned-23336 --title "handoff <ref>: <decision>"` | the decision and who now owns it |
 | "plan this job", architect's design note, job is at `plan` | write the workflow as named steps (owner role, done when); then `./scripts/project-tickets.mjs job advance <id> --to approval --by owned-23336` | the step list, then stop. Orch asks UserDefault. I do not assign yet |
 | job still at `design` | nothing on the stage | ask orchestrator or architect to advance `design → plan`. That move is not mine |
 | UserDefault said yes, job is at `staff`, "seat the gaps" | `./scripts/gotchibot link-cube status`, then Prof seats each missing pack: `./scripts/gotchibot templates apply <pack> --hero <available> --yes` | seated hero + role, or "no available hero — job stays at staff, orch asks UserDefault". Never auto-mint. Never steal LINK / YFI / WBTC |

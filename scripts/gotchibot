@@ -61,7 +61,9 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot project-tickets …           agent request/claim/submit tickets (PKM owns lifecycle)
   gotchibot project-mailbox …           per-desk local mailboxes (inbox+sent) under project AgentMail
   gotchibot inbox send|list|read|archive|housekeep|digest|unread|tui   internal bot mail (not AgentMail)
-  gotchibot graph …                 graph-state init|get|set|next|stop|list (sessions/graph)
+  gotchibot graph [--days N] [--json]   agent graph: handoff flows, stalled, rework, off-graph
+  gotchibot graph build|sync|watch      regenerate declared graph · drain outbox · kanban → PM alerts
+  gotchibot graph init|get|set|next|stop|list   graph-state (sessions/graph)
   gotchibot jev ask|smoke|models    TypeSafe Jev System One decisions (not chat)
   gotchibot meet start|open|room [--inline]|invite|status|say|morning|colabo|end   persistent room (/meet); --inline = single terminal (no tmux)
   gotchibot model-policy [show|pick|candidates|enforce]  working-models-only policy
@@ -659,7 +661,12 @@ cmd_inbox() {
 }
 
 cmd_graph() {
-  exec node "$ROOT/scripts/graph-state.mjs" "$@"
+  # graph-state's verbs keep working; anything else is the agent graph
+  # (handoff report, build, sync, watch — scripts/agent-graph.mjs).
+  case "${1:-}" in
+    init|get|set|next|stop|list) exec node "$ROOT/scripts/graph-state.mjs" "$@" ;;
+  esac
+  exec node "$ROOT/scripts/agent-graph.mjs" "$@"
 }
 
 cmd_jev() {
@@ -821,7 +828,8 @@ case "$cmd" in
   project-tickets|proj-tickets|tickets) cmd_project_tickets "$@" ;;
   project-mailbox|proj-mailbox|mailbox) cmd_project_mailbox "$@" ;;
   inbox|bot-inbox) cmd_inbox "$@" ;;
-  graph|graph-state) cmd_graph "$@" ;;
+  graph) cmd_graph "$@" ;;
+  graph-state) exec node "$ROOT/scripts/graph-state.mjs" "$@" ;;
   jev|typesafe|systemone) cmd_jev "$@" ;;
   meet) cmd_meet "$@" ;;
   model-policy|models-policy)

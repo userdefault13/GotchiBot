@@ -41,6 +41,7 @@ import {
 import { orchestratorId } from "./openclaw-fleet.mjs";
 import { writeJsonAtomic } from "./json-store.mjs";
 import { publishProjectWrite } from "./hub-project-sync.mjs";
+import { recordEdge, closeEdge } from "./agent-graph.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -217,6 +218,18 @@ export function sendMessage({
   };
   box.messages.push(msg);
   saveBox(box, "inbox");
+  // Agent graph: an ask stays open until read; fyi/report/alert are one-off edges.
+  void recordEdge({
+    edgeId: `inbox:${msg.id}`,
+    kind: "inbox",
+    from: msg.from,
+    to: msg.to,
+    ref: msg.id,
+    title: subj.slice(0, 120),
+    project: msg.project || null,
+    sentAt: msg.ts,
+    ...(k === "ask" ? {} : { answeredAt: msg.ts, outcome: "done" }),
+  });
   return msg;
 }
 
@@ -261,6 +274,7 @@ export function readMessage(id, { markRead = true } = {}) {
   if (markRead && !found.msg.readAt && found.which === "inbox") {
     found.msg.readAt = nowIso();
     saveBox(found.box, "inbox");
+    if (found.msg.kind === "ask") void closeEdge(`inbox:${found.msg.id}`, "answered");
   }
   return found.msg;
 }

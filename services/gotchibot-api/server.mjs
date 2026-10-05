@@ -16,6 +16,7 @@ import { connectStore } from "./store.mjs";
 import { createProjectSource, materializeSnapshotFiles, projectSlugOk, projectSyncPathOk, validateProjectSnapshot } from "./projects.mjs";
 import { validateCockpitSnapshot } from "./cockpit.mjs";
 import { validateTreeSnapshot } from "./tree.mjs";
+import { validateEdges } from "./graph.mjs";
 import {
   adoptDeskSessionFromTerminal,
   createOpencodeClient,
@@ -730,6 +731,21 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
             pushedAt: snap?.pushedAt || null,
             cockpit: snap?.cockpit || null,
           });
+        }
+
+        // POST /api/gotchibot/graph/edges — desks record handoffs (agent graph).
+        if (req.method === "POST" && path === "/api/gotchibot/graph/edges") {
+          if (deskKind !== "desk") return json(res, 403, { ok: false, error: "only a desk can record edges" });
+          const edges = validateEdges(await readBody(req));
+          const r = await store.putEdges(desk.deskId, edges);
+          return json(res, 200, { ok: true, ...r });
+        }
+
+        // GET /api/gotchibot/graph/edges?since=ISO — every desk's handoffs (phones may read).
+        if (req.method === "GET" && path === "/api/gotchibot/graph/edges") {
+          const since = url.searchParams.get("since");
+          const edges = await store.listEdges({ since: since && !Number.isNaN(Date.parse(since)) ? since : null });
+          return json(res, 200, { ok: true, edges });
         }
 
         if (req.method === "POST" && path === "/api/gotchibot/tree/push") {

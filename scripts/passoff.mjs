@@ -32,6 +32,7 @@ import {
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { recordEdge, closeEdge } from "./agent-graph.mjs";
 import { resolveInviteTarget } from "./gotchi-meet.mjs";
 import { loadCurrentMeeting, readTranscript, participantInfo } from "./meet-channel.mjs";
 import {
@@ -649,6 +650,19 @@ async function cmdSend(args) {
 
   p.delivery = { via, ok: result.ok, reason: result.reason || null, at: new Date().toISOString() };
   savePacket(p, { latest: false });
+  // Agent graph: one edge per passoff, closed on accept/drop (kanban watches it).
+  if (p.to?.id) {
+    await recordEdge({
+      edgeId: `passoff:${p.id}`,
+      kind: "passoff",
+      from: p.from?.id,
+      to: p.to.id,
+      ref: p.id,
+      title: firstLine(p.task, 120),
+      project: p.project || null,
+      sentAt: p.at,
+    });
+  }
 
   if (args.json) {
     console.log(JSON.stringify({ id: p.id, from: p.from, to: p.to, delivery: p.delivery }, null, 2));
@@ -721,6 +735,7 @@ async function cmdAccept(args, { pendingOnly = false } = {}) {
   p.acceptedAt = new Date().toISOString();
   p.acceptedBy = { id: me.id, label: heroLabel(me) };
   savePacket(p);
+  await closeEdge(`passoff:${p.id}`, "accepted");
   if (args.claim) await claimHero({ ...p, to: { id: me.id } });
   if (args.json) console.log(JSON.stringify(p, null, 2));
   else {
@@ -729,11 +744,12 @@ async function cmdAccept(args, { pendingOnly = false } = {}) {
   }
 }
 
-function cmdDrop(args) {
+async function cmdDrop(args) {
   const p = loadPacket(args._[0]);
   p.status = "dropped";
   p.droppedAt = new Date().toISOString();
   savePacket(p, { latest: false });
+  await closeEdge(`passoff:${p.id}`, "dropped");
   console.log(`dropped ${p.id} (${p.from.label} → ${p.to ? p.to.label : "?"})`);
 }
 

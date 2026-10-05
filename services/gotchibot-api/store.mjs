@@ -149,6 +149,8 @@ export async function connectStore({ mongoUri, dbName }) {
   const treeSnapshots = db.collection("tree_snapshots");
   /** slug → { sessionId, threadId, lastMirroredId }: the project's OpenCode desk session. */
   const deskSessions = db.collection("desk_sessions");
+  /** edgeId → one handoff between gotchis (agent graph; see graph.mjs). 90-day TTL. */
+  const agentEdges = db.collection("agent_edges");
 
   async function ensureIndexes() {
     await chatMessages.createIndex({ threadId: 1, messageId: 1 }, { unique: true });
@@ -174,6 +176,10 @@ export async function connectStore({ mongoUri, dbName }) {
     await walletNonces.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await walletVerifyCodes.createIndex({ codeHash: 1 }, { unique: true });
     await walletVerifyCodes.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await agentEdges.createIndex({ edgeId: 1 }, { unique: true });
+    await agentEdges.createIndex({ sentAt: -1 });
+    await agentEdges.createIndex({ fromRole: 1, toRole: 1 });
+    await agentEdges.createIndex({ updatedAt: 1 }, { expireAfterSeconds: 90 * 86400 });
   }
 
   function threadAccessibleToPhone(thread, deskId) {
@@ -1161,6 +1167,39 @@ export async function connectStore({ mongoUri, dbName }) {
     return { pushedAt: pushedAt.toISOString() };
   }
 
+  /**
+   * Upsert graph edges by edgeId. Only the fields present are set, so opening,
+   * answering and alerting one handoff are separate idempotent writes.
+   */
+  async function putEdges(deskId, edges) {
+    const now = new Date();
+    let written = 0;
+    for (const e of edges || []) {
+      const { edgeId, ...fields } = e;
+      await agentEdges.updateOne(
+        { edgeId },
+        { $set: { ...fields, updatedAt: now }, $setOnInsert: { edgeId, deskId, createdAt: now } },
+        { upsert: true },
+      );
+      written++;
+    }
+    return { written, at: now.toISOString() };
+  }
+
+  /** Edges sent within maxAgeMs (default 7 days), newest first, plus any still open. */
+  async function listEdges({ since = null, limit = 2000 } = {}) {
+    const from = since ? new Date(since) : new Date(Date.now() - 7 * 86400_000);
+    const docs = await agentEdges
+      .find({ $or: [{ sentAt: { $gte: from.toISOString() } }, { answeredAt: { $exists: false } }] })
+      .sort({ sentAt: -1 })
+      .limit(Math.max(1, Math.min(5000, Number(limit) || 2000)))
+      .toArray();
+    return docs.map(({ _id, createdAt, updatedAt, ...e }) => ({
+      ...e,
+      updatedAt: updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt,
+    }));
+  }
+
   /** Every desk's tree pushed within maxAgeMs (default 24h), newest first. */
   async function listTreeSnapshots({ maxAgeMs = 86400_000 } = {}) {
     const since = new Date(Date.now() - maxAgeMs);
@@ -1774,6 +1813,8 @@ export async function connectStore({ mongoUri, dbName }) {
     getProjectSnapshot,
     putCockpitSnapshot,
     getCockpitSnapshot,
+    putEdges,
+    listEdges,
     putTreeSnapshot,
     listTreeSnapshots,
     ensureDeskThread,

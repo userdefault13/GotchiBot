@@ -54,6 +54,31 @@ import {
   saveBoard,
 } from "./project-kanban.mjs";
 import { recordPkmEvent } from "./pkm-record.mjs";
+import { recordEdge, closeEdge } from "./agent-graph.mjs";
+
+/**
+ * Agent graph edges for tickets. Each review round is its own edge so rework
+ * loops stay countable: request opens round 0; rework closes the round as
+ * "rework" and opens the next; accept closes it as "accepted". The outbox
+ * write is synchronous, so callers need not await.
+ */
+function ticketRound(t) {
+  return (t.history || []).filter((h) => h.op === "rework").length;
+}
+function openTicketEdge(t, from, to, round) {
+  void recordEdge({
+    edgeId: `ticket:${t.id}.${round}`,
+    kind: "ticket",
+    from,
+    to,
+    ref: t.id,
+    title: String(t.title || "").slice(0, 120),
+    project: t.project || null,
+  });
+}
+function closeTicketEdge(t, round, outcome) {
+  void closeEdge(`ticket:${t.id}.${round}`, outcome);
+}
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -599,6 +624,7 @@ async function main() {
       ticket.cardId = card.id;
     }
     saveTicket(ticket, slug);
+    openTicketEdge(ticket, flags.from, flags.to, 0);
     notifyPkm("delegated", ticket, flags.from, "ticket request opened");
     const cardPart = ticket.cardId ? `  card ${ticket.cardId} [todo]` : "  no card";
     console.log(`ticket ${ticket.id}  open → ${ticket.to}${cardPart}  ${ticket.title}`);
@@ -643,6 +669,7 @@ async function main() {
     const t = loadTicket(id, slug);
     assertTransition(t, "accepted", "accept");
     t.status = "accepted";
+    closeTicketEdge(t, ticketRound(t), "accepted");
     pushHistory(t, flags.by, "accept", flags.note || "");
     moveLinkedCard(slug, t, CARD_COLUMN.accepted);
     saveTicket(t, slug);
@@ -657,7 +684,9 @@ async function main() {
     const t = loadTicket(id, slug);
     assertTransition(t, "rework", "rework");
     t.status = "rework";
+    closeTicketEdge(t, ticketRound(t), "rework");
     pushHistory(t, flags.by, "rework", flags.note);
+    openTicketEdge(t, flags.by, t.claimer || t.to, ticketRound(t));
     moveLinkedCard(slug, t, CARD_COLUMN.rework);
     saveTicket(t, slug);
     notifyPkm("reviewed", t, flags.by, flags.note || "rework");
@@ -788,6 +817,21 @@ async function main() {
         note: flags.note || "",
       });
       const saved = saveJob(job, slug);
+      // Agent graph: each move hands the job from the old stage owner to the
+      // new one; the previous move's edge closes now (rework or done).
+      const moves = job.history.filter((h) => h.op === "advance").length;
+      if (moves > 1) void closeEdge(`job:${job.id}.${moves - 1}`, next === "rework" ? "rework" : "done");
+      void recordEdge({
+        edgeId: `job:${job.id}.${moves}`,
+        kind: "job",
+        from: STAGE_OWNER[from],
+        fromRole: STAGE_OWNER[from],
+        to: STAGE_OWNER[next],
+        toRole: STAGE_OWNER[next],
+        ref: job.id,
+        title: `${from} → ${next}: ${String(job.title || "").slice(0, 100)}`,
+        project: slug,
+      });
       if (flags.json) console.log(JSON.stringify(saved, null, 2));
       else console.log(`job ${saved.id}  ${from} → ${next}  by ${role}  owner ${saved.owner}`);
       return;

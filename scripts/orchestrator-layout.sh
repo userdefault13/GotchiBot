@@ -2173,7 +2173,7 @@ case "$cmd" in
     enter_pstack_dossier
     ;;
   enter-factory|factory)
-    # Optional view: tree (default) | factory (bots) | hub | infra.
+    # Optional view: tree (default) | factory (bots) | hub | infra | graph (agent handoffs).
     tmux set-option -t "$sess" @gotchibot-center-app factory 2>/dev/null || true
     tmux set-option -t "$sess" @gotchibot-factory-view "${2:-tree}" 2>/dev/null || true
     focus_desk factory
