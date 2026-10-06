@@ -30,7 +30,7 @@ import {
   statSync,
   unlinkSync,
 } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -320,7 +320,24 @@ export function setCurrentProject(slug, { ensureDirs = true, sessionsDir = null 
     ensureProjectDirs(slug);
   }
   reconnectProjectDb(slug, { sessionsDir });
+  if (!sessionsDir) syncDeskPanes();
   return slug;
+}
+
+/**
+ * Tell a running desk its project changed so every pane follows (Files, Terminal,
+ * a local chat — orchestrator-layout.sh project-sync; the Hub chat reopens by
+ * itself). Detached and best-effort; skipped under node --test or with no tmux.
+ */
+function syncDeskPanes() {
+  if (process.env.NODE_TEST_CONTEXT || process.execArgv.includes("--test") || process.env.GOTCHIBOT_NO_PANE_SYNC === "1") return;
+  try {
+    const child = spawn("bash", [join(ROOT, "scripts", "orchestrator-layout.sh"), "project-sync"], { cwd: ROOT, detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+  } catch {
+    /* no desk running */
+  }
 }
 
 /** Clear desk project selection (new nest install / fresh onboard / cart transfer). */

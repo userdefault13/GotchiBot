@@ -110,7 +110,18 @@ async function prepareDeskTools() {
 }
 
 /** `open` exit codes the desk chat pane uses to pick its local fallback. */
-export const OPEN_EXIT = { ok: 0, error: 1, hubDown: 3, noSsh: 4 };
+export const OPEN_EXIT = { ok: 0, error: 1, hubDown: 3, noSsh: 4, projectSwitched: 5 };
+
+/**
+ * The desk switched project while this chat was open: its current project moved
+ * away from what it was at attach time, to something other than this chat. (An
+ * explicit `open <other-slug>` is not a switch.) Pure.
+ */
+export function projectSwitched(attachedSlug, startSlug, currentSlug) {
+  return Boolean(currentSlug) && currentSlug !== startSlug && currentSlug !== attachedSlug;
+}
+
+const PROJECT_POLL_MS = 1500;
 const SSH_TARGET_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/;
 
 function sshTarget(argv) {
@@ -174,9 +185,33 @@ async function openDesk(argv) {
   // Keystrokes belong to the TUI; a stray SIGINT must not kill this wrapper.
   const ignore = () => {};
   process.on("SIGINT", ignore);
+  // Every project has its own chat. --follow: when the desk switches project
+  // (cockpit, gotchibot project use), close this chat and exit projectSwitched so
+  // the chat pane reopens on the new project's chat.
+  let switched = false;
+  let startProject = null;
   try {
-    return await new Promise((done) => child.on("exit", (c) => done(c ?? 1)));
+    startProject = currentProjectSlug();
+  } catch {}
+  const watch = follow
+    ? setInterval(() => {
+        let cur = null;
+        try {
+          cur = currentProjectSlug();
+        } catch {
+          return;
+        }
+        if (!switched && projectSwitched(slug, startProject, cur)) {
+          switched = true;
+          child.kill("SIGTERM");
+        }
+      }, PROJECT_POLL_MS)
+    : null;
+  try {
+    const code = await new Promise((done) => child.on("exit", (c) => done(c ?? 1)));
+    return switched ? OPEN_EXIT.projectSwitched : code;
   } finally {
+    if (watch) clearInterval(watch);
     process.off("SIGINT", ignore);
   }
 }

@@ -65,5 +65,9 @@ trap debounced_winch WINCH
 
 # Hint on first paint (mc clears screen after).
 export GOTCHIBOT_MC=1
-# No mouse. Keyboard still drives mc.
+# No mouse. Keyboard still drives mc. Open on the current project's folder
+# (else the repo); project-sync restarts it on a project switch.
+# shellcheck source=scripts/lib/project-dir.sh
+. "$ROOT/scripts/lib/project-dir.sh"
+cd "$(project_dir "$ROOT")" 2>/dev/null || cd "$ROOT"
 exec mc --nomouse .

@@ -207,3 +207,20 @@ describe("desk ↔ Hub model sync", () => {
     assert.match(pane, /boot_mark "hub chat: \$\{hub_skip:-try\}"/);
   });
 });
+
+describe("project switch reopens the Hub chat", () => {
+  it("only a project change after attach counts as a switch", async () => {
+    const { projectSwitched, OPEN_EXIT } = await import("../scripts/hub-desk.mjs");
+    assert.equal(projectSwitched("aarcadeghst", "aarcadeghst", "wondrstack"), true);
+    assert.equal(projectSwitched("aarcadeghst", "aarcadeghst", "aarcadeghst"), false);
+    assert.equal(projectSwitched("aarcadeghst", "aarcadeghst", null), false, "no project → keep the chat");
+    assert.equal(projectSwitched("other", "aarcadeghst", "aarcadeghst"), false, "explicit open of another project");
+    assert.equal(projectSwitched("other", "aarcadeghst", "other"), false, "switched to the chat's own project");
+    assert.equal(OPEN_EXIT.projectSwitched, 5);
+  });
+
+  it("the chat pane starts over on the new project's chat", () => {
+    const pane = readFileSync(join(root, "scripts/chat-pane.sh"), "utf8");
+    assert.match(pane, /if \[ "\$hub_st" -eq 5 \]; then[\s\S]{0,300}exec "\$ROOT\/scripts\/chat-pane\.sh"/);
+  });
+});

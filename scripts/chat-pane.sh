@@ -594,6 +594,13 @@ if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
     hub_st=$?
     set -e
     [ "$hub_st" -eq 0 ] && quit_to_terminal
+    # 5 = the desk switched project: start over on the new project's chat.
+    if [ "$hub_st" -eq 5 ]; then
+      stty sane 2>/dev/null || true
+      printf '\033[?1049l\033[?25h\033[0m\033[2J\033[H' 2>/dev/null || true
+      boot_mark "hub chat: project switched — reopening"
+      exec "$ROOT/scripts/chat-pane.sh"
+    fi
     stty sane 2>/dev/null || true
     printf '\033[?1049l\033[?25h\033[0m' 2>/dev/null || true
     case "$hub_st" in

@@ -1266,6 +1266,45 @@ unpark_slot_app() {
   tmux kill-window -t "=$park:$kind" 2>/dev/null || true
 }
 
+# The desk's project changed (setCurrentProject runs this): every pane follows it.
+# Recorded in @gotchibot-project, so a repeat call is a no-op. Chat: a Hub chat
+# reopens by itself (hub-desk exits 5); a local chat restarts here. Files restarts
+# in the new project. Terminal restarts only when idle at its prompt — a running
+# command is never killed. Parked Files/Terminal copies are dropped so they come
+# back in the new project. Inbox, Kanban, Factory, Dossier and the avatar re-read
+# the project as they redraw; the meeting room is shared across projects.
+project_sync() {
+  local cur last idx cmd live tgt line
+  tmux has-session -t "=$sess" 2>/dev/null || return 0
+  cur="$(tr -d '[:space:]' < "$ROOT/sessions/.project-current" 2>/dev/null || true)"
+  last="$(tmux show-options -qv -t "$sess" @gotchibot-project 2>/dev/null || true)"
+  [ "$cur" = "$last" ] && return 0
+  tmux set-option -q -t "$sess" @gotchibot-project "$cur" 2>/dev/null || true
+  [ -n "$last" ] || return 0
+  drop_parked files
+  drop_parked terminal
+  for idx in $(seq 0 $((DESK_PANE_COUNT - 1))); do
+    cmd="$(tmux display -p -t "$sess:work.$idx" '#{pane_start_command}' 2>/dev/null || true)"
+    live="$(tmux display -p -t "$sess:work.$idx" '#{pane_current_command}' 2>/dev/null || true)"
+    case "$cmd" in
+      *mc-pane*) tmux respawn-pane -k -t "$sess:work.$idx" "cd \"$ROOT\" && exec ./scripts/mc-pane.sh" 2>/dev/null || true ;;
+      *terminal-pane*)
+        case "$live" in
+          bash|zsh|fish|sh|dash) tmux respawn-pane -k -t "$sess:work.$idx" "cd \"$ROOT\" && exec ./scripts/terminal-pane.sh" 2>/dev/null || true ;;
+          *) tmux display-message -t "$sess" "Project → $cur · Terminal kept (a command is running)" 2>/dev/null || true ;;
+        esac
+        ;;
+    esac
+  done
+  # A local (non-Hub) chat shows the old project's transcript: start it over.
+  if [ "$(cut -d' ' -f1 "$ROOT/sessions/.chat-backend" 2>/dev/null)" = local ]; then
+    while IFS=$'\t' read -r tgt line; do
+      [[ "$line" == *chat-pane.sh* ]] || continue
+      tmux respawn-pane -k -t "$tgt" "cd \"$ROOT\" && GOTCHIBOT_SKIP_ONBOARDING=1 GOTCHIBOT_SKIP_COCKPIT=1 exec ./scripts/chat-pane.sh" 2>/dev/null || true
+    done < <(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}	#{pane_start_command}' 2>/dev/null | grep -E "^($sess|$(park_session)):")
+  fi
+}
+
 # One tool slot: focused → app (unparked if it is waiting), else a label bar.
 place_slot() {
   local idx="$1" kind="$2" focused="$3" match="$4" app_cmd="$5" label="$6" cur
@@ -2124,6 +2163,9 @@ case "$cmd" in
     ;;
   fit-quiet)
     fit_quiet
+    ;;
+  project-sync)
+    project_sync
     ;;
   refresh)
     if nine_pane_desk; then
