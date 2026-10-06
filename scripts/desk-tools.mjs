@@ -78,6 +78,40 @@ export function lastUserText(messages) {
   return "";
 }
 
+const HISTORY_MAX = 8000;
+
+function messageText(m) {
+  if (typeof m?.content === "string") return m.content.trim();
+  if (Array.isArray(m?.content)) return m.content.filter((p) => p?.type === "text").map((p) => p.text || "").join("\n").trim();
+  return "";
+}
+
+/**
+ * The prompt a tool sees. The first turn of a chat with this tool carries a note
+ * (it IS the CLI the chat switched to — do the work, do not launch codex/claude/
+ * cursor-agent again, which also fails inside its sandbox) and the recent chat,
+ * newest kept, so a /local switch mid-conversation keeps the context. Later turns
+ * resume the tool's own conversation and send just the new message. Pure.
+ */
+export function buildPrompt(tool, messages, { resume = null } = {}) {
+  const latest = lastUserText(messages);
+  if (resume) return latest;
+  const name = { codex: "Codex", claude: "Claude Code", cursor: "Cursor Agent" }[tool] || tool;
+  const note = `[GotchiBot /local] You are ${name}, run on UserDefault's desk from the GotchiBot chat. Do the request yourself in this project. Do not launch codex, claude or cursor-agent from here — you are already the tool, and a nested run cannot start inside your sandbox.`;
+  const history = [];
+  let used = 0;
+  const prior = (messages || []).slice(0, -1).filter((m) => m?.role === "user" || m?.role === "assistant");
+  for (let i = prior.length - 1; i >= 0; i--) {
+    const t = messageText(prior[i]);
+    if (!t) continue;
+    const line = `${prior[i].role === "user" ? "UserDefault" : "Assistant"}: ${t}`;
+    if (used + line.length > HISTORY_MAX) break;
+    history.unshift(line);
+    used += line.length;
+  }
+  return [note, history.length ? `\nThe chat so far:\n${history.join("\n\n")}` : "", `\nUserDefault's request:\n${latest}`].join("\n");
+}
+
 /**
  * argv for one turn. `resume` is the tool's own conversation id from an earlier
  * turn of the same chat session. Pure.
@@ -228,7 +262,8 @@ export function createDeskToolsServer({ root = ROOT, token = deskToolsToken(root
     try {
       const map = readJson(sessionsPath(root), {});
       const cwd = await cwdOf();
-      const r = await run(tool, { prompt, cwd, resume: map[session]?.[tool] || null, onTick: () => stream && res.write(": working\n\n") });
+      const resume = map[session]?.[tool] || null;
+      const r = await run(tool, { prompt: buildPrompt(tool, body.messages, { resume }), cwd, resume, onTick: () => stream && res.write(": working\n\n") });
       if (r.resume) {
         const fresh = readJson(sessionsPath(root), {});
         fresh[session] = { ...(fresh[session] || {}), [tool]: r.resume, at: new Date().toISOString() };

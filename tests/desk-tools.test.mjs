@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { toolArgs, parseToolOutput, toolOf, lastUserText, createDeskToolsServer, deskToolsToken } from "../scripts/desk-tools.mjs";
+import { toolArgs, parseToolOutput, toolOf, lastUserText, createDeskToolsServer, deskToolsToken, buildPrompt } from "../scripts/desk-tools.mjs";
 import { reverseTunnelOpts, sshMasterOpts } from "../scripts/hub-desk.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,6 +42,32 @@ describe("tool commands", () => {
   });
 });
 
+describe("first-turn prompt", () => {
+  const msgs = [
+    { role: "system", content: "sys" },
+    { role: "user", content: "fix the login bug" },
+    { role: "assistant", content: [{ type: "text", text: "It is in api/auth.js" }] },
+    { role: "user", content: "try it now" },
+  ];
+
+  it("tells the tool it is the CLI and carries the chat so far", () => {
+    const p = buildPrompt("codex", msgs);
+    assert.match(p, /You are Codex/);
+    assert.match(p, /Do not launch codex, claude or cursor-agent/);
+    assert.match(p, /UserDefault: fix the login bug\n\nAssistant: It is in api\/auth\.js/);
+    assert.match(p, /UserDefault's request:\ntry it now$/);
+    assert.doesNotMatch(p, /sys/);
+  });
+
+  it("keeps the newest history under the cap and sends only the message when resuming", () => {
+    const long = [...Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: `m${i} ${"x".repeat(400)}` })), { role: "user", content: "now" }];
+    const p = buildPrompt("claude", long);
+    assert.match(p, /m39/);
+    assert.doesNotMatch(p, /m0 /);
+    assert.equal(buildPrompt("claude", msgs, { resume: "S1" }), "try it now");
+  });
+});
+
 describe("runner", () => {
   let root;
   let server;
@@ -57,8 +83,8 @@ describe("runner", () => {
       cwdOf: async () => "/proj",
       run: async (tool, o) => {
         calls.push({ tool, ...o });
-        if (o.prompt === "slow") await new Promise((r) => (release = r));
-        return { ok: true, text: `${tool} says ${o.prompt}`, resume: `${tool}-conv` };
+        if (o.prompt.endsWith("slow")) await new Promise((r) => (release = r));
+        return { ok: true, text: `${tool} says ${o.prompt.split("\n").pop()}`, resume: `${tool}-conv` };
       },
     });
     await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -81,7 +107,9 @@ describe("runner", () => {
     assert.equal(r1.choices[0].message.content, "codex says one");
     await post({ model: "desk/codex", messages: [{ role: "user", content: "two" }] });
     assert.equal(calls.at(-2).resume, null);
+    assert.match(calls.at(-2).prompt, /^\[GotchiBot \/local\] You are Codex/);
     assert.equal(calls.at(-1).resume, "codex-conv");
+    assert.equal(calls.at(-1).prompt, "two", "a resumed turn sends just the new message");
     assert.equal(calls.at(-1).cwd, "/proj");
     const map = JSON.parse(readFileSync(path.join(root, "sessions", ".desk-tools-sessions.json"), "utf8"));
     assert.equal(map.ses_A.codex, "codex-conv");
