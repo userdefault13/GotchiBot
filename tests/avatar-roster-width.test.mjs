@@ -271,9 +271,12 @@ describe("avatar roster width", () => {
     );
   }
 
-  it("keeps a 46-row canvas on short terminals and grows only when 3 rows fit", () => {
-    assert.equal(canvasHeight(24), "46");
-    assert.equal(canvasHeight(46), "46");
+  it("fits a short terminal exactly, keeps 46 up to 70 lines, and grows only when 3 rows fit", () => {
+    // Under 46 rows of content the canvas is the screen itself — never taller (big text).
+    assert.equal(canvasHeight(24), "23");
+    assert.equal(canvasHeight(44), "43");
+    assert.equal(canvasHeight(46), "45");
+    assert.equal(canvasHeight(47), "46");
     assert.equal(canvasHeight(50), "46");
     // 70 client lines leave 69 of content — one short of the 3-row pane.
     assert.equal(canvasHeight(70), "46");

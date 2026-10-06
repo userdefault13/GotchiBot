@@ -28,7 +28,9 @@ resize_hook="$ROOT/scripts/orchestrator-resize.sh"
 # Laptop floor is win_h_default (46): one roster row. A desktop is tall enough
 # when the content area is at least win_h_desktop (70), which keeps the laptop
 # portrait budget (20) and fits 3 roster rows of 12 lines. Shorter clients do
-# not get a squeezed 3-row canvas — they stay at 46.
+# not get a squeezed 3-row canvas — they stay at 46. A screen with fewer than 46
+# rows (big text, a short window) gets exactly its own height: a window taller
+# than the screen hides its top/bottom rows (the cockpit), worse than squeezing.
 canvas_height_for_client() {
   local client="${1:-0}" avail
   case "$client" in
@@ -40,6 +42,8 @@ canvas_height_for_client() {
     avail=0
   fi
   if [ "$avail" -ge "$win_h_desktop" ]; then
+    printf '%s\n' "$avail"
+  elif [ "$avail" -gt 0 ] && [ "$avail" -lt "$win_h_default" ]; then
     printf '%s\n' "$avail"
   else
     printf '%s\n' "$win_h_default"
