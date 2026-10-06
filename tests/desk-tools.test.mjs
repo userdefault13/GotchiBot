@@ -247,5 +247,8 @@ describe("wiring", () => {
     assert.match(local, /session_prompt_right\(ctx: any, data: any\)/);
     assert.match(local, /● local/);
     assert.match(readFileSync(path.join(repo, ".opencode", "tui-plugins", "gotchi-model-sync.ts"), "utf8"), /s\.startsWith\("desk\/"\)/);
+    // The /local plugin is a loader for .opencode/lib/local-tools-hooks.js: both ship.
+    const pkg = JSON.parse(readFileSync(path.join(repo, "package.json"), "utf8"));
+    assert.ok(pkg.files.includes(".opencode/plugins/") && pkg.files.includes(".opencode/lib/"));
   });
 });
