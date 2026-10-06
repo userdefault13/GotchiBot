@@ -151,6 +151,7 @@ describe("reroute plugin", () => {
     process.env.GOTCHIBOT_ROOT = root;
     process.env.GOTCHIBOT_DESK_TOOLS_PORT = String(listener.address().port);
     mod = await import(`../.opencode/plugins/gotchi-local-tools.js?t=${Date.now()}`);
+    // The loader re-imports the hooks by mtime; make sure the tests see a fresh copy.
   });
   after(() => {
     listener.close();
@@ -161,6 +162,12 @@ describe("reroute plugin", () => {
 
   it("exports only the plugin function (OpenCode calls every export as a plugin)", () => {
     assert.deepEqual(Object.keys(mod), ["GotchiLocalTools"]);
+  });
+
+  it("reloads changed hook code without a process restart (version-stamped import)", async () => {
+    const src = readFileSync(path.join(repo, ".opencode", "plugins", "gotchi-local-tools.js"), "utf8");
+    assert.match(src, /\?v=\$\{v\}/);
+    assert.match(src, /lib", "local-tools-hooks\.js"/);
   });
 
   it("reroutes only chats with /local on, and adds the desk headers", async () => {
