@@ -141,6 +141,21 @@ describe("avatar roster width", () => {
 
   const rowKeys = ["files", "avatar", "cockpit", "chat", "factory", "dossier", "inbox", "meet", "kanban", "terminal"];
 
+  it("fits a narrow (zoomed-in) terminal: every bar stays 3, the focused pane gives up the columns", () => {
+    for (const [w, chat] of [[120, 63], [100, 43], [93, 36]]) {
+      const got = sizes(w, "chat");
+      const widths = rowKeys.map((k) => Number(got[k]));
+      assert.equal(widths.reduce((n, x) => n + x, 0) + 9, w, `row fills ${w}`);
+      assert.equal(Number(got.chat), chat, `chat at ${w}`);
+      assert.equal(Number(got.avatar), 24);
+      for (const k of rowKeys.filter((k) => !["avatar", "chat"].includes(k))) assert.equal(got[k], "3", `${k} bar at ${w}`);
+    }
+    // apply_focus_sizes follows the client both ways, down to that 93-column floor.
+    const src = read(layout);
+    assert.match(src, /floor=\$\(\(8 \* chat_collapsed \+ min_avatar \+ DESK_PANE_COUNT - 1 \+ 36\)\)/);
+    assert.match(src, /\[ "\$client_w" -ne "\$win" \]/);
+  });
+
   it("pads collapsed labels and keeps chat at 90 on the previous 147-wide desk", () => {
     const got = sizes(147, "chat");
     assert.equal(got.files, "3");

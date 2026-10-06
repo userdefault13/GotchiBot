@@ -1388,10 +1388,20 @@ apply_focus_sizes() {
   client_w="$(tmux display -p -t "$sess" '#{client_width}' 2>/dev/null || true)"
   client_w="${client_w:-0}"
   win="$(window_width)"
-  # Use the whole terminal. The desk canvas is 163 columns; a narrower client clips the row.
-  if [ "$client_w" -gt "$win" ]; then
-    tmux resize-window -t "$sess:work" -x "$client_w" 2>/dev/null || true
-    win="$client_w"
+  # Fit the terminal both ways. A wider client grows the desk; a narrower one (zoomed-in
+  # text, a smaller window) shrinks it so every app bar stays on screen — the focused
+  # pane gives up the columns (focus_pane_widths keeps it >= 36). Only below the floor
+  # (all bars + the avatar column + separators + a 36-column focus) does the row clip.
+  # client-resized → fit-quiet lands here, so this follows every zoom live.
+  local floor want
+  floor=$((8 * chat_collapsed + min_avatar + DESK_PANE_COUNT - 1 + 36))
+  if [ "$client_w" -gt 0 ] && [ "$client_w" -ne "$win" ]; then
+    want="$client_w"
+    [ "$want" -lt "$floor" ] && want="$floor"
+    if [ "$want" -ne "$win" ]; then
+      tmux resize-window -t "$sess:work" -x "$want" 2>/dev/null || true
+      win="$want"
+    fi
   fi
   # shellcheck disable=SC2162
   read -r w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 <<EOF
