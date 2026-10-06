@@ -89,6 +89,26 @@ export function sshMasterOpts(home = homedir()) {
   return ["-o", `ControlPath=${join(home, ".ssh", "gb-%C")}`, "-o", "ControlMaster=no"];
 }
 
+/**
+ * Hub loopback :port → this desk's runner (scripts/desk-tools.mjs). A second desk
+ * attaching while one already holds the port gets a warning, not a failed attach.
+ */
+export function reverseTunnelOpts(port) {
+  return ["-o", "ExitOnForwardFailure=no", "-R", `127.0.0.1:${port}:127.0.0.1:${port}`];
+}
+
+/** Start the desk runner if needed; null when it cannot run (the chat still opens). */
+async function prepareDeskTools() {
+  try {
+    const { deskToolsToken, DESK_TOOLS_PORT } = await import("./desk-tools.mjs");
+    const r = spawnSync(process.execPath, [join(ROOT, "scripts", "desk-tools.mjs"), "ensure"], { stdio: "ignore", timeout: 8000 });
+    if (r.status !== 0) return null;
+    return { token: deskToolsToken(), port: DESK_TOOLS_PORT };
+  } catch {
+    return null;
+  }
+}
+
 /** `open` exit codes the desk chat pane uses to pick its local fallback. */
 export const OPEN_EXIT = { ok: 0, error: 1, hubDown: 3, noSsh: 4 };
 const SSH_TARGET_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/;
@@ -138,6 +158,10 @@ async function openDesk(argv) {
   if (flagValue(argv, "--ssh")) writePrefs({ ssh: target });
 
   const syncEnv = follow ? deskSyncEnv(slug) : {};
+  // /local: the Hub chat can run this desk's CLI tools through a reverse tunnel
+  // to the desk runner; the Hub side gets the runner's token with the attach.
+  const deskTools = local ? null : await prepareDeskTools();
+  if (deskTools) syncEnv.GOTCHIBOT_DESK_TOOLS_TOKEN = deskTools.token;
   const localDir = reconnectProjectDb(slug) || desk.repoDir;
   console.log(`${desk.title} · session ${desk.sessionId}${follow ? " · sessions sync with every device" : ""}`);
   const child = local
@@ -145,7 +169,7 @@ async function openDesk(argv) {
         stdio: "inherit",
         env: { ...process.env, ...syncEnv },
       })
-    : spawn("ssh", [...sshMasterOpts(), "-t", target, remoteAttachCommand(desk, syncEnv)], { stdio: "inherit" });
+    : spawn("ssh", [...sshMasterOpts(), ...(deskTools ? reverseTunnelOpts(deskTools.port) : []), "-t", target, remoteAttachCommand(desk, syncEnv)], { stdio: "inherit" });
 
   // Keystrokes belong to the TUI; a stray SIGINT must not kill this wrapper.
   const ignore = () => {};

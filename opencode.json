@@ -52,6 +52,29 @@
         }
       }
     },
+    "desk": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "This desk (/local CLI tools)",
+      "options": {
+        "baseURL": "http://127.0.0.1:45690/v1",
+        "apiKey": "desk-tools",
+        "timeout": false
+      },
+      "models": {
+        "cursor": {
+          "name": "Cursor (this desk)",
+          "tool_call": false
+        },
+        "codex": {
+          "name": "Codex (this desk)",
+          "tool_call": false
+        },
+        "claude": {
+          "name": "Claude Code (this desk)",
+          "tool_call": false
+        }
+      }
+    },
     "wisp": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Wisp (Gotchi Closet soul)",
@@ -197,7 +220,7 @@
       "headers": {
         "Authorization": "Bearer {env:WISP_API_KEY}"
       },
-      "$comment": "Gotchi Closet Wisp \u2014 free key = MCP tools. Set WISP_API_KEY via gotchibot wisp mint or abra. Never commit keys."
+      "$comment": "Gotchi Closet Wisp — free key = MCP tools. Set WISP_API_KEY via gotchibot wisp mint or abra. Never commit keys."
     }
   },
   "permission": {

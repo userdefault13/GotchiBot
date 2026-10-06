@@ -634,6 +634,8 @@ fi
 [ -n "$OC_DIR" ] || OC_DIR="$ROOT"
 # Everything from here runs OpenCode on this desk (a Hub chat exited above).
 printf 'local\n' > "$ROOT/sessions/.chat-backend"
+# /local in a desk chat talks to the desk runner directly (non-blocking start).
+( node "$ROOT/scripts/desk-tools.mjs" ensure >/dev/null 2>&1 & ) 2>/dev/null || true
 
 # Sandbox mode on a desk that offers its own VM (scripts/desk-vm.mjs: qualifies +
 # enabled + guest created): the chat attaches to opencode running INSIDE the guest,

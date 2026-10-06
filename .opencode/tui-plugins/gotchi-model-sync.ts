@@ -30,7 +30,9 @@ function stateDirOf(api: any): string {
 
 function normalizeModel(raw: unknown): string {
   const s = String(raw || "").trim()
-  if (!s || s.startsWith("openclaw/")) return ""
+  // openclaw/* hangs a relaunch; desk/* and claudemode/* are /local routing targets
+  // (gotchi-local-tools), not a model to relaunch the chat on.
+  if (!s || s.startsWith("openclaw/") || s.startsWith("desk/") || s.startsWith("claudemode/")) return ""
   return s
 }
 

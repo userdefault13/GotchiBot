@@ -34,6 +34,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot sandbox up|exec|status|promote|rm|ensure-image   Docker sandbox ops
   gotchibot vm up|exec|status|models|promote|rm|ensure-image   QEMU VM sandbox ops (2020 iMac only)
   gotchibot desk-vm check|enable|disable|ensure-image|up|exec|status|promote|rm   sandbox VM on a powerful desk (Lima)
+  gotchibot desk-tools status|ensure|serve   runner for /local (Cursor, Codex, Claude on this desk)
   gotchibot desk-vm mode-promote [--yes]   bring Sandbox · VM work back to the project (patch, then apply)
   gotchibot new [--model t] "P"   spawn a sub-agent
   gotchibot ask [--model t] "…"   natural-language task → auto-route + spawn
@@ -820,6 +821,9 @@ case "$cmd" in
     ;;
   desk-vm)
     exec node "$ROOT/scripts/desk-vm.mjs" "$@"
+    ;;
+  desk-tools)
+    exec node "$ROOT/scripts/desk-tools.mjs" "$@"
     ;;
   new) "$DISPATCH" new "$@" ;;
   list) exec "$DISPATCH" list ;;
