@@ -198,4 +198,12 @@ describe("desk ↔ Hub model sync", () => {
     assert.match(pane, /live-chat-model\.mjs" --last-known/);
     assert.match(pane, /if \[ "\$a" = "--session" \]; then skip_next=1/);
   });
+
+  it("keeps a paired desk on the Hub chat even when the OpenClaw gateway answers", () => {
+    const pane = readFileSync(join(root, "scripts/chat-pane.sh"), "utf8");
+    const hubIf = pane.slice(pane.indexOf('boot_mark "hub chat:'), pane.indexOf('hub-desk.mjs" open'));
+    assert.doesNotMatch(hubIf, /GOTCHIBOT_GOTCHI_BACKEND/, "gotchi mode's relay backend must not gate the Hub chat");
+    assert.match(hubIf, /GOTCHIBOT_CHAT_BACKEND:-\}" != "openclaw"/);
+    assert.match(pane, /boot_mark "hub chat: \$\{hub_skip:-try\}"/);
+  });
 });

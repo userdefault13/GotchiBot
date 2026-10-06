@@ -567,9 +567,21 @@ fi
 
 # Paired to a Hub + inside a project: the Gotchi chat IS the Hub's project chat, the same
 # one the phone and every other desk see. Offline/unpaired falls through to local OpenCode.
+# The boot trace says which way it went (sessions/.boot-trace.log).
+# A reachable OpenClaw gateway does NOT skip the Hub chat: gotchi mode picks the
+# gateway relay whenever the gateway answers, and that silently took paired desks
+# off the synced chat. The relay is for unpaired desks, or forced with
+# GOTCHIBOT_CHAT_BACKEND=openclaw.
+if [ "$AGENT" != "gotchi" ]; then hub_skip="agent=$AGENT"
+elif [ -n "${GOTCHIBOT_OPENCODE_SESSION:-}" ]; then hub_skip="pinned session"
+elif [ "${GOTCHIBOT_HUB_DESK:-1}" = "0" ]; then hub_skip="GOTCHIBOT_HUB_DESK=0"
+elif [ ! -f "$ROOT/sessions/.hub.json" ]; then hub_skip="not paired"
+elif [ "${GOTCHIBOT_CHAT_BACKEND:-}" = "openclaw" ]; then hub_skip="GOTCHIBOT_CHAT_BACKEND=openclaw"
+else hub_skip=""; fi
+boot_mark "hub chat: ${hub_skip:-try}"
 if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
   && [ "${GOTCHIBOT_HUB_DESK:-1}" != "0" ] && [ -f "$ROOT/sessions/.hub.json" ] \
-  && [ "${GOTCHIBOT_GOTCHI_BACKEND:-}" != "openclaw-gateway" ]; then
+  && [ "${GOTCHIBOT_CHAT_BACKEND:-}" != "openclaw" ]; then
   hub_slug="$(node "$ROOT/scripts/project-context.mjs" current 2>/dev/null | tr -d '[:space:]' || true)"
   if [ -n "$hub_slug" ]; then
     set_chat_border " Gotchi · ${hub_slug} (Hub) "
