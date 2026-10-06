@@ -128,7 +128,9 @@ export function chatBackend(root = SCRIPT_ROOT) {
  */
 export function lastKnownHubModel(root = SCRIPT_ROOT) {
   const cache = readJson(cachePath(root));
-  return cache?.model ? formatSessionModel(cache.model) : "";
+  const model = cache?.model ? formatSessionModel(cache.model) : "";
+  // A /local reroute (desk/<tool>, @claudemode) is not the Hub's model.
+  return /^(desk|claudemode)\//.test(model) ? "" : model;
 }
 
 function cachedModel(cache, sessionId, maxAge) {

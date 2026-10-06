@@ -224,3 +224,13 @@ describe("project switch reopens the Hub chat", () => {
     assert.match(pane, /if \[ "\$hub_st" -eq 5 \]; then[\s\S]{0,300}exec "\$ROOT\/scripts\/chat-pane\.sh"/);
   });
 });
+
+describe("last known Hub model", () => {
+  it("never hands a /local reroute to the local fallback", () => {
+    const dir = tree();
+    for (const [model, want] of [["desk/codex", ""], ["claudemode/@claudemode", ""], ["opencode-go/glm-5.3", "opencode-go/glm-5.3"]]) {
+      writeFileSync(join(dir, "sessions/.live-chat-model.json"), JSON.stringify({ model, sessionId: "s", fetchedAt: Date.now() }));
+      assert.equal(lastKnownHubModel(dir), want, model);
+    }
+  });
+});

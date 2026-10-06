@@ -593,6 +593,7 @@ if [ "$AGENT" = "gotchi" ] && [ -z "${GOTCHIBOT_OPENCODE_SESSION:-}" ] \
     node "$ROOT/scripts/hub-desk.mjs" open "$hub_slug" --follow
     hub_st=$?
     set -e
+    boot_mark "hub chat: exit $hub_st"
     [ "$hub_st" -eq 0 ] && quit_to_terminal
     # 5 = the desk switched project: start over on the new project's chat.
     if [ "$hub_st" -eq 5 ]; then
