@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const VERSION_FILE = join(ROOT, "config", "version.json");
@@ -106,16 +107,22 @@ function parseManifest(raw) {
   };
 }
 
-async function fetchCdnLatest() {
-  for (const url of [DEFAULT_CDN, DEFAULT_WWW, DEFAULT_GITHUB]) {
-    const raw = await fetchJson(url);
-    const m = parseManifest(raw);
-    if (m) {
-      const source = url.includes("github") ? "github" : url.includes("www.") ? "www" : "cdn";
-      return { manifest: m, source };
-    }
-  }
-  return null;
+/**
+ * Newest manifest any source publishes. All three are asked (in parallel) and
+ * the highest version wins: taking the first that answered let a stale source
+ * (the website stuck on 0.2.1) hide every later release from every desk.
+ */
+export async function fetchCdnLatest({ urls = [DEFAULT_CDN, DEFAULT_WWW, DEFAULT_GITHUB], fetchManifest = fetchJson } = {}) {
+  const found = (
+    await Promise.all(
+      urls.map(async (url) => {
+        const m = parseManifest(await fetchManifest(url));
+        return m ? { manifest: m, source: url.includes("github") ? "github" : url.includes("www.") ? "www" : "cdn" } : null;
+      }),
+    )
+  ).filter(Boolean);
+  if (!found.length) return null;
+  return found.reduce((best, x) => (isNewer(x.manifest.version, best.manifest.version) ? x : best));
 }
 
 function gitDir() {
@@ -339,9 +346,11 @@ async function main() {
   console.log("");
 }
 
-main().catch((e) => {
-  // A failed launch check must not stop `gotchibot tmux` (hung fetch already returns).
-  if (process.argv.includes("--launch")) process.exit(0);
-  console.error(e?.message || e);
-  process.exit(1);
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((e) => {
+    // A failed launch check must not stop `gotchibot tmux` (hung fetch already returns).
+    if (process.argv.includes("--launch")) process.exit(0);
+    console.error(e?.message || e);
+    process.exit(1);
+  });
+}
