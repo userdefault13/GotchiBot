@@ -3,7 +3,7 @@
  * Interactive welcome / sign-in gate for GotchiBot tmux (center pane).
  */
 import readline from "node:readline/promises";
-import { readFileSync, writeFileSync, unlinkSync, existsSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync, statSync, readdirSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import { stripVTControlCharacters } from "node:util";
@@ -2638,11 +2638,28 @@ function cockpitMenuLeafCount(rows) {
  * Cockpit "What next?" rows. Related actions sit under a parent; Enter on that
  * row opens the group, Esc returns here. Leaf labels and relative order match
  * the old flat list, so 1..n inside a group still picks those siblings.
- * Top-level is 8 rows. Leaves are 21 (Hub SSH down) or 22 (Hub SSH up).
+ * Top-level is 8 rows. Leaves are 21 (Hub SSH down) or 22 (Hub SSH up), plus
+ * "Screen off" under Settings… on a machine with a backlight (Linux desks).
  * The second Hub… row is the full dashboard only when this computer is the
  * Hub (sessions/.hub-api.json). Every other desk gets the lite view instead.
  */
-function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
+/**
+ * Can this machine turn its own backlight off? (Linux /sys/class/backlight — the
+ * 2020 iMac's gmux_backlight, Apple Silicon apple-panel-bl.) GOTCHIBOT_SCREEN_POWER
+ * =1/0 forces it for tests.
+ */
+function hasScreenPower() {
+  const forced = process.env.GOTCHIBOT_SCREEN_POWER;
+  if (forced === "1") return true;
+  if (forced === "0") return false;
+  try {
+    return readdirSync("/sys/class/backlight").some((d) => existsSync(`/sys/class/backlight/${d}/brightness`));
+  } catch {
+    return false;
+  }
+}
+
+function cockpitMenuRows({ sshHubUp = false, net = {}, screenPower = hasScreenPower() } = {}) {
   const item = (key, label) => ({ key, label });
   const group = (key, label, children) => ({ key, label, children });
   const hub = [
@@ -2693,6 +2710,7 @@ function cockpitMenuRows({ sshHubUp = false, net = {} } = {}) {
       item("settings", "Settings (voice, read speed, mouse, replay, IPFS, GitHub)"),
       item("avatar", "Change orchestrator avatar"),
       item("roster-order", "Rearrange roster display order"),
+      ...(screenPower ? [item("screen-off", "Screen off — save the panel and power (any key wakes)")] : []),
     ]),
   ];
 }
@@ -3110,6 +3128,12 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "roster-order") {
       await reorderRosterMenu();
+      continue;
+    }
+
+    if (pick.key === "screen-off") {
+      // Backlight to 0 until any key; scripts/screen-power.sh restores the level.
+      spawnSync("bash", [`${ROOT}/scripts/screen-power.sh`, "off-until-key"], { cwd: ROOT, stdio: "inherit" });
       continue;
     }
   }
