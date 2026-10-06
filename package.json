@@ -39,6 +39,7 @@
     "config/agent-roles.json",
     "config/aseprite.json.example",
     "config/browser.allowlist.json",
+    "config/cartridgeChain.base-sepolia.json",
     "config/claude-bridge-ui.json",
     "config/desk-vm.json",
     "config/gotchiverse-regions.json",
@@ -99,6 +100,7 @@
   ],
   "dependencies": {
     "cron402-mcp": "^1.1.0",
+    "ethers": "^6.16.0",
     "mongodb": "^6.21.0",
     "uqr": "^0.1.3"
   }
