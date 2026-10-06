@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Follow symlinks first: npm's global bin, ~/.local/bin and mise shims all start us
+# through a link, and dirname of the link is not the repo (bash 3.2-safe, no readlink -f).
+_gb_self="$0"
+while [ -L "$_gb_self" ]; do
+  _gb_dir="$(cd "$(dirname "$_gb_self")" && pwd)"
+  _gb_self="$(readlink "$_gb_self")"
+  case "$_gb_self" in /*) ;; *) _gb_self="$_gb_dir/$_gb_self" ;; esac
+done
+ROOT="$(cd "$(dirname "$_gb_self")/.." && pwd)"
+unset _gb_self _gb_dir
 export PATH="${HOME}/.openclaw/bin:${PATH}"
 # shellcheck source=/dev/null
 [ -f "$ROOT/scripts/openclaw-gateway-env.sh" ] && source "$ROOT/scripts/openclaw-gateway-env.sh"
