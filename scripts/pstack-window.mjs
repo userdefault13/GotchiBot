@@ -1905,7 +1905,7 @@ function runWatch() {
   let sel = 0;
   let page = 0;
   let detailScroll = 0; // start at PROGRAM section; j/k jumps to selected op
-  let detailTab = "overview";
+  let detailTab = state.wondrstack ? "wondrstack" : "overview";
   let lastFp = fingerprint(state);
   let lastRosterTick = Date.now();
   const term = termSize();
@@ -1917,8 +1917,10 @@ function runWatch() {
   };
 
   const refresh = () => {
+    const hadWondrStack = Boolean(state.wondrstack);
     state = buildState();
     if (!state.wondrstack) detailTab = "overview";
+    else if (!hadWondrStack) detailTab = "wondrstack";
     const selectables = buildSelectables(state.units || []);
     if (selectables.length) sel = Math.min(sel, selectables.length - 1);
     else sel = 0;
