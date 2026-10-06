@@ -26,6 +26,15 @@ const ID = "gotchi.local"
 
 const ROOT = process.env.GOTCHIBOT_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
 const STATE = join(ROOT, "sessions", ".local-mode.json")
+const ORIGINS = join(ROOT, "sessions", ".local-origins.json")
+
+function readJson(path: string): any {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"))
+  } catch {
+    return null
+  }
+}
 const PORT = Number(process.env.GOTCHIBOT_DESK_TOOLS_PORT) || 45690
 
 const CHOICES = [
@@ -124,13 +133,66 @@ const tui: TuiPlugin = async (api: any) => {
     }
   }
 
+  /**
+   * Off. The plugin already sends prompts to the chat's own model, but the footer
+   * shows the window's model, which OpenCode copied from the chat's last message
+   * (a /local one) and which no plugin API can set. So when that is likely, open
+   * OpenCode's model picker and name the model to pick: one Enter and it is right.
+   */
+  const offToFooter = (sid: string) => {
+    const msgs: any[] = (() => {
+      try {
+        return [...(api.state?.session?.messages?.(sid) || [])]
+      } catch {
+        return []
+      }
+    })()
+    const users = msgs.map((m) => m?.info || m).filter((i) => i?.role === "user" && i?.model)
+    const isLocal = (m: any) => m?.providerID === "desk" || m?.providerID === "claudemode"
+    const stuck = users.length ? isLocal(users[users.length - 1].model) : false
+    const origin = readJson(ORIGINS)?.[sid] || [...users].reverse().find((u) => !isLocal(u.model))?.model || configModel()
+    const name = modelName(origin)
+    if (!stuck) return toast("info", `Off — prompts go back to ${name}`)
+    toast("info", `Off — pick ${name} so the footer matches (prompts already go there)`)
+    // After the /local dialog has closed, or the picker opens underneath it.
+    setTimeout(() => {
+      try {
+        api.keymap?.dispatchCommand?.("model.list")
+      } catch {
+        try {
+          api.command?.trigger?.("model.list")
+        } catch {
+          /* the toast still says what to pick */
+        }
+      }
+    }, 120)
+  }
+
+  const modelName = (m: any) => {
+    if (!m?.providerID || !m?.modelID) return "the chat's own model"
+    try {
+      const p = (api.state?.provider || []).find((x: any) => x.id === m.providerID)
+      const model = p?.models?.[m.modelID]
+      if (model?.name) return `${model.name} · ${p.name || p.id}`
+    } catch {
+      /* fall through */
+    }
+    return `${m.providerID}/${m.modelID}`
+  }
+
+  const configModel = () => {
+    const ref = String(api.state?.config?.model || "")
+    const i = ref.indexOf("/")
+    return i > 0 ? { providerID: ref.slice(0, i), modelID: ref.slice(i + 1) } : null
+  }
+
   const apply = async (sid: string, value: string) => {
     const st = readState()
     const sessions = { ...(st.sessions || {}) }
     if (value === "off") delete sessions[sid]
     else sessions[sid] = { tool: value, at: new Date().toISOString() }
     writeState({ ...st, sessions })
-    if (value === "off") return toast("info", "Off — prompts go back to the chat's own model")
+    if (value === "off") return offToFooter(sid)
     const choice = CHOICES.find((c) => c.value === value)
     if (value === "hub-claude") return toast("success", `${choice?.title} — replies stay in this chat`)
     if (await deskUp()) toast("success", `${choice?.title} — runs on the desk's CPU, replies stay in this chat`)
