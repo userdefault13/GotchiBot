@@ -21,6 +21,7 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STAGE_OWNER, jobSignals } from "./project-tickets.mjs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -57,7 +58,7 @@ function jsonDir(path) {
 
 /** heroId → roleId → playbook title, so a machine reads as "Art Director". */
 export function roleLabels() {
-  const roles = readJson(join(ROOT, "config/agent-roles.json"));
+  const roles = projectRoles();
   if (!roles) return {};
   const playbooks = readJson(join(ROOT, "config/agent-role-playbooks.json")) || {};
   const out = {};

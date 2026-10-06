@@ -13,13 +13,14 @@ import { readGotchiBotCartridgeSepolia, readSepoliaHeroes } from "./cartridge-se
 import { getCachedHeroStatus } from "./hero-agent-state.mjs";
 import { loadOnboarding } from "./onboarding-lib.mjs";
 import { isOrchestratorId } from "./openclaw-fleet.mjs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WALLET = `${ROOT}/sessions/.wallet.json`;
 
 function heroRole(heroId) {
   try {
-    const row = JSON.parse(readFileSync(`${ROOT}/config/agent-roles.json`, "utf8"))?.[heroId];
+    const row = projectRoles()?.[heroId];
     return typeof row === "string" ? row : row?.roleId || row?.role || null;
   } catch {
     return null;

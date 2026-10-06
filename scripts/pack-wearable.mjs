@@ -123,12 +123,14 @@ function syncAgentRole(heroId, packIdOrNull) {
   if (slug) {
     try {
       rosterAssign(String(heroId), packIdOrNull ? String(packIdOrNull) : "none", slug);
+      // Every reader is on the workbench: the desk-wide table is not touched
+      // from inside a project, so this role does not leak into other projects.
+      return null;
     } catch (e) {
-      console.error(`  (workbench ${slug}: ${e?.message || e})`);
+      console.error(`  (workbench ${slug}: ${e?.message || e} — recorded desk-wide instead)`);
     }
   }
-  // Phase 1: still mirrored into config/agent-roles.json for readers not yet on
-  // the workbench (fleet sync, agent graph, factory).
+  // No project selected (or the workbench refused it): the desk-wide table.
   const roles = readJson(ROLES_PATH, {}) || {};
   if (packIdOrNull) {
     roles[String(heroId)] = String(packIdOrNull);
@@ -323,7 +325,8 @@ async function main() {
     if (si >= 0 && args[si + 1]) slot = Number(args[si + 1]);
     const eq = equipPack(hero, packId, { slot });
     console.log(`equipped ${hero} → ${eq.packId}  (slot ${eq.slot})  trust ${eq.trust}`);
-    console.log("  agent-roles.json synced (assignment label)");
+    const proj = currentProjectSlug();
+    console.log(proj ? `  role set in project ${proj} (its workbench; other projects unchanged)` : "  role set desk-wide (no project selected)");
     // Re-render workspaces so the hero's AGENTS.md carries the new hire sheet.
     // Background: the avatar's Assign role waits on this command.
     refreshWorkspaces({ background: true });

@@ -23,6 +23,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = join(ROOT, "sessions");
@@ -121,8 +122,7 @@ function heroTask(heroId) {
 }
 
 function roleFor(heroId) {
-  const roles = readJson(join(ROOT, "config/agent-roles.json")) || {};
-  return roles[heroId] || null;
+  return projectRoles()[heroId] || null;
 }
 
 /**

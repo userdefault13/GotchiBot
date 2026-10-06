@@ -11,6 +11,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, existsSync } from "node:fs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -31,7 +32,7 @@ function loadRings() {
 }
 
 function heroesForRoles(roleSpecs) {
-  const roles = loadJson(ROLES_PATH, {});
+  const roles = projectRoles();
   const byRole = new Map();
   for (const [hero, roleId] of Object.entries(roles)) {
     if (!byRole.has(roleId)) byRole.set(roleId, []);

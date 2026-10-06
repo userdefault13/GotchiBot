@@ -59,6 +59,7 @@ import {
 } from "./onboarding-lib.mjs";
 import { buildPersonaLine } from "./gotchi-persona.mjs";
 import { renderHireSheet, heroTrust, AGENTS_MD_LIMIT } from "./hire-sheet.mjs";
+import { heroRolesByProject } from "./project-context.mjs";
 
 const __DIR = dirname(fileURLToPath(import.meta.url));
 export { ROOT, SESSIONS };
@@ -216,13 +217,43 @@ function loadPlaybooks() {
 /** Thin load of role id + playbook for a hero (duplicated in gotchi-meet — avoid circular imports). */
 function loadRoleForHero(heroId) {
   const id = String(heroId || "").trim();
-  if (!id) return { roleId: null, playbook: null };
+  if (!id) return { roleId: null, playbook: null, byProject: [] };
   const roles = readJsonFile(`${ROOT}/config/agent-roles.json`, {}) || {};
   const playbooks = loadPlaybooks();
-  const roleId = roles[id] || null;
-  if (!roleId) return { roleId: null, playbook: null };
-  const playbook = playbooks[roleId] || null;
-  return { roleId, playbook };
+  // The orchestrator is desk-wide.
+  if (roles[id] === "orchestrator") return { roleId: "orchestrator", playbook: playbooks.orchestrator || null, byProject: [] };
+  // Roles live on each project's workbench. One role in every project where the
+  // gotchi has one → that role's template (duties, skills). Different roles →
+  // a generic workspace with every role's skills; each task names the role.
+  let byProject = [];
+  try {
+    byProject = heroRolesByProject(id);
+  } catch {
+    byProject = [];
+  }
+  if (!byProject.length) {
+    const roleId = roles[id] || null;
+    return { roleId, playbook: roleId ? playbooks[roleId] || null : null, byProject };
+  }
+  const distinct = [...new Set(byProject.map((r) => r.role).filter(Boolean))];
+  if (distinct.length === 1) return { roleId: distinct[0], playbook: playbooks[distinct[0]] || null, byProject };
+  if (!distinct.length) return { roleId: null, playbook: null, byProject };
+  const skills = [...new Set(distinct.flatMap((r) => playbooks[r]?.skills || []))];
+  return { roleId: null, playbook: { title: "Worker hero (role per project)", skills }, byProject, multi: distinct };
+}
+
+/** "Roles by project" for a workspace: one compact line + how a task names the role. */
+export function rolesByProjectBlock(byProject, max = 600) {
+  if (!byProject?.length) return "";
+  let line = byProject.map((r) => `${r.project}=${r.role || "—"}`).join(" · ");
+  if (line.length > max) line = `${line.slice(0, max - 1)}…`;
+  return [
+    "",
+    "## Roles by project",
+    line,
+    "My role differs per project. Each task's first line names it — [project X · you are the Y] — and I follow that role and its playbook for that task.",
+    "",
+  ].join("\n");
 }
 
 /**
@@ -341,7 +372,7 @@ export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orch
   const ws = heroWorkspaceDir(id);
   mkdirSync(ws, { recursive: true });
 
-  let { roleId, playbook } = loadRoleForHero(hero.id || id);
+  let { roleId, playbook, byProject } = loadRoleForHero(hero.id || id);
   if (!roleId && isOrchestrator) {
     roleId = "orchestrator";
     playbook = loadPlaybooks().orchestrator || null;
@@ -399,6 +430,9 @@ export function writeHeroWorkspace(hero, { id, name, emoji, isOrchestrator, orch
     vars.COMMON = renderTemplate("AGENTS.common.md", vars).trim();
     agentsBody = stamp(agentsTemplate) + renderTemplate(agentsTemplate, vars);
   }
+  // Roles by project, kept under OpenClaw's AGENTS.md cut.
+  const roleBlock = rolesByProjectBlock(byProject);
+  if (roleBlock && agentsBody.length + roleBlock.length < AGENTS_MD_LIMIT - 50) agentsBody += roleBlock;
   writeFileSync(`${ws}/AGENTS.md`, agentsBody);
   const persona = hero.persona ? `${ROOT}/${hero.persona}` : null;
   for (const file of ["SOUL.md", "IDENTITY.md"]) {

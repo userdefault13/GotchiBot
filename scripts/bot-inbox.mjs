@@ -33,11 +33,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { isMainModule } from "./is-main.mjs";
-import {
-  currentProjectSlug,
-  resolveInboxRoot,
-  requireProjectSlug,
-} from "./project-context.mjs";
+import { currentProjectSlug, resolveInboxRoot, requireProjectSlug, projectRoles } from "./project-context.mjs";
 import { orchestratorId } from "./openclaw-fleet.mjs";
 import { writeJsonAtomic } from "./json-store.mjs";
 import { publishProjectWrite } from "./hub-project-sync.mjs";
@@ -151,8 +147,8 @@ export function normalizeAddress(raw) {
 
 function heroIdForRole(roleId) {
   try {
-    const rolesPath = join(ROOT, "config", "agent-roles.json");
-    const roles = JSON.parse(readFileSync(rolesPath, "utf8"));
+    // The role holder in this project's workbench.
+    const roles = projectRoles();
     for (const [hero, role] of Object.entries(roles || {})) {
       if (String(role) === String(roleId)) return hero;
     }

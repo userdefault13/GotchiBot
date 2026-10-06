@@ -39,6 +39,7 @@ import readline from "node:readline";
 import { loadBaseStarterCollaterals, readWalletFile } from "./onboarding-lib.mjs";
 import { readGotchiBotCartridgeSepolia } from "./cartridge-sepolia.mjs";
 import { orchestratorId } from "./openclaw-fleet.mjs";
+import { currentProjectSlug, rosterAssign } from "./project-context.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_DIR = join(ROOT, "sessions", "link-cube");
@@ -370,6 +371,13 @@ function applyDesign(design) {
     const roles = readJson(ROLES_PATH, {});
     roles[design.hero] = design.roleId;
     writeJson(ROLES_PATH, roles);
+    // And this project's workbench — roles are per project.
+    try {
+      const slug = currentProjectSlug();
+      if (slug) rosterAssign(design.hero, design.roleId, slug);
+    } catch {
+      /* role still recorded desk-wide */
+    }
   }
 
   // 3. standing duty (per-hero; keeps the old desk alive on top of the new role)

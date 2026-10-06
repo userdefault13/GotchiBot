@@ -731,7 +731,7 @@ function buildDetailLines(card, board, rightW) {
   } else if (card.kind === "session") {
     detailLines.push(`  Role     ${c.dim}(session — no seat role)${c.reset}`);
   } else {
-    detailLines.push(`  Role     ${c.dim}(none in agent-roles.json)${c.reset}`);
+    detailLines.push(`  Role     ${c.dim}(no role in this project)${c.reset}`);
   }
   // Idle seats often store the role key as agentTask; still show standing assignment.
   const liveTask =
@@ -794,7 +794,7 @@ function buildDetailLines(card, board, rightW) {
     detailLines.push(`${c.bold}CRON HISTORY${c.reset}`);
     if (card.cronNeedsRole) {
       detailLines.push(
-        `  ${c.yellow}cron-ish task · no role in agent-roles.json${c.reset}`,
+        `  ${c.yellow}cron-ish task · no role in this project${c.reset}`,
       );
       detailLines.push(
         `  ${c.dim}map a role (+ playbook scheduleCmd) to load cron logs here${c.reset}`,

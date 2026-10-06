@@ -19,8 +19,11 @@ import {
   rosterAssign,
   loadRoster,
   roleBrief,
+  heroRolesByProject,
   WORKBENCH_VERSION,
 } from "../scripts/project-context.mjs";
+import { rolesByProjectBlock } from "../scripts/openclaw-fleet.mjs";
+import { roleOf } from "../scripts/agent-graph.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const made = [];
@@ -83,6 +86,33 @@ describe("workbench", () => {
     assert.match(roleBrief("owned-954", s), new RegExp(`^\\[project ${s} · you are the architect — `));
     assert.match(roleBrief("owned-3033", s), /you have no role here yet/);
     assert.equal(roleBrief("owned-954", null), "");
+  });
+
+  it("lists one gotchi's role in every project, for its workspace", () => {
+    const a = slug("ra");
+    const b = slug("rb");
+    ensureProjectDirs(a);
+    ensureProjectDirs(b);
+    rosterAssign("owned-8532", "architect", a);
+    const rows = heroRolesByProject("owned-8532").filter((r) => [a, b].includes(r.project));
+    assert.deepEqual(rows, [{ project: a, role: "architect" }, { project: b, role: null }]);
+    const block = rolesByProjectBlock(rows);
+    assert.match(block, /## Roles by project/);
+    assert.match(block, new RegExp(`${a}=architect · ${b}=—`));
+    assert.match(block, /\[project X · you are the Y\]/);
+    assert.equal(rolesByProjectBlock([]), "");
+    const long = Array.from({ length: 80 }, (_, i) => ({ project: `p${i}-xxxxxxxx`, role: "architect" }));
+    assert.ok(rolesByProjectBlock(long).split("\n")[2].length <= 600, "kept under its cap");
+  });
+
+  it("the agent graph reads an edge's role from that project's workbench", () => {
+    const a = slug("ga");
+    ensureProjectDirs(a);
+    rosterAssign("owned-8532", "art-director", a);
+    assert.equal(roleOf("owned-8532", { root: repo, project: a }), "art-director");
+    const b = slug("gb");
+    ensureProjectDirs(b);
+    assert.equal(roleOf("owned-8532", { root: repo, project: b }), null, "unassigned in that project");
   });
 
   it("no project reads the global table, as before", () => {

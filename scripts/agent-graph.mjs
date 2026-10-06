@@ -84,12 +84,23 @@ function orchHeroId(root = ROOT) {
 }
 
 /** Role of a hero id ("userdefault", "orchestrator", or config/agent-roles.json). */
-export function roleOf(id, { root = ROOT, roles } = {}) {
+/** hero → role on a project's workbench (light: reads roster.json, no project-context import). */
+function workbenchRoles(root, project) {
+  if (!project || !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(String(project))) return null;
+  const r = readJson(join(root, "sessions", "pstack", String(project), "roster.json"), null);
+  if (!r || !(Number(r.workbench) >= 1)) return null;
+  const out = {};
+  for (const h of r.heroes || []) if (h?.id && h.role) out[h.id] = h.role;
+  return out;
+}
+
+export function roleOf(id, { root = ROOT, roles, project } = {}) {
   const s = String(id || "").trim();
   if (!s) return null;
   if (/^(userdefault|user)$/i.test(s)) return "userdefault";
   if (/^(orch|orchestrator|gotchi)$/i.test(s) || s === orchHeroId(root)) return "orchestrator";
-  const map = roles || readJson(join(root, "config", "agent-roles.json"), {}) || {};
+  // Roles are per project: the edge's project workbench first.
+  const map = roles || workbenchRoles(root, project) || readJson(join(root, "config", "agent-roles.json"), {}) || {};
   if (map[s]) return map[s];
   // Already a role name (e.g. consult --to project-manager)?
   const playbooks = readJson(join(root, "config", "agent-role-playbooks.json"), {}) || {};
@@ -193,8 +204,8 @@ export async function recordEdge(edge, { root, hubRequest, graph, warn = true, f
     if (!e.edgeId) e.edgeId = newEdgeId(e.kind || "edge", e.ref);
     const opening = Boolean(e.from && e.to && e.kind);
     if (opening) {
-      e.fromRole = e.fromRole || roleOf(e.from, { root });
-      e.toRole = e.toRole || roleOf(e.to, { root });
+      e.fromRole = e.fromRole || roleOf(e.from, { root, project: e.project });
+      e.toRole = e.toRole || roleOf(e.to, { root, project: e.project });
       e.sentAt = e.sentAt || new Date().toISOString();
       if (typeof e.declared !== "boolean") e.declared = isDeclared(e.fromRole, e.toRole, e.kind, graph || loadGraph({ root }));
       if (!e.declared && warn) {

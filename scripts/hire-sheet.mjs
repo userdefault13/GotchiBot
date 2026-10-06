@@ -19,6 +19,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PLAYBOOKS = join(ROOT, "config", "agent-role-playbooks.json");
@@ -242,7 +243,7 @@ function main(argv) {
   if (cmd === "show") {
     if (!arg) throw new Error("usage: hire-sheet.mjs show <roleId|heroId>");
     const playbooks = loadPlaybooks();
-    const roles = readJson(ROLES, {}) || {};
+    const roles = projectRoles();
     const roleId = playbooks[arg] ? arg : roles[arg];
     if (!roleId) throw new Error(`no role or hero "${arg}"`);
     const heroId = playbooks[arg] ? null : arg;

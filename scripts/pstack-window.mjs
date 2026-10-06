@@ -23,7 +23,7 @@ import readline from "node:readline";
 import { isMainModule } from "./is-main.mjs";
 import { resolveHeroColors } from "./collateral-resolve.mjs";
 import { renderKanbanAscii } from "./gotchi-art.mjs";
-import { loadRoster, currentProjectSlug } from "./project-context.mjs";
+import { loadRoster, currentProjectSlug, projectRoles } from "./project-context.mjs";
 import { loadBox, listMessages } from "./bot-inbox.mjs";
 import { factoryModel, factoryBand } from "./gotchi-factory.mjs";
 import { loadWondrStack } from "./pstack-wondrstack.mjs";
@@ -380,7 +380,7 @@ function fetchRoster() {
 }
 
 function loadRoleCatalog() {
-  const roles = readJsonSafe(join(ROOT, "config/agent-roles.json"), {}) || {};
+  const roles = projectRoles();
   const playbooks = readJsonSafe(join(ROOT, "config/agent-role-playbooks.json"), {}) || {};
   return { roles, playbooks };
 }

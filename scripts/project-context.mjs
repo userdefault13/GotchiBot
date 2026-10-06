@@ -1128,6 +1128,30 @@ export function roleBrief(heroId, slug = currentProjectSlug()) {
   return `[project ${slug} · you are the ${role}${summary ? ` — ${summary}` : ""}]`;
 }
 
+/**
+ * One gotchi's role in every project room on this desk: [{ project, role|null }].
+ * The fleet sync renders a bot's workspace from this (one role everywhere → that
+ * role's template; different roles → a generic workspace, role per task).
+ */
+export function heroRolesByProject(heroId) {
+  if (!heroId) return [];
+  let slugs = [];
+  try {
+    slugs = readdirSync(PSTACK_ROOT, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && slugOk(d.name) && existsSync(join(PSTACK_ROOT, d.name, "roster.json")))
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const slug of slugs) {
+    const roles = projectRoles(slug);
+    out.push({ project: slug, role: roles[String(heroId)] || null });
+  }
+  return out;
+}
+
 /** The project role of one hero (orchestrator desk-wide), or null when unassigned. */
 export function heroRole(heroId, slug = currentProjectSlug()) {
   if (!heroId) return null;

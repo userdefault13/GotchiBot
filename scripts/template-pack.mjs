@@ -29,6 +29,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { projectRoles } from "./project-context.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -379,7 +380,7 @@ function savePlaybooks(playbooks) {
 }
 
 function loadRoles() {
-  return readJson(ROLES_FILE, {});
+  return projectRoles() || readJson(ROLES_FILE, {});
 }
 
 function loadRegistry() {

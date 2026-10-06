@@ -194,7 +194,7 @@ function meetMentionAgentBody({ slug, name, heroId, meetingRole, topic, roleId, 
   const autonomy =
     playbook?.autonomy ||
     "No persistent playbook — still relay via headless openclaw-fleet chat.";
-  const summary = playbook?.summary || "No role assigned in config/agent-roles.json.";
+  const summary = playbook?.summary || "No role in this project yet.";
   const roleLine = roleId
     ? `Persistent job role: ${playbook?.title || roleId} (\`${roleId}\`).`
     : "Persistent job role: none.";

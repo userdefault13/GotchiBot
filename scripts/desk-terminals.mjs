@@ -31,6 +31,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { isDarwin, macGuiAvailable, skipNote } from "./lib/platform-guard.mjs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOME = homedir();
@@ -171,7 +172,7 @@ const slug = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, "-").replac
 const expandHome = (p) => (p && p.startsWith("~/") ? join(HOME, p.slice(2)) : p);
 
 function plan() {
-  const roles = readJson(join(ROOT, "config/agent-roles.json"), {});
+  const roles = projectRoles();
   const playbooks = readJson(join(ROOT, "config/agent-role-playbooks.json"), {});
   const overrides = readJson(join(ROOT, "config/desk-terminals.json"), {});
   const skip = new Set(overrides.skip || []);

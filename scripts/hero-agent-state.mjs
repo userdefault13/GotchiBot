@@ -24,6 +24,7 @@ import { readJsonMap, writeJsonAtomic } from "./json-store.mjs";
 import { isSepoliaCartridgeId, readSepoliaHeroes } from "./cartridge-sepolia.mjs";
 import { isMainModule } from "./is-main.mjs";
 import { isOrchestratorId } from "./openclaw-fleet.mjs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -445,9 +446,9 @@ export async function syncHeroAgentStatuses() {
   // shows `idle` (not `available`/`assigned`). "Live session" = a running+alive
   // session for that hero (tracked in liveHeroes) or the orchestrator's live TUI.
   try {
-    const rolesPath = resolve(ROOT, "config", "agent-roles.json");
-    if (existsSync(rolesPath)) {
-      const roles = JSON.parse(readFileSync(rolesPath, "utf8"));
+    {
+      // Role holders in the current project's workbench.
+      const roles = projectRoles();
       for (const [heroId, role] of Object.entries(roles || {})) {
         if (!role) continue;
         if (!derived.has(heroId)) continue;
