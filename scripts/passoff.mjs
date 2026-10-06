@@ -48,6 +48,7 @@ import {
   requireProjectSlug,
   rosterHas,
   projectNotesDir,
+  roleBrief,
 } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -417,6 +418,10 @@ export function packetMarkdown(p) {
 export function packetBrief(p) {
   const L = [];
   L.push(`[passoff ${p.id}] ${p.from.label} → ${p.to ? p.to.label : "?"}`);
+  if (p.project && p.to?.id) {
+    const rb = roleBrief(p.to.id, p.project);
+    if (rb) L.push(rb);
+  }
   L.push("");
   L.push(`Task: ${p.task}`);
   L.push(`Repo: ${p.repo} · branch ${p.git.branch || "?"} @ ${p.git.head || "?"}`);

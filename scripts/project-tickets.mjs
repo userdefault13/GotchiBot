@@ -41,6 +41,7 @@ import { isMainModule } from "./is-main.mjs";
 import {
   currentProjectSlug,
   ensureProjectDirs,
+  projectRoles,
   projectRoot,
   requireProjectSlug,
   slugOk,
@@ -283,9 +284,10 @@ function newJobId() {
   return `j${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export function loadRoles() {
+/** hero → role in this project's workbench (orchestrator desk-wide). */
+export function loadRoles(slug = currentProjectSlug()) {
   try {
-    return JSON.parse(readFileSync(join(ROOT, "config/agent-roles.json"), "utf8"));
+    return projectRoles(slug);
   } catch {
     return {};
   }

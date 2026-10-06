@@ -11,7 +11,7 @@ import { loadMeta } from "./identity.mjs";
 import { resolveThumbCollateral, persistHeroCollateral } from "./collateral-resolve.mjs";
 import { builtinHeroes, heroDisplayName } from "./openclaw-fleet.mjs";
 import { isMainModule } from "./is-main.mjs";
-import { orderByRosterIds } from "./project-context.mjs";
+import { orderByRosterIds, projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -199,7 +199,8 @@ async function build() {
     }
   }
   const busy = busyHeroIds();
-  const roles = readJson(`${ROOT}/config/agent-roles.json`, {}) || {};
+  // The current project's workbench: the same gotchi shows its role here, not desk-wide.
+  const roles = projectRoles();
 
   const others = list
     .filter((h) => h.id && h.id !== pinned)

@@ -602,6 +602,7 @@ export function ensureProjectDirs(slug = currentProjectSlug()) {
       `${JSON.stringify(
         {
           project: slug,
+          workbench: WORKBENCH_VERSION,
           heroes: [],
           updatedAt: new Date().toISOString(),
           note: ROSTER_NOTE,
@@ -929,7 +930,7 @@ export function loadRoster(slug = currentProjectSlug()) {
   try {
     const j = JSON.parse(readFileSync(rp, "utf8"));
     const heroes = mergeRosterHeroes(Array.isArray(j.heroes) ? j.heroes : [], []);
-    return { project: j.project || slug, heroes, updatedAt: j.updatedAt || null, note: j.note };
+    return { project: j.project || slug, ...(j.workbench ? { workbench: j.workbench } : {}), heroes, updatedAt: j.updatedAt || null, note: j.note };
   } catch {
     return { project: slug, heroes: [], updatedAt: null };
   }
@@ -940,6 +941,7 @@ export function saveRoster(roster, slug = currentProjectSlug()) {
   const rp = rosterPath(slug);
   const body = {
     project: slug,
+    ...(roster.workbench ? { workbench: roster.workbench } : {}),
     heroes: mergeRosterHeroes(roster.heroes || [], []),
     updatedAt: new Date().toISOString(),
     note: roster.note || ROSTER_NOTE,
@@ -995,6 +997,7 @@ export function seedProjectRoster(slug = currentProjectSlug()) {
   mkdirSync(dir, { recursive: true });
   const body = {
     project: slug,
+    ...(current.workbench ? { workbench: current.workbench } : {}),
     heroes,
     updatedAt: new Date().toISOString(),
     note: current.note || ROSTER_NOTE,
@@ -1036,6 +1039,99 @@ export function rosterAssign(heroId, role, slug = currentProjectSlug()) {
   if (!row) r.heroes.push({ id: String(heroId), role: next });
   else row.role = next;
   return saveRoster(r, slug);
+}
+
+// ── workbench: each project's own copy of the main roster, with its own roles ──
+
+/**
+ * roster.json carries `workbench: 1` once it is the project's role table. A new
+ * project starts as a blank workbench (every gotchi available, no roles). A room
+ * from before workbenches is migrated once with today's global team, so existing
+ * projects keep their roles.
+ */
+export const WORKBENCH_VERSION = 1;
+
+function globalRoles(root = ROOT) {
+  try {
+    return JSON.parse(readFileSync(join(root, "config", "agent-roles.json"), "utf8")) || {};
+  } catch {
+    return {};
+  }
+}
+
+/** Is this project's roster a workbench (its own role table)? */
+export function isWorkbench(slug = currentProjectSlug()) {
+  if (!slug) return false;
+  return Number(loadRoster(slug).workbench) >= WORKBENCH_VERSION;
+}
+
+/**
+ * One-time upgrade of a pre-workbench room: every unassigned gotchi takes its
+ * current global role (the orchestrator stays desk-wide, never copied), and the
+ * room is marked a workbench. Roles already set on this project are kept.
+ * Returns true when it migrated.
+ */
+export function migrateWorkbench(slug = currentProjectSlug(), { roles = globalRoles() } = {}) {
+  if (!slug) return false;
+  const rp = rosterPath(slug);
+  if (!rp || !existsSync(rp)) return false;
+  const r = loadRoster(slug);
+  if (Number(r.workbench) >= WORKBENCH_VERSION) return false;
+  const heroes = mergeRosterHeroes(r.heroes, mainRosterIds()).map((h) => {
+    if (h.role) return h;
+    const g = roles[h.id];
+    return g && g !== "orchestrator" ? { ...h, role: g } : h;
+  });
+  saveRoster({ ...r, workbench: WORKBENCH_VERSION, heroes }, slug);
+  return true;
+}
+
+/**
+ * hero → role for a project, the shape config/agent-roles.json has, so every
+ * reader can swap `readJson(agent-roles.json)` for this. The orchestrator is
+ * desk-wide (main roster) and appears in every project; every other role comes
+ * from the project's workbench. No project, or a room not yet a workbench (and
+ * not migratable), reads the global file as before.
+ */
+export function projectRoles(slug = currentProjectSlug(), { roles = globalRoles(), migrate = true } = {}) {
+  if (!slug) return roles;
+  if (migrate) {
+    try {
+      migrateWorkbench(slug, { roles });
+    } catch {
+      /* read-only room: fall through */
+    }
+  }
+  const r = loadRoster(slug);
+  if (!(Number(r.workbench) >= WORKBENCH_VERSION)) return roles;
+  const out = {};
+  for (const [id, role] of Object.entries(roles)) if (role === "orchestrator") out[id] = role;
+  for (const h of r.heroes) if (h.role && h.role !== "orchestrator") out[h.id] = h.role;
+  return out;
+}
+
+/**
+ * One line telling a bot its role for this piece of work — roles differ per
+ * project, so every consult/passoff carries it rather than the bot's workspace.
+ */
+export function roleBrief(heroId, slug = currentProjectSlug()) {
+  if (!slug || !heroId) return "";
+  const role = heroRole(heroId, slug);
+  if (!role) return `[project ${slug} · you have no role here yet — help as a generalist and say so]`;
+  let summary = "";
+  try {
+    const pb = JSON.parse(readFileSync(join(ROOT, "config", "agent-role-playbooks.json"), "utf8"))[role];
+    summary = String(pb?.summary || "").replace(/\s+/g, " ").trim().slice(0, 220);
+  } catch {
+    /* role without a playbook */
+  }
+  return `[project ${slug} · you are the ${role}${summary ? ` — ${summary}` : ""}]`;
+}
+
+/** The project role of one hero (orchestrator desk-wide), or null when unassigned. */
+export function heroRole(heroId, slug = currentProjectSlug()) {
+  if (!heroId) return null;
+  return projectRoles(slug)[String(heroId)] || null;
 }
 
 export function requireProjectSlug() {

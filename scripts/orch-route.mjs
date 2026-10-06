@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "./is-main.mjs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -45,7 +46,8 @@ export function loadRoutes(root = ROOT) {
 
 /** First hero seated in a role. Skip the alias key "orchestrator"; a seated hero may hold that role. */
 export function heroForRole(role, root = ROOT) {
-  const roles = readJson(`${root}/config/agent-roles.json`, {});
+  // The desk's own root: this project's workbench. Another root (tests): its file.
+  const roles = root === ROOT ? projectRoles() : readJson(`${root}/config/agent-roles.json`, {});
   return Object.keys(roles).find((id) => id !== "orchestrator" && roles[id] === role) || null;
 }
 

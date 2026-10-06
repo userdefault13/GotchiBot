@@ -29,6 +29,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { isMainModule } from "./is-main.mjs";
+import { currentProjectSlug, rosterAssign } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = join(ROOT, "sessions");
@@ -116,6 +117,18 @@ function resolvePackId(packId) {
 }
 
 function syncAgentRole(heroId, packIdOrNull) {
+  // The current project's workbench is where the role lives: the same gotchi
+  // may hold another role (or none) in other projects.
+  const slug = currentProjectSlug();
+  if (slug) {
+    try {
+      rosterAssign(String(heroId), packIdOrNull ? String(packIdOrNull) : "none", slug);
+    } catch (e) {
+      console.error(`  (workbench ${slug}: ${e?.message || e})`);
+    }
+  }
+  // Phase 1: still mirrored into config/agent-roles.json for readers not yet on
+  // the workbench (fleet sync, agent graph, factory).
   const roles = readJson(ROLES_PATH, {}) || {};
   if (packIdOrNull) {
     roles[String(heroId)] = String(packIdOrNull);

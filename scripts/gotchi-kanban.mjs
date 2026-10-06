@@ -29,6 +29,7 @@ import { resolveHeroColors } from "./collateral-resolve.mjs";
 import { renderMiniAscii } from "./gotchi-art.mjs";
 import { orchestratorId } from "./openclaw-fleet.mjs";
 import { pullOpenProject, startHubProjectMirror } from "./hub-project-sync.mjs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = join(ROOT, "sessions");
@@ -194,7 +195,7 @@ function readJsonSafe(path, fallback = null) {
 }
 
 function loadRoleCatalog() {
-  const roles = readJsonSafe(join(ROOT, "config/agent-roles.json"), {}) || {};
+  const roles = projectRoles();
   const playbooks = readJsonSafe(join(ROOT, "config/agent-role-playbooks.json"), {}) || {};
   return { roles, playbooks };
 }

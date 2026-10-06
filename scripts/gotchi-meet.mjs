@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./meet-channel.mjs";
 import { isProfLinkCubeId, PROF_LINK_CUBE_ID } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
-import { resolveMeetingsRoot } from "./project-context.mjs";
+import { projectRoles, resolveMeetingsRoot } from "./project-context.mjs";
 import { publishProjectWrite, flushProjectWrites } from "./hub-project-sync.mjs";
 import {
   ROOT,
@@ -128,7 +128,8 @@ function writeJson(path, obj) {
 function loadRoleForHero(heroId) {
   const id = String(heroId || "").trim();
   if (!id) return { roleId: null, playbook: null };
-  const roles = readJson(`${ROOT}/config/agent-roles.json`, {}) || {};
+  // This project's workbench (orchestrator desk-wide): roles differ per project.
+  const roles = projectRoles();
   const playbooks = readJson(`${ROOT}/config/agent-role-playbooks.json`, {}) || {};
   // Prof. Link-Cube is an NPC (not in agent-roles / cartridge) — resolve playbook by id.
   const roleId = roles[id] || (isProfLinkCubeId(id) && playbooks[id] ? id : null);

@@ -14,6 +14,7 @@ import { loadMeta } from "./identity.mjs";
 import { fetchCartridgeHeroes, loadBaseStarterCollaterals } from "./onboarding-lib.mjs";
 import { builtinHeroes, heroDisplayName, orchestratorHeroId } from "./openclaw-fleet.mjs";
 import { STANDING } from "./ensure-prof-worker.mjs";
+import { projectRoles } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROLES_PATH = `${ROOT}/config/agent-roles.json`;
@@ -21,7 +22,7 @@ const GENERIC_ROLE = "worker";
 
 function readRoles() {
   try {
-    return JSON.parse(readFileSync(ROLES_PATH, "utf8")) || {};
+    return projectRoles() || JSON.parse(readFileSync(ROLES_PATH, "utf8")) || {};
   } catch {
     return {};
   }

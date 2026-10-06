@@ -30,6 +30,7 @@ import {
 } from "./openclaw-fleet.mjs";
 import { heroForRole } from "./orch-route.mjs";
 import { recordEdge, closeEdge } from "./agent-graph.mjs";
+import { currentProjectSlug, projectRoles, roleBrief } from "./project-context.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STORE = `${ROOT}/sessions/consults`;
@@ -57,7 +58,7 @@ function truncate(s, max) {
 
 function hero(id, role = null) {
   const mapped = loadAgentMap()?.agents?.[id];
-  return { id, name: mapped?.name || null, collateral: mapped?.collateral || null, role: role || readJson(ROLES, {})[id] || null };
+  return { id, name: mapped?.name || null, collateral: mapped?.collateral || null, role: role || projectRoles()[id] || null };
 }
 
 function label(h) {
@@ -69,7 +70,7 @@ function label(h) {
 async function resolveWho(query) {
   const q = String(query || "").trim().replace(/^@/, "");
   if (!q) throw new Error("who? pass a role (architect), roster n, hero id, or name");
-  const roles = readJson(ROLES, {});
+  const roles = projectRoles();
   if (Object.values(roles).includes(q)) {
     const id = heroForRole(q);
     if (!id) throw new Error(`no hero seated as ${q} (config/agent-roles.json)`);
@@ -99,6 +100,7 @@ function saveThread(t) {
 function brief(t, question, { replay }) {
   const lines = [
     `[consult ${t.id} · ${label(t.from)} is asking you${t.to.role ? ` as ${t.to.role}` : ""} · your reply goes straight back to them]`,
+    ...(t.project && t.to?.id ? [roleBrief(t.to.id, t.project)].filter(Boolean) : []),
     "",
   ];
   if (replay && t.turns.length) {
@@ -257,6 +259,8 @@ async function main() {
     from,
     to,
     sessionKey: `consult:${id}:${heroToAgentId(to.id)}`,
+    // The project this consult belongs to: the asked gotchi answers in its role there.
+    project: currentProjectSlug() || null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     turns: [],
