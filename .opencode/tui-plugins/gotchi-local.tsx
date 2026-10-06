@@ -1,3 +1,5 @@
+/** @jsxImportSource @opentui/solid */
+import { Show, createSignal, onCleanup } from "solid-js"
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { createConnection } from "node:net"
 import { dirname, join, resolve } from "node:path"
@@ -12,6 +14,10 @@ const ID = "gotchi.local"
  * the chat's own model. The prompt and reply stay in the chat session, so a Hub
  * chat stays synced. The choice is per chat session, in sessions/.local-mode.json;
  * plugins/gotchi-local-tools.js applies it to each message.
+ *
+ * While a chat has /local on, `local · <tool>` shows beside the prompt (left of
+ * steer); yellow when the desk runner is not reachable (prompts then stay on the
+ * chat's own model).
  *
  * When this TUI was opened by a desk's Hub attach, GOTCHIBOT_DESK_TOOLS_TOKEN is the
  * desk runner's token: it is saved (0600) so the Hub can call the desk's tools
@@ -67,6 +73,32 @@ function deskUp(timeoutMs = 600): Promise<boolean> {
   })
 }
 
+const SHORT: Record<string, string> = { claude: "claude", codex: "codex", cursor: "cursor", "hub-claude": "hub claude" }
+
+/** `local · codex` beside the prompt while this chat has /local on. */
+const LocalBadge = (props: { sessionId?: string; theme: any }) => {
+  const read = () => (props.sessionId ? readState().sessions?.[props.sessionId]?.tool || "" : "")
+  const [tool, setTool] = createSignal(read())
+  const [reachable, setReachable] = createSignal(true)
+  const refresh = async () => {
+    const t = read()
+    setTool(t)
+    setReachable(!t || t === "hub-claude" ? true : await deskUp(400))
+  }
+  void refresh()
+  const timer = setInterval(() => void refresh(), 1500)
+  onCleanup(() => clearInterval(timer))
+  const color = () => (reachable() ? props.theme?.accent ?? props.theme?.primary : props.theme?.warning)
+  return (
+    <Show when={tool()}>
+      <box flexDirection="row" paddingLeft={1}>
+        <text fg={color()}>● local</text>
+        <text fg={props.theme?.textMuted}> · {SHORT[tool()] || tool()}{reachable() ? "" : " (desk offline)"}</text>
+      </box>
+    </Show>
+  )
+}
+
 function currentSession(api: any): string | null {
   const cur = api?.route?.current
   return cur?.name === "session" ? cur.params?.sessionID || null : null
@@ -120,6 +152,21 @@ const tui: TuiPlugin = async (api: any) => {
         },
       }),
     )
+  }
+
+  try {
+    api.slots.register({
+      id: ID,
+      order: 300,
+      slots: {
+        session_prompt_right(ctx: any, data: any) {
+          const slot = data && typeof data === "object" ? data : {}
+          return <LocalBadge sessionId={slot.session_id} theme={ctx?.theme?.current} />
+        },
+      },
+    } as any)
+  } catch {
+    /* the picker still works without the badge */
   }
 
   const cmd = {

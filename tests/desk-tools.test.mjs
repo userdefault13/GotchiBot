@@ -177,7 +177,11 @@ describe("wiring", () => {
     const oc = JSON.parse(readFileSync(path.join(repo, "opencode.json"), "utf8"));
     assert.equal(oc.provider.desk.options.baseURL, "http://127.0.0.1:45690/v1");
     assert.deepEqual(Object.keys(oc.provider.desk.models), ["cursor", "codex", "claude"]);
-    assert.ok(JSON.parse(readFileSync(path.join(repo, ".opencode", "tui.json"), "utf8")).plugin.includes("./tui-plugins/gotchi-local.ts"));
+    assert.ok(JSON.parse(readFileSync(path.join(repo, ".opencode", "tui.json"), "utf8")).plugin.includes("./tui-plugins/gotchi-local.tsx"));
+    // The prompt row shows "● local · <tool>" while /local is on.
+    const local = readFileSync(path.join(repo, ".opencode", "tui-plugins", "gotchi-local.tsx"), "utf8");
+    assert.match(local, /session_prompt_right\(ctx: any, data: any\)/);
+    assert.match(local, /● local/);
     assert.match(readFileSync(path.join(repo, ".opencode", "tui-plugins", "gotchi-model-sync.ts"), "utf8"), /s\.startsWith\("desk\/"\)/);
   });
 });
