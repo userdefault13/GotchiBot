@@ -181,6 +181,32 @@ describe("reroute plugin", () => {
     assert.deepEqual(h.headers, { "x-gotchibot-session": "s1", authorization: "Bearer handed" });
   });
 
+  it("puts a chat back on its own model once /local is off (OpenCode keeps the last message's model)", async () => {
+    const st = path.join(root, "sessions", ".local-mode.json");
+    const hooks = await mod.GotchiLocalTools();
+    const send = async (sid, model) => {
+      const m = { message: { model }, parts: [] };
+      await hooks["chat.message"]({ sessionID: sid }, m);
+      return m.message.model;
+    };
+    writeFileSync(st, JSON.stringify({ sessions: { r1: { tool: "codex" }, r2: { tool: "hub-claude" } } }));
+    assert.deepEqual(await send("r1", { providerID: "nvidia", modelID: "z-ai/glm-5.3" }), { providerID: "desk", modelID: "codex" });
+    // The chat window now sends desk/codex itself; still /local → stays.
+    assert.deepEqual(await send("r1", { providerID: "desk", modelID: "codex" }), { providerID: "desk", modelID: "codex" });
+    assert.deepEqual(await send("r2", { providerID: "opencode-go", modelID: "kimi-k3" }), { providerID: "claudemode", modelID: "@claudemode" });
+    writeFileSync(st, JSON.stringify({ sessions: {} }));
+    assert.deepEqual(await send("r1", { providerID: "desk", modelID: "codex" }), { providerID: "nvidia", modelID: "z-ai/glm-5.3" }, "back to the model it had before /local");
+    assert.deepEqual(await send("r2", { providerID: "claudemode", modelID: "@claudemode" }), { providerID: "opencode-go", modelID: "kimi-k3" });
+    // A chat never on /local whose window sends desk/* falls back to opencode.json's model.
+    writeFileSync(path.join(root, "opencode.json"), JSON.stringify({ model: "opencode-go/glm-5.3" }));
+    assert.deepEqual(await send("never", { providerID: "desk", modelID: "cursor" }), { providerID: "opencode-go", modelID: "glm-5.3" });
+    // A @claudemode the user picked in /model (no /local origin) is left alone.
+    assert.deepEqual(await send("picked", { providerID: "claudemode", modelID: "@claudemode" }), { providerID: "claudemode", modelID: "@claudemode" });
+    // Back on a normal model: the origin is forgotten.
+    await send("r1", { providerID: "nvidia", modelID: "z-ai/glm-5.3" });
+    assert.equal(JSON.parse(readFileSync(path.join(root, "sessions", ".local-origins.json"), "utf8")).r1, undefined);
+  });
+
   it("leaves the message on the chat's model when the desk runner is unreachable", async () => {
     listener.close();
     await new Promise((r) => setTimeout(r, 50));
@@ -189,6 +215,9 @@ describe("reroute plugin", () => {
     const m = { message: { model: { providerID: "opencode-go", modelID: "glm-5.3" } }, parts: [] };
     await hooks["chat.message"]({ sessionID: "s1" }, m);
     assert.deepEqual(m.message.model, { providerID: "opencode-go", modelID: "glm-5.3" });
+    const sticky = { message: { model: { providerID: "desk", modelID: "claude" } }, parts: [] };
+    await hooks["chat.message"]({ sessionID: "s1" }, sticky);
+    assert.notEqual(sticky.message.model.providerID, "desk", "a sticky desk model falls back too");
     assert.match(readFileSync(path.join(root, "sessions", ".local-mode.log"), "utf8"), /desk runner not reachable/);
   });
 });
