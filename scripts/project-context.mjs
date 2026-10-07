@@ -1077,7 +1077,27 @@ export function rosterAdd(heroId, slug = currentProjectSlug()) {
   return saveRoster(r, slug);
 }
 
-/** Set this project's role for one gotchi. `none` clears it. Other projects are untouched. */
+/**
+ * How many gotchis may hold a role in one workbench: the playbook's `seats`
+ * (a number, or "many"), else 1. Roles are one seat unless a playbook says more.
+ */
+export function roleSeats(role) {
+  try {
+    const pb = JSON.parse(readFileSync(join(ROOT, "config/agent-role-playbooks.json"), "utf8"))[role];
+    if (pb?.seats === "many") return Infinity;
+    const n = Number(pb?.seats);
+    return Number.isFinite(n) && n >= 1 ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Set this project's role for one gotchi. `none` clears it. A one-seat role
+ * unseats whoever held it in this workbench (no duplicate roles); other
+ * projects are untouched — each workbench seats its own team. The returned
+ * roster carries `unseated`: the hero ids that lost the role here.
+ */
 export function rosterAssign(heroId, role, slug = currentProjectSlug()) {
   if (!heroId) throw new Error("hero id required");
   if (!slug) throw new Error("no project selected");
@@ -1085,10 +1105,20 @@ export function rosterAssign(heroId, role, slug = currentProjectSlug()) {
   if (next && !knownRole(next)) throw new Error(`unknown role: ${next}`);
   ensureProjectDirs(slug);
   const r = loadRoster(slug);
+  const unseated = [];
+  if (next) {
+    const others = r.heroes.filter((h) => h.role === next && h.id !== String(heroId));
+    const keep = Math.max(0, roleSeats(next) - 1);
+    for (const h of others.slice(keep)) {
+      h.role = null;
+      unseated.push(h.id);
+    }
+  }
   const row = r.heroes.find((h) => h.id === String(heroId));
   if (!row) r.heroes.push({ id: String(heroId), role: next });
   else row.role = next;
-  return saveRoster(r, slug);
+  const saved = saveRoster(r, slug);
+  return { ...saved, unseated };
 }
 
 // ── workbench: each project's own copy of the main roster, with its own roles ──

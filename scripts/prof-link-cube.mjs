@@ -39,7 +39,7 @@ import readline from "node:readline";
 import { loadBaseStarterCollaterals, readWalletFile } from "./onboarding-lib.mjs";
 import { readGotchiBotCartridgeSepolia } from "./cartridge-sepolia.mjs";
 import { orchestratorId } from "./openclaw-fleet.mjs";
-import { currentProjectSlug, rosterAssign } from "./project-context.mjs";
+import { currentProjectSlug, loadRoster, rosterAssign } from "./project-context.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_DIR = join(ROOT, "sessions", "link-cube");
@@ -341,7 +341,21 @@ function planDiff(design) {
   const playbooks = readJson(PLAYBOOKS_PATH, {});
   const standing = readJson(STANDING_PATH, {});
   const lines = [];
-  lines.push(`agent-roles.json: ${design.hero ? `${design.hero} → ${design.roleId}` : "(summon: hero unknown until portal mint — playbook only)"}`);
+  {
+    const slug = currentProjectSlug();
+    const where = slug ? `workbench ${slug}` : "agent-roles.json (desk-wide)";
+    let held = [];
+    try {
+      held = slug
+        ? loadRoster(slug).heroes.filter((h) => h.role === design.roleId && h.id !== design.hero).map((h) => h.id)
+        : Object.keys(roles).filter((h) => h !== design.hero && h !== "orchestrator" && roles[h] === design.roleId);
+    } catch {
+      held = [];
+    }
+    lines.push(
+      `${where}: ${design.hero ? `${design.hero} → ${design.roleId}${held.length ? ` (unseats ${held.join(", ")})` : ""}` : "(summon: hero unknown until portal mint — playbook only)"}`,
+    );
+  }
   lines.push(
     design.keepPlaybook && playbooks[design.roleId]
       ? `agent-role-playbooks.json: keep existing "${design.roleId}" (keepPlaybook)`
@@ -368,15 +382,27 @@ function applyDesign(design) {
 
   // 2. role mapping (resummon/bind only; summon wires after portal mint via bind)
   if (design.hero) {
-    const roles = readJson(ROLES_PATH, {});
-    roles[design.hero] = design.roleId;
-    writeJson(ROLES_PATH, roles);
-    // And this project's workbench — roles are per project.
-    try {
-      const slug = currentProjectSlug();
-      if (slug) rosterAssign(design.hero, design.roleId, slug);
-    } catch {
-      /* role still recorded desk-wide */
+    // Roles are per project: inside a project only its workbench changes, and the
+    // previous holder of this role there is unseated (one seat per role). Other
+    // projects keep their own teams. With no project, the desk-wide table.
+    const slug = currentProjectSlug();
+    let placed = false;
+    if (slug) {
+      try {
+        const r = rosterAssign(design.hero, design.roleId, slug);
+        placed = true;
+        console.log(`  workbench ${slug}: ${design.hero} → ${design.roleId}${r.unseated.length ? ` · unseated ${r.unseated.join(", ")}` : ""}`);
+      } catch (e) {
+        console.log(`  workbench ${slug}: ${e?.message || e} — recorded desk-wide instead`);
+      }
+    }
+    if (!placed) {
+      const roles = readJson(ROLES_PATH, {});
+      const prev = Object.keys(roles).filter((h) => h !== design.hero && h !== "orchestrator" && roles[h] === design.roleId);
+      for (const h of prev) delete roles[h];
+      roles[design.hero] = design.roleId;
+      writeJson(ROLES_PATH, roles);
+      if (prev.length) console.log(`  desk-wide: unseated ${prev.join(", ")} from ${design.roleId}`);
     }
   }
 

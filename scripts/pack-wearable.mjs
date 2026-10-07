@@ -122,10 +122,11 @@ function syncAgentRole(heroId, packIdOrNull) {
   const slug = currentProjectSlug();
   if (slug) {
     try {
-      rosterAssign(String(heroId), packIdOrNull ? String(packIdOrNull) : "none", slug);
+      const r = rosterAssign(String(heroId), packIdOrNull ? String(packIdOrNull) : "none", slug);
       // Every reader is on the workbench: the desk-wide table is not touched
       // from inside a project, so this role does not leak into other projects.
-      return null;
+      if (r.unseated?.length) console.error(`  workbench ${slug}: unseated ${r.unseated.join(", ")} (one seat per role)`);
+      return { unseated: r.unseated || [] };
     } catch (e) {
       console.error(`  (workbench ${slug}: ${e?.message || e} — recorded desk-wide instead)`);
     }

@@ -157,6 +157,21 @@ describe("workbench", () => {
     assert.deepEqual(projectsUsingRepo(repo), [b], "relinking the same project is fine");
   });
 
+  it("one seat per role in a workbench: seating a hero unseats the previous holder there only", () => {
+    const a = slug("sa");
+    const b = slug("sb");
+    ensureProjectDirs(a);
+    ensureProjectDirs(b);
+    rosterAssign("owned-954", "architect", a);
+    rosterAssign("owned-954", "architect", b);
+    const r = rosterAssign("owned-8532", "architect", a);
+    assert.deepEqual(r.unseated, ["owned-954"]);
+    assert.equal(projectRoles(a, { roles: global })["owned-954"], undefined, "unseated in a");
+    assert.equal(projectRoles(a, { roles: global })["owned-8532"], "architect");
+    assert.equal(projectRoles(b, { roles: global })["owned-954"], "architect", "b keeps its own architect");
+    assert.deepEqual(rosterAssign("owned-8532", "none", a).unseated, [], "clearing unseats nobody");
+  });
+
   it("no project reads the global table, as before", () => {
     assert.deepEqual(projectRoles(null, { roles: global }), global);
   });
