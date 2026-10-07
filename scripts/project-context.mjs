@@ -239,8 +239,10 @@ export function projectMenuOptions(slugs, current = null) {
       key: `proj:${slug}`,
       label: slug === cur ? `${slug}  (current)` : slug,
     })),
-    // Linking a repo never switches project — say so, it reads like a project list.
-    ...(cur ? [{ key: "repo", label: `Connect a GitHub repo to ${cur} (stays on ${cur})…` }] : []),
+    // A repo opens its project (or starts one for it); relinking the current
+    // project's repo is a separate, clearly named item.
+    { key: "repo-open", label: "Open a project from a GitHub repo…" },
+    ...(cur ? [{ key: "repo", label: `Change ${cur}'s GitHub repo…` }] : []),
     { key: "new", label: "Create new project…" },
     { key: "back", label: "Back to cockpit" },
   ];
@@ -464,6 +466,13 @@ export function repoPath(slug = currentProjectSlug()) {
 export function githubFullName(remote) {
   const m = /github\.com[:/]+([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(String(remote || "").trim());
   return m ? `${m[1]}/${m[2]}`.toLowerCase() : null;
+}
+
+/** Project slug for a repo with no project yet: its name, slug-safe ("WondrStack" → "wondrstack"). */
+export function slugForRepo(fullName) {
+  const name = String(fullName || "").split("/").pop() || "";
+  const s = name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 64);
+  return slugOk(s) ? s : null;
 }
 
 /** Other projects whose repo is this GitHub repo (by remote owner/repo). */

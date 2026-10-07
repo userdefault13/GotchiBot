@@ -23,6 +23,7 @@ import {
   githubFullName,
   projectsUsingRepo,
   projectMenuOptions,
+  slugForRepo,
   WORKBENCH_VERSION,
 } from "../scripts/project-context.mjs";
 import { rolesByProjectBlock } from "../scripts/openclaw-fleet.mjs";
@@ -118,9 +119,14 @@ describe("workbench", () => {
     assert.equal(roleOf("owned-8532", { root: repo, project: b }), null, "unassigned in that project");
   });
 
-  it("connecting a repo says it stays on the project, and knows which projects use a repo", () => {
+  it("a repo opens its project; relinking the current project is its own item", () => {
     const opts = projectMenuOptions(["a", "b"], "a");
-    assert.equal(opts.find((o) => o.key === "repo").label, "Connect a GitHub repo to a (stays on a)…");
+    assert.equal(opts.find((o) => o.key === "repo-open").label, "Open a project from a GitHub repo…");
+    assert.equal(opts.find((o) => o.key === "repo").label, "Change a's GitHub repo…");
+    assert.equal(projectMenuOptions(["a"], null).some((o) => o.key === "repo"), false, "no current project: nothing to relink");
+    assert.equal(slugForRepo("userdefault13/WondrStack"), "wondrstack");
+    assert.equal(slugForRepo("owner/My Repo!"), "my-repo-");
+    assert.equal(slugForRepo("owner/..."), null);
     assert.equal(githubFullName("https://github.com/Owner/Repo.git"), "owner/repo");
     assert.equal(githubFullName("git@github.com:owner/repo"), "owner/repo");
     assert.equal(githubFullName("/Users/x/Dev/repo"), null);

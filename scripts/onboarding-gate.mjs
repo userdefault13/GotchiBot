@@ -225,7 +225,64 @@ function timeAgo(iso) {
 const REPO_PAGE_SIZE = 10;
 
 /** Latest-pushed GitHub repos, 10 per page; pick one to connect to the project. */
-async function pickGithubRepo(slug, { optional = false } = {}) {
+/**
+ * A repo picked to open: its project (asks which if several), or a project named
+ * after the repo (linked now if it exists unlinked), else a new project for it.
+ * Then switch to it. Returns the slug, or null.
+ */
+async function openProjectForRepo(repo) {
+  const { projectsUsingRepo, slugForRepo, connectRepo, formatRepo } = await import("./project-context.mjs");
+  const owners = projectsUsingRepo(repo.fullName);
+  let target = null;
+  if (owners.length === 1) target = owners[0];
+  else if (owners.length > 1) {
+    const which = await choose(`${repo.fullName} is the repo of several projects — open which?`, [
+      ...owners.map((o) => ({ key: `p:${o}`, label: o })),
+      { key: "back", hotkey: "b", label: "Back" },
+    ]);
+    if (!which || which.key === "back") return null;
+    target = which.key.slice(2);
+  } else {
+    const base = slugForRepo(repo.fullName);
+    if (!base) {
+      console.log(`\n  ✗ cannot make a project name from ${repo.fullName} — use Create new project…`);
+      await pause();
+      return null;
+    }
+    if (listLocalProjectSlugs().includes(base)) {
+      console.log(`\n  · project ${base} exists with no link to this repo — linking it`);
+    } else {
+      const created = spawnSync(process.execPath, [`${ROOT}/scripts/pstack-dossier.mjs`, "new", base, "--title", repo.fullName.split("/").pop()], { cwd: ROOT, encoding: "utf8" });
+      if (created.status !== 0) {
+        console.log(`\n  ✗ ${String(created.stderr || created.stdout || "").trim() || `exit ${created.status}`}`);
+        await pause();
+        return null;
+      }
+      console.log(`\n  ✓ new project ${base} (fresh workbench: every gotchi available, no roles)`);
+    }
+    try {
+      const r = connectRepo(repo.fullName, base, { cwd: ROOT });
+      console.log(`  ✓ ${base}'s repo → ${formatRepo(r)}`);
+      if (!r.path) console.log("  · no matching checkout under ~/Dev — clone it there and reconnect to link the folder");
+    } catch (e) {
+      console.log(`  ✗ repo link: ${e?.message || e}`);
+    }
+    target = base;
+  }
+  if (target === currentProjectSlug()) {
+    console.log(`\n  ✓ already on project ${target}`);
+  } else if (setCurrentProject(target) && currentProjectSlug() === target) {
+    console.log(`\n  ✓ project → ${target}`);
+  } else {
+    console.log(`\n  ✗ could not select ${target}`);
+    target = null;
+  }
+  await pause();
+  return target;
+}
+
+async function pickGithubRepo(slug, { optional = false, mode = "link" } = {}) {
+  const opening = mode === "open";
   const gh = await import("./github-connect.mjs");
   const { loadRepo, connectRepo, disconnectRepo, formatRepo } = await import("./project-context.mjs");
   console.log("\n  Loading your GitHub repos (latest changes first)…");
@@ -238,17 +295,28 @@ async function pickGithubRepo(slug, { optional = false } = {}) {
   }
   const repos = res.repos;
   const totalPages = Math.ceil(repos.length / REPO_PAGE_SIZE);
+  const { projectsUsingRepo } = await import("./project-context.mjs");
+  const ownerCache = new Map();
+  const repoOwners = (fullName) => {
+    if (!ownerCache.has(fullName)) ownerCache.set(fullName, projectsUsingRepo(fullName));
+    return ownerCache.get(fullName);
+  };
   let page = 0;
   for (;;) {
     const cur = loadRepo(slug);
     const slice = repos.slice(page * REPO_PAGE_SIZE, (page + 1) * REPO_PAGE_SIZE);
     const width = Math.max(...slice.map((r) => r.fullName.length));
     clear();
-    title(`Connect a GitHub repo to ${slug}`);
-    console.log(`  project  ${slug}`);
-    console.log(`  repo     ${formatRepo(cur)}`);
-    console.log("  This links a repo to this project — it does not switch projects.");
-    console.log("  To switch, go Back and pick the project from the list.\n");
+    if (opening) {
+      title("Open a project from a GitHub repo");
+      console.log("  Pick a repo: its project opens — or a new project is started for it.\n");
+    } else {
+      title(`Change ${slug}'s GitHub repo`);
+      console.log(`  project  ${slug}`);
+      console.log(`  repo     ${formatRepo(cur)}`);
+      console.log("  This links a repo to this project — it does not switch projects.");
+      console.log("  To open another project, go Back and pick it (or Open a project from a GitHub repo).\n");
+    }
     console.log(`  ${repos.length} repos · latest changes first · page ${page + 1}/${totalPages}`);
     const options = slice.map((r) => ({
       key: "repo",
@@ -258,14 +326,17 @@ async function pickGithubRepo(slug, { optional = false } = {}) {
         timeAgo(r.pushedAt).padStart(8),
         r.private ? "private" : "",
         r.local ? "· local" : "",
+        opening && repoOwners(r.fullName).length ? `→ ${repoOwners(r.fullName).join(", ")}` : "",
       ]
         .filter(Boolean)
         .join("  "),
     }));
     if (page < totalPages - 1) options.push({ key: "next", hotkey: "n", label: "Next page" });
     if (page > 0) options.push({ key: "prev", hotkey: "p", label: "Previous page" });
-    options.push({ key: "manual", hotkey: "m", label: "Type a folder, git URL, or owner/repo" });
-    if (cur) options.push({ key: "disconnect", hotkey: "d", label: "Disconnect repo" });
+    if (!opening) {
+      options.push({ key: "manual", hotkey: "m", label: "Type a folder, git URL, or owner/repo" });
+      if (cur) options.push({ key: "disconnect", hotkey: "d", label: "Disconnect repo" });
+    }
     options.push({ key: "back", hotkey: "b", label: optional ? "Skip" : "Back" });
 
     const pick = await choose("Which repo?", options);
@@ -281,6 +352,10 @@ async function pickGithubRepo(slug, { optional = false } = {}) {
       console.log(`  ✓ repo disconnected from ${slug}`);
       await pause();
     } else {
+      if (opening) {
+        if (await openProjectForRepo(pick.repo)) return;
+        continue;
+      }
       // Picking a repo another project already uses usually means "switch to that
       // project", not "give this project the same repo" — ask.
       const { projectsUsingRepo, setCurrentProject: switchTo } = await import("./project-context.mjs");
@@ -339,6 +414,11 @@ async function selectProjectMenu({ freshInstall = false } = {}) {
   const options = projectMenuOptions(slugs, current);
   const pick = await choose("Which project?", options);
   if (!pick || pick.key === "back") return;
+
+  if (pick.key === "repo-open") {
+    await pickGithubRepo(current, { mode: "open" });
+    return;
+  }
 
   if (pick.key === "repo") {
     await pickGithubRepo(current);
