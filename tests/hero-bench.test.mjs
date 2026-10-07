@@ -131,3 +131,44 @@ describe("hero bench", () => {
     );
   });
 });
+
+describe("worker hats", () => {
+  it("the hero puts a hat on its worker; a new worker starts bare-headed", async () => {
+    const { setHat, workerHats } = await import("../scripts/project-context.mjs");
+    const s = slug("hat");
+    ensureProjectDirs(s);
+    addHero("art-director", s);
+    assert.throws(() => setHat("art-director", "animator", s), /no worker/);
+    bindWorker("art-director", "owned-3033", s);
+    setHat("art-director", "animator", s);
+    assert.deepEqual(loadRoster(s).bench, [{ hero: "art-director", worker: "owned-3033", hat: "animator" }]);
+    bindWorker("art-director", "owned-954", s);
+    assert.deepEqual(loadRoster(s).bench, [{ hero: "art-director", worker: "owned-954" }], "hat goes with the old worker");
+    setHat("art-director", "artist", s);
+    setHat("art-director", "none", s);
+    assert.equal(loadRoster(s).bench[0].hat, undefined);
+    assert.ok(Object.keys(workerHats()).includes("game-maker"));
+  });
+});
+
+describe("promotion", () => {
+  it("a promoted worker becomes the hero; the seat takes a new worker; demote frees it", async () => {
+    const { promoteWorker, demoteHero } = await import("../scripts/project-context.mjs");
+    const s = slug("promo");
+    ensureProjectDirs(s);
+    bindWorker("art-director", "owned-3033", s);
+    assert.throws(() => promoteWorker("architect", s), /no worker/);
+    const r = promoteWorker("art-director", s);
+    assert.equal(r.promoted, "owned-3033");
+    assert.deepEqual(loadRoster(s).bench, [{ hero: "art-director", worker: null, heroBy: "owned-3033" }]);
+    assert.equal(projectRoles(s, { roles: global })["owned-3033"], "art-director", "it is the hero");
+    assert.equal(benchPool(s).includes("owned-3033"), false);
+    assert.throws(() => bindWorker("architect", "owned-3033", s), /promoted to art-director/);
+    bindWorker("art-director", "owned-954", s);
+    assert.deepEqual(loadRoster(s).bench, [{ hero: "art-director", worker: "owned-954", heroBy: "owned-3033" }]);
+    assert.throws(() => promoteWorker("art-director", s), /already has a promoted/);
+    demoteHero("art-director", s);
+    assert.deepEqual(loadRoster(s).bench, [{ hero: "art-director", worker: "owned-954" }]);
+    assert.ok(benchPool(s).includes("owned-3033"));
+  });
+});

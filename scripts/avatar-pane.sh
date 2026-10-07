@@ -1206,7 +1206,7 @@ refresh_roster_async() {
   ) &
 }
 
-# Roster JSON -> "id␟status␟svg␟collateral␟haunt␟name␟role␟loading" rows (US-separated:
+# Roster JSON -> "id␟status␟svg␟collateral␟haunt␟name␟role␟loading␟wearable␟hat" rows (US-separated:
 # `read` collapses runs of tab, so an empty tab field shifts every later one).
 roster_ids() {
   # $2=1 includes the pinned gotchi as a mini. Used when the pane is not focused,
@@ -1216,15 +1216,15 @@ roster_ids() {
     let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
       try {
         const j=JSON.parse(d);
-        const row = (id, status, svg, collateral, haunt, name, role, loading) => {
+        const row = (id, status, svg, collateral, haunt, name, role, loading, wearable, hat) => {
           if (!id) return;
-          console.log([id, status||"", svg||"", collateral||"", haunt||"", name||"", role||"", loading?"1":"0"].join("\x1f"));
+          console.log([id, status||"", svg||"", collateral||"", haunt||"", name||"", role||"", loading?"1":"0", wearable||"", hat||""].join("\x1f"));
         };
         if (process.env.GOTCHI_INCLUDE_PINNED === "1" && j.pinned) {
-          row(j.pinned, j.pinnedStatus, j.pinnedSvg, "", "", j.pinnedName, j.role, 0);
+          row(j.pinned, j.pinnedStatus, j.pinnedSvg, "", "", j.pinnedName, j.role, 0, j.pinnedWearable, "");
         }
         for (const o of (j.others||[])) {
-          row(o.id, o.status, o.svg, o.collateral, o.hauntId, o.name, o.role, o.loading);
+          row(o.id, o.status, o.svg, o.collateral, o.hauntId, o.name, o.role, o.loading, o.wearable, o.hat);
         }
       } catch {}
     });
@@ -1439,8 +1439,14 @@ join4() {
   [ "${#B[@]}" -gt "$max" ] && max=${#B[@]}
   [ "${#C[@]}" -gt "$max" ] && max=${#C[@]}
   [ "${#D[@]}" -gt "$max" ] && max=${#D[@]}
+  # Cells differ in height (a hero box is taller): pad a short cell's missing
+  # rows to its width so the columns after it stay put.
+  local wa=0 wb=0 wc=0
+  [ "${#A[@]}" -gt 0 ] && vislen_set "${A[0]}" && wa=$VIS
+  [ "${#B[@]}" -gt 0 ] && vislen_set "${B[0]}" && wb=$VIS
+  [ "${#C[@]}" -gt 0 ] && vislen_set "${C[0]}" && wc=$VIS
   for ((i = 0; i < max; i++)); do
-    printf '%s%s%s%s%s%s%s\n' "${A[i]:-}" "$gap_s" "${B[i]:-}" "$gap_s" "${C[i]:-}" "$gap_s" "${D[i]:-}"
+    printf '%s%s%s%s%s%s%s\n' "${A[i]:-$(printf '%*s' "$wa" '')}" "$gap_s" "${B[i]:-$(printf '%*s' "$wb" '')}" "$gap_s" "${C[i]:-$(printf '%*s' "$wc" '')}" "$gap_s" "${D[i]:-}"
   done
 }
 
@@ -1503,10 +1509,103 @@ emit_line() {
   printf '%s\n' "$text"
 }
 
+# Status word + color for a tile. Leaves STATUS_LABEL / STATUS_COLOR.
+status_style() {
+  case "${1:-}" in
+    working|occupied) STATUS_COLOR="$AV_ST_WORKING"; STATUS_LABEL="working" ;;
+    active) STATUS_COLOR="$AV_ST_ACTIVE"; STATUS_LABEL="active" ;;
+    idle) STATUS_COLOR="$AV_ST_IDLE"; STATUS_LABEL="idle" ;;
+    watching) STATUS_COLOR="$AV_ST_WATCH"; STATUS_LABEL="watching" ;;
+    assigned) STATUS_COLOR="$AV_ST_ASSIGN"; STATUS_LABEL="assigned" ;;
+    needs-worker) STATUS_COLOR="$AV_MUTED"; STATUS_LABEL="asleep" ;;
+    *) STATUS_COLOR="$AV_ST_AVAIL"; STATUS_LABEL="available" ;;
+  esac
+}
+
+# Hero box: a template hero (its wearable) over the cAavegotchi that works it,
+# grouped in a dashed frame — wearable, arrow down, worker, then wearable name,
+# role · status, and the worker with the hat it wears. A hero with no worker
+# (id hero:<template>) shows an empty worker slot. cell_w is the frame width.
+hero_box() {
+  local id="$1" status="$2" cell_w="$3" cell_h="$4" collateral="${5:-}" haunt="${6:-}" name="${7:-}" role="${8:-}" face="${9:-mini}" wear="${10:-}" hat="${11:-}"
+  local tl='┌' tr='┐' bl='└' br='┘' hz='╌' vt='╎' arrow='▼' line i max_vis lp
+  if [ "${TUI_GLYPHS}" = "ascii" ]; then
+    tl='+'; tr='+'; bl='+'; br='+'; hz='-'; vt=':'; arrow='v'
+  fi
+  local inner=$((cell_w - 2))
+  [ "$inner" -lt 8 ] && inner=8
+  local wrows=4
+  [ "$face" = "mid" ] && wrows=5
+  local -a BODY=()
+
+  # Center a block of art lines inside the frame.
+  _hb_art() {
+    local -a A=()
+    max_vis=0
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -z "$line" ] && [ "${#A[@]}" -eq 0 ] && continue
+      A+=("$line")
+      vislen_set "$line"
+      [ "$VIS" -gt "$max_vis" ] && max_vis=$VIS
+    done < <(printf '%s\n' "$1")
+    lp=0
+    [ "$inner" -gt "$max_vis" ] && lp=$(( (inner - max_vis) / 2 ))
+    for ((i = 0; i < ${#A[@]}; i++)); do
+      BODY+=("$(block_pad_line "${A[i]}" "$inner" "$lp")")
+    done
+  }
+
+  local wart=""
+  if command -v node >/dev/null && [ -f "$ROOT/scripts/hero-wearable.mjs" ]; then
+    wart="$(node "$ROOT/scripts/hero-wearable.mjs" art "$role" --rows "$wrows" --width "$inner" --color-mode "${TUI_COLOR:-truecolor}" 2>/dev/null)" || wart=""
+  fi
+  [ -z "$wart" ] && wart="$(printf '%b%s%b' "$AV_MUTED" "◇" "$AV_RST")"
+  _hb_art "$wart"
+  BODY+=("$(printf '%b%s%b' "$AV_MUTED" "$(center_pad "$arrow" "$inner")" "$AV_RST")")
+  if [ "${id#hero:}" != "$id" ]; then
+    _hb_art "$(printf '%b%s\n%s\n%s%b' "$AV_MUTED" "$(repeat_char "$hz" 5)" "$vt ? $vt" "$(repeat_char "$hz" 5)" "$AV_RST")"
+  else
+    local wa
+    wa="$(thumb_art "$collateral" "$id" "$haunt" "$face")"
+    _hb_art "$(printf '%s\n' "$wa" | { head -n "$cell_h" || true; })"
+  fi
+
+  status_style "$status"
+  local wear_show="${wear:-${role//-/ }}" role_line who
+  wear_show="${wear_show:0:$inner}"
+  BODY+=("$(printf '%b%s%b' "$AV_ROLE_GAL" "$(center_pad "$wear_show" "$inner")" "$AV_RST")")
+  role_line="${role//-/ } · ${STATUS_LABEL}"
+  if [ "${#role_line}" -gt "$inner" ]; then
+    role_line="${STATUS_LABEL}"
+  fi
+  BODY+=("$(printf '%b%s%b' "$STATUS_COLOR" "$(center_pad "$role_line" "$inner")" "$AV_RST")")
+  if [ "${id#hero:}" != "$id" ]; then
+    who="needs a worker"
+    BODY+=("$(printf '%b%s%b' "$AV_ST_ASSIGN" "$(center_pad "${who:0:$inner}" "$inner")" "$AV_RST")")
+  else
+    who="${name:-$id}"
+    [ -n "$hat" ] && who="${who} · ${hat}"
+    BODY+=("$(printf '%b%s%b' "$AV_ROSTER" "$(center_pad "${who:0:$inner}" "$inner")" "$AV_RST")")
+  fi
+
+  local edge
+  edge="$(repeat_char "$hz" "$inner")"
+  emit_line "$(printf '%b%s%s%s%b' "$AV_MUTED" "$tl" "$edge" "$tr" "$AV_RST")"
+  for ((i = 0; i < ${#BODY[@]}; i++)); do
+    emit_line "$(printf '%b%s%b%s%b%s%b' "$AV_MUTED" "$vt" "$AV_RST" "$(pad_cell_line "${BODY[i]}" "$inner")" "$AV_MUTED" "$vt" "$AV_RST")"
+  done
+  emit_line "$(printf '%b%s%s%s%b' "$AV_MUTED" "$bl" "$edge" "$br" "$AV_RST")"
+}
+
 cell_block() {
   local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}" role="${9:-}" loading="${10:-}" face="${11:-mini}"
   CELL_SELECTED=0
   [ "${12:-0}" = 1 ] && CELL_SELECTED=1
+  # A gotchi working a hero (or a hero with no worker yet) draws as a hero box.
+  if [ -z "$loading" ] && [ -n "${13:-}" ] && [ -n "$role" ] && [ "${GOTCHIBOT_HERO_BOX:-1}" = 1 ]; then
+    hero_box "$id" "$status" "$cell_w" "$cell_h" "$collateral" "$haunt" "$name" "$role" "$face" "${13:-}" "${14:-}"
+    return 0
+  fi
   local art label status_color
   case "$status" in
     working)
@@ -1804,8 +1903,8 @@ warm_other_cells() {
     [ -n "${W_LOAD[i]:-}" ] && continue
     local warm_face=mini
     [ "${WARM_H:-0}" -ge 9 ] && warm_face=mid
-    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|${W_NAME[i]}|${W_ROLE[i]}||$WARM_W|$WARM_H|$warm_face" \
-      cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}" "${W_NAME[i]}" "${W_ROLE[i]}" "" "$warm_face"
+    memo_call v "r|cell|${TUI_COLOR}/${TUI_GLYPHS}|${W_ID[i]}|${W_ST[i]}|${W_COL[i]}|${W_HAUNT[i]}|${W_NAME[i]}|${W_ROLE[i]}||$WARM_W|$WARM_H|$warm_face|${W_WEAR[i]:-}|${W_HAT[i]:-}" \
+      cell_block "${W_ID[i]}" "${W_ST[i]}" "${W_SVG[i]}" "$WARM_W" "$WARM_H" "${W_COL[i]}" "${W_HAUNT[i]}" "${W_NAME[i]}" "${W_ROLE[i]}" "" "$warm_face" 0 "${W_WEAR[i]:-}" "${W_HAT[i]:-}"
   done
   WARM_DONE=1
   dbg "warm: done"
@@ -1826,6 +1925,11 @@ render_now() {
 # 3 rows. Each card is 12 lines: 9 art + status, name, and role.
 roster_budget() {
   local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain stride=12 rows
+  # Hero boxes (frame + wearable + arrow + worker + 3 lines) need more rows a tile.
+  if [ "${HERO_VIEW:-0}" = 1 ]; then
+    mini=15
+    stride=20
+  fi
   case "$pane_h" in
     ''|*[!0-9]*) pane_h=0 ;;
   esac
@@ -2049,6 +2153,10 @@ render_body() {
   if [ "$gallery" = 1 ] || avatar_pane_focused; then
     expanded=1
   fi
+  HERO_VIEW=0
+  if [ "${GOTCHIBOT_HERO_BOX:-1}" = 1 ] && [ -f "$ROSTER_CACHE" ] && grep -qi 'wearable": *"' "$ROSTER_CACHE" 2>/dev/null; then
+    HERO_VIEW=1
+  fi
   if [ "$expanded" = 1 ] && [ "$gallery" != 1 ]; then
     roster_budget "$pane_h" focused
   else
@@ -2201,8 +2309,8 @@ render_body() {
   [ "$face" = "mid" ] && cell_h=9
 
   # LOAD_ARR holds the spinner frame for a loading tile, empty once it resolved.
-  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR ROLE_ARR LOAD_ARR
-  while IFS=$'\x1f' read -r iid ist isvg icol ihaunt iname irole iload; do
+  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR ROLE_ARR LOAD_ARR WEAR_ARR HAT_ARR
+  while IFS=$'\x1f' read -r iid ist isvg icol ihaunt iname irole iload iwear ihat; do
     [ -z "$iid" ] && continue
     ID_ARR+=("$iid")
     ST_ARR+=("$ist")
@@ -2211,6 +2319,8 @@ render_body() {
     HAUNT_ARR+=("$ihaunt")
     NAME_ARR+=("$iname")
     ROLE_ARR+=("$irole")
+    WEAR_ARR+=("$iwear")
+    HAT_ARR+=("$ihat")
     if [ "$iload" = 1 ] && [ "$SECONDS" -lt "$AV_LOADING_MAX" ]; then
       LOAD_ARR+=("$((SPIN_FRAME % ${#AV_SPIN[@]}))")
     else
@@ -2239,6 +2349,8 @@ render_body() {
   W_HAUNT=("${HAUNT_ARR[@]}")
   W_NAME=("${NAME_ARR[@]}")
   W_ROLE=("${ROLE_ARR[@]}")
+  W_WEAR=("${WEAR_ARR[@]}")
+  W_HAT=("${HAT_ARR[@]}")
   W_LOAD=("${LOAD_ARR[@]}")
 
   local i base left k1 r vi end mid right pair k2 k3
@@ -2263,9 +2375,9 @@ render_body() {
         [ "$vi" -ge "$n_ids" ] && continue
         sel_flag=0
         [ "${SEL_ORCH:-1}" != 1 ] && [ "$vi" -eq "${SEL:-0}" ] && sel_flag=1
-        k1="g|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[vi]}|${ST_ARR[vi]}|${COL_ARR[vi]}|${HAUNT_ARR[vi]}|${NAME_ARR[vi]}|${ROLE_ARR[vi]}|${LOAD_ARR[vi]}|$cell_w|$cell_h|$face|$sel_flag"
+        k1="g|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[vi]}|${ST_ARR[vi]}|${COL_ARR[vi]}|${HAUNT_ARR[vi]}|${NAME_ARR[vi]}|${ROLE_ARR[vi]}|${LOAD_ARR[vi]}|$cell_w|$cell_h|$face|$sel_flag|${WEAR_ARR[vi]}|${HAT_ARR[vi]}"
         memo_call left "$k1" \
-          cell_block "${ID_ARR[vi]}" "${ST_ARR[vi]}" "${SVG_ARR[vi]}" "$cell_w" "$cell_h" "${COL_ARR[vi]}" "${HAUNT_ARR[vi]}" "${NAME_ARR[vi]}" "${ROLE_ARR[vi]}" "${LOAD_ARR[vi]}" "$face" "$sel_flag"
+          cell_block "${ID_ARR[vi]}" "${ST_ARR[vi]}" "${SVG_ARR[vi]}" "$cell_w" "$cell_h" "${COL_ARR[vi]}" "${HAUNT_ARR[vi]}" "${NAME_ARR[vi]}" "${ROLE_ARR[vi]}" "${LOAD_ARR[vi]}" "$face" "$sel_flag" "${WEAR_ARR[vi]}" "${HAT_ARR[vi]}"
         case "$slot" in
           0) c0="$left"; k1s="$k1" ;;
           1) c1="$left"; k2="$k1" ;;
@@ -2354,9 +2466,9 @@ render_body() {
     # Collapsed column shows the selector too, so the any-pane keys have a target.
     sel_flag=0
     [ "${SEL_ORCH:-1}" != 1 ] && [ "$i" -eq "${SEL:-0}" ] && sel_flag=1
-    k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h|$sel_flag"
+    k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h|$sel_flag|${WEAR_ARR[i]}|${HAT_ARR[i]}"
     memo_call left "$k1" \
-      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}" mini "$sel_flag"
+      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}" mini "$sel_flag" "${WEAR_ARR[i]}" "${HAT_ARR[i]}"
     while IFS= read -r line || [ -n "$line" ]; do
       [ -z "$line" ] && continue
       put_line "$row" "$line"

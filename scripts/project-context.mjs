@@ -1123,6 +1123,9 @@ export function rosterAssign(heroId, role, slug = currentProjectSlug()) {
 // ── bench: template heroes, each worked by a cAavegotchi ──
 //
 // roster.json `bench` is [{ hero: <template id>, worker: <gotchi id>|null }].
+// A worker the CoS recommends and UserDefault promotes becomes the hero itself
+// (`heroBy`: it wears the wearable and keeps the hero's memory); the seat then
+// takes a new worker.
 // The hero is the job (its playbook, its memory); the gotchi is the worker that
 // runs it, and is swappable. A gotchi works at most one hero per workbench; a
 // gotchi working nothing is in the pool. `heroes[].role` (gotchi rows) is worked
@@ -1133,14 +1136,30 @@ export function rosterAssign(heroId, role, slug = currentProjectSlug()) {
 export function normalizeBench(list) {
   const out = [];
   const workers = new Set();
-  for (const e of Array.isArray(list) ? list : []) {
+  const src = Array.isArray(list) ? list : [];
+  // A promoted gotchi is busy being the hero: claim those first.
+  const heroBy = new Map();
+  for (const e of src) {
+    const g = e?.heroBy == null ? "" : String(e.heroBy).trim();
+    if (g && HERO_ID_RE.test(g) && !workers.has(g)) {
+      workers.add(g);
+      heroBy.set(e, g);
+    }
+  }
+  for (const e of src) {
     const hero = String(e?.hero || "").trim();
     if (!hero || hero === "orchestrator" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(hero)) continue;
     let worker = e?.worker == null ? null : String(e.worker).trim() || null;
     if (worker && (!HERO_ID_RE.test(worker) || workers.has(worker))) worker = null;
     if (worker) workers.add(worker);
-    if (!worker && out.some((x) => x.hero === hero && !x.worker)) continue;
-    out.push({ hero, worker });
+    const by = heroBy.get(e) || null;
+    if (!worker && !by && out.some((x) => x.hero === hero && !x.worker && !x.heroBy)) continue;
+    // The hat is what the worker wears for its current task — no worker, no hat.
+    const hat = worker && typeof e?.hat === "string" && /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(e.hat.trim()) ? e.hat.trim() : null;
+    const row = { hero, worker };
+    if (hat) row.hat = hat;
+    if (by) row.heroBy = by;
+    out.push(row);
   }
   return out;
 }
@@ -1155,6 +1174,7 @@ export function benchOf(roster) {
 /** Gotchi rows with `role` = the hero each one works (null in the pool). */
 function rowsFromBench(rows, bench) {
   const working = new Map(bench.filter((e) => e.worker).map((e) => [e.worker, e.hero]));
+  for (const e of bench) if (e.heroBy) working.set(e.heroBy, e.hero);
   const out = rows.map((h) => (HERO_ID_RE.test(h.id) ? { ...h, role: working.get(h.id) || null } : h));
   for (const [worker, hero] of working) if (!out.some((h) => h.id === worker)) out.push({ id: worker, role: hero });
   return out;
@@ -1176,7 +1196,7 @@ export function benchHeroes(slug = currentProjectSlug(), { roles = globalRoles()
 /** Gotchis on this workbench working no hero (the orchestrator's gotchi works the desk). */
 export function benchPool(slug = currentProjectSlug(), { roles = globalRoles() } = {}) {
   const r = loadRoster(slug);
-  const busy = new Set(r.bench.map((e) => e.worker).filter(Boolean));
+  const busy = new Set(r.bench.flatMap((e) => [e.worker, e.heroBy]).filter(Boolean));
   for (const [id, role] of Object.entries(roles)) if (role === "orchestrator") busy.add(id);
   return r.heroes.filter((h) => HERO_ID_RE.test(h.id) && !busy.has(h.id)).map((h) => h.id);
 }
@@ -1214,21 +1234,25 @@ export function bindWorker(hero, gotchi, slug = currentProjectSlug()) {
   const r = loadRoster(slug);
   let bench = r.bench.map((e) => ({ ...e }));
   let left = null;
+  const embodies = bench.find((e) => e.heroBy === gid);
+  if (embodies) throw new Error(`${gid} was promoted to ${embodies.hero} here — it is the hero, not a worker (gotchibot heroes demote ${embodies.hero} first)`);
   const prev = bench.find((e) => e.worker === gid);
   if (prev && prev.hero === id) return { ...saveBench(r, bench, slug), unseated: [], left: null };
   if (prev) {
     left = prev.hero;
     prev.worker = null;
+    delete prev.hat;
   }
   const mine = bench.filter((e) => e.hero === id);
   const unseated = [];
-  const free = mine.find((e) => !e.worker);
+  const free = mine.find((e) => !e.worker && !e.heroBy) || mine.find((e) => !e.worker);
   if (free) free.worker = gid;
   else if (mine.length < roleSeats(id)) bench.push({ hero: id, worker: gid });
   else {
-    // Full: the longest-held seat changes hands.
+    // Full: the longest-held seat changes hands (the old worker's hat goes with it).
     unseated.push(mine[0].worker);
     mine[0].worker = gid;
+    delete mine[0].hat;
   }
   bench = normalizeBench(bench);
   const saved = saveBench(r, bench, slug);
@@ -1244,6 +1268,67 @@ export function unbindWorker(heroOrGotchi, slug = currentProjectSlug()) {
   const r = loadRoster(slug);
   const byGotchi = HERO_ID_RE.test(key);
   const bench = r.bench.map((e) => ((byGotchi ? e.worker === key : e.hero === key) ? { ...e, worker: null } : e));
+  return saveBench(r, normalizeBench(bench), slug);
+}
+
+/**
+ * Put a hat on a hero's worker (engineer, artist, animator…): what the worker
+ * is for the task the hero handed it. `none` takes it off. The hero asks Prof.
+ * Link-Cube for the task's agent template first; the hat names it.
+ */
+export function setHat(hero, hat, slug = currentProjectSlug()) {
+  if (!slug) throw new Error("no project selected");
+  const id = String(hero || "").trim();
+  const next = !hat || hat === "none" ? null : String(hat).trim();
+  if (next && !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(next)) throw new Error(`bad hat id: ${hat}`);
+  const r = loadRoster(slug);
+  const seat = r.bench.find((e) => e.hero === id && e.worker);
+  if (!seat) throw new Error(`${id} has no worker to wear a hat — gotchibot heroes bind ${id} <gotchi>`);
+  const bench = r.bench.map((e) => {
+    if (e !== seat) return e;
+    const { hat: _old, ...rest } = e;
+    return next ? { ...rest, hat: next } : rest;
+  });
+  return saveBench(r, bench, slug);
+}
+
+/** Usual worker hats: { id: label } from config/worker-hats.json. */
+export function workerHats() {
+  try {
+    const j = JSON.parse(readFileSync(join(ROOT, "config/worker-hats.json"), "utf8"));
+    return Object.fromEntries(Object.entries(j).filter(([k]) => !k.startsWith("_")));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Promote a hero's worker to the hero: the gotchi wears the wearable and keeps
+ * the hero's memory; the seat's worker slot empties for a new worker. The CoS
+ * recommends (track record); UserDefault runs this.
+ */
+export function promoteWorker(hero, slug = currentProjectSlug()) {
+  if (!slug) throw new Error("no project selected");
+  const id = String(hero || "").trim();
+  const r = loadRoster(slug);
+  if (r.bench.some((e) => e.hero === id && e.heroBy)) throw new Error(`${id} already has a promoted gotchi here — demote it first`);
+  const seat = r.bench.find((e) => e.hero === id && e.worker);
+  if (!seat) throw new Error(`${id} has no worker to promote`);
+  const promoted = seat.worker;
+  const bench = r.bench.map((e) => (e === seat ? { hero: id, worker: null, heroBy: promoted } : e));
+  return { ...saveBench(r, bench, slug), promoted };
+}
+
+/** Undo a promotion: the gotchi goes back to the pool; the hero stays. */
+export function demoteHero(hero, slug = currentProjectSlug()) {
+  if (!slug) throw new Error("no project selected");
+  const id = String(hero || "").trim();
+  const r = loadRoster(slug);
+  const bench = r.bench.map((e) => {
+    if (e.hero !== id || !e.heroBy) return e;
+    const { heroBy: _g, ...rest } = e;
+    return rest;
+  });
   return saveBench(r, normalizeBench(bench), slug);
 }
 
@@ -1436,6 +1521,8 @@ function usage() {
   project-context heroes bind <template> <gotchi> [<slug>]
   project-context heroes unbind <template|gotchi> [<slug>]
   project-context heroes remove <template> [<slug>]
+  project-context heroes hat <template> <hat|none> [<slug>]
+  project-context heroes promote|demote <template> [<slug>]
   project-context mail show [<slug>] [--json]
   project-context mail set [<slug>] --address <email> [--inbox-id <id>]
   project-context repo show|clear [<slug>] [--json]
@@ -1562,15 +1649,21 @@ async function main() {
     return;
   }
   if (cmd === "heroes") {
-    const verbs = new Set(["list", "add", "bind", "unbind", "remove"]);
+    const verbs = new Set(["list", "add", "bind", "unbind", "remove", "hat", "promote", "demote"]);
     const sub = verbs.has(args[0]) ? args[0] : "list";
     const a = verbs.has(args[0]) ? args.slice(1) : args;
-    const need = { list: 0, add: 1, bind: 2, unbind: 1, remove: 1 }[sub];
+    const need = { list: 0, add: 1, bind: 2, unbind: 1, remove: 1, hat: 2, promote: 1, demote: 1 }[sub];
     const slug = a[need] || currentProjectSlug();
     if (!slug || a.length < need) usage();
     if (sub === "add") addHero(a[0], slug);
     if (sub === "unbind") unbindWorker(a[0], slug);
     if (sub === "remove") removeHero(a[0], slug);
+    if (sub === "hat") setHat(a[0], a[1], slug);
+    if (sub === "demote") demoteHero(a[0], slug);
+    if (sub === "promote") {
+      const r = promoteWorker(a[0], slug);
+      console.log(`  ${r.promoted} is now ${a[0]} — bind a new worker: gotchibot heroes bind ${a[0]} <gotchi>`);
+    }
     if (sub === "bind") {
       const r = bindWorker(a[0], a[1], slug);
       if (r.left) console.log(`  ${a[1]} left ${r.left} (now unbound)`);
@@ -1584,7 +1677,7 @@ async function main() {
     }
     console.log(`project ${slug} · heroes ${heroes.length} · pool ${pool.length}`);
     for (const h of heroes) {
-      console.log(`  ${h.hero.padEnd(24)} ${h.worker ? `worked by ${h.worker}` : "needs a worker"}${h.deskWide ? "  (desk-wide)" : ""}`);
+      console.log(`  ${h.hero.padEnd(24)} ${h.heroBy ? `is ${h.heroBy} · ` : ""}${h.worker ? `worked by ${h.worker}` : "needs a worker"}${h.hat ? ` · hat ${h.hat}` : ""}${h.deskWide ? "  (desk-wide)" : ""}`);
     }
     if (pool.length) console.log(`  pool: ${pool.join(", ")}`);
     return;

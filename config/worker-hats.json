@@ -1,0 +1,10 @@
+{
+  "_note": "Hats a worker cAavegotchi can wear. The hero asks Prof. Link-Cube to spin up an agent template for the task, then puts that hat on its worker (gotchibot heroes hat <hero> <hat>). These are the usual ones; a Prof-made hat id works too.",
+  "engineer": "Engineer",
+  "artist": "Artist",
+  "animator": "Animator",
+  "game-maker": "Game maker",
+  "writer": "Writer",
+  "tasker": "Tasker",
+  "researcher": "Researcher"
+}

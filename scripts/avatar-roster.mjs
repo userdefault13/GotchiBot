@@ -11,7 +11,8 @@ import { loadMeta } from "./identity.mjs";
 import { resolveThumbCollateral, persistHeroCollateral } from "./collateral-resolve.mjs";
 import { builtinHeroes, heroDisplayName } from "./openclaw-fleet.mjs";
 import { isMainModule } from "./is-main.mjs";
-import { orderByRosterIds, projectRoles } from "./project-context.mjs";
+import { currentProjectSlug, loadRoster, orderByRosterIds, projectRoles } from "./project-context.mjs";
+import { wearableFor } from "./hero-wearable.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SESSIONS = `${ROOT}/sessions`;
@@ -229,6 +230,29 @@ async function build() {
       };
     });
 
+  // Hero boxes: a gotchi working a hero carries the hero's wearable name and the
+  // hat it wears; a hero with no worker is its own (unbound) tile at the end.
+  let bench = [];
+  try {
+    const slug = currentProjectSlug();
+    if (slug) bench = loadRoster(slug).bench || [];
+  } catch {
+    bench = [];
+  }
+  const heroTitle = (hero) => wearableFor(hero)?.name || hero.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  for (const o of others) {
+    if (!o.role) continue;
+    o.wearable = heroTitle(o.role);
+    const seat = bench.find((e) => e.worker === o.id);
+    if (seat?.hat) o.hat = seat.hat;
+    // Promoted: the gotchi is the hero itself (wears the wearable), not its worker.
+    if (bench.some((e) => e.heroBy === o.id)) o.hat = "the hero";
+  }
+  for (const e of bench) {
+    if (e.worker) continue;
+    others.push({ id: `hero:${e.hero}`, name: "", role: e.hero, wearable: heroTitle(e.hero), unbound: true, status: "needs-worker", loading: false, svg: null });
+  }
+
   const pinnedHero = list.find((h) => h.id === pinned);
   const pinnedStatus = pinned
     ? resolveStatus(pinnedHero || { id: pinned, agentStatus: null }, busy)
@@ -238,6 +262,7 @@ async function build() {
     role,
     pinned,
     pinnedName: pinned ? heroDisplayName(pinned) : null,
+    pinnedWearable: role ? heroTitle(role) : null,
     pinnedStatus,
     pinnedSvg: pinned && existsSync(`${AVATARS}/${pinned}.svg`) ? `${AVATARS}/${pinned}.svg` : null,
     others,
