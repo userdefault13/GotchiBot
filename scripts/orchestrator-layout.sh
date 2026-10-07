@@ -2080,6 +2080,15 @@ disable_resize_hook() {
   tmux set-hook -t "$sess" client-resized "" 2>/dev/null || true
 }
 
+# The theme and keys (Ctrl+Space prefix, Ctrl+J/K selector, pink borders) are
+# session options set when the desk is built. A session made some other way — a
+# restarted tmux server, another script's new-session — reattaches as plain tmux
+# (green bar, Ctrl+B, no desk keys). The prefix is the tell: put them back.
+ensure_ui_theme() {
+  [ "$(tmux show-options -t "$sess" -v prefix 2>/dev/null)" = "C-Space" ] && return 0
+  install_ui_theme
+}
+
 finish_ensure() {
   signal_panes
   # Always boot with Files collapsed to a bar, then the full row.
@@ -2163,6 +2172,10 @@ case "$cmd" in
     ;;
   fit-quiet)
     fit_quiet
+    ensure_ui_theme
+    ;;
+  ensure-theme)
+    ensure_ui_theme
     ;;
   project-sync)
     project_sync

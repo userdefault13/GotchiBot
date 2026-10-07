@@ -386,6 +386,8 @@ cmd_tmux() {
       echo "orchestrator enter-cockpit failed — try: tmux kill-session -t '=$sess_name' && ./scripts/gotchibot tmux" >&2
       exit 1
     fi
+    # A session built by anything but this launcher has no desk theme or keys.
+    "$layout" ensure-theme >/dev/null 2>&1 || true
     boot_mark "desk layout (reattach)"
     progress_pulse "GotchiBot · attaching…" 12
     progress_end
