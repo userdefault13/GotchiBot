@@ -70,7 +70,7 @@ cell_block "$@"
     const text = lines.join("\n");
     assert.match(text, /▼/);
     assert.match(text, /Staff of Creation/);
-    assert.match(text, /architect · working/);
+    assert.match(text, /\n╎ *architect *╎\n╎ *working *╎/);
     assert.match(text, /DAI · engineer/);
   });
 

@@ -1592,11 +1592,11 @@ hero_box() {
   local wear_show="${wear:-${role//-/ }}" role_line who
   wear_show="${wear_show:0:$inner}"
   BODY+=("$(printf '%b%s%b' "$AV_ROLE_GAL" "$(center_pad "$wear_show" "$inner")" "$AV_RST")")
-  role_line="${role//-/ } · ${STATUS_LABEL}"
-  if [ "${#role_line}" -gt "$inner" ]; then
-    role_line="${STATUS_LABEL}"
-  fi
-  BODY+=("$(printf '%b%s%b' "$STATUS_COLOR" "$(center_pad "$role_line" "$inner")" "$AV_RST")")
+  # Role and status each get their own line.
+  role_line="${role//-/ }"
+  role_line="${role_line:0:$inner}"
+  BODY+=("$(printf '%b%s%b' "$AV_ROSTER" "$(center_pad "$role_line" "$inner")" "$AV_RST")")
+  BODY+=("$(printf '%b%s%b' "$STATUS_COLOR" "$(center_pad "$STATUS_LABEL" "$inner")" "$AV_RST")")
   if [ "${id#hero:}" != "$id" ]; then
     who="needs a worker"
     BODY+=("$(printf '%b%s%b' "$AV_ST_ASSIGN" "$(center_pad "${who:0:$inner}" "$inner")" "$AV_RST")")
@@ -2202,6 +2202,7 @@ fit_collapsed_page() {
     [ "$ok" = 1 ] && break
   done
   FIT_PAGE=$k
+  FIT_H=("${H[@]}")
 }
 
 render_body() {
@@ -2546,6 +2547,14 @@ render_body() {
     return
   fi
   if [ "${ROSTER_COLS:-1}" != 4 ]; then
+  # Bottom-align the column: the page's tiles sit just above the pager row.
+  local page_h=0 drop
+  for ((i = base; i < end; i++)); do page_h=$((page_h + ${FIT_H[i]:-0})); done
+  drop=$((pane_h - row - 3 - page_h))
+  for ((i = 0; i < drop; i++)); do
+    put_line "$row" ""
+    row=$((row + 1))
+  done
   for ((i = base; i < end; i++)); do
     [ "$row" -ge "$pane_h" ] && break
     # Collapsed column shows the selector too, so the any-pane keys have a target.
