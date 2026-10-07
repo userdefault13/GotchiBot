@@ -1221,7 +1221,9 @@ roster_ids() {
           console.log([id, status||"", svg||"", collateral||"", haunt||"", name||"", role||"", loading?"1":"0", wearable||"", hat||""].join("\x1f"));
         };
         if (process.env.GOTCHI_INCLUDE_PINNED === "1" && j.pinned) {
-          row(j.pinned, j.pinnedStatus, j.pinnedSvg, "", "", j.pinnedName, j.role, 0, j.pinnedWearable, "");
+          // The desk orchestrator stays a plain tile here (the framed portrait is the
+          // focused view); a box would make every fixed-size page one tile shorter.
+          row(j.pinned, j.pinnedStatus, j.pinnedSvg, "", "", j.pinnedName, j.role, 0, "", "");
         }
         for (const o of (j.others||[])) {
           row(o.id, o.status, o.svg, o.collateral, o.hauntId, o.name, o.role, o.loading, o.wearable, o.hat);
@@ -1927,7 +1929,6 @@ roster_budget() {
   local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain stride=12 rows
   # Hero boxes (frame + wearable + arrow + worker + 3 lines) need more rows a tile.
   if [ "${HERO_VIEW:-0}" = 1 ]; then
-    mini=15
     stride=20
   fi
   case "$pane_h" in
@@ -2125,6 +2126,59 @@ modal_row() {
   printf '%s%s%s%s%*s%s%s' "$bg" "$fg" "$vt" "$cut" "$pad" '' "$vt" "$rst"
 }
 
+# Lines a tile draws (the column loop skips blank lines, so they do not count).
+tile_lines() {
+  local n=0 l
+  while IFS= read -r l || [ -n "$l" ]; do
+    [ -n "$l" ] && n=$((n + 1))
+  done < <(printf '%s\n' "$1")
+  TILE_LINES=$n
+}
+
+# Largest fixed page size whose every page fits in $3 rows. Heights are measured
+# once per kind — plain tile, hero box, loading tile — from the first of each.
+# Reads ID/ST/…/WEAR/HAT_ARR from render_body. Leaves FIT_PAGE.
+fit_collapsed_page() {
+  local cw="$1" ch="$2" avail="$3" n="$4" i k ok sum start kind tile=""
+  local hp=0 hb=0 hl=0
+  local -a H=()
+  [ "$avail" -lt 1 ] && avail=1
+  for ((i = 0; i < n; i++)); do
+    kind=p
+    if [ -n "${LOAD_ARR[i]:-}" ]; then kind=l
+    elif [ -n "${WEAR_ARR[i]:-}" ] && [ -n "${ROLE_ARR[i]:-}" ] && [ "${GOTCHIBOT_HERO_BOX:-1}" = 1 ]; then kind=b
+    fi
+    case "$kind" in
+      p) if [ "$hp" = 0 ]; then
+           memo_call tile "fit|p|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|$cw|$ch" \
+             cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cw" "$ch" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "" mini 0 "" ""
+           tile_lines "$tile"; hp=$TILE_LINES
+         fi
+         H+=("$hp") ;;
+      b) if [ "$hb" = 0 ]; then
+           memo_call tile "fit|b|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|$cw|$ch|${WEAR_ARR[i]}" \
+             cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cw" "$ch" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "" mini 0 "${WEAR_ARR[i]}" "${HAT_ARR[i]}"
+           tile_lines "$tile"; hb=$TILE_LINES
+         fi
+         H+=("$hb") ;;
+      l) if [ "$hl" = 0 ]; then
+           tile_lines "$(loading_art 0)"; hl=$((TILE_LINES + 3))
+         fi
+         H+=("$hl") ;;
+    esac
+  done
+  for ((k = n; k > 1; k--)); do
+    ok=1
+    for ((start = 0; start < n && ok; start += k)); do
+      sum=0
+      for ((i = start; i < start + k && i < n; i++)); do sum=$((sum + H[i])); done
+      [ "$sum" -gt "$avail" ] && ok=0
+    done
+    [ "$ok" = 1 ] && break
+  done
+  FIT_PAGE=$k
+}
+
 render_body() {
   local status="$1"
   local cols pane_h row=0 line
@@ -2154,7 +2208,7 @@ render_body() {
     expanded=1
   fi
   HERO_VIEW=0
-  if [ "${GOTCHIBOT_HERO_BOX:-1}" = 1 ] && [ -f "$ROSTER_CACHE" ] && grep -qi 'wearable": *"' "$ROSTER_CACHE" 2>/dev/null; then
+  if [ "${GOTCHIBOT_HERO_BOX:-1}" = 1 ] && [ -f "$ROSTER_CACHE" ] && grep -q '"wearable": *"' "$ROSTER_CACHE" 2>/dev/null; then
     HERO_VIEW=1
   fi
   if [ "$expanded" = 1 ] && [ "$gallery" != 1 ]; then
@@ -2332,6 +2386,12 @@ render_body() {
   local n_ids="${#ID_ARR[@]}"
   local page_size="$ROSTER_PAGE"
   [ -n "$page_size" ] || page_size=3
+  # Collapsed column: size the page from what the tiles really measure (a hero
+  # box is taller than a plain tile), so the column fills instead of guessing.
+  if [ "$side" != 1 ] && [ "$n_ids" -gt 0 ]; then
+    fit_collapsed_page "$cell_w" "$cell_h" "$((pane_h - row - 3))" "$n_ids"
+    page_size=$FIT_PAGE
+  fi
   NPAGES=$(( (n_ids + page_size - 1) / page_size ))
   [ "$NPAGES" -lt 1 ] && NPAGES=1
   clamp_page
