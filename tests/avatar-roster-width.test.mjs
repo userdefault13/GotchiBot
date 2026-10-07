@@ -319,16 +319,15 @@ describe("avatar roster width", () => {
     assert.equal(rosterRows(40).page, "6");
   });
 
-  it("puts a 4 by 3 mid grid beside the portrait when the pane is focused", () => {
+  it("puts a 3 by 2 mid grid beside the portrait when the pane is focused", () => {
     const laptop = rosterRowsMode(46, "focused");
-    assert.equal(laptop.cols, "4");
-    assert.equal(laptop.rows, "3");
-    assert.equal(laptop.page, "12");
-    assert.equal(rosterRowsMode(27, "focused").rows, "2");
-    assert.equal(rosterRowsMode(27, "focused").page, "8");
-    assert.equal(rosterRowsMode(27, "focused").cols, "4");
-    assert.equal(rosterRowsMode(70, "focused").rows, "3");
-    assert.equal(rosterRowsMode(70, "focused").page, "12");
+    assert.equal(laptop.cols, "3");
+    assert.equal(laptop.rows, "2");
+    assert.equal(laptop.page, "6");
+    assert.equal(rosterRowsMode(20, "focused").rows, "1");
+    assert.equal(rosterRowsMode(20, "focused").page, "3");
+    assert.equal(rosterRowsMode(70, "focused").rows, "2", "never more than two rows");
+    assert.equal(rosterRowsMode(70, "focused").page, "6");
     const pane = read(path.join(root, "scripts/avatar-pane.sh"));
     const body = pane.slice(pane.indexOf("render_body()"), pane.indexOf("rerender()"));
     assert.match(body, /avatar_pane_focused/);

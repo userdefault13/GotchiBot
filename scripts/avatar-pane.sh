@@ -6,6 +6,9 @@ SESSIONS="$ROOT/sessions"
 PIN="$SESSIONS/.pin"
 FOCUS="$SESSIONS/.focus.json"
 ROSTER_CACHE="$SESSIONS/.avatar-roster.json"
+# Focused avatar grid: 3 columns × 2 rows of tiles (hero boxes are wide).
+AV_GRID_COLS="${GOTCHIBOT_AVATAR_GRID_COLS:-3}"
+AV_GRID_ROWS="${GOTCHIBOT_AVATAR_GRID_ROWS:-2}"
 ASCII_IDLE="$ROOT/assets/gotchi-framed.ascii"
 ASCII_ACTIVE="$ROOT/assets/gotchi-inverted.ascii"
 ASCII_FALLBACK="$ROOT/assets/gotchi.ascii"
@@ -1997,10 +2000,10 @@ roster_budget() {
   esac
   if [ "$mode" = "focused" ]; then
     rows=$((pane_h / stride))
-    [ "$rows" -gt 3 ] && rows=3
+    [ "$rows" -gt "$AV_GRID_ROWS" ] && rows=$AV_GRID_ROWS
     [ "$rows" -lt 1 ] && rows=1
     ROSTER_ROWS=$rows
-    ROSTER_COLS_N=4
+    ROSTER_COLS_N=$AV_GRID_COLS
     ROSTER_PAGE=$((rows * ROSTER_COLS_N))
     ROSTER_GRID=$pane_h
     return 0
@@ -2020,7 +2023,7 @@ roster_geometry() {
   if [ "$mode" = "wide" ]; then
     local gap=2 gaps pad avail
     ROSTER_PAD=0
-    ROSTER_COLS=4
+    ROSTER_COLS=$AV_GRID_COLS
     gaps=$((gap * (ROSTER_COLS - 1)))
     ROSTER_CELL_W=12
     ROSTER_ROW_W=$((ROSTER_CELL_W * ROSTER_COLS + gaps))
@@ -2035,7 +2038,7 @@ roster_geometry() {
       [ "$ROSTER_CELL_W" -lt 12 ] && ROSTER_CELL_W=12
       # Hero boxes lay wearable ▶ worker side by side: they need wider cells.
       local wmax=22
-      [ "${HERO_VIEW:-0}" = 1 ] && wmax=30
+      [ "${HERO_VIEW:-0}" = 1 ] && wmax=38
       [ "$ROSTER_CELL_W" -gt "$wmax" ] && ROSTER_CELL_W=$wmax
       ROSTER_ROW_W=$((ROSTER_CELL_W * ROSTER_COLS + gaps))
       ROSTER_PAD=$pad
@@ -2514,6 +2517,7 @@ render_body() {
       [ "$i" -ge "$n_ids" ] && break
       c0=""; c1=""; c2=""; c3=""; k1=""; k2=""; k3=""; k4=""
       for slot in 0 1 2 3; do
+        [ "$slot" -ge "$ROSTER_COLS" ] && break
         vi=$((i + slot))
         [ "$vi" -ge "$n_ids" ] && continue
         sel_flag=0
@@ -2529,9 +2533,9 @@ render_body() {
         esac
       done
       [ -z "$c0" ] && c0="$(blank_block "$cell_w" 12)"
-      [ -z "$c1" ] && c1="$(blank_block "$cell_w" 12)"
-      [ -z "$c2" ] && c2="$(blank_block "$cell_w" 12)"
-      [ -z "$c3" ] && c3="$(blank_block "$cell_w" 12)"
+      [ -z "$c1" ] && [ "$ROSTER_COLS" -gt 1 ] && c1="$(blank_block "$cell_w" 12)"
+      [ -z "$c2" ] && [ "$ROSTER_COLS" -gt 2 ] && c2="$(blank_block "$cell_w" 12)"
+      [ -z "$c3" ] && [ "$ROSTER_COLS" -gt 3 ] && c3="$(blank_block "$cell_w" 12)"
       pair="$(join4 "$c0" "$c1" "$c2" "$c3" "$gap")"
       if [ -n "$GRID_BLOCK" ]; then
         GRID_BLOCK="${GRID_BLOCK}"$'
@@ -2603,7 +2607,7 @@ render_body() {
     printf '\033[1;1H'
     return
   fi
-  if [ "${ROSTER_COLS:-1}" != 4 ]; then
+  if [ "$side" != 1 ]; then
   # Bottom-align the column: the page's tiles sit just above the pager row.
   local page_h=0 drop
   for ((i = base; i < end; i++)); do page_h=$((page_h + ${FIT_H[i]:-0})); done
