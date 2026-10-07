@@ -78,6 +78,12 @@ function main() {
       return;
     }
 
+    // The site lives under /web/ — the bare domain lands there.
+    if ((req.url || "/").split("?")[0] === "/" && !existsSync(join(root, "index.html"))) {
+      send(res, 302, null, { Location: "/web/" });
+      return;
+    }
+
     let path = safeJoin(root, req.url || "/");
     if (!path) {
       send(res, 403, "forbidden\n", { "Content-Type": "text/plain; charset=utf-8" });
