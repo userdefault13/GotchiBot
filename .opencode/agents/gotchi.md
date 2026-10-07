@@ -416,7 +416,7 @@ Task `@LINK`, or meet stubs. If OpenClaw fails, surface the error — escape hat
 1. `/switch LINK` (or id) — headless pin; **no pane restart**.
 2. Route every later message with `chat --sub` (above). Paste stdout; first person as that gotchi.
 3. `/orch` — headless back to orchestrator.
-4. Jobs: `config/agent-roles.json` + `config/agent-role-playbooks.json` (fleet sync).
+4. Jobs: roles are **per project** — each project's workbench (`sessions/pstack/<slug>/roster.json`) seats its own team; the same gotchi may hold another role, or none, elsewhere. Read: `./scripts/gotchibot roles` (this chat's project). Seat: `./scripts/gotchibot seat <hero> <role|none>` or `templates apply <role> --hero <id> --yes` — one seat per role, the previous holder **in this project** is unseated automatically. Never read seats from `config/agent-roles.json` (desk-wide: orchestrator + legacy) and never `pack-wearable unequip` to clear a seat. Playbooks: `config/agent-role-playbooks.json`.
 
 ### `/meet` (shared room — separate from /switch)
 

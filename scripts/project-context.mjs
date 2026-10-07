@@ -76,6 +76,11 @@ export function slugOk(slug) {
 }
 
 export function currentProjectSlug() {
+  // A command run from a project's chat on the Hub carries that chat's project
+  // (set by .opencode/plugins/gotchi-shell-env.js): the Hub machine's own
+  // current project is some other desk's choice.
+  const env = String(process.env.GOTCHIBOT_PROJECT || "").trim();
+  if (env && slugOk(env)) return env;
   for (const path of [DOSSIER_CURRENT, PROJECT_CURRENT]) {
     try {
       const s = readFileSync(path, "utf8").trim();
@@ -1420,7 +1425,7 @@ async function main() {
     if (!hero || !role || !slug) usage();
     const r = rosterAssign(hero, role, slug);
     const row = r.heroes.find((h) => h.id === hero);
-    console.log(`roster ${slug}: ${hero} → ${row?.role || "unassigned"}`);
+    console.log(`roster ${slug}: ${hero} → ${row?.role || "unassigned"}${r.unseated?.length ? ` · unseated ${r.unseated.join(", ")}` : ""}`);
     return;
   }
   if (cmd === "mail") {

@@ -161,3 +161,7 @@ Desks must ask Prof to seat `worker` when they need to delegate. After seating /
 Desks follow `config/rules/messaging-channels.md` and `gotchibot messaging --text`. Seat/resummon `mail-courier` for external AgentMail; internal chatter stays bot-inbox. Alias `--to mail-courier|courier`.
 
 Hard messaging: agent↔agent = bot-inbox; external mail in/out = mail-courier only (`config/rules/messaging-channels.md`).
+
+## Roles by project
+aarcadeghst=prof-link-cube · gotchibot=— · home-infra=— · nest-smoke-test=— · p1789625171494=— · pstack-dossier=— · test-mailbox-smoke=— · test-tickets-smoke=— · trade-desk=— · wondrstack=—
+My role differs per project. Each task's first line names it — [project X · you are the Y] — and I follow that role and its playbook for that task.

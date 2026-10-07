@@ -78,7 +78,7 @@ cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot consult <role|hero> --
 ./scripts/gotchibot consult list                                     # my open threads
 ```
 
-- Roles resolve through `config/agent-roles.json`; the reply prints with the thread id to follow up on.
+- Roles are per project (its workbench): `consult <role>` asks that role's holder in this project. See who holds what with `./scripts/gotchibot roles`. The reply prints with the thread id to follow up on.
 - A consult is a question, not a handoff: the answer comes back to me and I keep the job. To give the job away, **passoff**.
 - When I am the one consulted, I answer in my role, lead with the answer, name the right desk if it is not mine, and do not start building.
 - A ticket addressed to my role is claimed, done, and submitted. The card moves only through `project-tickets` (`claim` / `submit`).
@@ -159,3 +159,7 @@ Inbox goes to role `kanban-manager` (alias `pkm`); if unseated, falls back to or
 - **Sealed project selected:** mini kanban `./scripts/project-kanban.mjs desk ensure owned-9934` then `desk show|add "…"|move <id> <column> --desk owned-9934` (kanban-manager owns the main board and `sync`); tickets `./scripts/project-tickets.mjs request|claim|submit --by owned-9934` (kanban-manager owns accept/rework/close/digest); mailbox `./scripts/project-mailbox.mjs desk ensure|inbox|sent|read owned-9934` — mail-courier sends AgentMail and files my inbox/sent; I never send directly.
 - **Bot inbox** (internal, not AgentMail) for FYI / report / ask / alert: `cd /Users/juliuswong/Dev/GotchiBot && ./scripts/gotchibot inbox send --to orch|userdefault --from owned-9934 --subject "…" --body "…" --kind fyi|report|ask|alert`; read with `inbox list --to userdefault --unread` / `inbox read <id>`. Passoff is for work packets, meet for live talk.
 - **Report back (hard):** a finished job as a sub → `inbox send --to orch --kind report`; if orch is unavailable, also `--to userdefault --kind alert`. "Email/ping/notify me" with no address → bot inbox to userdefault, never AgentMail (UserDefault has no personal email there).
+
+## Roles by project
+aarcadeghst=infra-docker · gotchibot=— · home-infra=infra-docker · nest-smoke-test=infra-docker · p1789625171494=infra-docker · pstack-dossier=infra-docker · test-mailbox-smoke=infra-docker · test-tickets-smoke=infra-docker · trade-desk=infra-docker · wondrstack=infra-docker
+My role differs per project. Each task's first line names it — [project X · you are the Y] — and I follow that role and its playbook for that task.

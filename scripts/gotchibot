@@ -43,6 +43,8 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot sandbox up|exec|status|promote|rm|ensure-image   Docker sandbox ops
   gotchibot vm up|exec|status|models|promote|rm|ensure-image   QEMU VM sandbox ops (2020 iMac only)
   gotchibot desk-vm check|enable|disable|ensure-image|up|exec|status|promote|rm   sandbox VM on a powerful desk (Lima)
+  gotchibot roles [project] [--json]   who holds which role in this project's workbench
+  gotchibot seat <hero> <role|none> [project]   seat a role here (unseats the previous holder here)
   gotchibot screen off|on|status|off-until-key   backlight off to save the panel + power (Linux desks)
   gotchibot desk-tools status|ensure|serve   runner for /local (Cursor, Codex, Claude on this desk)
   gotchibot desk-vm mode-promote [--yes]   bring Sandbox · VM work back to the project (patch, then apply)
@@ -863,6 +865,14 @@ case "$cmd" in
     ;;
   project)
     exec node "$ROOT/scripts/project-intake.mjs" "$@"
+    ;;
+  roles)
+    # This project's workbench: who holds which role here (roles are per project).
+    exec node "$ROOT/scripts/project-context.mjs" roster "$@"
+    ;;
+  seat)
+    # seat <hero> <role|none> [project] — one seat per role: unseats the previous holder here.
+    exec node "$ROOT/scripts/project-context.mjs" roster-assign "$@"
     ;;
   layout-check|layout-smoke) exec "$ROOT/scripts/layout-smoke.sh" "$@" ;;
   orch) cmd_orch "$@" ;;

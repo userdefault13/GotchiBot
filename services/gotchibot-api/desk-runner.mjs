@@ -6,6 +6,15 @@
  * that session back into the thread so all devices read one conversation.
  */
 import { stripReasoningContent, sanitizeRunnerError } from "./runner.mjs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Hub repo sessions/: the session → project map the shell plugin reads. Off under node --test. */
+const DEFAULT_SESSION_MAP =
+  process.execArgv.includes("--test") || process.env.NODE_TEST_CONTEXT != null
+    ? null
+    : resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "sessions", ".desk-session-projects.json");
 import {
   classifyModelError,
   hubModelChain,
@@ -478,6 +487,7 @@ export function createDeskRunner({
   graphWatchMs = 120_000,
   drainGraphOutbox = true,
   mirrorMs = 5_000,
+  sessionMapPath = DEFAULT_SESSION_MAP,
   turnTimeoutMs = 10 * 60_000,
   staleMs = 15 * 60_000,
   logger = console,
@@ -494,7 +504,33 @@ export function createDeskRunner({
     (logger.info || logger.log || console.log).call(logger, parts.join(" "));
   }
 
+  /**
+   * sessions/.desk-session-projects.json: every desk session → its project, for
+   * the shell plugin (a chat's commands use that chat's project). Rewritten only
+   * when it changes.
+   */
+  let sessionMapJson = "";
+  async function writeSessionProjects() {
+    if (!sessionMapPath) return;
+    try {
+      const map = {};
+      for (const s of await store.listDeskSessions({ recentMs: 365 * 24 * 60 * 60_000 })) {
+        for (const x of s.sessions || []) if (x?.sessionId) map[x.sessionId] = s.slug;
+        if (s.sessionId) map[s.sessionId] = s.slug;
+      }
+      const json = `${JSON.stringify(map, null, 2)}\n`;
+      if (json === sessionMapJson) return;
+      mkdirSync(dirname(sessionMapPath), { recursive: true });
+      writeFileSync(`${sessionMapPath}.tmp`, json);
+      renameSync(`${sessionMapPath}.tmp`, sessionMapPath);
+      sessionMapJson = json;
+    } catch (err) {
+      log("session-map-error", { error: sanitizeRunnerError(err?.message || err) });
+    }
+  }
+
   async function mirrorAll() {
+    await writeSessionProjects();
     for (const s of await store.listDeskSessions()) {
       if (!s.sessionId) continue;
       const ids = (s.sessions?.length ? s.sessions : [{ sessionId: s.sessionId }])
