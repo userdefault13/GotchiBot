@@ -50,7 +50,7 @@ TUI_COLOR=none; TUI_GLYPHS=unicode; ESC_CH=$'\\033'; VIS=0
 AV_MUTED=""; AV_RST=""; AV_ROLE_GAL=""; AV_ROSTER=""; AV_ST_ASSIGN=""; AV_ST_AVAIL=""; AV_ST_WORKING=""; AV_ST_ACTIVE=""; AV_ST_IDLE=""; AV_ST_WATCH=""
 ASCII_THUMB="$ROOT/assets/gotchi-thumb.ascii"
 gotchi_art() { return 1; }
-for f in vislen_set center_pad block_pad_line pad_cell_line repeat_char emit_line resolve_thumb_collateral thumb_art status_style hero_box cell_block; do
+for f in vislen_set center_pad block_pad_line pad_cell_line repeat_char emit_line resolve_thumb_collateral thumb_art status_style tile_lines hero_box cell_block; do
   eval "$(awk -v n="$f" '$0 ~ "^"n"\\\\(\\\\) \\\\{" {p=1} p {print} p && /^}/ {exit}' "$ROOT/scripts/avatar-pane.sh")"
 done
 cell_block "$@"
@@ -85,5 +85,17 @@ cell_block "$@"
     const text = box("owned-3033", "available", "", "22", "5", "", "", "ART", "", "", "mini", "0", "", "").join("\n");
     assert.doesNotMatch(text, /┌/);
     assert.match(text, /no role/);
+  });
+});
+
+describe("wearable height", () => {
+  it("--exact draws the wearable exactly as tall as asked, growing small art", () => {
+    const small = [[{ ch: "#", color: null }, { ch: "#", color: null }]];
+    const up = fitCells(small, 5, 16, { exact: true });
+    assert.equal(up.length, 5);
+    assert.equal(up[0].length, 10, "width scales with height");
+    const tall = Array.from({ length: 10 }, () => [...".#."].map((ch) => ({ ch, color: null })));
+    assert.equal(fitCells(tall, 5, 16, { exact: true }).length, 5);
+    assert.ok(fitCells(Array.from({ length: 2 }, () => Array(20).fill({ ch: "#", color: null })), 5, 12, { exact: true })[0].length <= 12, "still inside the box");
   });
 });

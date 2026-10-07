@@ -59,7 +59,7 @@ export function parseCells(w) {
  * Nearest-neighbour shrink of a cell grid to fit rows × width, each axis on its
  * own (a tall staff keeps its width). Never grows. Blank edge rows are dropped.
  */
-export function fitCells(grid, maxRows, maxWidth) {
+export function fitCells(grid, maxRows, maxWidth, { exact = false } = {}) {
   const blank = (r) => !r.some((c) => c.ch.trim());
   let g = grid;
   while (g.length && blank(g[0])) g = g.slice(1);
@@ -68,8 +68,14 @@ export function fitCells(grid, maxRows, maxWidth) {
   const rows = grid.length;
   const width = Math.max(0, ...grid.map((r) => r.length));
   if (!rows || !width) return grid;
-  const outR = maxRows > 0 && rows > maxRows ? maxRows : rows;
-  const outW = maxWidth > 0 && width > maxWidth ? maxWidth : width;
+  let outR = maxRows > 0 && rows > maxRows ? maxRows : rows;
+  let outW = maxWidth > 0 && width > maxWidth ? maxWidth : width;
+  if (exact && maxRows > 0) {
+    // Exactly maxRows tall (grow or shrink), width scaled by the same factor.
+    outR = maxRows;
+    outW = Math.max(1, Math.round((width * maxRows) / rows));
+    if (maxWidth > 0 && outW > maxWidth) outW = maxWidth;
+  }
   if (outR === rows && outW === width) return grid;
   const out = [];
   for (let r = 0; r < outR; r++) {
@@ -114,10 +120,10 @@ export function renderCells(grid, mode = "truecolor") {
   });
 }
 
-export function wearableArt(templateId, { rows = 5, width = 16, colorMode = "truecolor", wearables } = {}) {
+export function wearableArt(templateId, { rows = 5, width = 16, colorMode = "truecolor", exact = false, wearables } = {}) {
   const w = wearableFor(templateId, wearables);
   if (!w) return [];
-  return renderCells(fitCells(parseCells(w), rows, width), colorMode);
+  return renderCells(fitCells(parseCells(w), rows, width, { exact }), colorMode);
 }
 
 function argValue(argv, flag) {
@@ -132,6 +138,7 @@ function main() {
       rows: Number(argValue(rest, "--rows") || 5),
       width: Number(argValue(rest, "--width") || 16),
       colorMode: argValue(rest, "--color-mode") || "truecolor",
+      exact: rest.includes("--exact"),
     });
     if (lines.length) process.stdout.write(`${lines.join("\n")}\n`);
     return;
@@ -145,7 +152,7 @@ function main() {
     for (const [k, w] of Object.entries(loadWearables())) console.log(`${k}\t${w.name || ""}`);
     return;
   }
-  console.error("usage: hero-wearable.mjs art <template> [--rows N] [--width N] [--color-mode M] | name <template> | list");
+  console.error("usage: hero-wearable.mjs art <template> [--rows N] [--width N] [--exact] [--color-mode M] | name <template> | list");
   process.exit(2);
 }
 

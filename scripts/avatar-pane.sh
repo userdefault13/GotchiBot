@@ -1557,20 +1557,36 @@ hero_box() {
     done
   }
 
+  # The worker first: the wearable is drawn exactly as tall as the gotchi.
+  local worker_art="" wa
+  if [ "${id#hero:}" != "$id" ]; then
+    worker_art="$(printf '%b%s\n%s\n%s%b' "$AV_MUTED" "$(repeat_char "$hz" 5)" "$vt ? $vt" "$(repeat_char "$hz" 5)" "$AV_RST")"
+  else
+    wa="$(thumb_art "$collateral" "$id" "$haunt" "$face")"
+    worker_art="$(printf '%s\n' "$wa" | { head -n "$cell_h" || true; })"
+  fi
+  tile_lines "$worker_art"
+  [ "${TILE_LINES:-0}" -ge 3 ] && wrows=$TILE_LINES
+
   local wart=""
   if command -v node >/dev/null && [ -f "$ROOT/scripts/hero-wearable.mjs" ]; then
-    wart="$(node "$ROOT/scripts/hero-wearable.mjs" art "$role" --rows "$wrows" --width "$inner" --color-mode "${TUI_COLOR:-truecolor}" 2>/dev/null)" || wart=""
+    wart="$(node "$ROOT/scripts/hero-wearable.mjs" art "$role" --rows "$wrows" --width "$inner" --exact --color-mode "${TUI_COLOR:-truecolor}" 2>/dev/null)" || wart=""
   fi
   [ -z "$wart" ] && wart="$(printf '%b%s%b' "$AV_MUTED" "◇" "$AV_RST")"
-  _hb_art "$wart"
-  BODY+=("$(printf '%b%s%b' "$AV_MUTED" "$(center_pad "$arrow" "$inner")" "$AV_RST")")
-  if [ "${id#hero:}" != "$id" ]; then
-    _hb_art "$(printf '%b%s\n%s\n%s%b' "$AV_MUTED" "$(repeat_char "$hz" 5)" "$vt ? $vt" "$(repeat_char "$hz" 5)" "$AV_RST")"
+  # Always wrows tall (a missing or short wearable is centred), so every box
+  # with a worker is the same height and the column's page math holds.
+  tile_lines "$wart"
+  local wpad=$((wrows - TILE_LINES)) wtop
+  if [ "$wpad" -gt 0 ]; then
+    wtop=$((wpad / 2))
+    for ((i = 0; i < wtop; i++)); do BODY+=(" "); done
+    _hb_art "$wart"
+    for ((i = 0; i < wpad - wtop; i++)); do BODY+=(" "); done
   else
-    local wa
-    wa="$(thumb_art "$collateral" "$id" "$haunt" "$face")"
-    _hb_art "$(printf '%s\n' "$wa" | { head -n "$cell_h" || true; })"
+    _hb_art "$wart"
   fi
+  BODY+=("$(printf '%b%s%b' "$AV_MUTED" "$(center_pad "$arrow" "$inner")" "$AV_RST")")
+  _hb_art "$worker_art"
 
   status_style "$status"
   local wear_show="${wear:-${role//-/ }}" role_line who
@@ -2140,13 +2156,16 @@ tile_lines() {
 # Reads ID/ST/…/WEAR/HAT_ARR from render_body. Leaves FIT_PAGE.
 fit_collapsed_page() {
   local cw="$1" ch="$2" avail="$3" n="$4" i k ok sum start kind tile=""
-  local hp=0 hb=0 hl=0
+  local hp=0 hb=0 hu=0 hl=0
   local -a H=()
   [ "$avail" -lt 1 ] && avail=1
   for ((i = 0; i < n; i++)); do
     kind=p
     if [ -n "${LOAD_ARR[i]:-}" ]; then kind=l
-    elif [ -n "${WEAR_ARR[i]:-}" ] && [ -n "${ROLE_ARR[i]:-}" ] && [ "${GOTCHIBOT_HERO_BOX:-1}" = 1 ]; then kind=b
+    elif [ -n "${WEAR_ARR[i]:-}" ] && [ -n "${ROLE_ARR[i]:-}" ] && [ "${GOTCHIBOT_HERO_BOX:-1}" = 1 ]; then
+      kind=b
+      # A hero with no worker has a shorter (3-row) worker slot and wearable.
+      [ "${ID_ARR[i]#hero:}" != "${ID_ARR[i]}" ] && kind=u
     fi
     case "$kind" in
       p) if [ "$hp" = 0 ]; then
@@ -2161,6 +2180,12 @@ fit_collapsed_page() {
            tile_lines "$tile"; hb=$TILE_LINES
          fi
          H+=("$hb") ;;
+      u) if [ "$hu" = 0 ]; then
+           memo_call tile "fit|u|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|$cw|$ch|${WEAR_ARR[i]}" \
+             cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cw" "$ch" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "" mini 0 "${WEAR_ARR[i]}" ""
+           tile_lines "$tile"; hu=$TILE_LINES
+         fi
+         H+=("$hu") ;;
       l) if [ "$hl" = 0 ]; then
            tile_lines "$(loading_art 0)"; hl=$((TILE_LINES + 3))
          fi
