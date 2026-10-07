@@ -6,10 +6,10 @@ SESSIONS="$ROOT/sessions"
 PIN="$SESSIONS/.pin"
 FOCUS="$SESSIONS/.focus.json"
 ROSTER_CACHE="$SESSIONS/.avatar-roster.json"
-# Focused avatar grid: 2 columns × 3 rows. Cells are wide, so a hero box puts
-# its text beside the art and stays as short as a plain tile.
-AV_GRID_COLS="${GOTCHIBOT_AVATAR_GRID_COLS:-2}"
-AV_GRID_ROWS="${GOTCHIBOT_AVATAR_GRID_ROWS:-3}"
+# Focused avatar grid: sized to the pane (grid_dims) — at least 2 × 2, more
+# columns and rows on bigger screens. GOTCHIBOT_AVATAR_GRID_COLS / _ROWS pin it.
+AV_GRID_COLS="${GOTCHIBOT_AVATAR_GRID_COLS:-}"
+AV_GRID_ROWS="${GOTCHIBOT_AVATAR_GRID_ROWS:-}"
 ASCII_IDLE="$ROOT/assets/gotchi-framed.ascii"
 ASCII_ACTIVE="$ROOT/assets/gotchi-inverted.ascii"
 ASCII_FALLBACK="$ROOT/assets/gotchi.ascii"
@@ -2018,6 +2018,30 @@ render_now() {
 # collapsed: the whole pane is a single column of minis. No selected header.
 # focused: the portrait is the left column. The right column is 4 columns by
 # 3 rows. Each card is 12 lines: 9 art + status, name, and role.
+# Focused grid size from the pane: as many columns as fit a cell's minimum
+# width beside the portrait (a hero box with its text beside the art needs ~52,
+# a plain tile 16) and as many rows as fit the stride. Never under 2 × 2 unless
+# the pane is too short for two rows. Leaves GRID_C / GRID_R.
+grid_dims() {
+  local ph="${1:-0}" pw="${2:-0}" stride="${3:-12}" right minw
+  case "$pw" in ''|*[!0-9]*) pw=0 ;; esac
+  right=$((pw - 44))
+  [ "$right" -lt 54 ] && right=54
+  minw=16
+  [ "${HERO_VIEW:-0}" = 1 ] && minw=52
+  GRID_C=$(( (right + 2) / (minw + 2) ))
+  [ "$GRID_C" -lt 2 ] && GRID_C=2
+  [ "$GRID_C" -gt 6 ] && GRID_C=6
+  GRID_R=$((ph / stride))
+  if [ "$GRID_R" -lt 2 ]; then
+    GRID_R=1
+    [ "$ph" -ge $((stride * 2)) ] && GRID_R=2
+  fi
+  [ "$GRID_R" -gt 4 ] && GRID_R=4
+  case "$AV_GRID_COLS" in ''|*[!0-9]*) ;; *) GRID_C=$AV_GRID_COLS ;; esac
+  case "$AV_GRID_ROWS" in ''|*[!0-9]*) ;; *) GRID_R=$AV_GRID_ROWS ;; esac
+}
+
 roster_budget() {
   local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain stride=12 rows
   # Hero boxes (frame + wearable + arrow + worker + 3 lines) need more rows a tile.
@@ -2028,11 +2052,10 @@ roster_budget() {
     ''|*[!0-9]*) pane_h=0 ;;
   esac
   if [ "$mode" = "focused" ]; then
-    rows=$((pane_h / stride))
-    [ "$rows" -gt "$AV_GRID_ROWS" ] && rows=$AV_GRID_ROWS
-    [ "$rows" -lt 1 ] && rows=1
+    grid_dims "$pane_h" "$(pane_width)" "$stride"
+    rows=$GRID_R
     ROSTER_ROWS=$rows
-    ROSTER_COLS_N=$AV_GRID_COLS
+    ROSTER_COLS_N=$GRID_C
     ROSTER_PAGE=$((rows * ROSTER_COLS_N))
     ROSTER_GRID=$pane_h
     return 0
@@ -2052,7 +2075,8 @@ roster_geometry() {
   if [ "$mode" = "wide" ]; then
     local gap=2 gaps pad avail
     ROSTER_PAD=0
-    ROSTER_COLS=$AV_GRID_COLS
+    ROSTER_COLS="${ROSTER_COLS_N:-2}"
+    [ "$ROSTER_COLS" -lt 2 ] && ROSTER_COLS=2
     gaps=$((gap * (ROSTER_COLS - 1)))
     ROSTER_CELL_W=12
     ROSTER_ROW_W=$((ROSTER_CELL_W * ROSTER_COLS + gaps))
@@ -2943,6 +2967,9 @@ case "${1:-watch}" in
       collapsed|focused) ;;
       *) echo "usage: avatar-pane.sh roster-rows <pane-height> [collapsed|focused]" >&2; exit 2 ;;
     esac
+    # Optional 4th arg: pane width (the focused grid's columns depend on it).
+    case "${4:-}" in ''|*[!0-9]*) ;; *) PANE_W_CACHE="$4" ;; esac
+    [ "${5:-}" = hero ] && HERO_VIEW=1
     roster_budget "$h" "$mode"
     printf 'rows=%s\n' "$ROSTER_ROWS"
     printf 'page=%s\n' "$ROSTER_PAGE"

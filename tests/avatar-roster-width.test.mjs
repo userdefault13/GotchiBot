@@ -319,15 +319,18 @@ describe("avatar roster width", () => {
     assert.equal(rosterRows(40).page, "6");
   });
 
-  it("puts a 2 by 3 mid grid beside the portrait when the pane is focused", () => {
-    const laptop = rosterRowsMode(46, "focused");
-    assert.equal(laptop.cols, "2");
-    assert.equal(laptop.rows, "3");
-    assert.equal(laptop.page, "6");
-    assert.equal(rosterRowsMode(20, "focused").rows, "1");
-    assert.equal(rosterRowsMode(20, "focused").page, "2");
-    assert.equal(rosterRowsMode(70, "focused").rows, "3", "never more than three rows");
-    assert.equal(rosterRowsMode(70, "focused").page, "6");
+  it("sizes the focused grid to the pane: at least 2 by 2, more on bigger screens", () => {
+    const grid = (h, w, hero) =>
+      Object.fromEntries(
+        execFileSync("bash", ["scripts/avatar-pane.sh", "roster-rows", String(h), "focused", String(w), hero ? "hero" : ""], { cwd: root, encoding: "utf8" })
+          .trim().split("\n").map((l) => l.split("=")),
+      );
+    assert.deepEqual([grid(43, 165, true).cols, grid(43, 165, true).rows], ["2", "3"], "laptop desk: 2 × 3 hero boxes");
+    assert.deepEqual([grid(30, 120, true).cols, grid(30, 120, true).rows], ["2", "2"], "small pane: the 2 × 2 minimum");
+    assert.deepEqual([grid(60, 260, true).cols, grid(60, 260, true).rows], ["4", "4"], "big screen scales up");
+    assert.equal(grid(43, 165, true).page, "6");
+    assert.equal(grid(22, 100, true).rows, "1", "too short for two rows");
+    assert.ok(Number(grid(43, 165, false).cols) > 2, "plain tiles are narrower, so more fit across");
     const pane = read(path.join(root, "scripts/avatar-pane.sh"));
     const body = pane.slice(pane.indexOf("render_body()"), pane.indexOf("rerender()"));
     assert.match(body, /avatar_pane_focused/);
