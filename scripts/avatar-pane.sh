@@ -1216,14 +1216,14 @@ roster_ids() {
     let d=""; process.stdin.on("data",c=>d+=c); process.stdin.on("end",()=>{
       try {
         const j=JSON.parse(d);
-        const row = (id, status, svg, collateral, haunt, name, role, loading, wearable, hat) => {
+        const row = (id, status, svg, collateral, haunt, name, role, loading, wearable, hat, pinned) => {
           if (!id) return;
-          console.log([id, status||"", svg||"", collateral||"", haunt||"", name||"", role||"", loading?"1":"0", wearable||"", hat||""].join("\x1f"));
+          console.log([id, status||"", svg||"", collateral||"", haunt||"", name||"", role||"", loading?"1":"0", wearable||"", hat||"", pinned?"1":"0"].join("\x1f"));
         };
         if (process.env.GOTCHI_INCLUDE_PINNED === "1" && j.pinned) {
           // The desk orchestrator stays a plain tile here (the framed portrait is the
           // focused view); a box would make every fixed-size page one tile shorter.
-          row(j.pinned, j.pinnedStatus, j.pinnedSvg, "", "", j.pinnedName, j.role, 0, "", "");
+          row(j.pinned, j.pinnedStatus, j.pinnedSvg, "", "", j.pinnedName, j.role, 0, "", "", 1);
         }
         for (const o of (j.others||[])) {
           row(o.id, o.status, o.svg, o.collateral, o.hauntId, o.name, o.role, o.loading, o.wearable, o.hat);
@@ -2156,12 +2156,13 @@ tile_lines() {
 # Reads ID/ST/…/WEAR/HAT_ARR from render_body. Leaves FIT_PAGE.
 fit_collapsed_page() {
   local cw="$1" ch="$2" avail="$3" n="$4" i k ok sum start kind tile=""
-  local hp=0 hb=0 hu=0 hl=0
+  local hp=0 hb=0 hu=0 hl=0 ho=0
   local -a H=()
   [ "$avail" -lt 1 ] && avail=1
   for ((i = 0; i < n; i++)); do
     kind=p
-    if [ -n "${LOAD_ARR[i]:-}" ]; then kind=l
+    if [ "${PIN_ARR[i]:-0}" = 1 ]; then kind=o
+    elif [ -n "${LOAD_ARR[i]:-}" ]; then kind=l
     elif [ -n "${WEAR_ARR[i]:-}" ] && [ -n "${ROLE_ARR[i]:-}" ] && [ "${GOTCHIBOT_HERO_BOX:-1}" = 1 ]; then
       kind=b
       # A hero with no worker has a shorter (3-row) worker slot and wearable.
@@ -2186,6 +2187,12 @@ fit_collapsed_page() {
            tile_lines "$tile"; hu=$TILE_LINES
          fi
          H+=("$hu") ;;
+      o) if [ "$ho" = 0 ]; then
+           memo_call tile "fit|o|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|$cw|$ORCH_CELL_H" \
+             cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cw" "$ORCH_CELL_H" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "" mid 0 "" ""
+           tile_lines "$tile"; ho=$TILE_LINES
+         fi
+         H+=("$ho") ;;
       l) if [ "$hl" = 0 ]; then
            tile_lines "$(loading_art 0)"; hl=$((TILE_LINES + 3))
          fi
@@ -2387,10 +2394,11 @@ render_body() {
   local cell_w="$ROSTER_CELL_W"
   local cell_h=5
   [ "$face" = "mid" ] && cell_h=9
+  ORCH_CELL_H=9
 
   # LOAD_ARR holds the spinner frame for a loading tile, empty once it resolved.
-  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR ROLE_ARR LOAD_ARR WEAR_ARR HAT_ARR
-  while IFS=$'\x1f' read -r iid ist isvg icol ihaunt iname irole iload iwear ihat; do
+  local -a ID_ARR ST_ARR SVG_ARR COL_ARR HAUNT_ARR NAME_ARR ROLE_ARR LOAD_ARR WEAR_ARR HAT_ARR PIN_ARR
+  while IFS=$'\x1f' read -r iid ist isvg icol ihaunt iname irole iload iwear ihat ipin; do
     [ -z "$iid" ] && continue
     ID_ARR+=("$iid")
     ST_ARR+=("$ist")
@@ -2401,6 +2409,7 @@ render_body() {
     ROLE_ARR+=("$irole")
     WEAR_ARR+=("$iwear")
     HAT_ARR+=("$ihat")
+    PIN_ARR+=("${ipin:-0}")
     if [ "$iload" = 1 ] && [ "$SECONDS" -lt "$AV_LOADING_MAX" ]; then
       LOAD_ARR+=("$((SPIN_FRAME % ${#AV_SPIN[@]}))")
     else
@@ -2560,9 +2569,12 @@ render_body() {
     # Collapsed column shows the selector too, so the any-pane keys have a target.
     sel_flag=0
     [ "${SEL_ORCH:-1}" != 1 ] && [ "$i" -eq "${SEL:-0}" ] && sel_flag=1
-    k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$cell_h|$sel_flag|${WEAR_ARR[i]}|${HAT_ARR[i]}"
+    # The desk orchestrator draws with the medium face; everyone else is a mini.
+    local tface=mini th="$cell_h"
+    [ "${PIN_ARR[i]:-0}" = 1 ] && tface=mid && th="$ORCH_CELL_H"
+    k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$th|$sel_flag|${WEAR_ARR[i]}|${HAT_ARR[i]}|$tface"
     memo_call left "$k1" \
-      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$cell_h" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}" mini "$sel_flag" "${WEAR_ARR[i]}" "${HAT_ARR[i]}"
+      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$th" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}" "$tface" "$sel_flag" "${WEAR_ARR[i]}" "${HAT_ARR[i]}"
     while IFS= read -r line || [ -n "$line" ]; do
       [ -z "$line" ] && continue
       put_line "$row" "$line"

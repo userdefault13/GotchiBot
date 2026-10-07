@@ -99,3 +99,13 @@ describe("wearable height", () => {
     assert.ok(fitCells(Array.from({ length: 2 }, () => Array(20).fill({ ch: "#", color: null })), 5, 12, { exact: true })[0].length <= 12, "still inside the box");
   });
 });
+
+describe("tall wearables", () => {
+  it("shrinking to the box height keeps the width, so a staff keeps its shaft", () => {
+    const staff = Array.from({ length: 19 }, (_, r) => [..."  ▐█▌  "].map((ch) => ({ ch: r === 0 ? "▄" : ch, color: null })));
+    const fit = fitCells(staff, 5, 21, { exact: true });
+    assert.equal(fit.length, 5);
+    assert.equal(fit[0].length, 7);
+    assert.ok(fit.slice(1).every((row) => row.some((c) => c.ch === "█")), "the shaft survives");
+  });
+});

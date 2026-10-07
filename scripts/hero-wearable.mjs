@@ -71,9 +71,10 @@ export function fitCells(grid, maxRows, maxWidth, { exact = false } = {}) {
   let outR = maxRows > 0 && rows > maxRows ? maxRows : rows;
   let outW = maxWidth > 0 && width > maxWidth ? maxWidth : width;
   if (exact && maxRows > 0) {
-    // Exactly maxRows tall (grow or shrink), width scaled by the same factor.
+    // Exactly maxRows tall. Growing scales the width with it; shrinking keeps
+    // the width (a tall staff squashed to 2 columns loses its shaft).
     outR = maxRows;
-    outW = Math.max(1, Math.round((width * maxRows) / rows));
+    outW = maxRows > rows ? Math.max(1, Math.round((width * maxRows) / rows)) : width;
     if (maxWidth > 0 && outW > maxWidth) outW = maxWidth;
   }
   if (outR === rows && outW === width) return grid;
