@@ -239,7 +239,8 @@ export function projectMenuOptions(slugs, current = null) {
       key: `proj:${slug}`,
       label: slug === cur ? `${slug}  (current)` : slug,
     })),
-    ...(cur ? [{ key: "repo", label: "Connect to GitHub repo…" }] : []),
+    // Linking a repo never switches project — say so, it reads like a project list.
+    ...(cur ? [{ key: "repo", label: `Connect a GitHub repo to ${cur} (stays on ${cur})…` }] : []),
     { key: "new", label: "Create new project…" },
     { key: "back", label: "Back to cockpit" },
   ];
@@ -459,6 +460,28 @@ export function repoPath(slug = currentProjectSlug()) {
 }
 
 /** Connected code repo for a project, or null when none is connected. */
+/** "owner/repo" from a GitHub remote URL (https or ssh), lowercased; null if not GitHub. */
+export function githubFullName(remote) {
+  const m = /github\.com[:/]+([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(String(remote || "").trim());
+  return m ? `${m[1]}/${m[2]}`.toLowerCase() : null;
+}
+
+/** Other projects whose repo is this GitHub repo (by remote owner/repo). */
+export function projectsUsingRepo(fullName, { exclude = null } = {}) {
+  const want = String(fullName || "").toLowerCase();
+  if (!want) return [];
+  let slugs = [];
+  try {
+    slugs = readdirSync(PSTACK_ROOT, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && slugOk(d.name) && d.name !== exclude)
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    return [];
+  }
+  return slugs.filter((s) => githubFullName(loadRepo(s)?.remote) === want);
+}
+
 export function loadRepo(slug = currentProjectSlug()) {
   const rp = repoPath(slug);
   if (!rp || !existsSync(rp)) return null;

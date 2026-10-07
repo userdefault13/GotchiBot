@@ -244,9 +244,11 @@ async function pickGithubRepo(slug, { optional = false } = {}) {
     const slice = repos.slice(page * REPO_PAGE_SIZE, (page + 1) * REPO_PAGE_SIZE);
     const width = Math.max(...slice.map((r) => r.fullName.length));
     clear();
-    title("Connect to GitHub repo");
+    title(`Connect a GitHub repo to ${slug}`);
     console.log(`  project  ${slug}`);
-    console.log(`  repo     ${formatRepo(cur)}\n`);
+    console.log(`  repo     ${formatRepo(cur)}`);
+    console.log("  This links a repo to this project — it does not switch projects.");
+    console.log("  To switch, go Back and pick the project from the list.\n");
     console.log(`  ${repos.length} repos · latest changes first · page ${page + 1}/${totalPages}`);
     const options = slice.map((r) => ({
       key: "repo",
@@ -279,9 +281,31 @@ async function pickGithubRepo(slug, { optional = false } = {}) {
       console.log(`  ✓ repo disconnected from ${slug}`);
       await pause();
     } else {
+      // Picking a repo another project already uses usually means "switch to that
+      // project", not "give this project the same repo" — ask.
+      const { projectsUsingRepo, setCurrentProject: switchTo } = await import("./project-context.mjs");
+      const owners = projectsUsingRepo(pick.repo.fullName, { exclude: slug });
+      if (owners.length) {
+        const what = await choose(
+          `${pick.repo.fullName} is already the repo of ${owners.join(", ")}. Switch project instead?`,
+          [
+            ...owners.map((o) => ({ key: `switch:${o}`, label: `Switch to project ${o}` })),
+            { key: "link", hotkey: "l", label: `Link it to ${slug} anyway (stay on ${slug})` },
+            { key: "back", hotkey: "b", label: "Back" },
+          ],
+        );
+        if (!what || what.key === "back") continue;
+        if (what.key.startsWith("switch:")) {
+          const to = what.key.slice("switch:".length);
+          if (switchTo(to) && currentProjectSlug() === to) console.log(`\n  ✓ project → ${to}`);
+          else console.log(`\n  ✗ could not select ${to}`);
+          await pause();
+          return;
+        }
+      }
       try {
         const r = connectRepo(pick.repo.fullName, slug, { cwd: ROOT });
-        console.log(`\n  ✓ repo → ${formatRepo(r)}`);
+        console.log(`\n  ✓ ${slug}'s repo → ${formatRepo(r)}  (still on project ${slug})`);
         if (!r.path) console.log("  · no matching checkout under ~/Dev — clone it there and reconnect to link the folder");
         await pause();
         return;

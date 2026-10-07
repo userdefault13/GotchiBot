@@ -20,6 +20,9 @@ import {
   loadRoster,
   roleBrief,
   heroRolesByProject,
+  githubFullName,
+  projectsUsingRepo,
+  projectMenuOptions,
   WORKBENCH_VERSION,
 } from "../scripts/project-context.mjs";
 import { rolesByProjectBlock } from "../scripts/openclaw-fleet.mjs";
@@ -113,6 +116,21 @@ describe("workbench", () => {
     const b = slug("gb");
     ensureProjectDirs(b);
     assert.equal(roleOf("owned-8532", { root: repo, project: b }), null, "unassigned in that project");
+  });
+
+  it("connecting a repo says it stays on the project, and knows which projects use a repo", () => {
+    const opts = projectMenuOptions(["a", "b"], "a");
+    assert.equal(opts.find((o) => o.key === "repo").label, "Connect a GitHub repo to a (stays on a)…");
+    assert.equal(githubFullName("https://github.com/Owner/Repo.git"), "owner/repo");
+    assert.equal(githubFullName("git@github.com:owner/repo"), "owner/repo");
+    assert.equal(githubFullName("/Users/x/Dev/repo"), null);
+    const a = slug("ra");
+    const b = slug("rb");
+    for (const s of [a, b]) {
+      mkdirSync(room(s), { recursive: true });
+      writeFileSync(path.join(room(s), "repo.json"), JSON.stringify({ project: s, remote: "https://github.com/userdefault13/ZZTestRepo.git" }));
+    }
+    assert.deepEqual(projectsUsingRepo("userdefault13/zztestrepo", { exclude: a }), [b]);
   });
 
   it("no project reads the global table, as before", () => {
