@@ -90,6 +90,13 @@ cell_block "$@"
     assert.match(lines.join("\n"), /Staff of Creation\s*╎\n╎\s*architect\s*╎\n╎\s*idle/);
   });
 
+  it("a wide grid cell puts the text beside the art, so the box is as short as the art", () => {
+    const lines = box("owned-954", "idle", "", "58", "9", "", "", "UNI", "architect", "", "mid", "0", "Staff of Creation", "");
+    assert.deepEqual([...new Set(lines.map((l) => [...l].length))], [58]);
+    assert.ok(lines.length <= 11, `${lines.length} rows`);
+    assert.ok(lines.some((l) => /▶.*Staff of Creation|Staff of Creation/.test(l) && /█|▄|▀/.test(l)), "text shares rows with the art");
+  });
+
   it("a gotchi with no hero keeps the plain tile", () => {
     const text = box("owned-3033", "available", "", "22", "5", "", "", "ART", "", "", "mini", "0", "", "").join("\n");
     assert.doesNotMatch(text, /┌/);

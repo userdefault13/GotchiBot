@@ -6,9 +6,10 @@ SESSIONS="$ROOT/sessions"
 PIN="$SESSIONS/.pin"
 FOCUS="$SESSIONS/.focus.json"
 ROSTER_CACHE="$SESSIONS/.avatar-roster.json"
-# Focused avatar grid: 3 columns × 2 rows of tiles (hero boxes are wide).
-AV_GRID_COLS="${GOTCHIBOT_AVATAR_GRID_COLS:-3}"
-AV_GRID_ROWS="${GOTCHIBOT_AVATAR_GRID_ROWS:-2}"
+# Focused avatar grid: 2 columns × 3 rows. Cells are wide, so a hero box puts
+# its text beside the art and stays as short as a plain tile.
+AV_GRID_COLS="${GOTCHIBOT_AVATAR_GRID_COLS:-2}"
+AV_GRID_ROWS="${GOTCHIBOT_AVATAR_GRID_ROWS:-3}"
 ASCII_IDLE="$ROOT/assets/gotchi-framed.ascii"
 ASCII_ACTIVE="$ROOT/assets/gotchi-inverted.ascii"
 ASCII_FALLBACK="$ROOT/assets/gotchi.ascii"
@@ -1573,7 +1574,8 @@ hero_box() {
 
   # Focused grid (mid face): wearable ▶ worker side by side. Column (mini):
   # wearable, ▼, worker stacked.
-  local side_by_side=0 wwidth="$inner" gw=0
+  local side_by_side=0 wwidth="$inner" gw=0 SBS_W=0
+  local -a SBS_RAW=()
   if [ "$face" = "mid" ]; then
     side_by_side=1
     local -a WK=()
@@ -1618,7 +1620,9 @@ hero_box() {
       sep="   "
       [ "$j" = "$mid_row" ] && sep="$(printf ' %b%s%b ' "$AV_MUTED" "$harrow" "$AV_RST")"
       BODY+=("$(center_pad "${lcell}${sep}${rcell}" "$inner")")
+      SBS_RAW+=("${lcell}${sep}${rcell}")
     done
+    SBS_W=$((ww + 3 + gw))
   else
   # Always wrows tall (a missing or short wearable is centred), so every box
   # with a worker is the same height and the column's page math holds.
@@ -1652,6 +1656,31 @@ hero_box() {
     who="${name:-$id}"
     [ -n "$hat" ] && who="${who} · ${hat}"
     BODY+=("$(printf '%b%s%b' "$AV_ROSTER" "$(center_pad "${who:0:$inner}" "$inner")" "$AV_RST")")
+  fi
+
+  # A wide grid cell: the four text lines go beside the art, not under it, so
+  # the box is only as tall as the gotchi (3 rows of boxes fit the pane).
+  if [ "$side_by_side" = 1 ] && [ "${#SBS_RAW[@]}" -gt 0 ]; then
+    local who_color="$AV_ROSTER" tw=0 t txt ttop nrow line2
+    [ "${id#hero:}" != "$id" ] && who_color="$AV_ST_ASSIGN"
+    local -a TXT=("$wear_show" "$role_line" "$STATUS_LABEL" "$who")
+    local -a TCOL=("$AV_ROLE_GAL" "$AV_ROSTER" "$STATUS_COLOR" "$who_color")
+    for t in "${TXT[@]}"; do [ "${#t}" -gt "$tw" ] && tw=${#t}; done
+    if [ $((SBS_W + 3 + tw)) -le "$inner" ]; then
+      BODY=()
+      nrow=${#SBS_RAW[@]}
+      [ "$nrow" -lt 4 ] && nrow=4
+      ttop=$(( (nrow - 4) / 2 ))
+      for ((j = 0; j < nrow; j++)); do
+        txt=""
+        t=$((j - ttop))
+        if [ "$t" -ge 0 ] && [ "$t" -lt 4 ]; then
+          txt="$(printf '%b%s%b' "${TCOL[t]}" "${TXT[t]}" "$AV_RST")"
+        fi
+        line2="$(pad_cell_line "${SBS_RAW[j]:-}" "$SBS_W")   $(pad_cell_line "$txt" "$tw")"
+        BODY+=("$(center_pad "$line2" "$inner")")
+      done
+    fi
   fi
 
   local edge
@@ -1993,7 +2022,7 @@ roster_budget() {
   local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain stride=12 rows
   # Hero boxes (frame + wearable + arrow + worker + 3 lines) need more rows a tile.
   if [ "${HERO_VIEW:-0}" = 1 ]; then
-    stride=16
+    stride=12
   fi
   case "$pane_h" in
     ''|*[!0-9]*) pane_h=0 ;;
@@ -2038,7 +2067,7 @@ roster_geometry() {
       [ "$ROSTER_CELL_W" -lt 12 ] && ROSTER_CELL_W=12
       # Hero boxes lay wearable ▶ worker side by side: they need wider cells.
       local wmax=22
-      [ "${HERO_VIEW:-0}" = 1 ] && wmax=38
+      [ "${HERO_VIEW:-0}" = 1 ] && wmax=60
       [ "$ROSTER_CELL_W" -gt "$wmax" ] && ROSTER_CELL_W=$wmax
       ROSTER_ROW_W=$((ROSTER_CELL_W * ROSTER_COLS + gaps))
       ROSTER_PAD=$pad
