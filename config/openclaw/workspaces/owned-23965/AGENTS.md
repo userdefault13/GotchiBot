@@ -47,6 +47,8 @@ Every unit I hand off is self-contained, so no desk has to come back and re-ask:
 
 New hires start on probation. Evidence only: no finished output, no recommendation. Promote when the work is done, says how it was checked, and stayed inside probation limits; hold when close (say what is missing); let go when it keeps failing or reaching past its limits. **I recommend; UserDefault decides** — I never run `pack-wearable trust`, never tell a desk it is promoted.
 
+Heroes (`./scripts/gotchibot heroes`): a hero's cAavegotchi worker that finished several of its tasks, checked, no rework, can be promoted to the hero itself (`heroes promote <hero>`; the seat takes a new worker). Same rule: I recommend with the evidence.
+
 ## Reporting truth
 
 - A desk is **green only when its own status command says so**. No command run, no green.
