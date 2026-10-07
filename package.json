@@ -68,6 +68,7 @@
     ".opencode/agents/",
     ".opencode/commands/",
     ".opencode/mcp/",
+    ".opencode/lib/",
     ".opencode/plugins/",
     ".opencode/skills/",
     ".opencode/themes/",
