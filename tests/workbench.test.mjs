@@ -24,6 +24,8 @@ import {
   projectsUsingRepo,
   projectMenuOptions,
   slugForRepo,
+  connectRepo,
+  loadRepo,
   WORKBENCH_VERSION,
 } from "../scripts/project-context.mjs";
 import { rolesByProjectBlock } from "../scripts/openclaw-fleet.mjs";
@@ -137,6 +139,22 @@ describe("workbench", () => {
       writeFileSync(path.join(room(s), "repo.json"), JSON.stringify({ project: s, remote: "https://github.com/userdefault13/ZZTestRepo.git" }));
     }
     assert.deepEqual(projectsUsingRepo("userdefault13/zztestrepo", { exclude: a }), [b]);
+  });
+
+  it("one GitHub repo belongs to one project: linking it elsewhere is refused unless moved", () => {
+    const a = slug("ua");
+    const b = slug("ub");
+    ensureProjectDirs(a);
+    ensureProjectDirs(b);
+    const repo = `userdefault13/ZZOneRepo${randomBytes(2).toString("hex")}`;
+    connectRepo(repo, a);
+    assert.throws(() => connectRepo(repo, b), (e) => e.code === "REPO_TAKEN" && e.owners.includes(a));
+    assert.equal(loadRepo(b), null, "refused link wrote nothing");
+    connectRepo(repo, b, { move: true });
+    assert.equal(loadRepo(a), null, "moved: the old project lost it");
+    assert.deepEqual(projectsUsingRepo(repo), [b]);
+    connectRepo(repo, b);
+    assert.deepEqual(projectsUsingRepo(repo), [b], "relinking the same project is fine");
   });
 
   it("no project reads the global table, as before", () => {

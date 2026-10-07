@@ -593,12 +593,30 @@ export function resolveRepoTarget(input, { cwd = process.cwd() } = {}) {
   return { name, path: null, remote, branch: null };
 }
 
+/** A GitHub repo already linked to another project (one repo, one project). */
+export class RepoTakenError extends Error {
+  constructor(fullName, owners) {
+    super(`${fullName} is already the repo of ${owners.join(", ")} — open that project, or move the link`);
+    this.code = "REPO_TAKEN";
+    this.owners = owners;
+  }
+}
+
+/**
+ * Link a repo to a project. One GitHub repo belongs to one project: a repo
+ * another project has throws RepoTakenError, unless opts.move unlinks it there.
+ */
 export function connectRepo(input, slug = currentProjectSlug(), opts = {}) {
   if (!slug) throw new Error("no project selected");
+  const target = resolveRepoTarget(input, opts);
+  const fullName = githubFullName(target.remote);
+  const owners = fullName ? projectsUsingRepo(fullName, { exclude: slug }) : [];
+  if (owners.length && !opts.move) throw new RepoTakenError(fullName, owners);
+  for (const o of owners) disconnectRepo(o);
   ensureProjectDirs(slug);
   const next = {
     project: slug,
-    ...resolveRepoTarget(input, opts),
+    ...target,
     connectedAt: new Date().toISOString(),
   };
   writeFileSync(repoPath(slug), `${JSON.stringify(next, null, 2)}\n`, "utf8");
@@ -1429,7 +1447,8 @@ async function main() {
         console.error("no project selected");
         process.exit(1);
       }
-      const r = connectRepo(target, slug);
+      // One repo, one project: --move takes it from the project that has it.
+      const r = connectRepo(target, slug, { move: args.includes("--move") });
       if (json) console.log(JSON.stringify(r, null, 2));
       else console.log(`repo → ${slug}  ${formatRepo(r)}${r.remote ? `  (${r.remote})` : ""}`);
       return;
