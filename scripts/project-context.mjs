@@ -984,8 +984,10 @@ export function loadRoster(slug = currentProjectSlug()) {
   }
   try {
     const j = JSON.parse(readFileSync(rp, "utf8"));
-    const heroes = mergeRosterHeroes(Array.isArray(j.heroes) ? j.heroes : [], []);
-    return { project: j.project || slug, ...(j.workbench ? { workbench: j.workbench } : {}), heroes, updatedAt: j.updatedAt || null, note: j.note };
+    const rows = mergeRosterHeroes(Array.isArray(j.heroes) ? j.heroes : [], []);
+    const bench = benchOf({ heroes: rows, bench: j.bench });
+    const heroes = rowsFromBench(rows, bench);
+    return { project: j.project || slug, ...(j.workbench ? { workbench: j.workbench } : {}), heroes, bench, updatedAt: j.updatedAt || null, note: j.note };
   } catch {
     return { project: slug, heroes: [], updatedAt: null };
   }
@@ -994,10 +996,15 @@ export function loadRoster(slug = currentProjectSlug()) {
 export function saveRoster(roster, slug = currentProjectSlug()) {
   ensureProjectDirs(slug);
   const rp = rosterPath(slug);
+  const rows = mergeRosterHeroes(roster.heroes || [], []);
+  // An explicit bench wins; a roster saved without one (old callers that set
+  // row roles) has its bench worked out from those roles.
+  const bench = benchOf({ heroes: rows, bench: roster.bench });
   const body = {
     project: slug,
     ...(roster.workbench ? { workbench: roster.workbench } : {}),
-    heroes: mergeRosterHeroes(roster.heroes || [], []),
+    heroes: rowsFromBench(rows, bench),
+    bench,
     updatedAt: new Date().toISOString(),
     note: roster.note || ROSTER_NOTE,
   };
@@ -1054,6 +1061,7 @@ export function seedProjectRoster(slug = currentProjectSlug()) {
     project: slug,
     ...(current.workbench ? { workbench: current.workbench } : {}),
     heroes,
+    ...(current.bench ? { bench: current.bench } : {}),
     updatedAt: new Date().toISOString(),
     note: current.note || ROSTER_NOTE,
   };
@@ -1107,23 +1115,143 @@ export function rosterAssign(heroId, role, slug = currentProjectSlug()) {
   if (!heroId) throw new Error("hero id required");
   if (!slug) throw new Error("no project selected");
   const next = !role || role === "none" || role === "unassigned" ? null : String(role).trim();
-  if (next && !knownRole(next)) throw new Error(`unknown role: ${next}`);
+  // "Gotchi X takes role R" is "X becomes the worker of hero R"; none frees X.
+  if (!next) return { ...unbindWorker(String(heroId), slug), unseated: [] };
+  return bindWorker(next, String(heroId), slug);
+}
+
+// ── bench: template heroes, each worked by a cAavegotchi ──
+//
+// roster.json `bench` is [{ hero: <template id>, worker: <gotchi id>|null }].
+// The hero is the job (its playbook, its memory); the gotchi is the worker that
+// runs it, and is swappable. A gotchi works at most one hero per workbench; a
+// gotchi working nothing is in the pool. `heroes[].role` (gotchi rows) is worked
+// out from the bench so readers of the old shape keep working. The orchestrator
+// is desk-wide (the pinned gotchi) and never on a project bench.
+
+/** Normalize a bench list: known shape, one entry per worker, orchestrator dropped. */
+export function normalizeBench(list) {
+  const out = [];
+  const workers = new Set();
+  for (const e of Array.isArray(list) ? list : []) {
+    const hero = String(e?.hero || "").trim();
+    if (!hero || hero === "orchestrator" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(hero)) continue;
+    let worker = e?.worker == null ? null : String(e.worker).trim() || null;
+    if (worker && (!HERO_ID_RE.test(worker) || workers.has(worker))) worker = null;
+    if (worker) workers.add(worker);
+    if (!worker && out.some((x) => x.hero === hero && !x.worker)) continue;
+    out.push({ hero, worker });
+  }
+  return out;
+}
+
+/** A roster's bench: stored, or (rooms from before heroes) one per seated gotchi. */
+export function benchOf(roster) {
+  if (Array.isArray(roster?.bench)) return normalizeBench(roster.bench);
+  const rows = mergeRosterHeroes(roster?.heroes || [], []);
+  return normalizeBench(rows.filter((h) => h.role && HERO_ID_RE.test(h.id)).map((h) => ({ hero: h.role, worker: h.id })));
+}
+
+/** Gotchi rows with `role` = the hero each one works (null in the pool). */
+function rowsFromBench(rows, bench) {
+  const working = new Map(bench.filter((e) => e.worker).map((e) => [e.worker, e.hero]));
+  const out = rows.map((h) => (HERO_ID_RE.test(h.id) ? { ...h, role: working.get(h.id) || null } : h));
+  for (const [worker, hero] of working) if (!out.some((h) => h.id === worker)) out.push({ id: worker, role: hero });
+  return out;
+}
+
+function saveBench(r, bench, slug) {
+  return saveRoster({ ...r, bench }, slug);
+}
+
+/** This workbench's heroes: [{ hero, worker|null }], the desk-wide orchestrator first. */
+export function benchHeroes(slug = currentProjectSlug(), { roles = globalRoles() } = {}) {
+  const orchWorker = Object.keys(roles).find((id) => id !== "orchestrator" && roles[id] === "orchestrator") || null;
+  const out = [{ hero: "orchestrator", worker: orchWorker, deskWide: true }];
+  if (!slug) return out;
+  for (const e of loadRoster(slug).bench) out.push({ ...e });
+  return out;
+}
+
+/** Gotchis on this workbench working no hero (the orchestrator's gotchi works the desk). */
+export function benchPool(slug = currentProjectSlug(), { roles = globalRoles() } = {}) {
+  const r = loadRoster(slug);
+  const busy = new Set(r.bench.map((e) => e.worker).filter(Boolean));
+  for (const [id, role] of Object.entries(roles)) if (role === "orchestrator") busy.add(id);
+  return r.heroes.filter((h) => HERO_ID_RE.test(h.id) && !busy.has(h.id)).map((h) => h.id);
+}
+
+function checkHeroId(hero) {
+  const id = String(hero || "").trim();
+  if (!id) throw new Error("hero (template id) required");
+  if (id === "orchestrator") throw new Error("the orchestrator is desk-wide — change it with the orch pin, not a workbench");
+  if (!knownRole(id)) throw new Error(`unknown hero template: ${id}`);
+  return id;
+}
+
+/** Put a template hero on this workbench, with no worker yet. */
+export function addHero(hero, slug = currentProjectSlug()) {
+  if (!slug) throw new Error("no project selected");
+  const id = checkHeroId(hero);
   ensureProjectDirs(slug);
   const r = loadRoster(slug);
-  const unseated = [];
-  if (next) {
-    const others = r.heroes.filter((h) => h.role === next && h.id !== String(heroId));
-    const keep = Math.max(0, roleSeats(next) - 1);
-    for (const h of others.slice(keep)) {
-      h.role = null;
-      unseated.push(h.id);
-    }
+  const bench = [...r.bench];
+  if (!bench.some((e) => e.hero === id)) bench.push({ hero: id, worker: null });
+  return saveBench(r, bench, slug);
+}
+
+/**
+ * Make `gotchi` the worker of `hero` here (adds the hero when missing). The
+ * gotchi leaves any other hero it worked here (`left`); a one-seat hero's
+ * previous worker goes back to the pool (`unseated`).
+ */
+export function bindWorker(hero, gotchi, slug = currentProjectSlug()) {
+  if (!slug) throw new Error("no project selected");
+  const id = checkHeroId(hero);
+  const gid = String(gotchi || "").trim();
+  if (!HERO_ID_RE.test(gid)) throw new Error(`not a cAavegotchi id: ${gotchi}`);
+  ensureProjectDirs(slug);
+  const r = loadRoster(slug);
+  let bench = r.bench.map((e) => ({ ...e }));
+  let left = null;
+  const prev = bench.find((e) => e.worker === gid);
+  if (prev && prev.hero === id) return { ...saveBench(r, bench, slug), unseated: [], left: null };
+  if (prev) {
+    left = prev.hero;
+    prev.worker = null;
   }
-  const row = r.heroes.find((h) => h.id === String(heroId));
-  if (!row) r.heroes.push({ id: String(heroId), role: next });
-  else row.role = next;
-  const saved = saveRoster(r, slug);
-  return { ...saved, unseated };
+  const mine = bench.filter((e) => e.hero === id);
+  const unseated = [];
+  const free = mine.find((e) => !e.worker);
+  if (free) free.worker = gid;
+  else if (mine.length < roleSeats(id)) bench.push({ hero: id, worker: gid });
+  else {
+    // Full: the longest-held seat changes hands.
+    unseated.push(mine[0].worker);
+    mine[0].worker = gid;
+  }
+  bench = normalizeBench(bench);
+  const saved = saveBench(r, bench, slug);
+  return { ...saved, unseated, left };
+}
+
+/** Free a hero's worker (by hero id) or a gotchi (by gotchi id). The hero stays, unbound. */
+export function unbindWorker(heroOrGotchi, slug = currentProjectSlug()) {
+  if (!slug) throw new Error("no project selected");
+  const key = String(heroOrGotchi || "").trim();
+  if (!key) throw new Error("hero or gotchi id required");
+  ensureProjectDirs(slug);
+  const r = loadRoster(slug);
+  const byGotchi = HERO_ID_RE.test(key);
+  const bench = r.bench.map((e) => ((byGotchi ? e.worker === key : e.hero === key) ? { ...e, worker: null } : e));
+  return saveBench(r, normalizeBench(bench), slug);
+}
+
+/** Take a hero off this workbench; its worker goes back to the pool. */
+export function removeHero(hero, slug = currentProjectSlug()) {
+  if (!slug) throw new Error("no project selected");
+  const r = loadRoster(slug);
+  return saveBench(r, r.bench.filter((e) => e.hero !== String(hero)), slug);
 }
 
 // ── workbench: each project's own copy of the main roster, with its own roles ──
@@ -1167,7 +1295,7 @@ export function migrateWorkbench(slug = currentProjectSlug(), { roles = globalRo
     const g = roles[h.id];
     return g && g !== "orchestrator" ? { ...h, role: g } : h;
   });
-  saveRoster({ ...r, workbench: WORKBENCH_VERSION, heroes }, slug);
+  saveRoster({ ...r, bench: undefined, workbench: WORKBENCH_VERSION, heroes }, slug);
   return true;
 }
 
@@ -1303,6 +1431,11 @@ function usage() {
   project-context roster [<slug>] [--json]
   project-context roster-add <hero> [<slug>]
   project-context roster-assign <hero> <role|none> [<slug>]
+  project-context heroes [list] [<slug>] [--json]
+  project-context heroes add <template> [<slug>]
+  project-context heroes bind <template> <gotchi> [<slug>]
+  project-context heroes unbind <template|gotchi> [<slug>]
+  project-context heroes remove <template> [<slug>]
   project-context mail show [<slug>] [--json]
   project-context mail set [<slug>] --address <email> [--inbox-id <id>]
   project-context repo show|clear [<slug>] [--json]
@@ -1426,6 +1559,34 @@ async function main() {
     const r = rosterAssign(hero, role, slug);
     const row = r.heroes.find((h) => h.id === hero);
     console.log(`roster ${slug}: ${hero} → ${row?.role || "unassigned"}${r.unseated?.length ? ` · unseated ${r.unseated.join(", ")}` : ""}`);
+    return;
+  }
+  if (cmd === "heroes") {
+    const verbs = new Set(["list", "add", "bind", "unbind", "remove"]);
+    const sub = verbs.has(args[0]) ? args[0] : "list";
+    const a = verbs.has(args[0]) ? args.slice(1) : args;
+    const need = { list: 0, add: 1, bind: 2, unbind: 1, remove: 1 }[sub];
+    const slug = a[need] || currentProjectSlug();
+    if (!slug || a.length < need) usage();
+    if (sub === "add") addHero(a[0], slug);
+    if (sub === "unbind") unbindWorker(a[0], slug);
+    if (sub === "remove") removeHero(a[0], slug);
+    if (sub === "bind") {
+      const r = bindWorker(a[0], a[1], slug);
+      if (r.left) console.log(`  ${a[1]} left ${r.left} (now unbound)`);
+      if (r.unseated.length) console.log(`  ${r.unseated.join(", ")} back to the pool`);
+    }
+    const heroes = benchHeroes(slug);
+    const pool = benchPool(slug);
+    if (json) {
+      console.log(JSON.stringify({ project: slug, heroes, pool }, null, 2));
+      return;
+    }
+    console.log(`project ${slug} · heroes ${heroes.length} · pool ${pool.length}`);
+    for (const h of heroes) {
+      console.log(`  ${h.hero.padEnd(24)} ${h.worker ? `worked by ${h.worker}` : "needs a worker"}${h.deskWide ? "  (desk-wide)" : ""}`);
+    }
+    if (pool.length) console.log(`  pool: ${pool.join(", ")}`);
     return;
   }
   if (cmd === "mail") {

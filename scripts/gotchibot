@@ -874,6 +874,10 @@ case "$cmd" in
     # seat <hero> <role|none> [project] — one seat per role: unseats the previous holder here.
     exec node "$ROOT/scripts/project-context.mjs" roster-assign "$@"
     ;;
+  heroes)
+    # heroes [list|add|bind|unbind|remove] — this workbench's template heroes and their gotchi workers.
+    exec node "$ROOT/scripts/project-context.mjs" heroes "$@"
+    ;;
   layout-check|layout-smoke) exec "$ROOT/scripts/layout-smoke.sh" "$@" ;;
   orch) cmd_orch "$@" ;;
   openclaw) cmd_openclaw "$@" ;;
