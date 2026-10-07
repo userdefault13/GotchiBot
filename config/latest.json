@@ -1,7 +1,7 @@
 {
   "version": "0.3.2",
-  "publishedAt": "2026-10-06T20:43:33.900Z",
+  "publishedAt": "2026-10-07T18:08:04.774Z",
   "product": "gotchibot",
   "url": "https://github.com/userdefault13/GotchiBot",
-  "notes": "Agent graph (handoffs, bot runs and tokens on the Hub; kanban → PM alerts); /local runs Cursor, Codex or Claude on the desk CPU with replies synced to the Hub; desk sandbox VMs (Lima); desk layout fits any screen size and zoom; headless Omarchy desks (cage + foot, roster without AarcadeGh-t); Screen off in Settings; updater takes the newest release from any source"
+  "notes": "Agent graph (handoffs, bot runs and tokens on the Hub; kanban → PM alerts); /local runs Cursor, Codex or Claude on the desk CPU with replies synced to the Hub; desk sandbox VMs (Lima); desk layout fits any screen size and zoom; headless Omarchy desks (cage + foot, roster without AarcadeGh-t); Screen off in Settings; updater takes the newest release from any source; per-project workbenches: template heroes worked by cAavegotchis (gotchibot heroes: bind, hats, promotion), one seat per role; hero boxes in the avatar pane (wearable over its worker), grid sizes itself to the screen; one GitHub repo per project; a chat's commands act on its own project; desk theme and keys heal on reattach; templates.aarcadeghst.com lands on /web/"
 }

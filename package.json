@@ -65,6 +65,8 @@
     "config/tui-policy.json",
     "config/tui.json",
     "config/version.json",
+    "config/worker-hats.json",
+    "templates/marketplace/wearables.json",
     ".opencode/agents/",
     ".opencode/commands/",
     ".opencode/mcp/",

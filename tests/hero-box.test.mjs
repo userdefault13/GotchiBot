@@ -125,3 +125,12 @@ describe("tall wearables", () => {
     assert.ok(fit.slice(1).every((row) => row.some((c) => c.ch === "█")), "the shaft survives");
   });
 });
+
+describe("npm package", () => {
+  it("ships the wearables and worker hats the hero boxes read", async () => {
+    const { readFileSync } = await import("node:fs");
+    const files = JSON.parse(readFileSync(path.join(repo, "package.json"), "utf8")).files;
+    assert.ok(files.includes("templates/marketplace/wearables.json"));
+    assert.ok(files.includes("config/worker-hats.json"));
+  });
+});
