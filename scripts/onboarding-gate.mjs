@@ -233,42 +233,61 @@ const REPO_PAGE_SIZE = 10;
 async function openProjectForRepo(repo) {
   const { projectsUsingRepo, slugForRepo, connectRepo, formatRepo } = await import("./project-context.mjs");
   const owners = projectsUsingRepo(repo.fullName);
+  const base = slugForRepo(repo.fullName);
+  const local = listLocalProjectSlugs();
+  // A new project's name: the repo's, or the next free -2, -3… when taken.
+  let fresh = base;
+  for (let n = 2; fresh && local.includes(fresh); n++) fresh = `${base}-${n}`.slice(0, 64);
+
   let target = null;
-  if (owners.length === 1) target = owners[0];
-  else if (owners.length > 1) {
-    const which = await choose(`${repo.fullName} is the repo of several projects — open which?`, [
-      ...owners.map((o) => ({ key: `p:${o}`, label: o })),
+  let create = false;
+  if (owners.length) {
+    // Projects already use this repo: open one, or start a new project for it.
+    const which = await choose(`${repo.fullName} is the repo of ${owners.join(", ")} — open one, or start a new project?`, [
+      ...owners.map((o) => ({ key: `p:${o}`, label: `Open ${o}` })),
+      ...(fresh ? [{ key: "new", hotkey: "n", label: `New project for this repo (${fresh})` }] : []),
       { key: "back", hotkey: "b", label: "Back" },
     ]);
     if (!which || which.key === "back") return null;
-    target = which.key.slice(2);
-  } else {
-    const base = slugForRepo(repo.fullName);
-    if (!base) {
-      console.log(`\n  ✗ cannot make a project name from ${repo.fullName} — use Create new project…`);
-      await pause();
-      return null;
-    }
-    if (listLocalProjectSlugs().includes(base)) {
-      console.log(`\n  · project ${base} exists with no link to this repo — linking it`);
-    } else {
-      const created = spawnSync(process.execPath, [`${ROOT}/scripts/pstack-dossier.mjs`, "new", base, "--title", repo.fullName.split("/").pop()], { cwd: ROOT, encoding: "utf8" });
-      if (created.status !== 0) {
-        console.log(`\n  ✗ ${String(created.stderr || created.stdout || "").trim() || `exit ${created.status}`}`);
-        await pause();
-        return null;
-      }
-      console.log(`\n  ✓ new project ${base} (fresh workbench: every gotchi available, no roles)`);
-    }
+    if (which.key === "new") create = true;
+    else target = which.key.slice(2);
+  } else if (base && local.includes(base)) {
+    // A project named after the repo with no link yet: link it (e.g. WondrStack → wondrstack).
+    console.log(`\n  · project ${base} exists with no link to this repo — linking it`);
     try {
       const r = connectRepo(repo.fullName, base, { cwd: ROOT });
       console.log(`  ✓ ${base}'s repo → ${formatRepo(r)}`);
-      if (!r.path) console.log("  · no matching checkout under ~/Dev — clone it there and reconnect to link the folder");
     } catch (e) {
       console.log(`  ✗ repo link: ${e?.message || e}`);
     }
     target = base;
+  } else {
+    create = true;
   }
+
+  if (create) {
+    if (!fresh) {
+      console.log(`\n  ✗ cannot make a project name from ${repo.fullName} — use Create new project…`);
+      await pause();
+      return null;
+    }
+    const created = spawnSync(process.execPath, [`${ROOT}/scripts/pstack-dossier.mjs`, "new", fresh, "--title", repo.fullName.split("/").pop()], { cwd: ROOT, encoding: "utf8" });
+    if (created.status !== 0) {
+      console.log(`\n  ✗ ${String(created.stderr || created.stdout || "").trim() || `exit ${created.status}`}`);
+      await pause();
+      return null;
+    }
+    console.log(`\n  ✓ new project ${fresh} (fresh workbench: every gotchi available, no roles)`);
+    try {
+      const r = connectRepo(repo.fullName, fresh, { cwd: ROOT });
+      console.log(`  ✓ ${fresh}'s repo → ${formatRepo(r)}`);
+      if (!r.path) console.log("  · no matching checkout under ~/Dev — clone it there and reconnect to link the folder");
+    } catch (e) {
+      console.log(`  ✗ repo link: ${e?.message || e}`);
+    }
+    target = fresh;
+  }
+
   if (target === currentProjectSlug()) {
     console.log(`\n  ✓ already on project ${target}`);
   } else if (setCurrentProject(target) && currentProjectSlug() === target) {
