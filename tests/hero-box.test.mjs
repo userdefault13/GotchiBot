@@ -81,6 +81,15 @@ cell_block "$@"
     assert.match(text, /asleep/);
   });
 
+  it("in the focused grid (mid face) the wearable sits beside the worker, arrow between", () => {
+    const lines = box("owned-954", "idle", "", "30", "9", "", "", "UNI", "architect", "", "mid", "0", "Staff of Creation", "");
+    assert.deepEqual([...new Set(lines.map((l) => [...l].length))], [30], "every row the frame width");
+    const arrowRow = lines.find((l) => l.includes("▶"));
+    assert.ok(arrowRow, "a sideways arrow");
+    assert.equal(lines.some((l) => l.includes("▼")), false, "no down arrow");
+    assert.match(lines.join("\n"), /Staff of Creation\s*╎\n╎\s*architect\s*╎\n╎\s*idle/);
+  });
+
   it("a gotchi with no hero keeps the plain tile", () => {
     const text = box("owned-3033", "available", "", "22", "5", "", "", "ART", "", "", "mini", "0", "", "").join("\n");
     assert.doesNotMatch(text, /┌/);

@@ -1568,11 +1568,55 @@ hero_box() {
   tile_lines "$worker_art"
   [ "${TILE_LINES:-0}" -ge 3 ] && wrows=$TILE_LINES
 
+  # Focused grid (mid face): wearable ▶ worker side by side. Column (mini):
+  # wearable, ▼, worker stacked.
+  local side_by_side=0 wwidth="$inner" gw=0
+  if [ "$face" = "mid" ]; then
+    side_by_side=1
+    local -a WK=()
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -z "$line" ] && [ "${#WK[@]}" -eq 0 ] && continue
+      WK+=("$line")
+      vislen_set "$line"
+      [ "$VIS" -gt "$gw" ] && gw=$VIS
+    done < <(printf '%s\n' "$worker_art")
+    wwidth=$((inner - gw - 3))
+    [ "$wwidth" -lt 3 ] && wwidth=3
+  fi
+
   local wart=""
   if command -v node >/dev/null && [ -f "$ROOT/scripts/hero-wearable.mjs" ]; then
-    wart="$(node "$ROOT/scripts/hero-wearable.mjs" art "$role" --rows "$wrows" --width "$inner" --exact --color-mode "${TUI_COLOR:-truecolor}" 2>/dev/null)" || wart=""
+    wart="$(node "$ROOT/scripts/hero-wearable.mjs" art "$role" --rows "$wrows" --width "$wwidth" --exact --color-mode "${TUI_COLOR:-truecolor}" 2>/dev/null)" || wart=""
   fi
   [ -z "$wart" ] && wart="$(printf '%b%s%b' "$AV_MUTED" "◇" "$AV_RST")"
+
+  if [ "$side_by_side" = 1 ]; then
+    local -a WR=()
+    local ww=0 wtop2 mid_row n_rows j lcell rcell sep harrow='▶'
+    [ "${TUI_GLYPHS}" = "ascii" ] && harrow='>'
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -z "$line" ] && [ "${#WR[@]}" -eq 0 ] && continue
+      WR+=("$line")
+      vislen_set "$line"
+      [ "$VIS" -gt "$ww" ] && ww=$VIS
+    done < <(printf '%s\n' "$wart")
+    n_rows=${#WK[@]}
+    [ "${#WR[@]}" -gt "$n_rows" ] && n_rows=${#WR[@]}
+    # Wearable centred vertically against the worker; the arrow on the middle row.
+    wtop2=$(( (n_rows - ${#WR[@]}) / 2 ))
+    mid_row=$((n_rows / 2))
+    for ((j = 0; j < n_rows; j++)); do
+      lcell=""
+      if [ "$j" -ge "$wtop2" ] && [ $((j - wtop2)) -lt "${#WR[@]}" ]; then
+        lcell="${WR[$((j - wtop2))]}"
+      fi
+      lcell="$(pad_cell_line "$lcell" "$ww")"
+      rcell="$(pad_cell_line "${WK[j]:-}" "$gw")"
+      sep="   "
+      [ "$j" = "$mid_row" ] && sep="$(printf ' %b%s%b ' "$AV_MUTED" "$harrow" "$AV_RST")"
+      BODY+=("$(center_pad "${lcell}${sep}${rcell}" "$inner")")
+    done
+  else
   # Always wrows tall (a missing or short wearable is centred), so every box
   # with a worker is the same height and the column's page math holds.
   tile_lines "$wart"
@@ -1587,6 +1631,7 @@ hero_box() {
   fi
   BODY+=("$(printf '%b%s%b' "$AV_MUTED" "$(center_pad "$arrow" "$inner")" "$AV_RST")")
   _hb_art "$worker_art"
+  fi
 
   status_style "$status"
   local wear_show="${wear:-${role//-/ }}" role_line who
@@ -1945,7 +1990,7 @@ roster_budget() {
   local pane_h="${1:-0}" mode="${2:-collapsed}" mini=6 remain stride=12 rows
   # Hero boxes (frame + wearable + arrow + worker + 3 lines) need more rows a tile.
   if [ "${HERO_VIEW:-0}" = 1 ]; then
-    stride=20
+    stride=16
   fi
   case "$pane_h" in
     ''|*[!0-9]*) pane_h=0 ;;
@@ -1988,7 +2033,10 @@ roster_geometry() {
         ROSTER_CELL_W=$((avail / ROSTER_COLS))
       fi
       [ "$ROSTER_CELL_W" -lt 12 ] && ROSTER_CELL_W=12
-      [ "$ROSTER_CELL_W" -gt 22 ] && ROSTER_CELL_W=22
+      # Hero boxes lay wearable ▶ worker side by side: they need wider cells.
+      local wmax=22
+      [ "${HERO_VIEW:-0}" = 1 ] && wmax=30
+      [ "$ROSTER_CELL_W" -gt "$wmax" ] && ROSTER_CELL_W=$wmax
       ROSTER_ROW_W=$((ROSTER_CELL_W * ROSTER_COLS + gaps))
       ROSTER_PAD=$pad
       break
