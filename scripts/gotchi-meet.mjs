@@ -32,6 +32,7 @@ import { loadMeta } from "./identity.mjs";
 import { benchHeroes, currentProjectSlug, loadRepo, projectRoles, resolveMeetingsRoot, roleBrief } from "./project-context.mjs";
 import { extractActions, pendingActionPath, MEET_ACTION_SUBCOMMANDS } from "./lib/meet-actions.mjs";
 import { deskMentionTargets, resolveDeskMention } from "./lib/meet-mentions.mjs";
+import { loadWondrStack } from "./pstack-wondrstack.mjs";
 import { publishProjectWrite, flushProjectWrites } from "./hub-project-sync.mjs";
 import {
   ROOT,
@@ -1724,6 +1725,13 @@ export function meetDeskFacts() {
     if (slug) {
       const seats = benchHeroes(slug).map((h) => `${h.hero}=${h.worker || "no worker"}`).join(", ");
       lines.push(`Project: ${slug}. Seats (hero=worker gotchi): ${seats || "none"}`);
+      // WondrStack: one account per project. Linked → its workspace; else how to launch one.
+      const w = loadWondrStack(slug);
+      lines.push(
+        w
+          ? `WondrStack: linked to workspace ${w.workspace}${w.appUrl ? ` (app ${w.appUrl})` : ""}${w.repoUrl ? ` · repo ${w.repoUrl}` : ""}. Check it: ACTION: ./scripts/gotchibot wondrstack status ${slug}`
+          : `WondrStack: not linked. This project gets its own WondrStack account: ACTION: ./scripts/gotchibot wondrstack login ${slug}, then ACTION: ./scripts/gotchibot wondrstack launch ${slug} (creates the workspace, git repo and Vercel site step by step; the Vercel token is entered by UserDefault on WondrStack's page).`,
+      );
     }
   } catch {
     /* no project */

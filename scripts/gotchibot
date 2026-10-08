@@ -876,6 +876,10 @@ case "$cmd" in
     # seat <hero> <role|none> [project] — one seat per role: unseats the previous holder here.
     exec node "$ROOT/scripts/project-context.mjs" roster-assign "$@"
     ;;
+  wondrstack)
+    # wondrstack login|status|call|launch|logout <project> — one WondrStack account per project.
+    exec node "$ROOT/scripts/wondrstack.mjs" "$@"
+    ;;
   heroes)
     # heroes [list|add|bind|unbind|remove] — this workbench's template heroes and their gotchi workers.
     exec node "$ROOT/scripts/project-context.mjs" heroes "$@"

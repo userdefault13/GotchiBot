@@ -1,0 +1,458 @@
+#!/usr/bin/env node
+/**
+ * WondrStack from GotchiBot, deterministically: no model in the loop.
+ *
+ * One WondrStack account (one workspace) per GotchiBot project — the aarcadeghst
+ * project signs in as the aarcadeghst account, gotchibot as the gotchibot one.
+ * Each project has its own OAuth sign-in, kept in abra as WONDRSTACK_<PROJECT>
+ * (client id + tokens, never printed).
+ *
+ *   gotchibot wondrstack login  <project>              browser sign-in for that project's account
+ *   gotchibot wondrstack status <project>              get_status
+ *   gotchibot wondrstack call   <project> <tool> [json]  any WondrStack MCP tool
+ *   gotchibot wondrstack launch <project> [--name N] [--type T] [--template blank] [--hosting vercel]
+ *                                          [--city C --state S --country X] [--workspace slug] [--wait]
+ *   gotchibot wondrstack logout <project>
+ *
+ * launch walks get_status's state machine and only ever does the next step:
+ *   no workspace → create_business · repo failed/missing → start_provisioning ·
+ *   repo building → wait · no hosting → the secure hosting link (you paste the
+ *   Vercel token there; GotchiBot never sees it) · deploy failed → deploy_app ·
+ *   deploying → wait · live → linked. Re-run it any time; it picks up where it is.
+ * The project link (sessions/pstack/<project>/wondrstack.json) is written only
+ * when get_status shows the expected workspace (default: the project's slug).
+ */
+import { spawnSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import { createServer } from "node:http";
+import { isMainModule } from "./is-main.mjs";
+import { connectWondrStack } from "./pstack-wondrstack.mjs";
+
+export const ENDPOINT = process.env.WONDRSTACK_MCP_URL || "https://wondrstack.xyz/mcp";
+const SLUG = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
+const PROTOCOL = "2025-06-18";
+
+// ---------- credentials (abra, one key per project) ----------
+
+export function credKey(project) {
+  if (!SLUG.test(String(project || ""))) throw new Error(`invalid project slug: ${project}`);
+  return `WONDRSTACK_${String(project).toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+}
+
+/** abra-backed store; tests pass an in-memory one. */
+export const abraStore = {
+  get(key) {
+    const r = spawnSync("abra", ["get", "gotchibot", key], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (r.status !== 0) {
+      const err = String(r.stderr || "");
+      if (/locked/i.test(err)) throw new Error("abra vault is locked — run: abra unlock");
+      return null;
+    }
+    const v = String(r.stdout || "").trim();
+    return v || null;
+  },
+  set(key, value) {
+    const r = spawnSync("abra", ["set", "gotchibot", key, "--stdin"], {
+      input: value,
+      encoding: "utf8",
+      stdio: ["pipe", "ignore", "pipe"],
+    });
+    if (r.status !== 0) throw new Error(/locked/i.test(String(r.stderr)) ? "abra vault is locked — run: abra unlock" : "abra set failed");
+  },
+};
+
+function loadCreds(project, store) {
+  const raw = store.get(credKey(project));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveCreds(project, creds, store) {
+  store.set(credKey(project), JSON.stringify(creds));
+}
+
+// ---------- OAuth (RFC 9728 / 8414 / 7591, PKCE S256, public client) ----------
+
+async function getJson(url) {
+  const r = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+  return r.json();
+}
+
+/** Authorization server metadata for an MCP endpoint. */
+export async function discover(endpoint = ENDPOINT) {
+  const u = new URL(endpoint);
+  let issuer = u.origin;
+  for (const path of [`/.well-known/oauth-protected-resource${u.pathname}`, "/.well-known/oauth-protected-resource"]) {
+    try {
+      const pr = await getJson(`${u.origin}${path}`);
+      if (pr?.authorization_servers?.[0]) {
+        issuer = pr.authorization_servers[0];
+        break;
+      }
+    } catch {
+      /* try the next */
+    }
+  }
+  const as = await getJson(`${issuer.replace(/\/$/, "")}/.well-known/oauth-authorization-server`);
+  return { ...as, resource: endpoint.replace(/\/$/, "") };
+}
+
+async function postForm(url, fields) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+    body: new URLSearchParams(fields).toString(),
+    signal: AbortSignal.timeout(20000),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`token: ${body.error_description || body.error || `HTTP ${r.status}`}`);
+  return body;
+}
+
+function tokenSet(t, prev = {}) {
+  return {
+    ...prev,
+    access_token: t.access_token,
+    refresh_token: t.refresh_token || prev.refresh_token,
+    expires_at: Date.now() + Math.max(60, Number(t.expires_in) || 3600) * 1000,
+  };
+}
+
+function openBrowser(url) {
+  const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  spawnSync(cmd, args, { stdio: "ignore" });
+}
+
+/**
+ * Browser sign-in for one project's WondrStack account. A loopback callback on
+ * 127.0.0.1 (any port) receives the code; tokens go to the store.
+ */
+export async function login(project, { endpoint = ENDPOINT, store = abraStore, open = openBrowser, log = console.log, timeoutMs = 300_000 } = {}) {
+  credKey(project);
+  const meta = await discover(endpoint);
+  const reg = await fetch(meta.registration_endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      client_name: `GotchiBot (${project})`,
+      redirect_uris: ["http://127.0.0.1/callback"],
+      grant_types: ["authorization_code", "refresh_token"],
+      token_endpoint_auth_method: "none",
+    }),
+    signal: AbortSignal.timeout(15000),
+  }).then(async (r) => {
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok || !b.client_id) throw new Error(`register: ${b.error_description || b.error || `HTTP ${r.status}`}`);
+    return b;
+  });
+  const verifier = randomBytes(32).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const state = randomBytes(16).toString("base64url");
+
+  const { code, redirectUri } = await new Promise((resolveCode, reject) => {
+    const server = createServer((req, res) => {
+      const u = new URL(req.url, "http://127.0.0.1");
+      if (u.pathname !== "/callback") {
+        res.writeHead(404).end();
+        return;
+      }
+      const ok = u.searchParams.get("state") === state && u.searchParams.get("code");
+      res.writeHead(ok ? 200 : 400, { "content-type": "text/html; charset=utf-8" });
+      res.end(ok ? "<p>GotchiBot is signed in to WondrStack. You can close this tab.</p>" : "<p>Sign-in failed — go back to GotchiBot.</p>");
+      // The port before close(): address() is null once the server is closed.
+      const redirectUri = `http://127.0.0.1:${server.address().port}/callback`;
+      clearTimeout(timer);
+      server.close();
+      if (ok) resolveCode({ code: u.searchParams.get("code"), redirectUri });
+      else reject(new Error(u.searchParams.get("error_description") || u.searchParams.get("error") || "sign-in failed"));
+    });
+    const timer = setTimeout(() => {
+      server.close();
+      reject(new Error("sign-in timed out"));
+    }, timeoutMs);
+    server.listen(0, "127.0.0.1", () => {
+      const redirect = `http://127.0.0.1:${server.address().port}/callback`;
+      const url = new URL(meta.authorization_endpoint);
+      for (const [k, v] of Object.entries({
+        response_type: "code",
+        client_id: reg.client_id,
+        redirect_uri: redirect,
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        scope: (meta.scopes_supported || ["wondrstack"]).join(" "),
+        state,
+        resource: meta.resource,
+      })) url.searchParams.set(k, v);
+      log(`Sign in to the WondrStack account for project ${project} in your browser:\n  ${url}`);
+      open(url.toString());
+    });
+  });
+
+  const t = await postForm(meta.token_endpoint, {
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirectUri,
+    client_id: reg.client_id,
+    code_verifier: verifier,
+    resource: meta.resource,
+  });
+  saveCreds(project, tokenSet(t, { client_id: reg.client_id, token_endpoint: meta.token_endpoint, resource: meta.resource }), store);
+  return { ok: true };
+}
+
+/** A live access token for the project, refreshing (and storing the rotated token) when due. */
+export async function accessToken(project, { store = abraStore } = {}) {
+  const creds = loadCreds(project, store);
+  if (!creds?.access_token) throw new Error(`no WondrStack sign-in for ${project} — run: gotchibot wondrstack login ${project}`);
+  if (creds.expires_at && creds.expires_at > Date.now() + 60_000) return creds.access_token;
+  if (!creds.refresh_token) throw new Error(`WondrStack sign-in for ${project} expired — run: gotchibot wondrstack login ${project}`);
+  const t = await postForm(creds.token_endpoint, {
+    grant_type: "refresh_token",
+    refresh_token: creds.refresh_token,
+    client_id: creds.client_id,
+    resource: creds.resource,
+  });
+  saveCreds(project, tokenSet(t, creds), store);
+  return t.access_token;
+}
+
+// ---------- MCP over streamable HTTP ----------
+
+function parseRpc(text, id) {
+  const t = String(text || "").trim();
+  if (!t) return null;
+  if (t.startsWith("{") || t.startsWith("[")) {
+    const j = JSON.parse(t);
+    return Array.isArray(j) ? j.find((m) => m.id === id) : j;
+  }
+  // text/event-stream: the response is a data: line carrying our id.
+  for (const line of t.split("\n")) {
+    if (!line.startsWith("data:")) continue;
+    try {
+      const m = JSON.parse(line.slice(5).trim());
+      if (m.id === id) return m;
+    } catch {
+      /* not JSON */
+    }
+  }
+  return null;
+}
+
+async function rpc(endpoint, token, session, method, params, id) {
+  const headers = {
+    "content-type": "application/json",
+    accept: "application/json, text/event-stream",
+    "mcp-protocol-version": PROTOCOL,
+    authorization: `Bearer ${token}`,
+  };
+  if (session.id) headers["mcp-session-id"] = session.id;
+  const body = id == null ? { jsonrpc: "2.0", method, params } : { jsonrpc: "2.0", id, method, params };
+  const r = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(60000) });
+  const sid = r.headers.get("mcp-session-id");
+  if (sid) session.id = sid;
+  if (r.status === 401) throw new Error("WondrStack rejected the sign-in (401) — run: gotchibot wondrstack login <project>");
+  if (id == null) return null;
+  const msg = parseRpc(await r.text(), id);
+  if (!r.ok && !msg) throw new Error(`WondrStack MCP: HTTP ${r.status}`);
+  if (msg?.error) throw new Error(`WondrStack MCP: ${msg.error.message || JSON.stringify(msg.error)}`);
+  return msg?.result;
+}
+
+/** Call one WondrStack tool for a project; returns its parsed JSON result. */
+export async function callTool(project, tool, args = {}, { endpoint = ENDPOINT, store = abraStore } = {}) {
+  const token = await accessToken(project, { store });
+  const session = {};
+  await rpc(endpoint, token, session, "initialize", {
+    protocolVersion: PROTOCOL,
+    capabilities: {},
+    clientInfo: { name: "gotchibot", version: "1" },
+  }, 1);
+  await rpc(endpoint, token, session, "notifications/initialized", {}, null);
+  const result = await rpc(endpoint, token, session, "tools/call", { name: tool, arguments: args }, 2);
+  const text = (result?.content || []).find((c) => c?.type === "text")?.text;
+  let data = text;
+  try {
+    data = text != null ? JSON.parse(text) : result;
+  } catch {
+    /* plain text result */
+  }
+  if (result?.isError) {
+    const why = typeof data === "string" ? data : data?.error || data?.message || JSON.stringify(data);
+    throw new Error(`${tool}: ${why}`);
+  }
+  return data;
+}
+
+// ---------- launch: the deterministic pipeline ----------
+
+/**
+ * The one next step for a get_status result (pure):
+ * { step: create|provision|wait|hosting|redeploy|live, why }.
+ */
+export function nextStep(status) {
+  const ws = status?.workspace;
+  if (!ws) return { step: "create", why: "no WondrStack workspace on this account yet" };
+  const p = ws.provisioning;
+  if (p === "adopted_existing_app") return { step: "live", why: "existing app adopted; it stays on its own host" };
+  if (!p || p === "failed" || p === "not_configured") return { step: "provision", why: `code repository ${p || "not started"}` };
+  if (p === "queued" || p === "running") return { step: "wait", why: "the code repository is being created" };
+  const h = ws.hosting;
+  if (!h) return { step: "hosting", why: "no host connected — paste the Vercel token on WondrStack's secure page" };
+  if (h.status === "failed") return { step: "redeploy", why: `deploy failed: ${h.error || "see the build log"}` };
+  if (["connected", "queued", "deploying"].includes(h.status)) return { step: "wait", why: `deploy ${h.status}` };
+  if (h.status === "live" || h.status === "bundle_ready") return { step: "live", why: ws.app_url ? `live at ${ws.app_url}` : `hosting ${h.status}` };
+  return { step: "wait", why: `hosting ${h.status}` };
+}
+
+/**
+ * Walk the pipeline for one project. Returns { step, why, status, link? }:
+ * step "live" = done and linked; "hosting" = waiting on you (opened link);
+ * "wait" = WondrStack is working (re-run, or pass wait: true).
+ */
+export async function launch(project, opts = {}) {
+  const call = opts.call || ((tool, args) => callTool(project, tool, args, opts));
+  const log = opts.log || console.log;
+  const expected = opts.workspace || project;
+  const sleep = opts.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const deadline = Date.now() + (opts.waitMs ?? 600_000);
+  let redeployed = false;
+  let createdOnce = false;
+  for (;;) {
+    const status = await call("get_status", {});
+    if (status?.workspace && status.workspace.slug !== expected) {
+      throw new Error(
+        `this sign-in is WondrStack workspace "${status.workspace.slug}", not "${expected}" — one account per project: ` +
+          `run gotchibot wondrstack login ${project} with the ${expected} account (or pass --workspace ${status.workspace.slug})`,
+      );
+    }
+    const next = nextStep(status);
+    log(`· ${next.step}: ${next.why}`);
+    if (next.step === "create") {
+      if (createdOnce) throw new Error("create_business did not produce a workspace");
+      for (const k of ["city", "state", "country"]) {
+        if (!opts[k]) throw new Error(`creating the workspace needs --city, --state and --country (missing --${k})`);
+      }
+      const r = await call("create_business", {
+        business_name: opts.name || project,
+        business_type: opts.type || "Other",
+        template: opts.template || "blank",
+        preferred_hosting: opts.hosting || "vercel",
+        city: opts.city,
+        state: opts.state,
+        country: opts.country,
+        ...(opts.timezone ? { timezone: opts.timezone } : {}),
+      });
+      createdOnce = true;
+      log(`  created ${r?.workspace?.slug || expected} (template ${r?.template || opts.template || "blank"})`);
+      continue;
+    }
+    if (next.step === "provision") {
+      await call("start_provisioning", {});
+      log("  started the code repository");
+      if (!opts.wait) return { step: "wait", why: "code repository started", status };
+      await sleep(10_000);
+      continue;
+    }
+    if (next.step === "redeploy") {
+      if (redeployed) return { ...next, status };
+      await call("deploy_app", {});
+      redeployed = true;
+      log("  redeploying");
+      if (!opts.wait) return { step: "wait", why: "redeploy started", status };
+      await sleep(15_000);
+      continue;
+    }
+    if (next.step === "hosting") {
+      const url = status?.links?.hosting || (await call("get_setup_link", { step: "hosting" }))?.url;
+      log(`  connect hosting here (you paste the Vercel token; GotchiBot never sees it):\n  ${url}`);
+      if (opts.openLink !== false && url) (opts.open || openBrowser)(url);
+      return { ...next, status, url };
+    }
+    if (next.step === "live") {
+      const link = connectWondrStack({ project, status, expectedWorkspace: expected, ...(opts.root ? { root: opts.root } : {}) });
+      log(`  linked ${project} → WondrStack ${link.workspace}${link.appUrl ? ` · app ${link.appUrl}` : ""}${link.repoUrl ? ` · repo ${link.repoUrl}` : ""}`);
+      return { ...next, status, link };
+    }
+    // wait
+    if (!opts.wait || Date.now() > deadline) return { ...next, status };
+    await sleep(10_000);
+  }
+}
+
+// ---------- CLI ----------
+
+function flag(argv, name) {
+  const i = argv.indexOf(`--${name}`);
+  return i >= 0 ? argv[i + 1] : undefined;
+}
+
+function usage() {
+  console.log(`gotchibot wondrstack login  <project>
+gotchibot wondrstack status <project>
+gotchibot wondrstack call   <project> <tool> [json-args]
+gotchibot wondrstack launch <project> [--name N] [--type T] [--template blank] [--hosting vercel]
+                                     [--city C --state S --country X] [--workspace slug] [--wait]
+gotchibot wondrstack logout <project>
+
+One WondrStack account per project; each project signs in on its own (abra key WONDRSTACK_<PROJECT>).`);
+}
+
+async function main() {
+  const [cmd, project, ...rest] = process.argv.slice(2);
+  if (!cmd || cmd === "help" || cmd === "--help") return usage();
+  if (!project) throw new Error("project slug required");
+  if (cmd === "login") {
+    await login(project);
+    const s = await callTool(project, "get_status", {});
+    console.log(`signed in · workspace ${s?.workspace?.slug || "(none yet — run launch)"}`);
+    return;
+  }
+  if (cmd === "status") {
+    const s = await callTool(project, "get_status", {});
+    console.log(JSON.stringify(s, null, 2));
+    console.log(`next: ${nextStep(s).step} — ${nextStep(s).why}`);
+    return;
+  }
+  if (cmd === "call") {
+    const [tool, json] = rest;
+    if (!tool) throw new Error("tool name required");
+    console.log(JSON.stringify(await callTool(project, tool, json ? JSON.parse(json) : {}), null, 2));
+    return;
+  }
+  if (cmd === "launch") {
+    const r = await launch(project, {
+      name: flag(rest, "name"),
+      type: flag(rest, "type"),
+      template: flag(rest, "template"),
+      hosting: flag(rest, "hosting"),
+      city: flag(rest, "city"),
+      state: flag(rest, "state"),
+      country: flag(rest, "country"),
+      timezone: flag(rest, "timezone"),
+      workspace: flag(rest, "workspace"),
+      wait: rest.includes("--wait"),
+    });
+    console.log(`launch: ${r.step} — ${r.why}`);
+    if (r.step !== "live") process.exitCode = r.step === "hosting" ? 3 : 4;
+    return;
+  }
+  if (cmd === "logout") {
+    abraStore.set(credKey(project), "");
+    console.log(`signed out of WondrStack for ${project}`);
+    return;
+  }
+  throw new Error(`unknown command: ${cmd}`);
+}
+
+if (isMainModule(import.meta.url)) {
+  main().catch((e) => {
+    console.error(`wondrstack: ${e.message || e}`);
+    process.exitCode = 1;
+  });
+}

@@ -21,6 +21,14 @@ describe("meeting actions", () => {
     assert.equal(normalizeAction("`!gotchibot roles`").allowed, true);
   });
 
+  it("lets a meeting propose WondrStack status / launch / login, not raw tool calls", () => {
+    assert.equal(normalizeAction("gotchibot wondrstack launch gotchibot").allowed, true);
+    assert.equal(normalizeAction("./scripts/gotchibot wondrstack status aarcadeghst").allowed, true);
+    assert.equal(normalizeAction("./scripts/gotchibot wondrstack login gotchibot").allowed, true);
+    assert.equal(normalizeAction("./scripts/gotchibot wondrstack call gotchibot deploy_app").allowed, false);
+    assert.equal(normalizeAction("./scripts/gotchibot wondrstack logout gotchibot").allowed, false);
+  });
+
   it("refuses anything outside the allowlist or with shell syntax", () => {
     for (const bad of [
       "rm -rf ~",

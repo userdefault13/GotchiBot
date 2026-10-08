@@ -8,10 +8,12 @@
  */
 import { join } from "node:path";
 
-/** gotchibot subcommands a meeting may propose. */
-export const MEET_ACTION_SUBCOMMANDS = ["heroes", "seat", "roles"];
+/** gotchibot subcommands a meeting may propose (wondrstack: status, launch, login only). */
+export const MEET_ACTION_SUBCOMMANDS = ["heroes", "seat", "roles", "wondrstack"];
 
-const ALLOWED = new RegExp(`^(?:\\./scripts/)?gotchibot\\s+(?:${MEET_ACTION_SUBCOMMANDS.join("|")})(?:\\s|$)`);
+const ALLOWED = new RegExp(
+  "^(?:\\./scripts/)?gotchibot\\s+(?:(?:heroes|seat|roles)(?:\\s|$)|wondrstack\\s+(?:status|launch|login)\\s)",
+);
 /** Letters, digits, spaces and . _ : / @ - only (no ; | & $ ` < > quotes or newlines). */
 const SAFE = /^[A-Za-z0-9 ._:/@-]+$/;
 
