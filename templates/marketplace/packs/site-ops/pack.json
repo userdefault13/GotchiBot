@@ -23,6 +23,13 @@
     "playbook.json",
     "skills/wondrstack/SKILL.md"
   ],
+  "wearable": {
+    "id": "wondrstack",
+    "name": "WondrStack",
+    "view": "front",
+    "ascii": "     ▀   ▀\n   ▄ █   █ ▄\n ▄▀  ▀▄▀▄▀  ▀▄\n ▄▀▀▄▄   ▄▄▀▀▄\n ▄▀▀▄▄▀▀▀▄▄▀▀▄\n  ▀▀▄▄▀▀▀▄▄▀▀\n      ▀▀▀",
+    "markup": "     <span style=\"color:#ffffff\">▀</span>   <span style=\"color:#ffffff\">▀</span>\n   <span style=\"color:#80aeff\">▄</span> <span style=\"color:#c2e2ff\">█</span>   <span style=\"color:#c2e2ff\">█</span> <span style=\"color:#80aeff\">▄</span>\n <span style=\"color:#80aeff\">▄▀</span>  <span style=\"color:#8bc8fd\">▀</span><span style=\"color:#0087ff\">▄</span><span style=\"color:#8bc8fd\">▀</span><span style=\"color:#0087ff\">▄</span><span style=\"color:#8bc8fd\">▀</span>  <span style=\"color:#80aeff\">▀▄</span>\n <span style=\"color:#5a7bb5\">▄</span><span style=\"color:#80aeff\">▀▀▄▄</span>   <span style=\"color:#80aeff\">▄▄▀▀</span><span style=\"color:#5a7bb5\">▄</span>\n <span style=\"color:#052e76\">▄</span><span style=\"color:#5a7bb5\">▀▀▄▄</span><span style=\"color:#80aeff\">▀▀▀</span><span style=\"color:#5a7bb5\">▄▄▀▀</span><span style=\"color:#052e76\">▄</span>\n  <span style=\"color:#052e76\">▀▀▄▄</span><span style=\"color:#5a7bb5\">▀▀▀</span><span style=\"color:#052e76\">▄▄▀▀</span>\n      <span style=\"color:#052e76\">▀▀▀</span>"
+  },
   "hire": {
     "job": "Run the project's WondrStack app (repo, hosting, deploys, domain, branding) and keep it healthy.",
     "owns": "Owns the project's WondrStack app only: `./scripts/gotchibot wondrstack status|launch|keys|watch <project>`, its repo, hosting, deploys, domain and branding. Watches health every hour (Hub timer) and alerts the project manager. Business goals belong to the Chief of Staff.",

@@ -999,7 +999,14 @@
       ],
       "skills": [
         "wondrstack"
-      ]
+      ],
+      "wearable": {
+        "id": "wondrstack",
+        "name": "WondrStack",
+        "view": "front",
+        "ascii": "     ▀   ▀\n   ▄ █   █ ▄\n ▄▀  ▀▄▀▄▀  ▀▄\n ▄▀▀▄▄   ▄▄▀▀▄\n ▄▀▀▄▄▀▀▀▄▄▀▀▄\n  ▀▀▄▄▀▀▀▄▄▀▀\n      ▀▀▀",
+        "markup": "     <span style=\"color:#ffffff\">▀</span>   <span style=\"color:#ffffff\">▀</span>\n   <span style=\"color:#80aeff\">▄</span> <span style=\"color:#c2e2ff\">█</span>   <span style=\"color:#c2e2ff\">█</span> <span style=\"color:#80aeff\">▄</span>\n <span style=\"color:#80aeff\">▄▀</span>  <span style=\"color:#8bc8fd\">▀</span><span style=\"color:#0087ff\">▄</span><span style=\"color:#8bc8fd\">▀</span><span style=\"color:#0087ff\">▄</span><span style=\"color:#8bc8fd\">▀</span>  <span style=\"color:#80aeff\">▀▄</span>\n <span style=\"color:#5a7bb5\">▄</span><span style=\"color:#80aeff\">▀▀▄▄</span>   <span style=\"color:#80aeff\">▄▄▀▀</span><span style=\"color:#5a7bb5\">▄</span>\n <span style=\"color:#052e76\">▄</span><span style=\"color:#5a7bb5\">▀▀▄▄</span><span style=\"color:#80aeff\">▀▀▀</span><span style=\"color:#5a7bb5\">▄▄▀▀</span><span style=\"color:#052e76\">▄</span>\n  <span style=\"color:#052e76\">▀▀▄▄</span><span style=\"color:#5a7bb5\">▀▀▀</span><span style=\"color:#052e76\">▄▄▀▀</span>\n      <span style=\"color:#052e76\">▀▀▀</span>"
+      }
     },
     {
       "id": "skill-maker",

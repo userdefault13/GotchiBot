@@ -154,6 +154,17 @@ describe("marketplace wearable sprite colors", () => {
     assert.match(pageSrc, /colored == null/);
     const seen = new Set();
     for (const [roleId, row] of Object.entries(wearables)) {
+      // A custom wearable (a brand logo, not an Aavegotchi item) has no item
+      // sprite to sample; its markup and pack copy are still checked.
+      if (row.custom) {
+        assert.equal(typeof row.id, "string", roleId);
+        assert.equal(wearableMarkup(row.ascii, row), row.markup, roleId);
+        assert.equal(page(row.ascii, row), row.markup, roleId);
+        const pack = catalog.packs.find((p) => p.id === roleId);
+        assert.equal(pack.wearable.ascii, row.ascii, roleId);
+        assert.equal(pack.wearable.markup, row.markup, roleId);
+        continue;
+      }
       assert.notEqual(row.id, 17, roleId);
       assert.equal(SPRITE_COLORS[row.id] != null, true, roleId);
       const pack = catalog.packs.find((p) => p.id === roleId);
