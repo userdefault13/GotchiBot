@@ -1252,6 +1252,37 @@ function layoutInput(buffer, cursor, cols, inputRows = PROMPT_INPUT_ROWS) {
  * Input panel inside the chat column: `left` is its first pane column (1-based),
  * `cols` its width. With the sidebar up it never runs under the meet list.
  */
+/**
+ * Which characters of a prompt line belong to an @mention of a real target
+ * (a member, hero or roster gotchi): those draw cyan. Unknown @words stay text.
+ */
+export function mentionMask(text, known = null) {
+  const mask = new Array(text.length).fill(false);
+  if (!text.includes("@")) return mask;
+  const tags = known || new Set(mentionTags().map((t) => t.tag.toLowerCase()));
+  for (const m of text.matchAll(/@[A-Za-z0-9][A-Za-z0-9._-]*/g)) {
+    const tok = m[0].replace(/\.+$/, "");
+    if (!tags.has(tok.toLowerCase())) continue;
+    for (let i = m.index; i < m.index + tok.length; i++) mask[i] = true;
+  }
+  return mask;
+}
+
+/** Text with mention runs in cyan (foreground swaps only: the panel background stays). */
+function paintMentions(text, mask, from = 0) {
+  let out = "";
+  let on = false;
+  for (let i = 0; i < text.length; i++) {
+    const m = Boolean(mask[from + i]);
+    if (m !== on) {
+      out += m ? T.mention : T.text;
+      on = m;
+    }
+    out += text[i];
+  }
+  return on ? `${out}${T.text}` : out;
+}
+
 function drawInputPanel(top, cols, left = 1, inputRows = PROMPT_INPUT_ROWS, padY = 0) {
   const { segments, cursorRow, cursorCol } = layoutInput(editor.buffer, editor.cursor, cols, inputRows);
   // Padding rows above and below the panel, chat column only.
@@ -1266,13 +1297,14 @@ function drawInputPanel(top, cols, left = 1, inputRows = PROMPT_INPUT_ROWS, padY
     const before = seg.text.slice(0, off);
     const after = seg.text.slice(off);
     const showCursor = i === cursorRow;
+    const mask = mentionMask(seg.text);
     let body;
     if (showCursor && before.length === 0 && after.length === 0) {
       body = T.cursor;
     } else if (showCursor) {
-      body = `${T.text}${before}${T.reset}${T.cursor}${T.text}${after}${T.reset}`;
+      body = `${T.text}${paintMentions(before, mask)}${T.reset}${T.cursor}${T.text}${paintMentions(after, mask, off)}${T.reset}`;
     } else {
-      body = seg.text ? `${T.text}${seg.text}${T.reset}` : "";
+      body = seg.text ? `${T.text}${paintMentions(seg.text, mask)}${T.reset}` : "";
     }
     const line = `${T.accentBar}${T.panel} ${body}`;
     writeAt(top + i, left, padPanelLine(line, cols));

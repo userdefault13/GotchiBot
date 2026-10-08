@@ -68,3 +68,14 @@ describe("meet @mentions", () => {
     assert.match(meet, /await inviteMentioned\(meeting, text\)/);
   });
 });
+
+describe("@mentions in the prompt", () => {
+  it("marks known mentions for cyan; unknown @words and trailing dots stay plain", async () => {
+    const { mentionMask } = await import("../scripts/meet-room-prompter.mjs");
+    const known = new Set(["@chief-of-staff", "@user.default"]);
+    const text = "@chief-of-staff hi @nobody and @User.Default.";
+    const marked = mentionMask(text, known).map((on, i) => (on ? text[i] : " ")).join("");
+    assert.equal(marked.replace(/ +/g, " ").trim(), "@chief-of-staff @User.Default");
+    assert.ok(mentionMask("no mentions", known).every((x) => !x));
+  });
+});
