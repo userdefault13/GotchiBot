@@ -56,3 +56,19 @@ describe("meeting actions", () => {
     assert.match(room, /tag: "\/run"/);
   });
 });
+
+describe("meetings speak for their project", () => {
+  it("every turn opens with the project, and says other projects' notes do not apply", async () => {
+    const { meetProjectFrame } = await import("../scripts/gotchi-meet.mjs");
+    assert.deepEqual(meetProjectFrame("owned-1", null), [], "no project, no frame");
+    const meet = readFileSync(path.join(root, "scripts/gotchi-meet.mjs"), "utf8");
+    const fn = meet.slice(meet.indexOf("async function agentReply"), meet.indexOf("function withProposedAction"));
+    assert.match(fn, /\.\.\.meetProjectFrame\(speakerId, slug\)/);
+    assert.match(fn, /slug !== "aarcadeghst"/, "the arcade-written autonomy line only inside aarcadeghst");
+    const frameSrc = meet.slice(meet.indexOf("export function meetProjectFrame"), meet.indexOf("export const MEET_ACTION_RULE"));
+    assert.match(frameSrc, /about \$\{title\} only/);
+    assert.match(frameSrc, /do not apply here/);
+    const cos = readFileSync(path.join(root, "config/openclaw/templates/AGENTS.chief-of-staff.md"), "utf8");
+    assert.doesNotMatch(cos.split("\n").slice(0, 5).join("\n"), /AarcadeGh-t \/ GotchiBot fleet/);
+  });
+});

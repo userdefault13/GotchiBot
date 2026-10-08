@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./meet-channel.mjs";
 import { isProfLinkCubeId, PROF_LINK_CUBE_ID } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
-import { benchHeroes, currentProjectSlug, projectRoles, resolveMeetingsRoot } from "./project-context.mjs";
+import { benchHeroes, currentProjectSlug, loadRepo, projectRoles, resolveMeetingsRoot, roleBrief } from "./project-context.mjs";
 import { extractActions, pendingActionPath, MEET_ACTION_SUBCOMMANDS } from "./lib/meet-actions.mjs";
 import { deskMentionTargets, resolveDeskMention } from "./lib/meet-mentions.mjs";
 import { publishProjectWrite, flushProjectWrites } from "./hub-project-sync.mjs";
@@ -1740,6 +1740,40 @@ export function meetDeskFacts() {
   return lines;
 }
 
+/**
+ * The project this meeting belongs to, said first in every turn. Gotchis carry
+ * workspaces and playbooks written for other projects (aarcadeghst's standing
+ * desks, its comms cycle…); in a meeting they speak for this project only.
+ */
+export function meetProjectFrame(heroId, slug = currentProjectSlug()) {
+  if (!slug) return [];
+  let title = slug;
+  let goal = "";
+  try {
+    const d = JSON.parse(readFileSync(`${ROOT}/sessions/pstack/${slug}/dossier.json`, "utf8"));
+    title = d?.fields?.title || d?.title || slug;
+    goal = String(d?.fields?.goal || "").trim();
+  } catch {
+    /* no dossier */
+  }
+  let repo = "";
+  try {
+    const r = loadRepo(slug);
+    repo = r?.remote ? String(r.remote).replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "") : r?.path || "";
+  } catch {
+    /* no repo */
+  }
+  const lines = [
+    `PROJECT: ${title} (${slug})${repo ? ` · repo ${repo}` : ""}${goal ? ` · goal: ${goal}` : ""}.`,
+    `Everything you say here is about ${title} only. Your workspace notes and playbook may describe other projects ` +
+      `(e.g. AarcadeGh-t, its LINK/YFI/WBTC standing desks, its comms cycle): those do not apply here unless UserDefault brings them up. ` +
+      `Describe your role, desks and duties as they are in ${title}.`,
+  ];
+  const brief = heroId ? roleBrief(heroId, slug) : "";
+  if (brief) lines.push(brief);
+  return lines;
+}
+
 /** Meetings are talk only: nobody acts from here, so nobody may claim to have. */
 export const MEET_ACTION_RULE =
   "You cannot run anything yourself from a meeting, and nothing changes until it has run. Never say something was done before its output is in the transcript. " +
@@ -1752,12 +1786,15 @@ async function agentReply(meeting, speakerId) {
   const p = meeting.participants.find((x) => x.id === speakerId);
   const turns = readTranscript(meeting.id);
   const { roleId, playbook } = loadRoleForHero(speakerId);
+  // A playbook's autonomy line is written for AarcadeGh-t; outside that project
+  // it pulls the gotchi back there, so only the job title goes in.
+  const slug = currentProjectSlug();
   const jobLines = roleId
     ? [
         `Persistent job: ${playbook?.title || roleId} (${roleId})`,
-        `Autonomy: ${playbook?.autonomy || ""}`,
+        ...(slug && slug !== "aarcadeghst" ? [] : [`Autonomy: ${playbook?.autonomy || ""}`]),
       ]
-    : ["Persistent job: none"];
+    : ["Persistent job: none in this project"];
   const lastUser = [...turns].reverse().find((t) => t.role === "user");
   const everyoneCue = isEveryoneMention(lastUser?.text)
     ? [
@@ -1771,6 +1808,7 @@ async function agentReply(meeting, speakerId) {
       ]
     : [];
   const prompt = [
+    ...meetProjectFrame(speakerId, slug),
     "You are in a GotchiBot meeting. Reply in 3–8 sentences as this gotchi. Don't chair unless you are the chair. Don't repeat others.",
     "Address the human as UserDefault only — never use any other personal name.",
     ...everyoneCue,

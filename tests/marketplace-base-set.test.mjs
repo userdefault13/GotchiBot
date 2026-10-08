@@ -45,7 +45,9 @@ describe("marketplace Base set", () => {
     assert.equal(pack.version, "1.2.0");
     assert.match(publicAgents, /workspace owner/);
     assert.doesNotMatch(publicAgents, /AarcadeGh-t|UserDefault|LINK \/ YFI \/ WBTC/);
-    assert.match(liveAgents, /AarcadeGh-t/);
+    // The operator's live CoS keeps its desk rules, but speaks for the project it sits in.
+    assert.match(liveAgents, /LINK \/ YFI \/ WBTC/);
+    assert.match(liveAgents, /for the project I am seated in/);
   });
 
   it("labels the public set Base set and lists the roster", () => {
