@@ -27,6 +27,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { isMainModule } from "./is-main.mjs";
 import { connectWondrStack } from "./pstack-wondrstack.mjs";
+import { loadRepo } from "./project-context.mjs";
 
 export const ENDPOINT = process.env.WONDRSTACK_MCP_URL || "https://wondrstack.xyz/mcp";
 const SLUG = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
@@ -289,6 +290,102 @@ export async function callTool(project, tool, args = {}, { endpoint = ENDPOINT, 
   return data;
 }
 
+// ---------- setup keys from the vault (abra) ----------
+//
+// A project's app keys live in its repo-named abra namespace (AarcadeGh-t,
+// GotchiBot, WondrStack), separate from the desk's own `gotchibot` secrets.
+// They are read inside this script and sent straight to WondrStack over TLS
+// with the project's sign-in: never printed, logged, or shown to a model.
+
+/** Setup kinds → WondrStack's body fields ← abra key names (first that exists wins). */
+export const KEY_MAP = {
+  hosting: { provider: "vercel", fields: { token: ["VERCEL_TOKEN"], accountId: ["VERCEL_TEAM_ID", "VERCEL_ORG_ID"] }, required: ["token"] },
+  database: { fields: { uri: ["MONGODB_URI"], dbName: ["MONGODB_DB_NAME", "MONGO_DB_NAME", "MONGODB_DATABASE"] }, required: ["uri"] },
+  payments: { fields: { secretKey: ["STRIPE_SECRET_KEY"], publishableKey: ["STRIPE_PUBLISHABLE_KEY", "NUXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"] }, required: ["secretKey"] },
+  google_signin: { fields: { clientId: ["GOOGLE_CLIENT_ID"], clientSecret: ["GOOGLE_CLIENT_SECRET"] }, required: ["clientId", "clientSecret"] },
+};
+
+/** The abra namespace for a project: its linked repo's name (gotchibot → GotchiBot). */
+export function keyNamespace(project, { loadRepoFn = loadRepo } = {}) {
+  const repo = loadRepoFn(project);
+  const name = repo?.name || String(repo?.remote || "").split("/").pop()?.replace(/\.git$/, "");
+  if (!name) throw new Error(`${project} has no linked repo, so no abra namespace — link one, or pass --namespace`);
+  return name;
+}
+
+/** abra get <namespace> <key>, or null when it is not there. Value stays in memory only. */
+export function abraValue(namespace, key) {
+  const r = spawnSync("abra", ["get", namespace, key], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (r.status !== 0) {
+    if (/locked/i.test(String(r.stderr || ""))) throw new Error("abra vault is locked — run: abra unlock");
+    return null;
+  }
+  return String(r.stdout || "").trim() || null;
+}
+
+/**
+ * The body for one setup kind from the vault: { body, found: [key names], missing: [field names] }.
+ * Only key names leave this function's report — values go into `body`, which is sent, never shown.
+ */
+export function bodyFromVault(kind, namespace, { get = abraValue } = {}) {
+  const spec = KEY_MAP[kind];
+  if (!spec) throw new Error(`unknown setup kind: ${kind}`);
+  const body = spec.provider ? { provider: spec.provider } : {};
+  const found = [];
+  for (const [field, names] of Object.entries(spec.fields)) {
+    for (const name of names) {
+      const v = get(namespace, name);
+      if (v) {
+        body[field] = v;
+        found.push(name);
+        break;
+      }
+    }
+  }
+  const missing = spec.required.filter((f) => !body[f]);
+  return { body, found, missing };
+}
+
+/** POST the body to WondrStack's agent setup endpoint with the project's sign-in. Never echoes secrets. */
+export async function pushSetup(project, kind, body, { endpoint = ENDPOINT, store = abraStore } = {}) {
+  const token = await accessToken(project, { store });
+  const url = `${new URL(endpoint).origin}/api/agent/setup/${kind}`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60000),
+  });
+  const res = await r.json().catch(() => ({}));
+  if (r.status === 404) return { ok: false, unsupported: true, error: "WondrStack has no agent setup endpoint yet (plan gap #7)" };
+  if (!r.ok) return { ok: false, error: res.statusMessage || res.message || res.error || `HTTP ${r.status}` };
+  return { ok: true, ...(res.provider ? { provider: res.provider } : {}), ...(res.account ? { account: res.account } : {}) };
+}
+
+/** Push every requested kind whose keys are in the vault. Reports key names only. */
+export async function pushKeys(project, kinds, opts = {}) {
+  const log = opts.log || console.log;
+  const namespace = opts.namespace || keyNamespace(project, opts);
+  const out = [];
+  for (const kind of kinds) {
+    const { body, found, missing } = bodyFromVault(kind, namespace, opts);
+    if (missing.length) {
+      log(`· ${kind}: not in abra ${namespace} (needs ${missing.map((f) => KEY_MAP[kind].fields[f][0]).join(", ")}) — skipped`);
+      out.push({ kind, skipped: true, missing });
+      continue;
+    }
+    if (opts.dryRun) {
+      log(`· ${kind}: would send ${found.join(", ")} from abra ${namespace}`);
+      out.push({ kind, dryRun: true, found });
+      continue;
+    }
+    const r = await (opts.push || pushSetup)(project, kind, body, opts);
+    log(r.ok ? `✓ ${kind}: sent ${found.join(", ")} from abra ${namespace}${r.account ? ` · ${r.account}` : ""}` : `✗ ${kind}: ${r.error}`);
+    out.push({ kind, ...r, found });
+  }
+  return out;
+}
+
 // ---------- launch: the deterministic pipeline ----------
 
 /**
@@ -369,6 +466,21 @@ export async function launch(project, opts = {}) {
       continue;
     }
     if (next.step === "hosting") {
+      // The Vercel token from the project's abra namespace, when it is there and
+      // WondrStack takes it; else the secure page as before.
+      if (!opts.noVault && !opts.vaultTried) {
+        opts.vaultTried = true;
+        try {
+          const [r] = await pushKeys(project, ["hosting"], { ...opts, log });
+          if (r?.ok) {
+            if (!opts.wait) return { step: "wait", why: "Vercel token sent from abra; deploying", status };
+            await sleep(15_000);
+            continue;
+          }
+        } catch (e) {
+          log(`  vault: ${e.message || e}`);
+        }
+      }
       const url = status?.links?.hosting || (await call("get_setup_link", { step: "hosting" }))?.url;
       log(`  connect hosting here (you paste the Vercel token; GotchiBot never sees it):\n  ${url}`);
       if (opts.openLink !== false && url) (opts.open || openBrowser)(url);
@@ -398,9 +510,12 @@ gotchibot wondrstack status <project>
 gotchibot wondrstack call   <project> <tool> [json-args]
 gotchibot wondrstack launch <project> [--name N] [--type T] [--template blank] [--hosting vercel]
                                      [--city C --state S --country X] [--workspace slug] [--wait]
+gotchibot wondrstack keys   <project> [--hosting] [--database] [--payments] [--google] [--all] [--namespace N] [--dry-run]
 gotchibot wondrstack logout <project>
 
-One WondrStack account per project; each project signs in on its own (abra key WONDRSTACK_<PROJECT>).`);
+One WondrStack account per project; each project signs in on its own (abra key WONDRSTACK_<PROJECT>).
+App keys come from the project's repo-named abra namespace (gotchibot → GotchiBot, aarcadeghst → AarcadeGh-t):
+VERCEL_TOKEN, MONGODB_URI, STRIPE_SECRET_KEY + STRIPE_PUBLISHABLE_KEY, GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET.`);
 }
 
 async function main() {
@@ -440,6 +555,16 @@ async function main() {
     });
     console.log(`launch: ${r.step} — ${r.why}`);
     if (r.step !== "live") process.exitCode = r.step === "hosting" ? 3 : 4;
+    return;
+  }
+  if (cmd === "keys") {
+    const all = rest.includes("--all");
+    const kinds = all
+      ? Object.keys(KEY_MAP)
+      : Object.keys(KEY_MAP).filter((k) => rest.includes(`--${k}`) || (k === "google_signin" && rest.includes("--google")));
+    if (!kinds.length) throw new Error("say what to send: --hosting --database --payments --google, or --all");
+    const r = await pushKeys(project, kinds, { namespace: flag(rest, "namespace"), dryRun: rest.includes("--dry-run") });
+    if (r.some((x) => x.ok === false)) process.exitCode = 1;
     return;
   }
   if (cmd === "logout") {

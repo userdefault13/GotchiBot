@@ -33,3 +33,14 @@ Each GotchiBot project has its own WondrStack account (one workspace per account
 
 In a meeting, gotchis see whether the project is linked and can propose `gotchibot wondrstack status|launch|login <project>` for you to `/run`.
 
+## App keys from the vault
+
+A project's app keys live in its repo-named abra namespace (`gotchibot` → `GotchiBot`, `aarcadeghst` → `AarcadeGh-t`), separate from the desk's own `gotchibot` secrets: `VERCEL_TOKEN` (optional `VERCEL_TEAM_ID`), `MONGODB_URI` (optional `MONGODB_DB_NAME` / `MONGO_DB_NAME`), `STRIPE_SECRET_KEY` + `STRIPE_PUBLISHABLE_KEY`, `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`.
+
+```sh
+./scripts/gotchibot wondrstack keys <project> --all --dry-run   # which key names would be sent
+./scripts/gotchibot wondrstack keys <project> --hosting --database --payments --google
+```
+
+Values are read inside the script and sent to WondrStack's `POST /api/agent/setup/<kind>` with the project's sign-in; they are never printed or shown to a model. `launch` sends the Vercel token this way when it is in abra, and falls back to WondrStack's secure page when it is not (or until WondrStack ships the endpoint).
+

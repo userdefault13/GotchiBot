@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { callTool, credKey, launch, login, nextStep } from "../scripts/wondrstack.mjs";
+import { bodyFromVault, callTool, credKey, keyNamespace, launch, login, nextStep, pushKeys, pushSetup } from "../scripts/wondrstack.mjs";
 
 let server;
 let base;
@@ -18,6 +18,8 @@ const ws = { state: "none", hosting: null, slug: "gotchibot" };
 const codes = new Map();
 const tokens = new Set();
 const calls = [];
+const setupCalls = [];
+let agentSetup = false;
 
 function status() {
   if (ws.state === "none") return { workspace: null, next_steps: [] };
@@ -66,6 +68,13 @@ before(async () => {
       const t = `tok-${tokens.size}`;
       tokens.add(t);
       return send(200, { access_token: t, refresh_token: `r-${t}`, expires_in: 3600 });
+    }
+    if (u.pathname.startsWith("/api/agent/setup/")) {
+      if (!tokens.has(String(req.headers.authorization || "").replace("Bearer ", ""))) return send(401, {});
+      if (!agentSetup) return send(404, {});
+      const b = JSON.parse(body);
+      setupCalls.push({ kind: u.pathname.split("/").pop(), fields: Object.keys(b).sort() });
+      return send(200, { ok: true, provider: b.provider, account: "acct_test" });
     }
     if (u.pathname === "/mcp") {
       if (!tokens.has(String(req.headers.authorization || "").replace("Bearer ", ""))) return send(401, {});
@@ -141,5 +150,49 @@ describe("wondrstack", () => {
   it("refuses another project's account: one WondrStack account per project", async () => {
     const signedInAsGotchibot = { workspace: { slug: "gotchibot", provisioning: "repo_created", hosting: { status: "live" } } };
     await assert.rejects(launch("aarcadeghst", { call: async () => signedInAsGotchibot, log: () => {} }), /workspace "gotchibot", not "aarcadeghst"/);
+  });
+
+  it("app keys come from the project's repo-named abra namespace, names only in reports", async () => {
+    assert.equal(keyNamespace("gotchibot", { loadRepoFn: () => ({ name: "GotchiBot" }) }), "GotchiBot");
+    assert.equal(keyNamespace("x", { loadRepoFn: () => ({ remote: "https://github.com/o/AarcadeGh-t.git" }) }), "AarcadeGh-t");
+    assert.throws(() => keyNamespace("x", { loadRepoFn: () => null }), /no linked repo/);
+    const vault = { "AarcadeGh-t": { MONGODB_URI: "mongodb+srv://u:p@h/db", MONGO_DB_NAME: "aarcade", STRIPE_SECRET_KEY: "sk_test_1" } };
+    const get = (ns, k) => vault[ns]?.[k] || null;
+    const db = bodyFromVault("database", "AarcadeGh-t", { get });
+    assert.deepEqual(db.found, ["MONGODB_URI", "MONGO_DB_NAME"]);
+    assert.deepEqual(db.body, { uri: "mongodb+srv://u:p@h/db", dbName: "aarcade" });
+    assert.deepEqual(bodyFromVault("hosting", "AarcadeGh-t", { get }).missing, ["token"]);
+    assert.deepEqual(bodyFromVault("payments", "AarcadeGh-t", { get }).found, ["STRIPE_SECRET_KEY"]);
+    const lines = [];
+    const sent = [];
+    await pushKeys("aarcadeghst", ["hosting", "database"], { namespace: "AarcadeGh-t", get, log: (l) => lines.push(l), push: async (p, k, b) => (sent.push({ k, b }), { ok: true }) });
+    assert.deepEqual(sent.map((x) => x.k), ["database"]);
+    assert.ok(lines.every((l) => !l.includes("mongodb+srv")), "a secret value never reaches a log line");
+  });
+
+  it("pushes to WondrStack's agent setup endpoint, and says so plainly while it does not exist yet", async () => {
+    const opts = { endpoint: `${base}/mcp`, store };
+    const missing = await pushSetup("gotchibot", "hosting", { provider: "vercel", token: "t" }, opts);
+    assert.equal(missing.unsupported, true);
+    assert.match(missing.error, /no agent setup endpoint yet/);
+    agentSetup = true;
+    const r = await pushSetup("gotchibot", "hosting", { provider: "vercel", token: "t" }, opts);
+    assert.deepEqual(r, { ok: true, provider: "vercel", account: "acct_test" });
+    assert.deepEqual(setupCalls.at(-1), { kind: "hosting", fields: ["provider", "token"] });
+    assert.equal(JSON.stringify(r).includes('"t"'), false, "the token is not echoed");
+    agentSetup = false;
+  });
+
+  it("launch sends the Vercel token from abra at the hosting step, else shows the page", async () => {
+    const atHosting = { workspace: { slug: "gotchibot", provisioning: "repo_created", hosting: null }, links: { hosting: "https://x/hosting" } };
+    const viaVault = await launch("gotchibot", {
+      call: async () => atHosting, log: () => {}, namespace: "GotchiBot",
+      get: (ns, k) => (k === "VERCEL_TOKEN" ? "tok" : null), push: async () => ({ ok: true }),
+    });
+    assert.equal(viaVault.step, "wait");
+    assert.match(viaVault.why, /sent from abra/);
+    const viaPage = await launch("gotchibot", { call: async () => atHosting, log: () => {}, namespace: "GotchiBot", get: () => null, open: () => {} });
+    assert.equal(viaPage.step, "hosting");
+    assert.equal(viaPage.url, "https://x/hosting");
   });
 });
