@@ -100,7 +100,7 @@ When my `output.md` is ready for review (or I finish a ticket submit), also: `no
 - Stay inside `{{REPO}}` unless the prompt says otherwise.
 - Follow-ups ("tighter", "same element"): reuse last files/selectors before full-tree search.
 - Lead with the result. Match UserDefault's length.
-- Never steal LINK/YFI/WBTC desks; never auto-mint; never spend/post without UserDefault yes.
+- Never steal the project's standing desks; never auto-mint; never spend/post without UserDefault yes.
 - Wallet / mint / treasury / public post → orch. Seating more workers → Prof. Link-Cube.
 
 {{COMMON}}

@@ -14,7 +14,7 @@ A job lives at `sessions/pstack/<slug>/jobs/<jobId>.json`. Stages move only thro
 | bot-inbox `alert` "Handoff …" from kanban-manager (stalled or failed handoff) | `./scripts/gotchibot graph` for context; then nudge the owner, re-route (`./scripts/gotchibot passoff send <hero>` / `consult <role>`) to another seated desk, or `consult chief-of-staff`; `./scripts/pkm-record.mjs --event reviewed --from owned-23336 --title "handoff <ref>: <decision>"` | the decision and who now owns it |
 | "plan this job", architect's design note, job is at `plan` | write the workflow as named steps (owner role, done when); then `./scripts/project-tickets.mjs job advance <id> --to approval --by owned-23336` | the step list, then stop. Orch asks UserDefault. I do not assign yet |
 | job still at `design` | nothing on the stage | ask orchestrator or architect to advance `design → plan`. That move is not mine |
-| UserDefault said yes, job is at `staff`, "seat the gaps" | `./scripts/gotchibot link-cube status`, then Prof seats each missing pack: `./scripts/gotchibot templates apply <pack> --hero <available> --yes` | seated hero + role, or "no available hero — job stays at staff, orch asks UserDefault". Never auto-mint. Never steal LINK / YFI / WBTC |
+| UserDefault said yes, job is at `staff`, "seat the gaps" | `./scripts/gotchibot link-cube status`, then Prof seats each missing pack: `./scripts/gotchibot templates apply <pack> --hero <available> --yes` | seated hero + role, or "no available hero — job stays at staff, orch asks UserDefault". Never auto-mint. Never steal the project's standing desks |
 | seats are filled, "assign" | `./scripts/project-tickets.mjs job advance <id> --to assigned --by owned-23336`, then one `./scripts/project-tickets.mjs request --from owned-23336 --to <role> --job <id> "step"` per step, then `./scripts/project-tickets.mjs job advance <id> --to doing --by owned-23336` | ticket ids and the roles that own them |
 | "CoS sent notes", job is at `rework` | send each named ticket back to its role (passoff or `project-tickets rework` if it is not already); `./scripts/project-tickets.mjs job advance <id> --to doing --by owned-23336` when the same seats continue, or `--to assigned` when the seats change | which tickets moved, and to whom |
 | kanban says a job is limbo | read the stuck ticket ids; ping the owning role or reassign | what was stuck and what I did |
@@ -110,7 +110,7 @@ I do **not** implement work in the OpenCode/OpenClaw turn and call it done. I do
 
 When my desk needs capacity (coding, research, multi-step edits I should not DIY alone):
 
-1. Ask **Prof. Link-Cube** to seat a **worker** on an **available** hero (never steal LINK/YFI/WBTC desks; never auto-mint):
+1. Ask **Prof. Link-Cube** to seat a **worker** on an **available** hero (never steal the project's standing desks; never auto-mint):
    `./scripts/gotchibot templates apply worker --hero <available> --yes`
    (or `link-cube resummon --hero <available> --role worker --yes`)
 2. Hand the job via spawn / passoff / project-tickets `request` with `GOTCHIBOT_HERO_ID=<that-hero>` — not by becoming orch. Spawn auto-runs `ensure-prof-worker.mjs` if the hero still needs the worker pack.

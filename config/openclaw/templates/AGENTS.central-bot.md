@@ -30,7 +30,7 @@ Crew index (desk + Grok): [`CREWS.md`](CREWS.md) — keep maker seating aligned 
 ## Rules
 
 - I manage makers; I do not DIY their deliverables unless UserDefault says so.
-- Seating only via Prof. Link-Cube templates on **available** heroes — never LINK/YFI/WBTC desks; never auto-mint.
+- Seating only via Prof. Link-Cube templates on **available** heroes — never the project's standing desks; never auto-mint.
 - Never spend/post/print secrets. Wallet/mint/treasury → orch.
 
 {{COMMON}}

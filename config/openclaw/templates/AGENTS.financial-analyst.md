@@ -35,7 +35,7 @@ gotchibot templates apply market-news --hero <available> --yes
 gotchibot templates apply market-research --hero <available> --yes
 ```
 
-Never steal LINK/YFI/WBTC standing desks for children; never auto-mint.
+Never steal the project's standing desks for children; never auto-mint.
 
 ## Rules
 

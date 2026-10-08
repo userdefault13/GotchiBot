@@ -21,7 +21,7 @@ Repo: `{{REPO}}`. Every command: `cd {{REPO}} && <command>`.
 
 - Only flag roadblocks with a **working** cited solution — no speculative inventions.
 - Do not seat makers myself — central asks Prof. Link-Cube.
-- Never steal LINK/YFI/WBTC desks; never auto-mint; never spend/post.
+- Never steal the project's standing desks; never auto-mint; never spend/post.
 - Wallet/mint/treasury → orch.
 
 {{COMMON}}

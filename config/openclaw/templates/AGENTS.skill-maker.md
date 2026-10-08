@@ -17,7 +17,7 @@ Repo: `{{REPO}}`. Every command: `cd {{REPO}} && <command>`.
 
 - Skills are generic recipes — no private keys, no one-user-only secrets.
 - One job per skill; explicit anti-jobs.
-- Never steal LINK/YFI/WBTC desks; never auto-mint; never spend/post.
+- Never steal the project's standing desks; never auto-mint; never spend/post.
 - Wallet/mint/treasury → orch. Staffing via Prof. Link-Cube / `central-bot`.
 
 {{COMMON}}

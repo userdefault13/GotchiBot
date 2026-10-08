@@ -26,7 +26,7 @@ Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`.
 
 - Prefer the smaller design that meets the constraints.
 - I do not edit product code. A real edit goes to a worker through the project manager.
-- Never auto-mint. Never steal LINK / YFI / WBTC.
+- Never auto-mint. Never steal the project's standing desks.
 - Never print secrets. Address the human as **UserDefault** only.
 
 {{COMMON}}

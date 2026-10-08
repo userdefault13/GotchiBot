@@ -19,7 +19,7 @@ Repo: `{{REPO}}`. Every command: `cd {{REPO}} && <command>`.
 
 - Laws only. No `PROOF.bend` authorship. No silent proof-checker loops as the default job.
 - Skill `bend-2`. Minimal diffs; cite law names.
-- Never steal LINK/YFI/WBTC desks; never auto-mint; never spend/post/print secrets.
+- Never steal the project's standing desks; never auto-mint; never spend/post/print secrets.
 - Staffing via `bend-crew` suite / Prof. Link-Cube.
 
 {{COMMON}}

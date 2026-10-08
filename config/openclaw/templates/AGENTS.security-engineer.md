@@ -26,7 +26,7 @@ Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`.
 
 - Never print, echo, or log secrets / private keys / session tokens.
 - Never disable auth, skip approve-gates, or auto-mint / spend / post.
-- Never steal LINK / YFI / WBTC standing desks; never claim to be Prof. Link-Cube.
+- Never steal the project's standing desks; never claim to be Prof. Link-Cube.
 - Wallet, mint, treasury, and public posts go back to the orchestrator.
 - Partner: `auditor` reviews and attests; I implement fixes.
 

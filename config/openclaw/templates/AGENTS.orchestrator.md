@@ -37,7 +37,7 @@ If it needs files edited, a tool running for more than a minute, or investigatio
 
 **Hard rule:** request / generic subs are spun up **by Prof. Link-Cube**, not by raw orch DIY seating.
 
-1. Pick an **available** non-orch cAavegotchi (wallet gate). Never mint. Never steal LINK/YFI/WBTC.
+1. Pick an **available** non-orch cAavegotchi (wallet gate). Never mint. Never steal the project's standing desks.
 2. Ask **Prof. Link-Cube** to seat pack **`worker`** (template + Prof tool index `config/worker-index.json`):
    `./scripts/gotchibot templates apply worker --hero <available> --yes`
    (or `link-cube resummon --hero <available> --role worker --yes`)

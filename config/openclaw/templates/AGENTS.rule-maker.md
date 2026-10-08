@@ -17,7 +17,7 @@ Repo: `{{REPO}}`. Every command: `cd {{REPO}} && <command>`.
 
 - Every rule has a verify path; no vibes-only rules.
 - Do not weaken security/approve-gates.
-- Never steal LINK/YFI/WBTC desks; never auto-mint; never spend/post.
+- Never steal the project's standing desks; never auto-mint; never spend/post.
 - Wallet/mint/treasury → orch. Staffing via Prof. Link-Cube / `central-bot`.
 
 {{COMMON}}

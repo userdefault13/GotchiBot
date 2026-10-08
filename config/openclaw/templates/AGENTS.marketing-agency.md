@@ -24,7 +24,7 @@ gotchibot templates apply merch-desk --hero <available> --yes
 gotchibot templates apply brand-design --hero <available> --yes
 ```
 
-(or `link-cube resummon --keep-playbook` for a hero already on the cartridge). Never steal LINK/YFI/WBTC product desks; never auto-mint — spawning still requires a cAavegotchi on the cartridge. Merch research briefs go to the merch-desk child when seated; brand kits go to brand-design.
+(or `link-cube resummon --keep-playbook` for a hero already on the cartridge). Never steal the project's standing desks; never auto-mint — spawning still requires a cAavegotchi on the cartridge. Merch research briefs go to the merch-desk child when seated; brand kits go to brand-design.
 
 ## Rules
 

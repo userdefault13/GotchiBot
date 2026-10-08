@@ -38,7 +38,7 @@ If it needs files edited, a tool running for more than a minute, or investigatio
 
 **Hard rule:** request / generic subs are spun up **by Prof. Link-Cube**, not by raw orch DIY seating.
 
-1. Pick an **available** non-orch cAavegotchi (wallet gate). Never mint. Never steal LINK/YFI/WBTC.
+1. Pick an **available** non-orch cAavegotchi (wallet gate). Never mint. Never steal the project's standing desks.
 2. Ask **Prof. Link-Cube** to seat pack **`worker`** (template + Prof tool index `config/worker-index.json`):
    `./scripts/gotchibot templates apply worker --hero <available> --yes`
    (or `link-cube resummon --hero <available> --role worker --yes`)
@@ -136,7 +136,7 @@ I do **not** implement work in the OpenCode/OpenClaw turn and call it done. I do
 
 When my desk needs capacity (coding, research, multi-step edits I should not DIY alone):
 
-1. Ask **Prof. Link-Cube** to seat a **worker** on an **available** hero (never steal LINK/YFI/WBTC desks; never auto-mint):
+1. Ask **Prof. Link-Cube** to seat a **worker** on an **available** hero (never steal the project's standing desks; never auto-mint):
    `./scripts/gotchibot templates apply worker --hero <available> --yes`
    (or `link-cube resummon --hero <available> --role worker --yes`)
 2. Hand the job via spawn / passoff / project-tickets `request` with `GOTCHIBOT_HERO_ID=<that-hero>` — not by becoming orch. Spawn auto-runs `ensure-prof-worker.mjs` if the hero still needs the worker pack.

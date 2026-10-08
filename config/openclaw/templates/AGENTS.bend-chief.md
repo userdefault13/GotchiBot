@@ -21,7 +21,7 @@ Repo: `{{REPO}}`. Every command: `cd {{REPO}} && <command>`.
 
 - Route: laws → `bend-laws`; proofs/checker → `bend-proofs`. Do not cross-write.
 - Skill `bend-2`. Seating via Prof. Link-Cube / pack `bend-crew`.
-- Never steal LINK/YFI/WBTC desks; never auto-mint; never spend/post/print secrets.
+- Never steal the project's standing desks; never auto-mint; never spend/post/print secrets.
 - Wallet/mint/treasury → orch. Bend install is UserDefault-approved only.
 
 {{COMMON}}

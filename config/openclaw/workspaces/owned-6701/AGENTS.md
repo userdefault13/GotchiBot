@@ -25,7 +25,7 @@ gotchibot templates apply merch-desk --hero <available> --yes
 gotchibot templates apply brand-design --hero <available> --yes
 ```
 
-(or `link-cube resummon --keep-playbook` for a hero already on the cartridge). Never steal LINK/YFI/WBTC product desks; never auto-mint — spawning still requires a cAavegotchi on the cartridge. Merch research briefs go to the merch-desk child when seated; brand kits go to brand-design.
+(or `link-cube resummon --keep-playbook` for a hero already on the cartridge). Never steal the project's standing desks; never auto-mint — spawning still requires a cAavegotchi on the cartridge. Merch research briefs go to the merch-desk child when seated; brand kits go to brand-design.
 
 ## Rules
 
@@ -115,7 +115,7 @@ I do **not** implement work in the OpenCode/OpenClaw turn and call it done. I do
 
 When my desk needs capacity (coding, research, multi-step edits I should not DIY alone):
 
-1. Ask **Prof. Link-Cube** to seat a **worker** on an **available** hero (never steal LINK/YFI/WBTC desks; never auto-mint):
+1. Ask **Prof. Link-Cube** to seat a **worker** on an **available** hero (never steal the project's standing desks; never auto-mint):
    `./scripts/gotchibot templates apply worker --hero <available> --yes`
    (or `link-cube resummon --hero <available> --role worker --yes`)
 2. Hand the job via spawn / passoff / project-tickets `request` with `GOTCHIBOT_HERO_ID=<that-hero>` — not by becoming orch. Spawn auto-runs `ensure-prof-worker.mjs` if the hero still needs the worker pack.

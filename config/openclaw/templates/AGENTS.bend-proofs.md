@@ -19,7 +19,7 @@ Repo: `{{REPO}}`. Every command: `cd {{REPO}} && <command>`.
 
 - Proofs only. Do not rewrite laws. Skill `bend-2`.
 - Prove with real checker output — no fabricated green.
-- Never steal LINK/YFI/WBTC desks; never auto-mint; never spend/post/print secrets.
+- Never steal the project's standing desks; never auto-mint; never spend/post/print secrets.
 - Staffing via `bend-crew` suite / Prof. Link-Cube.
 
 {{COMMON}}

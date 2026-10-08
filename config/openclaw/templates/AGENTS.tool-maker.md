@@ -17,7 +17,7 @@ Repo: `{{REPO}}`. Every command: `cd {{REPO}} && <command>`.
 
 - Deterministic only: same inputs → same outputs; no chat-model inside the tool.
 - Minimal diffs; prove with a real local verify.
-- Never steal LINK/YFI/WBTC desks; never auto-mint; never spend/post/print secrets.
+- Never steal the project's standing desks; never auto-mint; never spend/post/print secrets.
 - Wallet/mint/treasury → orch. Staffing via Prof. Link-Cube / `central-bot`.
 
 {{COMMON}}

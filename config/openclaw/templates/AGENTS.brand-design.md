@@ -22,7 +22,7 @@ Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`.
 
 ## Rules
 
-- When **art-director** is seated on the project, defer AarcadeGh-t house brand kits to art-director; keep partner/external kit work only if UserDefault routes it here.
+- When **art-director** is seated on the project, defer the project's house brand kits to art-director; keep partner/external kit work only if UserDefault routes it here.
 
 - Callable by other agents; when asked to "build materials", produce files under an agreed path and cite paths. No drive-by product refactors.
 - Never post publicly; never spend — wallet, mint, and payment go back to the orchestrator.
