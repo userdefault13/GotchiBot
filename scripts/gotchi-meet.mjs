@@ -30,6 +30,7 @@ import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./
 import { isProfLinkCubeId, PROF_LINK_CUBE_ID } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
 import { benchHeroes, currentProjectSlug, projectRoles, resolveMeetingsRoot } from "./project-context.mjs";
+import { extractActions, pendingActionPath, MEET_ACTION_SUBCOMMANDS } from "./lib/meet-actions.mjs";
 import { publishProjectWrite, flushProjectWrites } from "./hub-project-sync.mjs";
 import {
   ROOT,
@@ -1733,10 +1734,11 @@ export function meetDeskFacts() {
 
 /** Meetings are talk only: nobody acts from here, so nobody may claim to have. */
 export const MEET_ACTION_RULE =
-  "You cannot take actions from a meeting: no command runs, no role or seat changes, nothing is assigned or sent. Never say something was done. " +
-  "When UserDefault asks for an action, say it has not been done yet and give the exact command to run here with ! — " +
-  "e.g. seat a gotchi as a project hero: !./scripts/gotchibot heroes bind chief-of-staff owned-12302 (see who sits where: !./scripts/gotchibot heroes). " +
-  "If a name could match more than one gotchi, ask which id.";
+  "You cannot run anything yourself from a meeting, and nothing changes until it has run. Never say something was done before its output is in the transcript. " +
+  `To act on a request, end your reply with one line: ACTION: ./scripts/gotchibot <${MEET_ACTION_SUBCOMMANDS.join("|")}> … — ` +
+  "e.g. ACTION: ./scripts/gotchibot heroes bind chief-of-staff owned-12302. UserDefault sees it and types /run to run it (or /skip). " +
+  "Say you have proposed it, not done it. Other commands cannot be proposed: give them as text for UserDefault to run with !. " +
+  "If a name could match more than one gotchi, ask which id instead of guessing.";
 
 async function agentReply(meeting, speakerId) {
   const p = meeting.participants.find((x) => x.id === speakerId);
@@ -1789,8 +1791,48 @@ async function agentReply(meeting, speakerId) {
     return { ok: false, text: `(unreachable: ${why})`, reason: why };
   }
   // Gotchis sometimes echo the transcript's "[chair] owned-22899:" line format.
-  const text = (extractReplyText(r) || "").replace(/^\s*\[(?:chair|agent|user)\]\s*[\w.-]+:\s*/i, "") || "(no reply)";
-  return { ok: true, text };
+  const said = (extractReplyText(r) || "").replace(/^\s*\[(?:chair|agent|user)\]\s*[\w.-]+:\s*/i, "") || "(no reply)";
+  return { ok: true, text: withProposedAction(meeting, speakerId, said) };
+}
+
+/**
+ * A reply's `ACTION:` line becomes the room's proposed command: kept for /run,
+ * shown under the message. A command outside the allowlist is shown, not kept.
+ */
+function withProposedAction(meeting, speakerId, said) {
+  const { text, actions } = extractActions(said);
+  if (!actions.length) return said;
+  let shown = text || "(proposes a command)";
+  const ok = actions.find((a) => a.allowed);
+  if (ok) {
+    writeJson(pendingActionPath(meetingsRoot(), meeting.id), { cmd: ok.cmd, by: speakerId, ts: new Date().toISOString() });
+    shown += `\n\n▶ Proposed: ${ok.cmd}\n  /run to run it · /skip to drop it`;
+  }
+  for (const a of actions.filter((x) => !x.allowed)) shown += `\n\n⚠ Not runnable from a meeting: ${a.cmd}`;
+  return shown;
+}
+
+/** The command waiting for /run in the open meeting, or null. */
+export function pendingAction() {
+  const meeting = loadCurrentMeeting();
+  if (!meeting) return null;
+  return readJson(pendingActionPath(meetingsRoot(), meeting.id), null);
+}
+
+/** /run: run the proposed command (posted to the room like !cmd). /skip: drop it. */
+export async function resolvePendingAction(how) {
+  const meeting = requireOpenMeeting();
+  const path = pendingActionPath(meetingsRoot(), meeting.id);
+  const act = readJson(path, null);
+  if (!act?.cmd) return { ok: false, message: "no proposed command" };
+  try {
+    unlinkSync(path);
+  } catch {
+    /* already gone */
+  }
+  if (how === "skip") return { ok: true, message: `skipped: ${act.cmd}` };
+  const { row } = await shellTurn(act.cmd);
+  return { ok: true, message: row.text };
 }
 
 function printMeetingBlock(meeting, turns, { pick } = {}) {
@@ -2587,6 +2629,20 @@ async function main() {
       console.log(`edited ${turn.ts}  (${turn.speaker})`);
       console.log(turn.text);
     }
+    return;
+  }
+
+  // /run and /skip from the meet prompter: the gotchi-proposed command.
+  if (cmd === "action") {
+    const how = rest[0] === "skip" ? "skip" : rest[0] === "run" ? "run" : null;
+    if (!how) {
+      const act = pendingAction();
+      console.log(act ? `proposed by ${act.by}: ${act.cmd}` : "no proposed command");
+      return;
+    }
+    const r = await resolvePendingAction(how);
+    console.log(r.message);
+    if (!r.ok) process.exitCode = 1;
     return;
   }
 

@@ -597,6 +597,8 @@ const SLASH_COMMANDS = [
   { tag: "/edit", hint: "edit last msg", needsArg: true },
   { tag: "/start", hint: "start recording", needsArg: true },
   { tag: "/end", hint: "stop recording", needsArg: false },
+  { tag: "/run", hint: "run the proposed command", needsArg: false },
+  { tag: "/skip", hint: "drop the proposed command", needsArg: false },
   { tag: "/help", hint: "list commands", needsArg: false },
   { tag: "/prev", hint: "older messages", needsArg: false },
   { tag: "/next", hint: "newer messages", needsArg: false },
@@ -1433,7 +1435,7 @@ class Prompter {
         // No match — show help instead of saying.
         this.clear();
         sendError =
-          "/chat pick gotchis · /prev /next · /edit · /start · /end · /desk · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
+          "/chat pick gotchis · /prev /next · /edit · /start · /end · /run /skip · /desk · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
         return "redraw";
       }
     }
@@ -1475,7 +1477,7 @@ class Prompter {
     if (line === "/help" || line === "/?") {
       editTargetTs = null;
       sendError =
-        "/chat pick gotchis · /prev /next · /edit · /start · /end · /desk · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
+        "/chat pick gotchis · /prev /next · /edit · /start · /end · /run /skip · /desk · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave";
       return "redraw";
     }
     if (line === "/edit") {
@@ -1507,6 +1509,17 @@ class Prompter {
     if (line === "/recap-present") {
       editTargetTs = null;
       runMeetHelper(["morning", "present"]);
+      return "redraw";
+    }
+    // A gotchi's proposed command (▶ Proposed: …): run it here, or drop it.
+    if (line === "/run" || line === "/skip") {
+      editTargetTs = null;
+      this.history.push(line);
+      if (this.history.length > 100) this.history.shift();
+      runMeetHelper(["action", line.slice(1)], {
+        pending: line === "/run" ? "running the proposed command…" : "dropping it…",
+        failLabel: line === "/run" ? "nothing to run" : "nothing to skip",
+      });
       return "redraw";
     }
     if (line.startsWith("!")) {
@@ -1545,7 +1558,7 @@ class Prompter {
       const cmd = line.split(/\s+/)[0];
       sendError =
         line === "/" || line === "/?"
-          ? "/chat pick gotchis · /prev /next · /edit · /start · /end · /desk · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave"
+          ? "/chat pick gotchis · /prev /next · /edit · /start · /end · /run /skip · /desk · /cockpit · /colabo · /pardon · /continue · !cmd · ^C leave"
           : `unknown ${cmd} · /help`;
       return "redraw";
     }
