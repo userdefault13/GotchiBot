@@ -80,3 +80,23 @@ describe("meetings speak for their project", () => {
     assert.doesNotMatch(cos.split("\n").slice(0, 5).join("\n"), /AarcadeGh-t \/ GotchiBot fleet/);
   });
 });
+
+describe("proposals are the room's, not copies", () => {
+  it("drops ▶ Proposed / /run lines a gotchi copied, keeps its words and real ACTION lines", async () => {
+    const { stripCopiedProposals } = await import("../scripts/gotchi-meet.mjs");
+    const reply = [
+      "I've proposed the login below.",
+      "▶ Proposed: ./scripts/gotchibot seat owned-12444 project-manager",
+      "/run to run it · /skip to drop it",
+      "▶ Proposed 1/2: ./scripts/gotchibot wondrstack login gotchibot",
+      "ACTION: ./scripts/gotchibot wondrstack login gotchibot",
+    ].join("\n");
+    const out = stripCopiedProposals(reply);
+    assert.doesNotMatch(out, /▶ Proposed|\/run to run/);
+    assert.match(out, /I've proposed the login below\./);
+    assert.match(out, /^ACTION: \.\/scripts\/gotchibot wondrstack login gotchibot$/m);
+    const meet = readFileSync(path.join(root, "scripts/gotchi-meet.mjs"), "utf8");
+    assert.match(meet, /writeJson\(pendingActionPath\(meetingsRoot\(\), meeting\.id\), \{ actions: queue \}\)/, "several proposals queue up");
+    assert.match(meet, /const act = queue\.shift\(\)/, "/run takes the oldest");
+  });
+});

@@ -1854,39 +1854,75 @@ async function agentReply(meeting, speakerId) {
  * shown under the message. A command outside the allowlist is shown, not kept.
  */
 function withProposedAction(meeting, speakerId, said) {
-  const { text, actions } = extractActions(said);
-  if (!actions.length) return said;
+  // Gotchis copy the room's "▶ Proposed: … /run to run it" lines from the
+  // transcript; only real ACTION: lines become proposals, so drop the copies.
+  const cleaned = stripCopiedProposals(said);
+  const { text, actions } = extractActions(cleaned);
+  if (!actions.length) return cleaned.replace(/\n{3,}/g, "\n\n").trim() || said;
   let shown = text || "(proposes a command)";
-  const ok = actions.find((a) => a.allowed);
-  if (ok) {
-    writeJson(pendingActionPath(meetingsRoot(), meeting.id), { cmd: ok.cmd, by: speakerId, ts: new Date().toISOString() });
-    shown += `\n\n▶ Proposed: ${ok.cmd}\n  /run to run it · /skip to drop it`;
+  const queue = readPendingQueue(meeting.id);
+  const ok = actions.filter((a) => a.allowed);
+  for (const a of ok) {
+    if (!queue.some((q) => q.cmd === a.cmd)) queue.push({ cmd: a.cmd, by: speakerId, ts: new Date().toISOString() });
+  }
+  if (ok.length) {
+    writeJson(pendingActionPath(meetingsRoot(), meeting.id), { actions: queue });
+    queue.forEach((q, i) => {
+      shown += `\n\n▶ Proposed${queue.length > 1 ? ` ${i + 1}/${queue.length}` : ""}: ${q.cmd}`;
+    });
+    shown += `\n  /run runs ${queue.length > 1 ? "#1, then the next" : "it"} · /skip drops ${queue.length > 1 ? "#1" : "it"}`;
   }
   for (const a of actions.filter((x) => !x.allowed)) shown += `\n\n⚠ Not runnable from a meeting: ${a.cmd}`;
   return shown;
+}
+
+/** Drop "▶ Proposed …" / "/run …" / "⚠ Not runnable …" lines a gotchi copied from the transcript. */
+export function stripCopiedProposals(said) {
+  return String(said || "")
+    .replace(/^[ \t]*▶[ \t]*Proposed( \d+\/\d+)?:.*$/gim, "")
+    .replace(/^[ \t]*\/run (to run it|runs).*$/gim, "")
+    .replace(/^[ \t]*⚠[ \t]*Not runnable from a meeting:.*$/gim, "");
+}
+
+/** The room's proposed commands, oldest first (older single-proposal files read as one). */
+function readPendingQueue(meetingId) {
+  const raw = readJson(pendingActionPath(meetingsRoot(), meetingId), null);
+  if (Array.isArray(raw?.actions)) return raw.actions.filter((a) => a?.cmd);
+  return raw?.cmd ? [raw] : [];
 }
 
 /** The command waiting for /run in the open meeting, or null. */
 export function pendingAction() {
   const meeting = loadCurrentMeeting();
   if (!meeting) return null;
-  return readJson(pendingActionPath(meetingsRoot(), meeting.id), null);
+  return readPendingQueue(meeting.id)[0] || null;
+}
+
+/** Every proposed command waiting in the open meeting. */
+export function pendingActions() {
+  const meeting = loadCurrentMeeting();
+  return meeting ? readPendingQueue(meeting.id) : [];
 }
 
 /** /run: run the proposed command (posted to the room like !cmd). /skip: drop it. */
 export async function resolvePendingAction(how) {
   const meeting = requireOpenMeeting();
   const path = pendingActionPath(meetingsRoot(), meeting.id);
-  const act = readJson(path, null);
+  const queue = readPendingQueue(meeting.id);
+  const act = queue.shift();
   if (!act?.cmd) return { ok: false, message: "no proposed command" };
-  try {
-    unlinkSync(path);
-  } catch {
-    /* already gone */
+  if (queue.length) writeJson(path, { actions: queue });
+  else {
+    try {
+      unlinkSync(path);
+    } catch {
+      /* already gone */
+    }
   }
-  if (how === "skip") return { ok: true, message: `skipped: ${act.cmd}` };
+  const left = queue.length ? ` · next: ${queue[0].cmd} (${queue.length} left)` : "";
+  if (how === "skip") return { ok: true, message: `skipped: ${act.cmd}${left}` };
   const { row } = await shellTurn(act.cmd);
-  return { ok: true, message: row.text };
+  return { ok: true, message: `${row.text}${left}` };
 }
 
 function printMeetingBlock(meeting, turns, { pick } = {}) {
@@ -2714,8 +2750,9 @@ async function main() {
   if (cmd === "action") {
     const how = rest[0] === "skip" ? "skip" : rest[0] === "run" ? "run" : null;
     if (!how) {
-      const act = pendingAction();
-      console.log(act ? `proposed by ${act.by}: ${act.cmd}` : "no proposed command");
+      const all = pendingActions();
+      if (!all.length) console.log("no proposed command");
+      all.forEach((a, i) => console.log(`${i + 1}. ${a.cmd}  (proposed by ${a.by})`));
       return;
     }
     const r = await resolvePendingAction(how);
