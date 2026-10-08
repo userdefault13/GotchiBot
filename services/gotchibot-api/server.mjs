@@ -20,6 +20,7 @@ import { validateEdges } from "./graph.mjs";
 import {
   adoptDeskSessionFromTerminal,
   createOpencodeClient,
+  DEFAULT_DESK_AGENT,
   deskThreadTitle,
   ensureDeskSession,
   listProjectSessions,
@@ -884,6 +885,33 @@ export function createApiServer({ store, config, projects, verifyWallet, ownerWa
               error: "the Hub's OpenCode server is not reachable — gotchibot hub desk service status",
             });
           }
+        }
+
+        // POST /api/gotchibot/projects/:slug/desk/say — a desk posts a message
+        // into the project's chat for the orchestrator (a meeting's outcome).
+        // Desks only. Does not wait for the reply: the turn runs here and every
+        // attached chat shows it.
+        const sayMatch = path.match(/^\/api\/gotchibot\/projects\/([^/]+)\/desk\/say$/);
+        if (req.method === "POST" && sayMatch) {
+          if (deskKind === "phone") return json(res, 403, { ok: false, error: "desks only" });
+          await loadProjectSnapshot();
+          let slug;
+          try {
+            slug = decodeURIComponent(sayMatch[1]);
+          } catch {
+            slug = "";
+          }
+          if (!projectSource.getProject(slug)) return json(res, 404, { ok: false, error: "project not found" });
+          const body = (await readBody(req)) || {};
+          const text = typeof body.text === "string" ? body.text.trim() : "";
+          if (!text) return json(res, 400, { ok: false, error: "text required" });
+          if (text.length > 16_000) return json(res, 400, { ok: false, error: "text too long (16000 max)" });
+          const session = await store.getDeskSession(slug);
+          if (!session?.sessionId) return json(res, 409, { ok: false, error: "this project's chat has no session yet" });
+          opencodeClient
+            .sendMessage(session.sessionId, { text, agent: DEFAULT_DESK_AGENT })
+            .catch((err) => console.error(`desk say ${slug}: ${String(err?.message || err).slice(0, 200)}`));
+          return json(res, 202, { ok: true, sessionId: session.sessionId });
         }
 
         // POST /api/gotchibot/projects/:slug/desk/session — New session in the

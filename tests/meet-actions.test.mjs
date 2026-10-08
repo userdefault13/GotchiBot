@@ -136,7 +136,7 @@ describe("a meeting's plan", () => {
     assert.equal(mod.endChoiceKey("r"), "", "closed: keys go to the chat");
     const meet = readFileSync(path.join(root, "scripts/gotchi-meet.mjs"), "utf8");
     assert.match(meet, /Check the whole plan first/);
-    assert.match(meet, /if \(r\.code !== 0 \|\| r\.timedOut\) return \{ ok: false/, "stops at the first failing step");
+    assert.match(meet, /if \(r\.code !== 0 \|\| r\.timedOut\) \{\n\s+const out = \{ ok: false/, "stops at the first failing step");
   });
 });
 
@@ -152,5 +152,41 @@ describe("meeting commands time out completely", () => {
     const out = JSON.parse(r.stdout.trim().split("\n").pop());
     assert.equal(out.timedOut, true);
     assert.ok(out.ms < 8000, `returned after ${out.ms} ms`);
+  });
+});
+
+describe("the meeting reports to the orchestrator", () => {
+  it("one chat message: topic, who, what the plan did, minutes, the chair's last word", async () => {
+    const { mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+    const { randomBytes } = await import("node:crypto");
+    const slug = `zz-report-${randomBytes(3).toString("hex")}`;
+    const prev = process.env.GOTCHIBOT_PROJECT;
+    process.env.GOTCHIBOT_PROJECT = slug;
+    const dir = path.join(root, "sessions", "pstack", slug, "meetings", "m1");
+    try {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(path.join(dir, "transcript.jsonl"), `${JSON.stringify({ ts: "2026-10-08T00:00:00Z", speaker: "owned-1", role: "chair", text: "Seats are set; launch is next." })}\n`);
+      writeFileSync(path.join(dir, "plan-result.json"), JSON.stringify({ ok: false, ran: [{ cmd: "./scripts/gotchibot seat owned-2 project-manager", code: 0 }, { cmd: "./scripts/gotchibot wondrstack login gotchibot --hub", code: 1 }], stoppedAt: "./scripts/gotchibot wondrstack login gotchibot --hub", left: 0 }));
+      const { meetingReport, reportToOrchestrator } = await import("../scripts/gotchi-meet.mjs");
+      const meeting = { id: "m1", topic: "Goals", participants: [{ id: "u", name: "UserDefault" }, { id: "owned-1", name: "Chair" }] };
+      const text = meetingReport(meeting, { minutesPath: path.join(root, "sessions/pstack", slug, "meetings/m1/minutes.md") });
+      assert.match(text, /^\[meeting report\] "Goals" ended\. With: UserDefault, Chair\./);
+      assert.match(text, /Plan: stopped at \.\/scripts\/gotchibot wondrstack login gotchibot --hub; ran ✓ \.\/scripts\/gotchibot seat owned-2 project-manager · ✗ .*\(exit 1\)/);
+      assert.match(text, new RegExp(`Minutes: sessions/pstack/${slug}/meetings/m1/minutes\\.md`));
+      assert.match(text, /Chair's last word: "Seats are set; launch is next\."/);
+      const calls = [];
+      const r = await reportToOrchestrator(meeting, { request: async (method, url, opts) => (calls.push({ method, url, text: opts.body.text }), {}) });
+      assert.equal(r.ok, true);
+      assert.deepEqual([calls[0].method, calls[0].url], ["POST", `/api/gotchibot/projects/${slug}/desk/say`]);
+      writeFileSync(path.join(dir, "plan-result.json"), JSON.stringify({ ok: true, dropped: ["./scripts/gotchibot seat owned-3 architect"], ran: [] }));
+      assert.match(meetingReport(meeting), /Plan: dropped without running/);
+      const api = readFileSync(path.join(root, "services/gotchibot-api/server.mjs"), "utf8");
+      assert.match(api, /desk\\\/say\$/);
+      assert.match(api, /if \(deskKind === "phone"\) return json\(res, 403/);
+    } finally {
+      if (prev == null) delete process.env.GOTCHIBOT_PROJECT;
+      else process.env.GOTCHIBOT_PROJECT = prev;
+      rmSync(path.join(root, "sessions", "pstack", slug), { recursive: true, force: true });
+    }
   });
 });

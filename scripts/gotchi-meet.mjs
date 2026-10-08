@@ -1889,7 +1889,11 @@ export async function runMeetingPlan() {
   const bad = readPendingQueue(meeting.id)
     .map((a) => ({ cmd: a.cmd, why: templateProblem(a.cmd) }))
     .filter((x) => x.why);
-  if (bad.length) return { ok: false, ran: [], stoppedAt: bad[0].cmd, why: bad[0].why, left: readPendingQueue(meeting.id).length };
+  if (bad.length) {
+    const out = { ok: false, ran: [], stoppedAt: bad[0].cmd, why: bad[0].why, left: readPendingQueue(meeting.id).length };
+    savePlanResult(meeting.id, out);
+    return out;
+  }
   const ran = [];
   for (;;) {
     const queue = readPendingQueue(meeting.id);
@@ -1904,15 +1908,28 @@ export async function runMeetingPlan() {
       }
     }
     const r = await shellTurn(act.cmd);
-    ran.push({ cmd: act.cmd, code: r.code });
-    if (r.code !== 0 || r.timedOut) return { ok: false, ran, stoppedAt: act.cmd, left: queue.length };
+    ran.push({ cmd: act.cmd, code: r.code, ...(r.timedOut ? { timedOut: true } : {}) });
+    if (r.code !== 0 || r.timedOut) {
+      const out = { ok: false, ran, stoppedAt: act.cmd, left: queue.length };
+      savePlanResult(meeting.id, out);
+      return out;
+    }
   }
-  return { ok: true, ran, left: 0 };
+  const out = { ok: true, ran, left: 0 };
+  savePlanResult(meeting.id, out);
+  return out;
+}
+
+/** What happened to the meeting's plan, for the report to the orchestrator. */
+function savePlanResult(meetingId, result) {
+  writeJson(`${meetingDir(meetingId)}/plan-result.json`, { ...result, at: new Date().toISOString() });
 }
 
 /** Drop the meeting's plan without running it. */
 export function clearMeetingPlan() {
   const meeting = requireOpenMeeting();
+  const dropped = readPendingQueue(meeting.id).map((a) => a.cmd);
+  if (dropped.length) savePlanResult(meeting.id, { ok: true, dropped, ran: [] });
   try {
     unlinkSync(pendingActionPath(meetingsRoot(), meeting.id));
   } catch {
@@ -2544,6 +2561,49 @@ function writeHandoff(meeting, minutesPath) {
   return path;
 }
 
+/**
+ * The meeting's outcome for the orchestrator, as one chat message: topic, who
+ * was there, what the plan did, where the minutes are, the chair's last word.
+ */
+export function meetingReport(meeting, { minutesPath = null } = {}) {
+  const names = (meeting.participants || []).map((p) => p.name || p.id).join(", ");
+  const result = readJson(`${meetingDir(meeting.id)}/plan-result.json`, null);
+  let plan = "Plan: none was queued.";
+  if (result?.dropped?.length) plan = `Plan: dropped without running (${result.dropped.join(" · ")}).`;
+  else if (result?.ran?.length || result?.stoppedAt) {
+    const steps = (result.ran || []).map((r) => `${r.code === 0 && !r.timedOut ? "✓" : "✗"} ${r.cmd}${r.timedOut ? " (timed out)" : r.code ? ` (exit ${r.code})` : ""}`);
+    plan = result.ok
+      ? `Plan: ran ${steps.length} step${steps.length === 1 ? "" : "s"}: ${steps.join(" · ")}.`
+      : `Plan: stopped at ${result.stoppedAt}${result.why ? ` (${result.why})` : ""}${steps.length ? `; ran ${steps.join(" · ")}` : "; nothing ran"}${result.left ? `; ${result.left} step${result.left === 1 ? "" : "s"} not run` : ""}.`;
+  }
+  const chair = [...readTranscript(meeting.id)].reverse().find((t) => t.role === "chair");
+  const last = chair ? String(chair.text || "").replace(/\s+/g, " ").trim().slice(0, 600) : "";
+  return [
+    `[meeting report] "${meeting.topic || "meeting"}" ended. With: ${names || "—"}.`,
+    plan,
+    ...(minutesPath ? [`Minutes: ${String(minutesPath).replace(`${ROOT}/`, "")}`] : []),
+    ...(last ? [`Chair's last word: "${last}"`] : []),
+    "Pick up from here: follow up on anything that failed or was left open, and tell UserDefault what you are doing next.",
+  ].join("\n");
+}
+
+/** Post the report into this project's chat on the Hub, for the orchestrator. Best effort. */
+export async function reportToOrchestrator(meeting, { minutesPath = null, request = null } = {}) {
+  const slug = currentProjectSlug();
+  if (!slug) return { ok: false, reason: "no project" };
+  if (!request && (process.env.NODE_TEST_CONTEXT || process.execArgv.includes("--test") || process.env.GOTCHIBOT_NO_ORCH_REPORT === "1")) {
+    return { ok: false, reason: "skipped" };
+  }
+  const text = meetingReport(meeting, { minutesPath });
+  try {
+    const send = request || (await import("./chat-hub-client.mjs")).hubRequest;
+    await send("POST", `/api/gotchibot/projects/${encodeURIComponent(slug)}/desk/say`, { body: { text }, signal: AbortSignal.timeout(15_000) });
+    return { ok: true, text };
+  } catch (err) {
+    return { ok: false, reason: String(err?.message || err).split("\n")[0], text };
+  }
+}
+
 export async function endMeeting({ keepLayout = false } = {}) {
   const meeting = requireOpenMeeting();
   const { path, endedAt } = writeMinutes(meeting);
@@ -2568,7 +2628,9 @@ export async function endMeeting({ keepLayout = false } = {}) {
   }
   pokeAvatar();
   if (!keepLayout) leaveMeetGallery();
-  return { meeting, minutesPath: path, handoffPath };
+  // Tell the orchestrator how it went, in the project's chat.
+  const report = await reportToOrchestrator(meeting, { minutesPath: path });
+  return { meeting, minutesPath: path, handoffPath, report };
 }
 
 function printStatus(meeting, { json } = {}) {
@@ -2875,10 +2937,11 @@ async function main() {
 
   if (cmd === "end") {
     const keepLayout = argv.includes("--keep-layout") || argv.includes("--no-layout");
-    const { meeting, minutesPath, handoffPath } = await endMeeting({ keepLayout });
+    const { meeting, minutesPath, handoffPath, report } = await endMeeting({ keepLayout });
     console.log(`meeting ended  ${meeting.id}`);
     console.log(`minutes  ${minutesPath}`);
     if (handoffPath) console.log(`handoff  ${handoffPath}`);
+    if (report) console.log(report.ok ? "orchestrator: told in chat" : `orchestrator: not told (${report.reason})`);
     return;
   }
 
