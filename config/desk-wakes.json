@@ -14,7 +14,7 @@
       "enabled": false,
       "mode": "defer",
       "scheduleCmd": "./scripts/gotchibot trader schedule status",
-      "note": "Owns the trader desk \u2014 dedicated waker already exists."
+      "note": "Owns the trader desk — dedicated waker already exists."
     },
     "infra-monitor": {
       "enabled": false,
@@ -44,7 +44,7 @@
       "enabled": true,
       "intervalSec": 3600,
       "mode": "chat",
-      "prompt": "Desk wake (merch-desk). One bounded cycle: refresh the POD plushie + toy supplier shortlist (skill browser-tool research; score API capability, MOQ, samples, regions, pricing signals; keep the living shortlist under the agreed path). Draft outreach only \u2014 never send, never spend. Report via `./scripts/gotchibot inbox send --to orch --from {{HERO}} --kind report --subject \"merch wake\" --body \"shortlist refreshed; N vendors scored\"`.",
+      "prompt": "Desk wake (merch-desk). One bounded cycle: refresh the POD plushie + toy supplier shortlist (skill browser-tool research; score API capability, MOQ, samples, regions, pricing signals; keep the living shortlist under the agreed path). Draft outreach only — never send, never spend. Report via `./scripts/gotchibot inbox send --to orch --from {{HERO}} --kind report --subject \"merch wake\" --body \"shortlist refreshed; N vendors scored\"`.",
       "note": "UserDefault's pilot desk for desk-wake."
     },
     "art-director": {
@@ -81,7 +81,7 @@
       "enabled": true,
       "intervalSec": 7200,
       "mode": "chat",
-      "prompt": "Desk wake (social-media-manager). One bounded cycle: review the content calendar, draft one channel-native post \u2014 approve-gated, never publish. Never invent metrics."
+      "prompt": "Desk wake (social-media-manager). One bounded cycle: review the content calendar, draft one channel-native post — approve-gated, never publish. Never invent metrics."
     },
     "mail-courier": {
       "enabled": true,
@@ -104,25 +104,31 @@
       "enabled": true,
       "intervalSec": 7200,
       "mode": "chat",
-      "prompt": "Desk wake (abra-vault). One bounded cycle: vault hygiene \u2014 pending requests, key scopes, promote abracadabra. Never print secret values."
+      "prompt": "Desk wake (abra-vault). One bounded cycle: vault hygiene — pending requests, key scopes, promote abracadabra. Never print secret values."
     },
     "market-news": {
       "enabled": true,
       "intervalSec": 3600,
       "mode": "chat",
-      "prompt": "Desk wake (market-news). One bounded cycle: pull the news regime, write a short digest under the agreed path with sources; dead feed \u2192 unknown."
+      "prompt": "Desk wake (market-news). One bounded cycle: pull the news regime, write a short digest under the agreed path with sources; dead feed → unknown."
     },
     "market-research": {
       "enabled": true,
       "intervalSec": 3600,
       "mode": "chat",
-      "prompt": "Desk wake (market-research). One bounded cycle: advance one research memo (bottom line \u2192 evidence \u2192 drivers \u2192 risks \u2192 confidence) under the agreed path."
+      "prompt": "Desk wake (market-research). One bounded cycle: advance one research memo (bottom line → evidence → drivers → risks → confidence) under the agreed path."
     },
     "game-art-director": {
       "enabled": true,
       "intervalSec": 7200,
       "mode": "chat",
       "prompt": "Desk wake (game-art-director). One bounded cycle: re-read style guide + spec + shot list; advance one deliverable (guide, palette, prompt sheet, spec, audit, or sheet op) under the agreed path, cited. Weekly review/ref sweep stay off unless UserDefault enabled them. Never invent colours or frame counts. Never post, spend, or mint."
+    },
+    "site-ops": {
+      "enabled": false,
+      "mode": "defer",
+      "scheduleCmd": "./scripts/gotchibot wondrstack schedule status",
+      "note": "Site Ops runs on the Hub: systemd timer gotchibot-site-ops (gotchibot wondrstack schedule install, every hour) runs `wondrstack watch --all`. Desk-wake only reports it."
     }
   }
 }

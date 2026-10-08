@@ -22,12 +22,18 @@
  * The project link (sessions/pstack/<project>/wondrstack.json) is written only
  * when get_status shows the expected workspace (default: the project's slug).
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { isMainModule } from "./is-main.mjs";
 import { connectWondrStack } from "./pstack-wondrstack.mjs";
-import { loadRepo } from "./project-context.mjs";
+import { benchHeroes, loadRepo } from "./project-context.mjs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const ENDPOINT = process.env.WONDRSTACK_MCP_URL || "https://wondrstack.xyz/mcp";
 const SLUG = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
@@ -134,7 +140,7 @@ function openBrowser(url) {
  * Browser sign-in for one project's WondrStack account. A loopback callback on
  * 127.0.0.1 (any port) receives the code; tokens go to the store.
  */
-export async function login(project, { endpoint = ENDPOINT, store = abraStore, open = openBrowser, log = console.log, timeoutMs = 300_000 } = {}) {
+export async function login(project, { endpoint = ENDPOINT, store = abraStore, open = openBrowser, log = console.log, timeoutMs = 300_000, port = 0 } = {}) {
   credKey(project);
   const meta = await discover(endpoint);
   const reg = await fetch(meta.registration_endpoint, {
@@ -177,7 +183,7 @@ export async function login(project, { endpoint = ENDPOINT, store = abraStore, o
       server.close();
       reject(new Error("sign-in timed out"));
     }, timeoutMs);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(Number(port) || 0, "127.0.0.1", () => {
       const redirect = `http://127.0.0.1:${server.address().port}/callback`;
       const url = new URL(meta.authorization_endpoint);
       for (const [k, v] of Object.entries({
@@ -191,7 +197,7 @@ export async function login(project, { endpoint = ENDPOINT, store = abraStore, o
         resource: meta.resource,
       })) url.searchParams.set(k, v);
       log(`Sign in to the WondrStack account for project ${project} in your browser:\n  ${url}`);
-      open(url.toString());
+      if (open) open(url.toString());
     });
   });
 
@@ -386,6 +392,227 @@ export async function pushKeys(project, kinds, opts = {}) {
   return out;
 }
 
+// ---------- Site Ops: watch, schedule, Hub sign-in ----------
+
+/** GET the app URL (follows redirects): { url, ok, status, ms } or { url, ok: false, error }. */
+export async function siteCheck(url, { fetchFn = fetch, timeoutMs = 10_000 } = {}) {
+  if (!/^https?:\/\//i.test(String(url || ""))) return null;
+  const t0 = Date.now();
+  try {
+    const r = await fetchFn(url, { method: "GET", redirect: "follow", signal: AbortSignal.timeout(timeoutMs), headers: { "user-agent": "gotchibot-site-ops" } });
+    return { url, ok: r.status < 400, status: r.status, ms: Date.now() - t0 };
+  } catch (e) {
+    return { url, ok: false, error: String(e?.cause?.code || e?.name || e?.message || e) };
+  }
+}
+
+/** The conditions Site Ops alerts on, from get_status + the site check (pure). */
+export function siteConditions(status, site) {
+  const ws = status?.workspace;
+  const out = {};
+  if (!ws) return out;
+  if (ws.provisioning === "failed") out.repo_failed = "creating the code repository failed";
+  if (ws.hosting?.status === "failed") out.deploy_failed = `the deploy failed: ${ws.hosting.error || "see the build log"}`;
+  if (!ws.hosting && ws.provisioning === "repo_created") out.no_hosting = "no host is connected yet";
+  if (site && !site.ok) out.site_down = `${site.url} is not answering (${site.status || site.error})`;
+  return out;
+}
+
+const DAY = 24 * 3600_000;
+
+function watchStatePath(root, project) {
+  return join(root, "sessions", "pstack", project, "site-ops.json");
+}
+
+/**
+ * One Site Ops pass for a project: status + site check, alerts the project's PM
+ * on new problems (and once when they clear), and, when the Site Ops worker is
+ * trusted, redeploys a failed deploy once per failure. Returns a summary.
+ */
+export async function watchProject(project, opts = {}) {
+  const root = opts.root || ROOT;
+  const now = opts.now || Date.now();
+  const call = opts.call || ((tool, args) => callTool(project, tool, args, opts));
+  const send = opts.send || sendAlert;
+  const statePath = watchStatePath(root, project);
+  let state = {};
+  try {
+    state = JSON.parse(readFileSync(statePath, "utf8"));
+  } catch {
+    state = {};
+  }
+  state.conditions ||= {};
+  const status = await call("get_status", {});
+  const site = await (opts.siteCheck || siteCheck)(status?.workspace?.app_url);
+  const found = siteConditions(status, site);
+  const notes = [];
+
+  // One automatic redeploy per failure, only for a trusted Site Ops worker.
+  if (found.deploy_failed && opts.trusted) {
+    const failure = `${status.workspace.hosting?.error || ""}`;
+    if (state.autoRedeploy?.failure !== failure) {
+      await call("deploy_app", {});
+      state.autoRedeploy = { failure, at: new Date(now).toISOString() };
+      notes.push("redeployed once automatically");
+    }
+  }
+
+  const alerts = [];
+  for (const [key, why] of Object.entries(found)) {
+    const c = (state.conditions[key] ||= { since: new Date(now).toISOString() });
+    // No hosting is only a problem once it has lasted a day.
+    if (key === "no_hosting" && now - Date.parse(c.since) < DAY) continue;
+    if (!c.alertedAt) {
+      c.alertedAt = new Date(now).toISOString();
+      alerts.push(why);
+    }
+  }
+  const cleared = [];
+  for (const key of Object.keys(state.conditions)) {
+    if (found[key]) continue;
+    if (state.conditions[key].alertedAt) cleared.push(key.replace(/_/g, " "));
+    delete state.conditions[key];
+  }
+
+  const ws = status?.workspace;
+  const where = ws?.app_url || ws?.slug || project;
+  if (alerts.length) {
+    await send({
+      project,
+      from: opts.from,
+      subject: `Site Ops · ${project}: ${alerts[0]}`,
+      body: [
+        `WondrStack app for ${project} (${where}) needs attention:`,
+        ...alerts.map((a) => `- ${a}`),
+        ...notes.map((n) => `- ${n}`),
+        `Next step: ./scripts/gotchibot wondrstack status ${project}, then launch, keys or a redeploy as it says.`,
+      ].join("\n"),
+    });
+  }
+  if (cleared.length) {
+    await send({ project, from: opts.from, subject: `Site Ops · ${project}: back to normal`, body: `Cleared: ${cleared.join(", ")} (${where}).` });
+  }
+  mkdirSync(dirname(statePath), { recursive: true });
+  state.lastCheck = { at: new Date(now).toISOString(), site, provisioning: ws?.provisioning || null, hosting: ws?.hosting?.status || null };
+  writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+  return { project, problems: Object.keys(found), alerted: alerts, cleared, notes, site };
+}
+
+/** Alert the project's PM in its bot inbox; no PM seated → the orchestrator. */
+async function sendAlert({ project, from, subject, body }) {
+  const { sendMessage } = await import("./bot-inbox.mjs");
+  for (const to of ["project-manager", "orch"]) {
+    try {
+      sendMessage({ to, from: from || "orch", kind: "alert", subject, body, project });
+      return to;
+    } catch {
+      /* no PM here → orchestrator */
+    }
+  }
+  return null;
+}
+
+/** Projects with a Site Ops hero worked by a gotchi: [{ project, worker }]. */
+export function siteOpsSeats({ root = ROOT } = {}) {
+  const dir = join(root, "sessions", "pstack");
+  let slugs = [];
+  try {
+    slugs = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const slug of slugs) {
+    try {
+      const seat = benchHeroes(slug).find((h) => h.hero === "site-ops" && h.worker);
+      if (seat) out.push({ project: slug, worker: seat.worker });
+    } catch {
+      /* not a workbench */
+    }
+  }
+  return out;
+}
+
+async function watchAll(opts = {}) {
+  const { heroTrust } = await import("./hire-sheet.mjs");
+  const seats = siteOpsSeats(opts);
+  if (!seats.length) return console.log("no Site Ops seated in any project");
+  for (const { project, worker } of seats) {
+    try {
+      const r = await watchProject(project, { ...opts, from: worker, trusted: heroTrust(worker) === "trusted" });
+      console.log(`${project}: ${r.problems.length ? r.problems.join(", ") : "ok"}${r.alerted.length ? " · PM alerted" : ""}${r.cleared.length ? ` · cleared ${r.cleared.join(", ")}` : ""}${r.notes.length ? ` · ${r.notes.join(", ")}` : ""}`);
+    } catch (e) {
+      console.log(`${project}: check failed: ${e.message || e}`);
+    }
+  }
+}
+
+const UNIT = "gotchibot-site-ops";
+
+/** Hourly `wondrstack watch --all`: a systemd user timer on Linux (the Hub). */
+export function scheduleSiteOps(action, { intervalSec = 3600 } = {}) {
+  const node = process.execPath;
+  const script = join(ROOT, "scripts", "wondrstack.mjs");
+  if (process.platform === "linux") {
+    const dir = join(homedir(), ".config", "systemd", "user");
+    const svc = join(dir, `${UNIT}.service`);
+    const tmr = join(dir, `${UNIT}.timer`);
+    const sys = (...a) => spawnSync("systemctl", ["--user", ...a], { encoding: "utf8" });
+    if (action === "install") {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(svc, `[Unit]\nDescription=GotchiBot Site Ops (WondrStack watch)\n\n[Service]\nType=oneshot\nWorkingDirectory=${ROOT}\nEnvironment=PATH=${process.env.PATH}\nExecStart=${node} ${script} watch --all\n`);
+      writeFileSync(tmr, `[Unit]\nDescription=GotchiBot Site Ops every ${intervalSec}s\n\n[Timer]\nOnBootSec=300\nOnUnitActiveSec=${intervalSec}\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n`);
+      sys("daemon-reload");
+      const r = sys("enable", "--now", `${UNIT}.timer`);
+      return { ok: r.status === 0, how: "systemd", message: r.status === 0 ? `installed ${UNIT}.timer (every ${intervalSec}s)` : r.stderr };
+    }
+    if (action === "uninstall") {
+      sys("disable", "--now", `${UNIT}.timer`);
+      return { ok: true, how: "systemd", message: `stopped ${UNIT}.timer` };
+    }
+    const r = sys("list-timers", `${UNIT}.timer`, "--no-pager");
+    return { ok: true, how: "systemd", message: existsSync(tmr) ? String(r.stdout || "").trim() || "installed" : "not installed" };
+  }
+  return { ok: false, how: process.platform, message: "Site Ops runs on the Hub: run this there (systemd). On a Mac desk use: gotchibot wondrstack watch --all" };
+}
+
+/** This desk's ssh target for the Hub (sessions/.hub-desk.json or GOTCHIBOT_HUB_SSH). */
+function hubSshTarget() {
+  const env = String(process.env.GOTCHIBOT_HUB_SSH || "").trim();
+  if (env) return env;
+  try {
+    return String(JSON.parse(readFileSync(join(ROOT, "sessions", ".hub-desk.json"), "utf8"))?.ssh || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Sign a project in on the Hub from this desk: the Hub runs the sign-in on a
+ * fixed loopback port, ssh forwards that port here, and the browser opens here.
+ * The tokens are stored in the Hub's abra.
+ */
+export async function loginOnHub(project, { target = hubSshTarget(), log = console.log } = {}) {
+  if (!target) throw new Error("no Hub ssh target: pair this desk with the Hub first (gotchibot hub setup)");
+  credKey(project);
+  const port = 49152 + Math.floor(Math.random() * 10000);
+  const remote = `cd ~/dev/GotchiBot 2>/dev/null || cd ~/Dev/GotchiBot; export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"; ./scripts/gotchibot wondrstack login ${project} --port ${port} --no-open`;
+  const child = spawn("ssh", ["-tt", "-o", "ExitOnForwardFailure=yes", "-L", `${port}:127.0.0.1:${port}`, target, remote], { stdio: ["inherit", "pipe", "inherit"] });
+  let opened = false;
+  child.stdout.on("data", (buf) => {
+    const text = String(buf);
+    process.stdout.write(text);
+    const m = text.match(/https:\/\/\S+\/oauth\/authorize\S+/);
+    if (m && !opened) {
+      opened = true;
+      openBrowser(m[0]);
+    }
+  });
+  const code = await new Promise((r) => child.on("close", r));
+  if (code !== 0) throw new Error(`sign-in on the Hub failed (exit ${code}): is its abra unlocked? (abra unlock on the Hub)`);
+  log(`signed ${project} in on the Hub`);
+}
+
 // ---------- launch: the deterministic pipeline ----------
 
 /**
@@ -512,6 +739,9 @@ gotchibot wondrstack launch <project> [--name N] [--type T] [--template blank] [
                                      [--city C --state S --country X] [--workspace slug] [--wait]
 gotchibot wondrstack keys   <project> [--hosting] [--database] [--payments] [--google] [--all] [--namespace N] [--dry-run]
 gotchibot wondrstack logout <project>
+gotchibot wondrstack login  <project> --hub          sign a project in on the Hub (browser here, tokens in the Hub's abra)
+gotchibot wondrstack watch  <project>|--all           Site Ops pass: status + site check, PM alerts, one auto-redeploy when trusted
+gotchibot wondrstack schedule install|uninstall|status [--interval 3600]   hourly watch on the Hub (systemd timer)
 
 One WondrStack account per project; each project signs in on its own (abra key WONDRSTACK_<PROJECT>).
 App keys come from the project's repo-named abra namespace (gotchibot → GotchiBot, aarcadeghst → AarcadeGh-t):
@@ -521,9 +751,22 @@ VERCEL_TOKEN, MONGODB_URI, STRIPE_SECRET_KEY + STRIPE_PUBLISHABLE_KEY, GOOGLE_CL
 async function main() {
   const [cmd, project, ...rest] = process.argv.slice(2);
   if (!cmd || cmd === "help" || cmd === "--help") return usage();
-  if (!project) throw new Error("project slug required");
+  if (!project) throw new Error(cmd === "schedule" ? "say install, uninstall or status" : "project slug required");
+  if (cmd === "watch") {
+    if (project === "--all") return watchAll();
+    const r = await watchProject(project);
+    console.log(`${project}: ${r.problems.length ? r.problems.join(", ") : "ok"}${r.alerted.length ? " · PM alerted" : ""}`);
+    return;
+  }
+  if (cmd === "schedule") {
+    const r = scheduleSiteOps(project, { intervalSec: Number(flag(rest, "interval")) || 3600 });
+    console.log(r.message);
+    if (!r.ok) process.exitCode = 1;
+    return;
+  }
   if (cmd === "login") {
-    await login(project);
+    if (rest.includes("--hub")) return loginOnHub(project);
+    await login(project, { port: Number(flag(rest, "port")) || 0, open: rest.includes("--no-open") ? null : openBrowser });
     const s = await callTool(project, "get_status", {});
     console.log(`signed in · workspace ${s?.workspace?.slug || "(none yet — run launch)"}`);
     return;
@@ -532,6 +775,8 @@ async function main() {
     const s = await callTool(project, "get_status", {});
     console.log(JSON.stringify(s, null, 2));
     console.log(`next: ${nextStep(s).step} — ${nextStep(s).why}`);
+    const site = await siteCheck(s?.workspace?.app_url);
+    if (site) console.log(`site: ${site.url} ${site.ok ? `up (${site.status}, ${site.ms} ms)` : `DOWN (${site.status || site.error})`}`);
     return;
   }
   if (cmd === "call") {

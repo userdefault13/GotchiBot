@@ -987,6 +987,21 @@
       "scope": "starter"
     },
     {
+      "id": "site-ops",
+      "roleId": "site-ops",
+      "title": "Site Ops",
+      "summary": "Runs the project's WondrStack app: its repo, hosting, deploys, domain and branding. Watches its health, reports what changed, and proposes the next step. Does not own business goals; the Chief of Staff does.",
+      "scope": "aarcade",
+      "version": "1.0.0",
+      "path": "packs/site-ops",
+      "tags": [
+        "marketplace"
+      ],
+      "skills": [
+        "wondrstack"
+      ]
+    },
+    {
       "id": "skill-maker",
       "roleId": "skill-maker",
       "title": "Skill Maker",
