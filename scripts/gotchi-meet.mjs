@@ -1736,6 +1736,18 @@ export function meetDeskFacts() {
   } catch {
     /* no project */
   }
+  // What is really waiting for /run in this meeting (gotchis otherwise claim
+  // proposals they never made).
+  try {
+    const queue = pendingActions();
+    lines.push(
+      queue.length
+        ? `Waiting for /run (in order): ${queue.map((a, i) => `${i + 1}. ${a.cmd}`).join(" · ")}. Nothing else is proposed.`
+        : "Waiting for /run: nothing. To propose a command, end your reply with an ACTION: line.",
+    );
+  } catch {
+    /* no open meeting */
+  }
   try {
     const r = JSON.parse(readFileSync(`${SESSIONS}/.avatar-roster.json`, "utf8"));
     const names = [[r.pinned, r.pinnedName], ...(r.others || []).map((o) => [o.id, o.name])]
@@ -1787,7 +1799,9 @@ export const MEET_ACTION_RULE =
   "You cannot run anything yourself from a meeting, and nothing changes until it has run. Never say something was done before its output is in the transcript. " +
   `To act on a request, end your reply with one line: ACTION: ./scripts/gotchibot <${MEET_ACTION_SUBCOMMANDS.join("|")}> … — ` +
   "e.g. ACTION: ./scripts/gotchibot heroes bind chief-of-staff owned-12302. UserDefault sees it and types /run to run it (or /skip). " +
-  "Say you have proposed it, not done it. Other commands cannot be proposed: give them as text for UserDefault to run with !. " +
+  "Say you have proposed it, not done it. Only an ACTION: line proposes anything: writing that you propose or re-propose something without an ACTION: line proposes nothing. " +
+  "The room's queue below is the truth about what is waiting for /run; a seat is only held once its command has run (the Seats line shows it). " +
+  "Other commands cannot be proposed: give them as text for UserDefault to run with !. " +
   "If a name could match more than one gotchi, ask which id instead of guessing.";
 
 async function agentReply(meeting, speakerId) {

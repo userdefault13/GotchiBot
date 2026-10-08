@@ -100,3 +100,14 @@ describe("proposals are the room's, not copies", () => {
     assert.match(meet, /const act = queue\.shift\(\)/, "/run takes the oldest");
   });
 });
+
+describe("meeting turns see what is really queued", () => {
+  it("the rule says only ACTION: lines propose; the facts list the /run queue", async () => {
+    const { MEET_ACTION_RULE, meetDeskFacts } = await import("../scripts/gotchi-meet.mjs");
+    assert.match(MEET_ACTION_RULE, /without an ACTION: line proposes nothing/);
+    assert.match(MEET_ACTION_RULE, /a seat is only held once its command has run/);
+    const facts = meetDeskFacts();
+    if (!facts.some((l) => l.startsWith("Project:"))) return;
+    assert.ok(facts.some((l) => /^Waiting for \/run/.test(l)), "the queue line is always there when a project is open");
+  });
+});
