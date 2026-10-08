@@ -30,7 +30,7 @@ import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./
 import { isProfLinkCubeId, PROF_LINK_CUBE_ID } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
 import { benchHeroes, currentProjectSlug, loadRepo, projectRoles, resolveMeetingsRoot, roleBrief } from "./project-context.mjs";
-import { extractActions, pendingActionPath, MEET_ACTION_SUBCOMMANDS } from "./lib/meet-actions.mjs";
+import { extractActions, pendingActionPath, MEET_ACTION_SUBCOMMANDS, templateProblem as templateProblemIn } from "./lib/meet-actions.mjs";
 import { deskMentionTargets, resolveDeskMention } from "./lib/meet-mentions.mjs";
 import { loadWondrStack } from "./pstack-wondrstack.mjs";
 import { publishProjectWrite, flushProjectWrites } from "./hub-project-sync.mjs";
@@ -1736,6 +1736,12 @@ export function meetDeskFacts() {
   } catch {
     /* no project */
   }
+  try {
+    const ids = Object.keys(heroTemplates()).filter((k) => k !== "orchestrator");
+    if (ids.length) lines.push(`Hero templates (ids for seat/heroes commands): ${ids.join(", ")}`.slice(0, 1400));
+  } catch {
+    /* no playbooks */
+  }
   // What is really waiting for /run in this meeting (gotchis otherwise claim
   // proposals they never made).
   try {
@@ -1802,7 +1808,9 @@ export const MEET_ACTION_RULE =
   "Say you have proposed it, not done it. Only an ACTION: line proposes anything: writing that you propose or re-propose something without an ACTION: line proposes nothing. " +
   "The room's queue below is the truth about what is waiting for /run; a seat is only held once its command has run (the Seats line shows it). " +
   "Other commands cannot be proposed: give them as text for UserDefault to run with !. " +
-  "If a name could match more than one gotchi, ask which id instead of guessing.";
+  "If a name could match more than one gotchi, ask which id instead of guessing. " +
+  "Seat commands take a hero template id from the Hero templates line, never a made-up one. " +
+  "A meeting is planning: the queued ACTION: lines are the meeting's plan. UserDefault ends the meeting with /end, which offers to run the plan.";
 
 async function agentReply(meeting, speakerId) {
   const p = meeting.participants.find((x) => x.id === speakerId);
@@ -1863,6 +1871,55 @@ async function agentReply(meeting, speakerId) {
   return { ok: true, text: withProposedAction(meeting, speakerId, said) };
 }
 
+/** Hero template ids (role playbooks) with their titles. */
+function heroTemplates() {
+  return readJson(`${ROOT}/config/agent-role-playbooks.json`, {}) || {};
+}
+
+/** templateProblem against this desk's role playbooks. */
+export function templateProblem(cmd, playbooks = heroTemplates()) {
+  return templateProblemIn(cmd, playbooks);
+}
+
+/** Run the meeting's plan: every queued command in order, stopping at the first failure. */
+export async function runMeetingPlan() {
+  const meeting = requireOpenMeeting();
+  const path = pendingActionPath(meetingsRoot(), meeting.id);
+  // Check the whole plan first: a bad step should stop it before anything runs.
+  const bad = readPendingQueue(meeting.id)
+    .map((a) => ({ cmd: a.cmd, why: templateProblem(a.cmd) }))
+    .filter((x) => x.why);
+  if (bad.length) return { ok: false, ran: [], stoppedAt: bad[0].cmd, why: bad[0].why, left: readPendingQueue(meeting.id).length };
+  const ran = [];
+  for (;;) {
+    const queue = readPendingQueue(meeting.id);
+    const act = queue.shift();
+    if (!act) break;
+    if (queue.length) writeJson(path, { actions: queue });
+    else {
+      try {
+        unlinkSync(path);
+      } catch {
+        /* already gone */
+      }
+    }
+    const r = await shellTurn(act.cmd);
+    ran.push({ cmd: act.cmd, code: r.code });
+    if (r.code !== 0 || r.timedOut) return { ok: false, ran, stoppedAt: act.cmd, left: queue.length };
+  }
+  return { ok: true, ran, left: 0 };
+}
+
+/** Drop the meeting's plan without running it. */
+export function clearMeetingPlan() {
+  const meeting = requireOpenMeeting();
+  try {
+    unlinkSync(pendingActionPath(meetingsRoot(), meeting.id));
+  } catch {
+    /* nothing queued */
+  }
+}
+
 /**
  * A reply's `ACTION:` line becomes the room's proposed command: kept for /run,
  * shown under the message. A command outside the allowlist is shown, not kept.
@@ -1875,7 +1932,14 @@ function withProposedAction(meeting, speakerId, said) {
   if (!actions.length) return cleaned.replace(/\n{3,}/g, "\n\n").trim() || said;
   let shown = text || "(proposes a command)";
   const queue = readPendingQueue(meeting.id);
-  const ok = actions.filter((a) => a.allowed);
+  // A seat with a made-up template id would only fail later: say so now.
+  const bad = [];
+  const ok = actions.filter((a) => {
+    if (!a.allowed) return false;
+    const why = templateProblem(a.cmd);
+    if (why) bad.push(`⚠ Not queued: ${a.cmd} — ${why}`);
+    return !why;
+  });
   for (const a of ok) {
     if (!queue.some((q) => q.cmd === a.cmd)) queue.push({ cmd: a.cmd, by: speakerId, ts: new Date().toISOString() });
   }
@@ -1887,6 +1951,7 @@ function withProposedAction(meeting, speakerId, said) {
     shown += `\n  /run runs ${queue.length > 1 ? "#1, then the next" : "it"} · /skip drops ${queue.length > 1 ? "#1" : "it"}`;
   }
   for (const a of actions.filter((x) => !x.allowed)) shown += `\n\n⚠ Not runnable from a meeting: ${a.cmd}`;
+  for (const b of bad) shown += `\n\n${b}`;
   return shown;
 }
 
@@ -1895,7 +1960,7 @@ export function stripCopiedProposals(said) {
   return String(said || "")
     .replace(/^[ \t]*▶[ \t]*Proposed( \d+\/\d+)?:.*$/gim, "")
     .replace(/^[ \t]*\/run (to run it|runs).*$/gim, "")
-    .replace(/^[ \t]*⚠[ \t]*Not runnable from a meeting:.*$/gim, "");
+    .replace(/^[ \t]*⚠[ \t]*Not (runnable from a meeting|queued):.*$/gim, "");
 }
 
 /** The room's proposed commands, oldest first (older single-proposal files read as one). */
@@ -2762,6 +2827,17 @@ async function main() {
 
   // /run and /skip from the meet prompter: the gotchi-proposed command.
   if (cmd === "action") {
+    if (rest[0] === "plan") {
+      const r = await runMeetingPlan();
+      console.log(r.ok ? `plan done: ${r.ran.length} step${r.ran.length === 1 ? "" : "s"}` : `plan stopped at: ${r.stoppedAt}${r.why ? ` — ${r.why}; nothing ran` : ""} (${r.left} left)`);
+      if (!r.ok) process.exitCode = 1;
+      return;
+    }
+    if (rest[0] === "clear") {
+      clearMeetingPlan();
+      console.log("plan dropped");
+      return;
+    }
     const how = rest[0] === "skip" ? "skip" : rest[0] === "run" ? "run" : null;
     if (!how) {
       const all = pendingActions();

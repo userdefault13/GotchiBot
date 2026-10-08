@@ -6,6 +6,7 @@
  *   node scripts/meet-room-prompter.mjs --inline   # single terminal (no tmux)
  */
 import { deskMentionTargets, mentionTag } from "./lib/meet-mentions.mjs";
+import { pendingActionPath, templateProblem } from "./lib/meet-actions.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import {
   readFileSync,
@@ -82,6 +83,52 @@ let sideScroll = 0;
 let sideSel = 0;
 /** Thread shown in the chat column (a group meeting's id / "direct:<ids>"). null = the one with the open meeting. */
 let viewMeetingId = null;
+/** /end with a plan queued: the run-or-drop choice is open. */
+let endChoice = false;
+
+/** The meeting's plan: the queued ACTION: commands, oldest first. */
+export function meetingPlan() {
+  try {
+    const m = loadCurrentMeeting();
+    if (!m) return [];
+    const raw = JSON.parse(readFileSync(pendingActionPath(resolveMeetingsRoot().root, m.id), "utf8"));
+    const list = Array.isArray(raw?.actions) ? raw.actions : raw?.cmd ? [raw] : [];
+    return list.filter((a) => a?.cmd);
+  } catch {
+    return [];
+  }
+}
+
+/** End the meeting and go back to chat (after the plan ran, or without it). */
+function endAndReturn() {
+  runMeetHelper(["end"], { pending: "ending the meeting…", failLabel: "end failed", onDone: () => backToChat() });
+}
+
+/** The /end choice: r runs the plan then ends · e ends without it · Esc keeps the meeting. */
+export function endChoiceKey(key) {
+  if (!endChoice) return "";
+  if (key === "r" || key === "R") {
+    endChoice = false;
+    runMeetHelper(["action", "plan"], { pending: "running the meeting plan…", failLabel: "plan stopped: see the last step", onDone: () => endAndReturn() });
+    return "redraw";
+  }
+  if (key === "e" || key === "E") {
+    endChoice = false;
+    runMeetHelper(["action", "clear"], { pending: "dropping the plan…", failLabel: "could not drop the plan", onDone: () => endAndReturn() });
+    return "redraw";
+  }
+  if (key === "esc") {
+    endChoice = false;
+    return "redraw";
+  }
+  return "noop";
+}
+
+/** Test hook. */
+export function endChoiceState() {
+  return endChoice;
+}
+
 /** Message selector: index into the viewed room's messages, or null (typing at the latest). */
 let selTurn = null;
 /** "copied" / "copy-failed" flash on the selected message after Enter. */
@@ -616,7 +663,7 @@ const SLASH_COMMANDS = [
   { tag: "/desk", hint: "back to OpenCode", needsArg: false },
   { tag: "/edit", hint: "edit last msg", needsArg: true },
   { tag: "/start", hint: "start recording", needsArg: true },
-  { tag: "/end", hint: "stop recording", needsArg: false },
+  { tag: "/end", hint: "end: run the plan or not, back to chat", needsArg: false },
   { tag: "/run", hint: "run the proposed command", needsArg: false },
   { tag: "/skip", hint: "drop the proposed command", needsArg: false },
   { tag: "/help", hint: "list commands", needsArg: false },
@@ -1504,9 +1551,13 @@ class Prompter {
       return "redraw";
     }
     if (line === "/end") {
-      // Stop recording only — stay in the room UI.
+      // A meeting is planning: with a plan queued, ask whether to run it first.
       editTargetTs = null;
-      runMeetHelper(["end"]);
+      if (meetingPlan().length) {
+        endChoice = true;
+        return "redraw";
+      }
+      endAndReturn();
       return "redraw";
     }
     if (line === "/chat") {
@@ -1688,6 +1739,27 @@ function drawBodyInline() {
   // The / and @ menus go on the row just above the prompt, after the panel:
   // drawInputPanel blanks its padding rows, which used to wipe the menu.
   const menuRow = Math.max(1, g.top - 1);
+  if (endChoice) {
+    const plan = meetingPlan();
+    let playbooks = {};
+    try {
+      playbooks = JSON.parse(readFileSync(join(ROOT, "config", "agent-role-playbooks.json"), "utf8"));
+    } catch {
+      /* no playbooks */
+    }
+    const w = cols - sideW;
+    const rowsOut = [
+      `${T.accentBar}${T.panel} ${T.brand}End meeting${T.reset}${T.panel}${T.muted} · the plan has ${plan.length} step${plan.length === 1 ? "" : "s"}:${T.reset}`,
+      ...plan.slice(0, 6).map((a, i) => {
+        const why = templateProblem(a.cmd, playbooks);
+        return `${T.accentBar}${T.panel}   ${T.text}${i + 1}. ${a.cmd}${T.reset}${why ? `${T.panel}${T.mention}  ⚠ ${why}${T.reset}` : ""}`;
+      }),
+      ...(plan.length > 6 ? [`${T.accentBar}${T.panel}   ${T.muted}… ${plan.length - 6} more${T.reset}`] : []),
+      `${T.accentBar}${T.panel} ${T.mention}r${T.reset}${T.panel}${T.text} run the plan, then end${T.muted} · ${T.mention}e${T.reset}${T.panel}${T.text} end without it${T.muted} · ${T.mention}Esc${T.reset}${T.panel}${T.text} keep the meeting${T.reset}`,
+    ];
+    const top = Math.max(1, menuRow - rowsOut.length + 1);
+    rowsOut.forEach((line, i) => writeAt(top + i, sideW + 1, padPanelLine(line, w)));
+  }
   if (slashMatches.length && slashQ != null) {
     const n = slashMatches.length;
     const menu = slashMatches
@@ -1913,6 +1985,9 @@ function handleKey(chunk) {
     escBuf = "\x1b";
     return;
   }
+
+  // The /end choice owns the keyboard while open.
+  if (endChoice) return endChoiceKey(chunk);
 
   // /chat picker owns the keyboard while open.
   if (chatPick) {
@@ -2295,6 +2370,12 @@ function main() {
         // Lone Esc in the /chat picker: step back, then close.
         if (!escBuf && ch === "\x1b" && chatPick && text.length === 1) {
           chatPickerKey("back");
+          draw();
+          return;
+        }
+        // Lone Esc on the /end choice: keep the meeting.
+        if (!escBuf && ch === "\x1b" && endChoice && text.length === 1) {
+          endChoiceKey("esc");
           draw();
           return;
         }

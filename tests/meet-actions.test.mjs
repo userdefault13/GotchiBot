@@ -111,3 +111,31 @@ describe("meeting turns see what is really queued", () => {
     assert.ok(facts.some((l) => /^Waiting for \/run/.test(l)), "the queue line is always there when a project is open");
   });
 });
+
+describe("a meeting's plan", () => {
+  it("refuses seat commands with a made-up template, suggesting the real one", async () => {
+    const { templateProblem } = await import("../scripts/lib/meet-actions.mjs");
+    const playbooks = { "site-ops": { title: "Site Ops", skills: ["wondrstack"] }, "project-manager": { title: "Project manager" } };
+    assert.match(templateProblem("./scripts/gotchibot seat owned-16263 wondrstack", playbooks), /not a hero template \(did you mean site-ops, Site Ops\?\)/);
+    assert.equal(templateProblem("./scripts/gotchibot seat owned-12444 project-manager", playbooks), null);
+    assert.equal(templateProblem("./scripts/gotchibot heroes bind site-ops owned-1 gotchibot", playbooks), null);
+    assert.equal(templateProblem("./scripts/gotchibot seat owned-1 none", playbooks), null);
+    assert.equal(templateProblem("./scripts/gotchibot wondrstack login gotchibot", playbooks), null);
+  });
+
+  it("/end with a plan asks: r runs it then ends, e ends without it, Esc keeps the meeting", async () => {
+    const room = readFileSync(path.join(root, "scripts/meet-room-prompter.mjs"), "utf8");
+    const end = room.slice(room.indexOf('if (line === "/end") {'), room.indexOf('if (line === "/chat") {'));
+    assert.match(end, /meetingPlan\(\)\.length/);
+    assert.match(end, /endChoice = true/);
+    assert.match(end, /endAndReturn\(\)/, "no plan: end and go back to chat");
+    assert.match(room, /runMeetHelper\(\["action", "plan"\][\s\S]{0,160}onDone: \(\) => endAndReturn\(\)/, "r: the plan runs, then the meeting ends");
+    assert.match(room, /runMeetHelper\(\["action", "clear"\][\s\S]{0,160}onDone: \(\) => endAndReturn\(\)/, "e: dropped, then ends");
+    assert.match(room, /if \(endChoice\) return endChoiceKey\(chunk\)/, "the choice owns the keyboard");
+    const mod = await import("../scripts/meet-room-prompter.mjs");
+    assert.equal(mod.endChoiceKey("r"), "", "closed: keys go to the chat");
+    const meet = readFileSync(path.join(root, "scripts/gotchi-meet.mjs"), "utf8");
+    assert.match(meet, /Check the whole plan first/);
+    assert.match(meet, /if \(r\.code !== 0 \|\| r\.timedOut\) return \{ ok: false/, "stops at the first failing step");
+  });
+});
