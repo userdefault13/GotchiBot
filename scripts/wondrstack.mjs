@@ -41,6 +41,9 @@ const PROTOCOL = "2025-06-18";
 
 // ---------- credentials (abra, one key per project) ----------
 
+/** abra gets this long to answer before we call the vault locked. */
+const ABRA_TIMEOUT_MS = Number(process.env.GOTCHIBOT_ABRA_TIMEOUT_MS) || 20_000;
+
 export function credKey(project) {
   if (!SLUG.test(String(project || ""))) throw new Error(`invalid project slug: ${project}`);
   return `WONDRSTACK_${String(project).toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
@@ -49,7 +52,9 @@ export function credKey(project) {
 /** abra-backed store; tests pass an in-memory one. */
 export const abraStore = {
   get(key) {
-    const r = spawnSync("abra", ["get", "gotchibot", key], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    // A time limit: a locked vault can wait on a passphrase prompt nobody answers.
+    const r = spawnSync("abra", ["get", "gotchibot", key], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: ABRA_TIMEOUT_MS });
+    if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer (vault locked?) — run: abra unlock");
     if (r.status !== 0) {
       const err = String(r.stderr || "");
       if (/locked/i.test(err)) throw new Error("abra vault is locked — run: abra unlock");
@@ -63,7 +68,9 @@ export const abraStore = {
       input: value,
       encoding: "utf8",
       stdio: ["pipe", "ignore", "pipe"],
+      timeout: ABRA_TIMEOUT_MS,
     });
+    if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer (vault locked?) — run: abra unlock");
     if (r.status !== 0) throw new Error(/locked/i.test(String(r.stderr)) ? "abra vault is locked — run: abra unlock" : "abra set failed");
   },
 };
@@ -136,6 +143,55 @@ function openBrowser(url) {
   spawnSync(cmd, args, { stdio: "ignore" });
 }
 
+function oauthCallbackPage(success) {
+  const title = success ? "You're connected." : "We couldn't connect.";
+  const summary = success
+    ? "GotchiBot is signed in to WondrStack."
+    : "The WondrStack sign-in wasn't completed.";
+  const instruction = success
+    ? "Return to GotchiBot to continue setting up this project. You can close this tab."
+    : "Return to GotchiBot and try signing in again.";
+  const status = success ? "Connection complete" : "Sign-in needs another try";
+  const mark = success ? "✓" : "!";
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>${title} · WondrStack</title>
+    <style>
+      :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #292a36; background: #f7f8fc; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; min-height: 100svh; margin: 0; padding: 28px; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 0%, #e8edff 0, #f7f8fc 58%); }
+      main { width: min(100%, 560px); padding: clamp(28px, 7vw, 48px); border: 1px solid #e5e8f1; border-radius: 28px; background: rgba(255,255,255,.94); box-shadow: 0 28px 80px -48px rgba(39,54,105,.38); }
+      .brand { display: flex; align-items: center; gap: 11px; color: #28314d; font-size: 15px; font-weight: 650; letter-spacing: -.02em; }
+      .brand-mark { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 12px; background: linear-gradient(145deg, #7aa9ff, #3b81ff); color: white; font-family: Georgia, serif; font-size: 23px; font-weight: 700; box-shadow: 0 5px 14px rgba(59,129,255,.25); }
+      .status { display: grid; width: 54px; height: 54px; margin-top: 42px; place-items: center; border-radius: 18px; background: ${success ? "#eaf1ff" : "#fff2e9"}; color: ${success ? "#356ee0" : "#b45332"}; font-size: 29px; font-weight: 600; }
+      .eyebrow { margin: 23px 0 0; color: ${success ? "#356ee0" : "#a54b32"}; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+      h1 { margin: 8px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(34px, 8vw, 46px); font-weight: 500; letter-spacing: -.045em; line-height: 1.12; }
+      .summary { margin: 18px 0 0; color: #46495a; font-size: 17px; line-height: 1.6; }
+      .instruction { margin: 11px 0 0; color: #737789; font-size: 14px; line-height: 1.7; }
+      .rule { height: 1px; margin: 30px 0 17px; background: #eceef4; }
+      .foot { margin: 0; color: #9296a5; font-size: 12px; letter-spacing: .03em; }
+      @media (max-width: 480px) { body { padding: 16px; } main { border-radius: 23px; } .status { margin-top: 34px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">W</span><span>WondrStack</span></div>
+      <div class="status" aria-hidden="true">${mark}</div>
+      <p class="eyebrow">${status}</p>
+      <h1>${title}</h1>
+      <p class="summary">${summary}</p>
+      <p class="instruction">${instruction}</p>
+      <div class="rule" aria-hidden="true"></div>
+      <p class="foot">GotchiBot · WondrStack sign-in</p>
+    </main>
+  </body>
+</html>`;
+}
+
 /**
  * Browser sign-in for one project's WondrStack account. A loopback callback on
  * 127.0.0.1 (any port) receives the code; tokens go to the store.
@@ -170,8 +226,15 @@ export async function login(project, { endpoint = ENDPOINT, store = abraStore, o
         return;
       }
       const ok = u.searchParams.get("state") === state && u.searchParams.get("code");
-      res.writeHead(ok ? 200 : 400, { "content-type": "text/html; charset=utf-8" });
-      res.end(ok ? "<p>GotchiBot is signed in to WondrStack. You can close this tab.</p>" : "<p>Sign-in failed — go back to GotchiBot.</p>");
+      res.writeHead(ok ? 200 : 400, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "DENY",
+      });
+      res.end(oauthCallbackPage(Boolean(ok)));
       // The port before close(): address() is null once the server is closed.
       const redirectUri = `http://127.0.0.1:${server.address().port}/callback`;
       clearTimeout(timer);
@@ -321,7 +384,8 @@ export function keyNamespace(project, { loadRepoFn = loadRepo } = {}) {
 
 /** abra get <namespace> <key>, or null when it is not there. Value stays in memory only. */
 export function abraValue(namespace, key) {
-  const r = spawnSync("abra", ["get", namespace, key], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const r = spawnSync("abra", ["get", namespace, key], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: ABRA_TIMEOUT_MS });
+  if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer (vault locked?) — run: abra unlock");
   if (r.status !== 0) {
     if (/locked/i.test(String(r.stderr || ""))) throw new Error("abra vault is locked — run: abra unlock");
     return null;

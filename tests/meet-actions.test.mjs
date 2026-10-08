@@ -139,3 +139,18 @@ describe("a meeting's plan", () => {
     assert.match(meet, /if \(r\.code !== 0 \|\| r\.timedOut\) return \{ ok: false/, "stops at the first failing step");
   });
 });
+
+describe("meeting commands time out completely", () => {
+  it("a timed-out command stops its children too, so the room is not left waiting", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", `
+      const { runShell } = await import(${JSON.stringify(path.join(root, "scripts/gotchi-meet.mjs"))});
+      const t0 = Date.now();
+      const r = await runShell("node -e 'setTimeout(() => {}, 60000)' & sleep 60");
+      console.log(JSON.stringify({ ms: Date.now() - t0, timedOut: r.timedOut }));
+    `], { encoding: "utf8", env: { ...process.env, GOTCHIBOT_MEET_SHELL_TIMEOUT_MS: "1000" }, timeout: 20000 });
+    const out = JSON.parse(r.stdout.trim().split("\n").pop());
+    assert.equal(out.timedOut, true);
+    assert.ok(out.ms < 8000, `returned after ${out.ms} ms`);
+  });
+});

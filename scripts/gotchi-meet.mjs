@@ -2057,17 +2057,31 @@ function trimShellOutput(raw) {
   return text;
 }
 
-function runShell(command) {
+export function runShell(command) {
   return new Promise((done) => {
     let out = "";
     let timedOut = false;
     // Non-login bash, like OpenCode's bash tool: a login profile here printed
     // "grep: invalid option -- P" into every result. PATH is inherited from the pane.
+    // Its own process group, so a timeout or Ctrl+C stops everything the
+    // command started (an ssh or node below bash kept the room waiting forever).
     const child = spawn("bash", ["-c", command], {
       cwd: ROOT,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, GOTCHIBOT_ROOT: ROOT },
+      detached: true,
     });
+    const killGroup = (sig) => {
+      try {
+        process.kill(-child.pid, sig);
+      } catch {
+        try {
+          child.kill(sig);
+        } catch {
+          /* already gone */
+        }
+      }
+    };
     const push = (chunk) => {
       if (out.length < SHELL_MAX_CHARS * 4) out += String(chunk);
     };
@@ -2075,10 +2089,10 @@ function runShell(command) {
     child.stderr.on("data", push);
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      killGroup("SIGKILL");
     }, SHELL_TIMEOUT_MS);
     // Ctrl+C in the prompter SIGTERMs this helper — pass it on to the command.
-    const forward = () => child.kill("SIGTERM");
+    const forward = () => killGroup("SIGTERM");
     process.once("SIGTERM", forward);
     process.once("SIGINT", forward);
     const finish = (result) => {
