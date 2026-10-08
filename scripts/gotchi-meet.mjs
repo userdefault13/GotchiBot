@@ -31,6 +31,7 @@ import { isProfLinkCubeId, PROF_LINK_CUBE_ID } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
 import { benchHeroes, currentProjectSlug, projectRoles, resolveMeetingsRoot } from "./project-context.mjs";
 import { extractActions, pendingActionPath, MEET_ACTION_SUBCOMMANDS } from "./lib/meet-actions.mjs";
+import { deskMentionTargets, resolveDeskMention } from "./lib/meet-mentions.mjs";
 import { publishProjectWrite, flushProjectWrites } from "./hub-project-sync.mjs";
 import {
   ROOT,
@@ -1278,9 +1279,16 @@ function everyoneSpeakers(meeting) {
  */
 function resolveMentionedSpeakers(meeting, userText) {
   const mentioned = [];
+  let desk = null;
   for (const tok of mentionsFromText(userText)) {
     if (/^(everyone|all|channel|here)$/i.test(tok)) continue;
-    const hit = matchParticipant(meeting, tok);
+    let hit = matchParticipant(meeting, tok);
+    // @chief-of-staff (a seated hero) or a roster name → that gotchi, if in the room.
+    if (!hit) {
+      desk ||= deskMentionTargets();
+      const id = resolveDeskMention(tok, desk);
+      hit = id ? (meeting.participants || []).find((p) => p.id === id) || null : null;
+    }
     if (hit && hit.role !== "user" && !mentioned.includes(hit.id)) mentioned.push(hit.id);
   }
   // Only consult bare names when there was no @mention at all.
@@ -1958,10 +1966,34 @@ export async function editTurn(turnKey, newText) {
   return editTranscriptTurn(meeting.id, turnKey, newText);
 }
 
+/**
+ * @mentions of gotchis who are not in the room (a roster name, or a seated
+ * hero's tag) invite them first, so the mention reaches them. Returns the ids
+ * invited.
+ */
+async function inviteMentioned(meeting, text) {
+  const invited = [];
+  let desk = null;
+  for (const tok of mentionsFromText(text)) {
+    if (/^(everyone|all|channel|here)$/i.test(tok) || isChairAlias(tok) || matchParticipant(meeting, tok)) continue;
+    desk ||= deskMentionTargets();
+    const id = resolveDeskMention(tok, desk);
+    if (!id || (meeting.participants || []).some((p) => p.id === id) || invited.includes(id)) continue;
+    try {
+      await inviteParticipant(id);
+      invited.push(id);
+    } catch {
+      /* not invitable (busy, unknown): the mention just goes unanswered */
+    }
+  }
+  return invited;
+}
+
 export async function sayTurn(userText, opts = {}) {
   const text = String(userText || "").trim();
   if (!text) throw new Error('usage: gotchi-meet.mjs say "user message"');
-  const meeting = requireOpenMeeting();
+  let meeting = requireOpenMeeting();
+  if ((await inviteMentioned(meeting, text)).length) meeting = requireOpenMeeting();
   const resume = Boolean(opts.resume);
   const forcedSpeakers = Array.isArray(opts.speakers) ? opts.speakers.filter(Boolean) : null;
   const skipUserAppend = Boolean(opts.skipUserAppend);

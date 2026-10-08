@@ -5,6 +5,7 @@
  *   node scripts/meet-room-prompter.mjs
  *   node scripts/meet-room-prompter.mjs --inline   # single terminal (no tmux)
  */
+import { deskMentionTargets, mentionTag } from "./lib/meet-mentions.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import {
   readFileSync,
@@ -564,17 +565,25 @@ function mentionTags() {
   const members = listMeetMembers()
     .filter((m) => m.role !== "user")
     .map((m) => ({
-      tag: `@${String(m.label || m.id).replace(/\s+/g, "")}`,
+      tag: mentionTag(m.label || m.id, m.id),
       label: m.label,
       id: m.id,
     }));
-  if (!members.length) return members;
+  // Then the project's heroes (@chief-of-staff → its worker) and every roster
+  // gotchi not in the room yet; mentioning one invites them.
+  const inRoom = new Set(members.map((m) => m.id));
+  const tags = new Set(members.map((m) => m.tag.toLowerCase()));
+  const desk = deskMentionTargets().filter(
+    (t) => (t.kind === "hero" || !inRoom.has(t.id)) && !tags.has(t.tag.toLowerCase()),
+  );
+  const all = [...members, ...desk];
+  if (!all.length) return all;
   // @everyone: the whole room answers (gotchi-meet.mjs sayTurn fans it out).
-  return [{ tag: "@everyone", label: "everyone", id: "everyone" }, ...members];
+  return [{ tag: "@everyone", label: "everyone", id: "everyone" }, ...all];
 }
 
 function activeMentionQuery(buffer) {
-  const m = buffer.match(/@([A-Za-z0-9_-]*)$/);
+  const m = buffer.match(/@([A-Za-z0-9_.-]*)$/);
   return m ? m[1].toLowerCase() : null;
 }
 
@@ -1630,6 +1639,12 @@ function drawBodyInline() {
   const mentionMatches = mentionQ != null ? matchingMentions(mentionQ) : [];
   const mentionRow = layout.mentionRow;
 
+  // Chat column only: start past the sidebar rule.
+  const g = inputPanelGeometry(cols, rows, meeting);
+  drawInputPanel(g.top, g.cols, g.left, g.inputRows, g.padY);
+  // The / and @ menus go on the row just above the prompt, after the panel:
+  // drawInputPanel blanks its padding rows, which used to wipe the menu.
+  const menuRow = Math.max(1, g.top - 1);
   if (slashMatches.length && slashQ != null) {
     const n = slashMatches.length;
     const menu = slashMatches
@@ -1642,7 +1657,7 @@ function drawBodyInline() {
       })
       .join(`${T.muted} · ${T.reset}`);
     writeAt(
-      Math.max(1, mentionRow),
+      menuRow,
       sideW + 1,
       padPanelLine(`${T.accentBar}${T.panel} ${menu}`, cols - sideW),
     );
@@ -1652,15 +1667,13 @@ function drawBodyInline() {
       .map((m, i) => `${i === editor.menuIdx % mentionMatches.length ? T.menu : T.mention}${m.tag}${T.reset}`)
       .join(`${T.muted}  ${T.reset}`);
     writeAt(
-      Math.max(1, mentionRow),
+      menuRow,
       sideW + 1,
       padPanelLine(`${T.accentBar}${T.panel} ${T.muted}${menu}${T.reset}`, cols - sideW),
     );
   }
 
-  // Chat column only: start past the sidebar rule.
-  const g = inputPanelGeometry(cols, rows, meeting);
-  drawInputPanel(g.top, g.cols, g.left, g.inputRows, g.padY);
+
   if (chatPick) {
     drawChatPicker(sideW + 1, cols - sideW, layout.transcriptTop, layout.transcriptRows);
     stdout.write("\x1b[?25l");
