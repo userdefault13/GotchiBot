@@ -34,6 +34,9 @@ import {
   getMini,
   listMeetings,
   listMeetThreads,
+  meetingTurns,
+  scrollForTurn,
+  copyMeetingTurn,
 } from "./meet-channel.mjs";
 import {
   stripPardonPrefix,
@@ -79,6 +82,10 @@ let sideScroll = 0;
 let sideSel = 0;
 /** Thread shown in the chat column (a group meeting's id / "direct:<ids>"). null = the one with the open meeting. */
 let viewMeetingId = null;
+/** Message selector: index into the viewed room's messages, or null (typing at the latest). */
+let selTurn = null;
+/** "copied" / "copy-failed" flash on the selected message after Enter. */
+let selMark = null;
 /** Thread of the open meeting at the last look (a new one resets the pick). */
 let lastOpenThreadId = null;
 /**
@@ -493,6 +500,8 @@ export function renderInlineFrame({
     rows: layout.transcriptRows,
     scrollFromBottom,
     meeting: m || null,
+    selected: selTurn,
+    selectedMark: selMark,
   });
   const pad = Math.max(0, layout.cols - stripAnsi(foldedStrip).length);
   const stripLine = `${foldedStrip}${" ".repeat(pad)}`;
@@ -537,6 +546,8 @@ export function sidebarKey(key) {
     if (!m) return "redraw";
     viewMeetingId = m.id;
     scrollFromBottom = 0;
+    selTurn = null;
+    selMark = null;
     meetPaneFocus = "chat";
   } else if (key === "leave") {
     meetPaneFocus = "chat";
@@ -1328,7 +1339,7 @@ function drawInputPanel(top, cols, left = 1, inputRows = PROMPT_INPUT_ROWS, padY
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
       (INLINE
         ? `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab room" : "Tab meets · ↑↓/wheel ^U/^D scroll · ^P/^N history"} · q quit · /help${T.reset}`
-        : `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab/Esc room" : "Tab meets · ↑↓/wheel ^U/^D PgUp/PgDn scroll · ^P/^N history · Home/End"} · /help${T.reset}`);
+        : `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab/Esc room" : selTurn != null ? "↑↓ messages · ⏎ copy · Esc latest · type to reply" : "Tab meets · ↑ pick a message · wheel ^U/^D PgUp/PgDn scroll · ^P/^N history"} · /help${T.reset}`);
   }
   writeAt(top + inputRows, left, padPanelLine(footerCore + footerTicks(cols - INPUT_PAD_X * 2, visLen(footerCore)), cols));
 
@@ -1808,6 +1819,57 @@ function applyPagerClick(x, y) {
   return false;
 }
 
+/**
+ * Move the message selector: ↑ from the prompt picks the latest message, then
+ * older ones; ↓ goes newer, and past the latest returns to typing. Keeps the
+ * picked message on screen.
+ */
+export function moveMessageSelector(delta) {
+  const meeting = viewedMeeting();
+  const n = meetingTurns(meeting).length;
+  selMark = null;
+  if (!n) {
+    selTurn = null;
+    return "redraw";
+  }
+  if (selTurn == null) {
+    if (delta > 0) return "noop";
+    selTurn = n - 1;
+  } else {
+    selTurn += delta;
+    if (selTurn >= n) return leaveMessageSelector();
+    selTurn = Math.max(0, selTurn);
+  }
+  const { cols, rows } = paneSize();
+  const layout = inlineLayout(cols, rows);
+  scrollFromBottom = scrollForTurn({
+    cols: layout.cols - meetSideWidth(layout.cols, meeting),
+    rows: layout.transcriptRows,
+    meeting,
+    index: selTurn,
+  });
+  return "redraw";
+}
+
+/** Esc (or typing): drop the selection and go back to the latest message. */
+export function leaveMessageSelector() {
+  selTurn = null;
+  selMark = null;
+  scrollFromBottom = 0;
+  return "redraw";
+}
+
+/** Enter on a picked message: copy it. */
+function copySelectedMessage() {
+  selMark = copyMeetingTurn(viewedMeeting(), selTurn) ? "copied" : "copy-failed";
+  return "redraw";
+}
+
+/** Test hook. */
+export function messageSelectorState() {
+  return { selTurn, selMark, scrollFromBottom };
+}
+
 function handleKey(chunk) {
   if (escBuf) {
     escBuf += chunk;
@@ -1882,6 +1944,12 @@ function handleKey(chunk) {
 
   // The room is a chat: every printable key goes into the message. Scrolling
   // is ↑↓ / wheel / ^U ^D / PgUp PgDn / Home End; Tab opens the meet list.
+
+  // A picked message: Enter copies it; typing drops the pick and types.
+  if (selTurn != null && meetPaneFocus !== "sidebar") {
+    if ((chunk === "\r" || chunk === "\n") && bufferEmpty() && !editTargetTs) return copySelectedMessage();
+    if (chunk.length === 1 && chunk >= " ") leaveMessageSelector();
+  }
 
   switch (chunk) {
     case "\r":
@@ -2003,13 +2071,17 @@ function handleEsc(seq) {
   // ↑/↓ scroll the messages, never the prompt. With tmux mouse off, Terminal
   // turns the mouse wheel into arrow keys, so arrows recalling history used to
   // make the wheel rewrite the prompt. History is Ctrl+P / Ctrl+N; /edit edits.
+  // ↑/↓ on an empty prompt pick messages (Enter copies, Esc back to latest);
+  // while typing they scroll. History is Ctrl+P / Ctrl+N.
   if (seq === "\x1b[A" || seq === "\x1bOA") {
     if (editor.cycleMenu(-1)) return "redraw";
+    if (bufferEmpty() && !editTargetTs) return moveMessageSelector(-1);
     scrollFromBottom += 1;
     return "redraw";
   }
   if (seq === "\x1b[B" || seq === "\x1bOB") {
     if (editor.cycleMenu(1)) return "redraw";
+    if (bufferEmpty() && !editTargetTs && selTurn != null) return moveMessageSelector(1);
     scrollFromBottom = Math.max(0, scrollFromBottom - 1);
     return "redraw";
   }
@@ -2223,6 +2295,12 @@ function main() {
         // Lone Esc in the /chat picker: step back, then close.
         if (!escBuf && ch === "\x1b" && chatPick && text.length === 1) {
           chatPickerKey("back");
+          draw();
+          return;
+        }
+        // Lone Esc with a picked message: back to the latest reply.
+        if (!escBuf && ch === "\x1b" && selTurn != null && meetPaneFocus !== "sidebar" && text.length === 1) {
+          leaveMessageSelector();
           draw();
           return;
         }

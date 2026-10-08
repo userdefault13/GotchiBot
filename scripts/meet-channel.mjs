@@ -594,7 +594,7 @@ function withActionButton(meta, turn, cols, hit) {
   return `${meta} ${color}${label}${C.reset}`;
 }
 
-function renderTurn(turn, meeting, cols, hit = null) {
+function renderTurn(turn, meeting, cols, hit = null, mark = null) {
   const { name, role, id } = participantInfo(meeting, turn.speaker);
   const thumb = getThumb(id);
   // 2 columns between the sprite and the words, 2 columns before the right edge.
@@ -606,7 +606,12 @@ function renderTurn(turn, meeting, cols, hit = null) {
   // Quiet "edited" cue on the user's own corrected messages — not a badge card.
   const edited = turn.editedAt && role === "user" ? ` ${C.dim}(edited)${C.reset}` : "";
   const meta = `${nameColor(role)}${name}${C.reset} ${C.dim}${formatTime(turn.ts)}${C.reset}${edited}`;
-  const header = hit ? withActionButton(meta, turn, cols, hit) : meta;
+  let header = hit ? withActionButton(meta, turn, cols, hit) : meta;
+  // The meet room's message selector: ▶ on the picked message, and what keys do.
+  if (mark) {
+    const cue = mark === "copied" ? `${C.user}✓ copied${C.reset}` : mark === "copy-failed" ? `${C.dim}copy failed${C.reset}` : `${C.dim}⏎ copy · Esc latest${C.reset}`;
+    header = `${C.chair}▶${C.reset} ${header}  ${cue}`;
+  }
   const blockH = Math.max(thumb.length, 1 + bodyLines.length);
   const rows = [];
 
@@ -638,6 +643,7 @@ function buildThreadLines(thread, cols, contentCols, opts = {}) {
   const lines = [...renderHeader(thread, contentCols, Boolean(hits))];
   const segs = thread.segments || [];
   if (!segs.length) lines.push(`${C.dim}(no messages saved)${C.reset}`, "");
+  let turnNo = 0;
   for (const seg of segs) {
     const open = seg.status === "open" && seg.isCurrent;
     const paused = seg.status === "open" && !seg.isCurrent;
@@ -660,7 +666,10 @@ function buildThreadLines(thread, cols, contentCols, opts = {}) {
           copied: action === "copy" && opts.copiedKey === key ? opts.copiedState || "ok" : null,
         };
       }
-      lines.push(...renderTurn(t, seg, contentCols, hit));
+      opts.turnStarts?.push(lines.length);
+      const mark = opts.selected === turnNo ? opts.selectedMark || "selected" : null;
+      turnNo += 1;
+      lines.push(...renderTurn(t, seg, contentCols, hit, mark));
     });
     if (open) {
       lines.push(...renderPendingTail(seg, cols, turns));
@@ -686,6 +695,8 @@ export function buildMeetChannelLines(meeting, cols, contentCols = cols, opts = 
     turns.forEach((t, i) => {
       const role = t.role || participantInfo(meeting, t.speaker).role;
       const key = `${i}:${t.ts || ""}`;
+      opts.turnStarts?.push(lines.length);
+      const mark = opts.selected === i ? opts.selectedMark || "selected" : null;
       let hit = null;
       if (hits) {
         if (role === "user") {
@@ -700,7 +711,7 @@ export function buildMeetChannelLines(meeting, cols, contentCols = cols, opts = 
           };
         }
       }
-      lines.push(...renderTurn(t, meeting, contentCols, hit));
+      lines.push(...renderTurn(t, meeting, contentCols, hit, mark));
     });
   }
   lines.push(...renderPendingTail(meeting, cols, turns));
@@ -753,6 +764,37 @@ function insetTranscript(lines, rows) {
   return out;
 }
 
+/** Every message of a room or thread, oldest first (the selector's index space). */
+export function meetingTurns(meeting) {
+  if (!meeting) return [];
+  if (meeting.combined) return (meeting.segments || []).flatMap((seg) => readTranscript(seg.id));
+  return readTranscript(meeting.id);
+}
+
+/**
+ * scrollFromBottom that puts message `index` in view: its header near the top
+ * when it is taller than the pane, else the whole message on screen.
+ */
+export function scrollForTurn({ cols = 80, rows = 40, meeting, index }) {
+  if (!meeting || index == null) return 0;
+  const turnStarts = [];
+  const lines = buildMeetChannelLines(meeting, cols, transcriptContentCols(cols), { turnStarts, selected: index });
+  const total = lines.length;
+  const viewport = transcriptMessageRows(rows);
+  if (total <= viewport || index >= turnStarts.length) return 0;
+  const start = turnStarts[index];
+  const end = index + 1 < turnStarts.length ? turnStarts[index + 1] : total;
+  // Lines shown end at total - fromBottom; keep 2 rows for the ↑/↓ markers.
+  const wantEnd = end - start > viewport - 2 ? start + viewport - 2 : Math.max(end, Math.min(total, start + viewport - 2));
+  return Math.max(0, total - Math.min(total, wantEnd));
+}
+
+/** Copy message `index` of a room/thread to the clipboard. */
+export function copyMeetingTurn(meeting, index) {
+  const t = meetingTurns(meeting)[index];
+  return t ? copyTurnText(String(t.text || "")) : false;
+}
+
 export function maxScrollFromBottom({ cols = 80, rows = 40, meeting = loadCurrentMeeting() } = {}) {
   if (!meeting) return 0;
   const contentCols = transcriptContentCols(cols);
@@ -767,6 +809,8 @@ export function renderMeetChannel({
   rows = 40,
   scrollFromBottom = 0,
   meeting: picked = undefined,
+  selected = null,
+  selectedMark = null,
 } = {}) {
   // undefined → the open meeting; a meeting object → that saved log.
   const meeting = picked === undefined ? loadCurrentMeeting() : picked;
@@ -783,7 +827,7 @@ export function renderMeetChannel({
   }
 
   const contentCols = transcriptContentCols(cols);
-  const allLines = buildMeetChannelLines(meeting, cols, contentCols);
+  const allLines = buildMeetChannelLines(meeting, cols, contentCols, { selected, selectedMark });
   const total = allLines.length;
   const viewport = transcriptMessageRows(rows);
   const fromBottom = Math.max(

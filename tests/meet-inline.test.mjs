@@ -368,3 +368,34 @@ describe("meeting gotchis stay honest about actions", () => {
     assert.match(fn, /meetDeskFacts\(\)/);
   });
 });
+
+describe("meet message selector", () => {
+  it("↑ picks the latest message, ↑↓ step, ↓ past the latest returns to typing; the pick is drawn with ▶ and copy keys", async (t) => {
+    const mod = await import("../scripts/meet-room-prompter.mjs");
+    const { meetingTurns, renderMeetChannel } = await import("../scripts/meet-channel.mjs");
+    const meeting = mod.viewedMeeting();
+    const n = meetingTurns(meeting).length;
+    if (n < 2) return t.skip("needs a room with 2+ messages");
+    mod.leaveMessageSelector();
+    assert.equal(mod.moveMessageSelector(1), "noop", "↓ with nothing picked does not pick");
+    mod.moveMessageSelector(-1);
+    assert.equal(mod.messageSelectorState().selTurn, n - 1, "↑ picks the latest");
+    mod.moveMessageSelector(-1);
+    assert.equal(mod.messageSelectorState().selTurn, n - 2);
+    const { scrollForTurn } = await import("../scripts/meet-channel.mjs");
+    for (const [cols, rows] of [[90, 40], [70, 16]]) {
+      const frame = renderMeetChannel({ cols, rows, meeting, selected: n - 2, scrollFromBottom: scrollForTurn({ cols, rows, meeting, index: n - 2 }) })
+        .replace(/\x1b\[[0-9;]*m/g, "");
+      assert.match(frame, /▶ /, `the picked message is on screen at ${cols}×${rows}`);
+    }
+    const frame = renderMeetChannel({ cols: 90, rows: 40, meeting, selected: n - 2, scrollFromBottom: scrollForTurn({ cols: 90, rows: 40, meeting, index: n - 2 }) })
+      .replace(/\x1b\[[0-9;]*m/g, "");
+    assert.match(frame, /▶ .*⏎ copy · Esc latest/, "the picked message is on screen with its keys");
+    mod.moveMessageSelector(1);
+    mod.moveMessageSelector(1);
+    assert.deepEqual(mod.messageSelectorState(), { selTurn: null, selMark: null, scrollFromBottom: 0 }, "past the latest: back to typing");
+    mod.moveMessageSelector(-1);
+    mod.leaveMessageSelector();
+    assert.equal(mod.messageSelectorState().selTurn, null, "Esc drops the pick");
+  });
+});
