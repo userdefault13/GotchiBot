@@ -121,10 +121,10 @@ export function listMeetings() {
 }
 
 /**
- * Meets combined into threads for the meet list: every group meeting is one
- * "Group meetings" thread; 1:1 chats are one thread per gotchi. Each thread
- * keeps its meetings oldest-first in `segments` so the log can show where each
- * one started and ended. Newest thread first.
+ * Meets as threads for the meet list: every group meeting is its own room
+ * (thread `group:<meeting id>`, titled with its topic); 1:1 chats are one
+ * thread per gotchi, keeping its chats oldest-first in `segments` so the log
+ * shows where each started and ended. Newest thread first.
  */
 export function listMeetThreads() {
   const meets = listMeetings();
@@ -133,7 +133,7 @@ export function listMeetThreads() {
   const agentKey = (m) =>
     (m.participants || []).filter((p) => p.role !== "user").map((p) => p.id).sort().join(",");
   for (const m of meets) {
-    const key = m.solo || m.direct ? `direct:${agentKey(m) || m.chairId}` : "group";
+    const key = m.solo || m.direct ? `direct:${agentKey(m) || m.chairId}` : `group:${m.id}`;
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key).push(m);
   }
@@ -150,15 +150,16 @@ export function listMeetThreads() {
     for (const seg of segments) {
       for (const p of seg.participants || []) if (!seen.has(p.id)) seen.set(p.id, p);
     }
-    const direct = key !== "group";
+    const direct = key.startsWith("direct:");
     const agents = (latest.participants || []).filter((p) => p.role !== "user");
     threads.push({
       id: key,
-      combined: true,
+      // Only 1:1 chats collect several meets; a group meeting is one room.
+      combined: direct,
       solo: direct,
       direct,
       agentCount: agents.length,
-      topic: direct ? `chat with ${agents.map((p) => p.name || p.id).join(", ") || latest.chairId}` : "group meetings",
+      topic: direct ? `chat with ${agents.map((p) => p.name || p.id).join(", ") || latest.chairId}` : latest.topic || "Untitled meeting",
       chairId: (open || latest).chairId,
       participants: [...seen.values()],
       segments,

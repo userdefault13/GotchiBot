@@ -139,7 +139,7 @@ describe("pane scripts ignore wheel", () => {
     const src = read(meetPrompter);
     assert.doesNotMatch(src, /\?1000h/);
     assert.match(src, /btn === 64 \|\| btn === 65/);
-    assert.match(src, /chunk === "h"/);
+    assert.match(src, /key === "h"\) return "sidebar"|key === "h"/, "h moves focus to the meet list");
   });
 
   it("factory and dossier panes do not repaint on wheel", () => {

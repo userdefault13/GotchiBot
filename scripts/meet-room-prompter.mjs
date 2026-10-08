@@ -76,8 +76,10 @@ let meetPaneFocus = "chat";
 let sideScroll = 0;
 /** Sidebar selector: index into listMeetThreads(). */
 let sideSel = 0;
-/** Thread shown in the chat column ("group" / "direct:<ids>"). null = the one with the open meeting. */
+/** Thread shown in the chat column ("group:<meeting id>" / "direct:<ids>"). null = the one with the open meeting. */
 let viewMeetingId = null;
+/** Thread of the open meeting at the last look (a new one resets the pick). */
+let lastOpenThreadId = null;
 /**
  * /chat picker. null when closed. step "mode" (single/multi) → "agents".
  * sel = cursor, picked = ids toggled in multi mode.
@@ -242,10 +244,16 @@ function clipSide(text, width) {
 
 /**
  * Thread shown in the chat column: the picked one, else the thread holding the
- * open meeting, else the newest. Group meetings are one combined log.
+ * open meeting, else the newest. Each group meeting is its own room.
  */
 export function viewedMeeting() {
   const threads = listMeetThreads();
+  // A newly opened meeting takes the room over from whatever was picked before.
+  const openId = threads.find((x) => x.isCurrent)?.id || null;
+  if (openId && openId !== lastOpenThreadId) {
+    lastOpenThreadId = openId;
+    viewMeetingId = null;
+  }
   if (viewMeetingId) {
     const t = threads.find((x) => x.id === viewMeetingId);
     if (t) return t;
@@ -398,7 +406,13 @@ function meetCardLabels(t) {
       faceId: agents[0]?.id || t.chairId,
     };
   }
-  return { title: "Group meetings", kind: `${n} meeting${n === 1 ? "" : "s"}`, faceId: t.chairId };
+  // A group meeting is its own room: its topic, and how many gotchis sit in it.
+  const agents = (t.participants || []).filter((p) => p.role !== "user").length;
+  return {
+    title: t.topic || "Untitled meeting",
+    kind: `meeting · ${agents} gotchi${agents === 1 ? "" : "s"}`,
+    faceId: t.chairId,
+  };
 }
 
 /**
@@ -456,8 +470,9 @@ export function renderMeetSidebar(rows, width = MEET_SIDEBAR_COLS - 1, scroll = 
 
 /** m focuses the sidebar. n focuses the meeting chat. "" is not a focus key. */
 export function meetFocusTarget(key) {
-  if (key === "m" || key === "M") return "sidebar";
-  if (key === "n" || key === "N") return "chat";
+  // h / l: left to the meet list, right back to the room (m / n the same).
+  if (key === "m" || key === "M" || key === "h") return "sidebar";
+  if (key === "n" || key === "N" || key === "l") return "chat";
   return "";
 }
 
@@ -1271,8 +1286,8 @@ function drawInputPanel(top, cols, left = 1, inputRows = PROMPT_INPUT_ROWS, padY
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
       (INLINE
-        ? `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab chat" : "Tab meets · ↑↓/wheel ^U/^D scroll · ^P/^N history"} · q quit · /help${T.reset}`
-        : `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab/Esc chat" : "Tab meets · ↑↓/wheel ^U/^D PgUp/PgDn scroll · ^P/^N history · Home/End"} · /help${T.reset}`);
+        ? `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · l/Tab room" : "h/Tab meets · ↑↓/wheel ^U/^D scroll · ^P/^N history"} · q quit · /help${T.reset}`
+        : `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · l/Tab/Esc room" : "h/Tab meets · ↑↓/wheel ^U/^D PgUp/PgDn scroll · ^P/^N history · Home/End"} · /help${T.reset}`);
   }
   writeAt(top + inputRows, left, padPanelLine(footerCore + footerTicks(cols - INPUT_PAD_X * 2, visLen(footerCore)), cols));
 
@@ -1835,11 +1850,11 @@ function handleKey(chunk) {
       }
       return "redraw";
     }
-    if (chunk === "," || chunk === "[" || chunk === "h") {
+    if (chunk === "," || chunk === "[") {
       pagePrev();
       return "redraw";
     }
-    if (chunk === "." || chunk === "]" || chunk === "l") {
+    if (chunk === "." || chunk === "]") {
       pageNext();
       return "redraw";
     }

@@ -240,6 +240,8 @@ describe("meet sidebar", () => {
     assert.equal(meetFocusTarget("n"), "chat");
     assert.equal(meetFocusTarget("N"), "chat");
     assert.equal(meetFocusTarget("j"), "");
+    assert.equal(meetFocusTarget("h"), "sidebar", "h: left to the meet list");
+    assert.equal(meetFocusTarget("l"), "chat", "l: right back to the room");
     const src = readFileSync(path.join(root, "scripts/meet-room-prompter.mjs"), "utf8");
     const fn = src.slice(src.indexOf("function handleKey"), src.indexOf("function handleEsc"));
     assert.ok(fn.indexOf("meetFocusTarget") < fn.indexOf("editor.insert"));
@@ -248,28 +250,28 @@ describe("meet sidebar", () => {
 });
 
 describe("meet sidebar picks saved meets", () => {
-  it("combines group meetings into one card and marks each start and end", async () => {
+  it("gives each group meeting its own room, titled with its topic", async () => {
     const { listMeetThreads, buildMeetChannelLines } = await import("../scripts/meet-channel.mjs");
     const mod = await import("../scripts/meet-room-prompter.mjs");
     const threads = listMeetThreads();
-    assert.ok(threads.filter((t) => t.id === "group").length <= 1, "one group thread");
+    const groups = threads.filter((t) => t.id.startsWith("group:"));
+    for (const g of groups) assert.equal(g.segments.length, 1, "one meeting per group room");
+    assert.equal(threads.some((t) => t.id === "group"), false, "no combined group thread");
     const plain = mod
       .renderMeetSidebar(SIDEBAR_CARD_ROWS * 2, MEET_SIDEBAR_COLS - 1)
       .map((s) => s.replace(/\x1b\[[0-9;]*m/g, ""))
       .join("\n");
-    const group = threads.find((t) => t.id === "group");
+    const group = groups[0];
     if (!group) return;
-    assert.match(plain, /Group meetings/);
+    assert.doesNotMatch(plain, /Group meetings/);
     const lines = buildMeetChannelLines(group, 100, 90).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
-    const starts = lines.filter((l) => /▶ .* started /.test(l)).length;
-    const ends = lines.filter((l) => /■ ended |● in progress/.test(l)).length;
-    assert.equal(starts, group.segments.length);
-    assert.equal(ends, group.segments.length);
+    assert.match(lines[0], new RegExp(`# ${(group.topic || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.equal(lines.filter((l) => /▶ .* started /.test(l)).length <= 1, true, "no stack of earlier meetings");
     const at = threads.indexOf(group);
     while (mod.meetSidebarState().sideSel > at) mod.sidebarKey("up");
     while (mod.meetSidebarState().sideSel < at) mod.sidebarKey("down");
     mod.sidebarKey("open");
-    assert.equal(mod.meetSidebarState().viewMeetingId, "group");
+    assert.equal(mod.meetSidebarState().viewMeetingId, group.id);
     assert.equal(mod.meetSidebarState().focus, "chat");
     assert.equal(mod.sidebarKey("x"), "");
   });
