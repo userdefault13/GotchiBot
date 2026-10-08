@@ -249,9 +249,10 @@ describe("meet sidebar picks saved meets", () => {
     const { listMeetThreads, buildMeetChannelLines } = await import("../scripts/meet-channel.mjs");
     const mod = await import("../scripts/meet-room-prompter.mjs");
     const threads = listMeetThreads();
-    const groups = threads.filter((t) => t.id.startsWith("group:"));
+    const groups = threads.filter((t) => !t.direct);
     for (const g of groups) assert.equal(g.segments.length, 1, "one meeting per group room");
     assert.equal(threads.some((t) => t.id === "group"), false, "no combined group thread");
+    for (const g of groups) assert.equal(g.id, g.segments[0].id, "a group room's id is its meeting id");
     const plain = mod
       .renderMeetSidebar(SIDEBAR_CARD_ROWS * 2, MEET_SIDEBAR_COLS - 1)
       .map((s) => s.replace(/\x1b\[[0-9;]*m/g, ""))
@@ -262,6 +263,9 @@ describe("meet sidebar picks saved meets", () => {
     const lines = buildMeetChannelLines(group, 100, 90).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));
     assert.match(lines[0], new RegExp(`# ${(group.topic || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     assert.equal(lines.filter((l) => /▶ .* started /.test(l)).length <= 1, true, "no stack of earlier meetings");
+    // The room shows that meeting's own messages (it read the right transcript).
+    const { readTranscript } = await import("../scripts/meet-channel.mjs");
+    if (readTranscript(group.id).length) assert.doesNotMatch(lines.join("\n"), /channel empty/);
     const at = threads.indexOf(group);
     while (mod.meetSidebarState().sideSel > at) mod.sidebarKey("up");
     while (mod.meetSidebarState().sideSel < at) mod.sidebarKey("down");

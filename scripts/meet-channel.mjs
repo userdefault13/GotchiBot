@@ -122,7 +122,7 @@ export function listMeetings() {
 
 /**
  * Meets as threads for the meet list: every group meeting is its own room
- * (thread `group:<meeting id>`, titled with its topic); 1:1 chats are one
+ * (thread id = the meeting id, titled with its topic); 1:1 chats are one
  * thread per gotchi, keeping its chats oldest-first in `segments` so the log
  * shows where each started and ended. Newest thread first.
  */
@@ -133,7 +133,9 @@ export function listMeetThreads() {
   const agentKey = (m) =>
     (m.participants || []).filter((p) => p.role !== "user").map((p) => p.id).sort().join(",");
   for (const m of meets) {
-    const key = m.solo || m.direct ? `direct:${agentKey(m) || m.chairId}` : `group:${m.id}`;
+    // A group room's id is its meeting id, so readers that take thread.id as a
+    // meeting id (the transcript, edits) read that meeting.
+    const key = m.solo || m.direct ? `direct:${agentKey(m) || m.chairId}` : m.id;
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key).push(m);
   }

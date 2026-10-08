@@ -76,7 +76,7 @@ let meetPaneFocus = "chat";
 let sideScroll = 0;
 /** Sidebar selector: index into listMeetThreads(). */
 let sideSel = 0;
-/** Thread shown in the chat column ("group:<meeting id>" / "direct:<ids>"). null = the one with the open meeting. */
+/** Thread shown in the chat column (a group meeting's id / "direct:<ids>"). null = the one with the open meeting. */
 let viewMeetingId = null;
 /** Thread of the open meeting at the last look (a new one resets the pick). */
 let lastOpenThreadId = null;
@@ -707,14 +707,10 @@ function writePending(text, { chair = true } = {}) {
   if (!chair) return;
   try {
     // User line in flight — show chair thinking until sayTurn updates speakers.
-    const mid = String(readFileSync(`${ROOT}/sessions/meetings/.current`, "utf8")).trim();
-    if (mid) {
-      const meeting = JSON.parse(
-        readFileSync(`${ROOT}/sessions/meetings/${mid}/meeting.json`, "utf8"),
-      );
-      if (meeting?.chairId) {
-        setMeetStatus(meeting.chairId, "thinking", { meetingId: meeting.id, poke: true });
-      }
+    // The open meeting, from the project's meetings folder (not sessions/meetings).
+    const meeting = loadCurrentMeeting();
+    if (meeting?.chairId) {
+      setMeetStatus(meeting.chairId, "thinking", { meetingId: meeting.id, poke: true });
     }
   } catch {
     /* ok */
