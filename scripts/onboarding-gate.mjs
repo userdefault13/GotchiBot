@@ -3083,6 +3083,15 @@ async function mainMenu(wallet, cartridgeId) {
     if (pick.key === "meet") {
       const opened = await startMeetingMenu(heroes);
       if (opened) {
+        // Cockpit pane (desk): bring up the meet pane on the room. Falling through
+        // to chat-pane.sh here started a chat in the cockpit pane instead.
+        if (process.env.GOTCHIBOT_COCKPIT_PANE === "1") {
+          rl.close();
+          enterMeetGalleryLayout();
+          // 6 = handed off to another pane: cockpit-pane.sh must not leave-cockpit
+          // (that focuses chat, and could land after the switch to the meet pane).
+          process.exit(6);
+        }
         if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") {
           openMeetRoomFromPane();
         }

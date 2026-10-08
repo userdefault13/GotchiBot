@@ -13,6 +13,10 @@ node ./scripts/onboarding-gate.mjs --cockpit
 st=$?
 set -e
 
+# 6: the menu handed the desk to another pane (meet room); leaving the cockpit
+# here would focus chat over it.
+[ "$st" = 6 ] && exit 0
+
 mode="$(tr -d '[:space:]' < "$ROOT/sessions/.layout-mode" 2>/dev/null || echo normal)"
 if [ "$mode" = "cockpit" ]; then
   GOTCHIBOT_LAYOUT_SAFE=1 "$ROOT/scripts/orchestrator-layout.sh" leave-cockpit || true
