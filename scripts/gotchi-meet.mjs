@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { printSlackTurns, orderMeetingParticipants, insertBesideChair } from "./meet-channel.mjs";
 import { isProfLinkCubeId, PROF_LINK_CUBE_ID } from "./gotchi-art.mjs";
 import { loadMeta } from "./identity.mjs";
-import { projectRoles, resolveMeetingsRoot } from "./project-context.mjs";
+import { benchHeroes, currentProjectSlug, projectRoles, resolveMeetingsRoot } from "./project-context.mjs";
 import { publishProjectWrite, flushProjectWrites } from "./hub-project-sync.mjs";
 import {
   ROOT,
@@ -1703,6 +1703,41 @@ function profLinkCubeMeetDigest() {
   return digest;
 }
 
+/**
+ * What a meeting gotchi needs to answer desk questions truthfully: the project's
+ * seats (hero → worker gotchi) and every gotchi's name → id, so "User.Default"
+ * resolves to one id (or the gotchi asks which).
+ */
+export function meetDeskFacts() {
+  const lines = [];
+  try {
+    const slug = currentProjectSlug();
+    if (slug) {
+      const seats = benchHeroes(slug).map((h) => `${h.hero}=${h.worker || "no worker"}`).join(", ");
+      lines.push(`Project: ${slug}. Seats (hero=worker gotchi): ${seats || "none"}`);
+    }
+  } catch {
+    /* no project */
+  }
+  try {
+    const r = JSON.parse(readFileSync(`${SESSIONS}/.avatar-roster.json`, "utf8"));
+    const names = [[r.pinned, r.pinnedName], ...(r.others || []).map((o) => [o.id, o.name])]
+      .filter(([id, name]) => id && name && !String(id).startsWith("hero:"))
+      .map(([id, name]) => `${name}=${id}`);
+    if (names.length) lines.push(`Gotchis (name=id): ${names.join(", ")}`.slice(0, 1600));
+  } catch {
+    /* roster not cached */
+  }
+  return lines;
+}
+
+/** Meetings are talk only: nobody acts from here, so nobody may claim to have. */
+export const MEET_ACTION_RULE =
+  "You cannot take actions from a meeting: no command runs, no role or seat changes, nothing is assigned or sent. Never say something was done. " +
+  "When UserDefault asks for an action, say it has not been done yet and give the exact command to run here with ! — " +
+  "e.g. seat a gotchi as a project hero: !./scripts/gotchibot heroes bind chief-of-staff owned-12302 (see who sits where: !./scripts/gotchibot heroes). " +
+  "If a name could match more than one gotchi, ask which id.";
+
 async function agentReply(meeting, speakerId) {
   const p = meeting.participants.find((x) => x.id === speakerId);
   const turns = readTranscript(meeting.id);
@@ -1736,6 +1771,8 @@ async function agentReply(meeting, speakerId) {
     ...profLines,
     `Topic: ${meeting.topic}`,
     `Participants: ${(meeting.participants || []).map((x) => `${x.name || x.id} (${x.role})`).join(", ")}`,
+    ...meetDeskFacts(),
+    MEET_ACTION_RULE,
     "",
     "Transcript so far:",
     formatTranscript(turns) || "(empty)",
@@ -1751,7 +1788,8 @@ async function agentReply(meeting, speakerId) {
     const why = r.reason || "agent-failed";
     return { ok: false, text: `(unreachable: ${why})`, reason: why };
   }
-  const text = extractReplyText(r) || "(no reply)";
+  // Gotchis sometimes echo the transcript's "[chair] owned-22899:" line format.
+  const text = (extractReplyText(r) || "").replace(/^\s*\[(?:chair|agent|user)\]\s*[\w.-]+:\s*/i, "") || "(no reply)";
   return { ok: true, text };
 }
 

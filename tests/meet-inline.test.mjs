@@ -355,3 +355,16 @@ describe("wheel scrolls the messages, not the prompt", () => {
     assert.match(keys, /case "\\x0e":[\s\S]*?historyDown\(\)/);
   });
 });
+
+describe("meeting gotchis stay honest about actions", () => {
+  it("every turn says nothing runs from a meeting and gives the ! command instead", async () => {
+    const { MEET_ACTION_RULE } = await import("../scripts/gotchi-meet.mjs");
+    assert.match(MEET_ACTION_RULE, /cannot take actions/);
+    assert.match(MEET_ACTION_RULE, /Never say something was done/);
+    assert.match(MEET_ACTION_RULE, /!\.\/scripts\/gotchibot heroes bind/);
+    const src = readFileSync(path.join(root, "scripts/gotchi-meet.mjs"), "utf8");
+    const fn = src.slice(src.indexOf("async function agentReply"), src.indexOf("function printMeetingBlock"));
+    assert.match(fn, /MEET_ACTION_RULE/);
+    assert.match(fn, /meetDeskFacts\(\)/);
+  });
+});
