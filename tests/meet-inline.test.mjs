@@ -11,10 +11,8 @@ import path from "node:path";
 
 import {
   inlineLayout,
-  meetScrollDelta,
   MEET_SIDEBAR_COLS,
   SIDEBAR_CARD_ROWS,
-  meetFocusTarget,
   renderInlineFrame,
   renderMeetSidebar,
 } from "../scripts/meet-room-prompter.mjs";
@@ -174,17 +172,6 @@ describe("meet room iMessage layout", () => {
   });
 });
 
-describe("meet transcript j/k", () => {
-  it("j moves down toward newer turns and k moves up toward older ones", () => {
-    assert.equal(meetScrollDelta("j"), -1);
-    assert.equal(meetScrollDelta("J"), -1);
-    assert.equal(meetScrollDelta("k"), 1);
-    assert.equal(meetScrollDelta("K"), 1);
-    assert.equal(meetScrollDelta("h"), 0);
-    assert.equal(meetScrollDelta("l"), 0);
-  });
-});
-
 describe("meet transcript inset", () => {
   it("leaves 2 columns beside the message text and 1 row above and below", (t) => {
     // Top of the live meeting: the bottom can be one long reply (or "typing…")
@@ -234,18 +221,26 @@ describe("meet sidebar", () => {
     }
   });
 
-  it("m focuses the sidebar and n focuses the chat, and typing still takes the letters", () => {
-    assert.equal(meetFocusTarget("m"), "sidebar");
-    assert.equal(meetFocusTarget("M"), "sidebar");
-    assert.equal(meetFocusTarget("n"), "chat");
-    assert.equal(meetFocusTarget("N"), "chat");
-    assert.equal(meetFocusTarget("j"), "");
-    assert.equal(meetFocusTarget("h"), "sidebar", "h: left to the meet list");
-    assert.equal(meetFocusTarget("l"), "chat", "l: right back to the room");
-    const src = readFileSync(path.join(root, "scripts/meet-room-prompter.mjs"), "utf8");
-    const fn = src.slice(src.indexOf("function handleKey"), src.indexOf("function handleEsc"));
-    assert.ok(fn.indexOf("meetFocusTarget") < fn.indexOf("editor.insert"));
-    assert.match(fn, /bufferEmpty\(\)/);
+  it("the room is a chat: every letter goes into the message; Tab then ↑↓ pick a meet", async () => {
+    const mod = await import("../scripts/meet-room-prompter.mjs");
+    mod.meetKeyForTest("\t"); // into the list…
+    mod.meetKeyForTest("\t"); // …and back to the room
+    assert.equal(mod.meetSidebarState().focus, "chat");
+    for (const ch of "hjklmn,.[]") mod.meetKeyForTest(ch);
+    assert.equal(mod.meetPromptText(), "hjklmn,.[]", "no letter or punctuation is a shortcut");
+    assert.equal(mod.meetSidebarState().focus, "chat");
+    for (let i = 0; i < 10; i++) mod.meetKeyForTest("\x7f");
+    assert.equal(mod.meetPromptText(), "");
+    mod.meetKeyForTest("\t");
+    assert.equal(mod.meetSidebarState().focus, "sidebar", "Tab opens the meet list");
+    const before = mod.meetSidebarState().sideSel;
+    for (const ch of "\x1b[B") mod.meetKeyForTest(ch);
+    const n = (await import("../scripts/meet-channel.mjs")).listMeetThreads().length;
+    assert.equal(mod.meetSidebarState().sideSel, Math.min(n - 1, before + 1), "↓ picks the next meet");
+    mod.meetKeyForTest("x");
+    assert.equal(mod.meetSidebarState().focus, "chat", "typing in the list goes back to the room's chat");
+    assert.equal(mod.meetPromptText(), "x");
+    mod.meetKeyForTest("\x7f");
   });
 });
 

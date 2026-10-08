@@ -469,12 +469,6 @@ export function renderMeetSidebar(rows, width = MEET_SIDEBAR_COLS - 1, scroll = 
 }
 
 /** m focuses the sidebar. n focuses the meeting chat. "" is not a focus key. */
-export function meetFocusTarget(key) {
-  // h / l: left to the meet list, right back to the room (m / n the same).
-  if (key === "m" || key === "M" || key === "h") return "sidebar";
-  if (key === "n" || key === "N" || key === "l") return "chat";
-  return "";
-}
 
 export function renderInlineFrame({
   cols = 80,
@@ -551,6 +545,14 @@ export function sidebarKey(key) {
   const { rows } = paneSize();
   revealSideSel(Math.max(1, rows - 1));
   return "redraw";
+}
+
+/** Test hook: one key into the prompter, and the message being typed. */
+export function meetKeyForTest(chunk) {
+  return handleKey(chunk);
+}
+export function meetPromptText() {
+  return editor.buffer;
 }
 
 /** Test hook: sidebar / viewer state. */
@@ -1286,8 +1288,8 @@ function drawInputPanel(top, cols, left = 1, inputRows = PROMPT_INPUT_ROWS, padY
     footerCore =
       `${T.accentBar}${T.panel} ${T.brand}Gotchi${T.reset}${T.panel}${T.muted} · ${T.text}${model}${T.reset}` +
       (INLINE
-        ? `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · l/Tab room" : "h/Tab meets · ↑↓/wheel ^U/^D scroll · ^P/^N history"} · q quit · /help${T.reset}`
-        : `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · l/Tab/Esc room" : "h/Tab meets · ↑↓/wheel ^U/^D PgUp/PgDn scroll · ^P/^N history · Home/End"} · /help${T.reset}`);
+        ? `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab room" : "Tab meets · ↑↓/wheel ^U/^D scroll · ^P/^N history"} · q quit · /help${T.reset}`
+        : `${T.panel}${T.muted} · ${meetPaneFocus === "sidebar" ? "↑↓ pick meet · ⏎ open · Tab/Esc room" : "Tab meets · ↑↓/wheel ^U/^D PgUp/PgDn scroll · ^P/^N history · Home/End"} · /help${T.reset}`);
   }
   writeAt(top + inputRows, left, padPanelLine(footerCore + footerTicks(cols - INPUT_PAD_X * 2, visLen(footerCore)), cols));
 
@@ -1740,11 +1742,6 @@ function bufferEmpty() {
  * Vim line scroll for the iMessage transcript.
  * +1 is up (older turns). -1 is down (newer turns). 0 is not a scroll key.
  */
-export function meetScrollDelta(key) {
-  if (key === "j" || key === "J") return -1;
-  if (key === "k" || key === "K") return 1;
-  return 0;
-}
 
 /** Mouse click on pager row: left third = prev, right third = next (1-based x,y). */
 function applyPagerClick(x, y) {
@@ -1811,14 +1808,11 @@ function handleKey(chunk) {
     return "noop";
   }
 
-  // Sidebar focus: j/k pick a meet, Enter opens its log, Tab goes back to chat.
-  // Any other typing returns to the chat and lands in the prompt.
+  // Meet list (Tab): ↑/↓ pick a meeting (handleEsc), Enter opens it in the
+  // room, Tab goes back. Typing anything returns to the room's chat with it.
   if (meetPaneFocus === "sidebar") {
-    if (chunk === "j" || chunk === "J") return sidebarKey("down");
-    if (chunk === "k" || chunk === "K") return sidebarKey("up");
     if (chunk === "\r" || chunk === "\n") return sidebarKey("open");
     if (chunk === "\t") return sidebarKey("leave");
-    if (chunk === "m" || chunk === "M") return "noop";
     if (chunk.length === 1 && chunk >= " ") meetPaneFocus = "chat";
   }
 
@@ -1832,33 +1826,8 @@ function handleKey(chunk) {
     return "redraw";
   }
 
-  // Immediate scroll keys when the prompt is empty (no Enter needed).
-  // j/k match the channel and factory panes: j down (newer), k up (older), one line.
-  if (bufferEmpty() && !editTargetTs) {
-    const focus = meetFocusTarget(chunk);
-    if (focus) {
-      if (focus === "sidebar") focusSidebar();
-      else meetPaneFocus = focus;
-      return "redraw";
-    }
-    const line = meetScrollDelta(chunk);
-    if (line) {
-      if (meetPaneFocus === "sidebar") {
-        sideScroll = Math.max(0, sideScroll + (line < 0 ? 1 : -1));
-      } else {
-        scrollFromBottom = Math.max(0, scrollFromBottom + line);
-      }
-      return "redraw";
-    }
-    if (chunk === "," || chunk === "[") {
-      pagePrev();
-      return "redraw";
-    }
-    if (chunk === "." || chunk === "]") {
-      pageNext();
-      return "redraw";
-    }
-  }
+  // The room is a chat: every printable key goes into the message. Scrolling
+  // is ↑↓ / wheel / ^U ^D / PgUp PgDn / Home End; Tab opens the meet list.
 
   switch (chunk) {
     case "\r":

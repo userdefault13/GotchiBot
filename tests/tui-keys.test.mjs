@@ -139,7 +139,8 @@ describe("pane scripts ignore wheel", () => {
     const src = read(meetPrompter);
     assert.doesNotMatch(src, /\?1000h/);
     assert.match(src, /btn === 64 \|\| btn === 65/);
-    assert.match(src, /key === "h"\) return "sidebar"|key === "h"/, "h moves focus to the meet list");
+    const room = src.slice(src.indexOf("// Meet list (Tab)"), src.indexOf("function handleEsc"));
+    assert.doesNotMatch(room, /chunk === "[a-z]"/, "no single-letter shortcuts in the meet room: letters are chat");
   });
 
   it("factory and dossier panes do not repaint on wheel", () => {
@@ -194,16 +195,12 @@ describe("orchestrator-layout.sh — desk hotkeys", () => {
 });
 
 describe("meet room transcript scroll", () => {
-  it("j scrolls down one line and k scrolls up when the prompt is empty", () => {
+  it("scrolls on keys that are not letters (↑↓, ^U/^D, PgUp/PgDn, Home/End); letters are chat", () => {
     const src = read(meetPrompter);
-    assert.match(src, /if \(key === "j" \|\| key === "J"\) return -1/);
-    assert.match(src, /if \(key === "k" \|\| key === "K"\) return 1/);
-    const fn = src.slice(src.indexOf("function handleKey"), src.indexOf("function handleEsc"));
-    assert.match(fn, /bufferEmpty\(\)/);
-    assert.match(fn, /meetScrollDelta\(chunk\)/);
-    assert.match(fn, /scrollFromBottom \+ line/);
-    // Typing still inserts j/k; scroll is only the empty-prompt path.
-    assert.ok(fn.indexOf("meetScrollDelta") < fn.indexOf("editor.insert"));
+    assert.doesNotMatch(src, /meetScrollDelta/);
+    const esc = src.slice(src.indexOf("function handleEsc"), src.indexOf("function handleEsc") + 3000);
+    assert.match(esc, /\\x1b\[5~/);
+    assert.match(esc, /\\x1b\[H/);
   });
 });
 
