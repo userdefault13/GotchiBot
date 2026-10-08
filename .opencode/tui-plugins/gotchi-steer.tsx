@@ -1,8 +1,18 @@
 /** @jsxImportSource @opentui/solid */
 import { Show, createSignal, onCleanup } from "solid-js"
 import { mkdirSync, appendFileSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
+
+/**
+ * GotchiBot's own folder (GOTCHIBOT_ROOT, else this plugin's install: .opencode/tui-plugins/../..).
+ * Never the folder OpenCode was opened in: in another repo that wrote GotchiBot's
+ * sessions/ logs into it and could not find GotchiBot's scripts.
+ */
+function gotchiRoot(): string {
+  return process.env.GOTCHIBOT_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
+}
 
 const ID = "gotchi.steer"
 
@@ -37,13 +47,8 @@ const SETTLE_MS = 6000
 const POLL_MS = 60
 const KEYS = ["ctrl+o", "alt+return"]
 
-function rootDirOf(api: any): string {
-  return (
-    api?.state?.path?.directory ||
-    api?.state?.path?.worktree ||
-    process.env.GOTCHIBOT_ROOT ||
-    process.cwd()
-  )
+function rootDirOf(_api?: any): string {
+  return gotchiRoot()
 }
 
 function log(rootDir: string, event: string, extra: Record<string, unknown> = {}) {

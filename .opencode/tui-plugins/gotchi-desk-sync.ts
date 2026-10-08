@@ -1,8 +1,17 @@
 import { existsSync } from "node:fs"
-import { join } from "node:path"
-import { pathToFileURL } from "node:url"
+import { dirname, join, resolve } from "node:path"
+import { pathToFileURL, fileURLToPath } from "node:url"
 import { createEffect, createRoot, on } from "solid-js"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+
+/**
+ * GotchiBot's own folder (GOTCHIBOT_ROOT, else this plugin's install: .opencode/tui-plugins/../..).
+ * Never the folder OpenCode was opened in: in another repo that wrote GotchiBot's
+ * sessions/ logs into it and could not find GotchiBot's scripts.
+ */
+function gotchiRoot(): string {
+  return process.env.GOTCHIBOT_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
+}
 
 const ID = "gotchi.desk-sync"
 const RETRY_MIN_MS = 1_000
@@ -24,16 +33,8 @@ function toast(api: TuiPluginApi, message: string, variant: "info" | "success" |
   }
 }
 
-function resolveRoot(api: TuiPluginApi): string {
-  const fromApi =
-    (api as any).directory ||
-    (api as any).worktree ||
-    (api as any).state?.path?.directory ||
-    (api as any).state?.path?.worktree
-  if (typeof fromApi === "string" && fromApi && existsSync(join(fromApi, "scripts"))) return fromApi
-  const fromEnv = process.env.GOTCHIBOT_ROOT?.trim() || ""
-  if (fromEnv && existsSync(join(fromEnv, "scripts"))) return fromEnv
-  return process.cwd()
+function resolveRoot(_api?: TuiPluginApi): string {
+  return gotchiRoot()
 }
 
 function routeSessionId(api: TuiPluginApi): string | null {

@@ -1,7 +1,17 @@
 import { spawn, spawnSync } from "node:child_process"
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
+
+/**
+ * GotchiBot's own folder (GOTCHIBOT_ROOT, else this plugin's install: .opencode/tui-plugins/../..).
+ * Never the folder OpenCode was opened in: in another repo that wrote GotchiBot's
+ * sessions/ logs into it and could not find GotchiBot's scripts.
+ */
+function gotchiRoot(): string {
+  return process.env.GOTCHIBOT_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
+}
 
 const ID = "gotchi.thought-tts"
 const SGR = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g
@@ -262,7 +272,7 @@ function isRightButton(btn: unknown) {
 }
 
 const tui: TuiPlugin = async (api) => {
-  const rootDir = api.state?.path?.directory || api.state?.path?.worktree || process.cwd()
+  const rootDir = gotchiRoot()
   markLoaded(rootDir)
   log(rootDir, "plugin-init", { version: api.app?.version, cwd: rootDir, speak: "response" })
 

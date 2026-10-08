@@ -3,7 +3,17 @@ import type { TuiPlugin, TuiPluginModule, TuiThemeCurrent } from "@opencode-ai/p
 import { useTerminalDimensions } from "@opentui/solid"
 import { Show, createMemo, createSignal, onCleanup } from "solid-js"
 import { existsSync, readFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+
+/**
+ * GotchiBot's own folder (GOTCHIBOT_ROOT, else this plugin's install: .opencode/tui-plugins/../..).
+ * Never the folder OpenCode was opened in: in another repo that wrote GotchiBot's
+ * sessions/ logs into it and could not find GotchiBot's scripts.
+ */
+function gotchiRoot(): string {
+  return process.env.GOTCHIBOT_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
+}
 
 const ID = "gotchi.logo"
 const COMPACT = "GotchiCode"
@@ -167,11 +177,7 @@ const SessionPromptWithLogo = (props: {
 }
 
 const tui: TuiPlugin = async (api) => {
-  const root =
-    api.state?.path?.directory ||
-    api.state?.path?.worktree ||
-    process.env.GOTCHIBOT_ROOT ||
-    process.cwd()
+  const root = gotchiRoot()
   const art = loadArt(root)
 
   api.slots.register({
