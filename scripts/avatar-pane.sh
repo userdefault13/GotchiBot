@@ -391,12 +391,21 @@ expanded_vpad() {
 }
 
 # Collapsed column: tiles start at the first row; the leftover rows (never
-# negative) sit between the last tile and the prev/next row. Pure.
+# negative) sit between the last tile and the prev/next row. One row is held
+# back as a separator above the pager; when the page needs that row too (the
+# last tile drawn solo), COLLAPSED_SEP is 0 and the pager still stays on the
+# pane's second-to-last row. Pure.
 collapsed_vpad() {
-  local pane_h="${1:-0}" row="${2:-0}" page_h="${3:-0}"
+  local pane_h="${1:-0}" row="${2:-0}" page_h="${3:-0}" raw
   COLLAPSED_TOP=0
-  COLLAPSED_GAP=$((pane_h - row - 3 - page_h))
-  if [ "$COLLAPSED_GAP" -lt 0 ]; then COLLAPSED_GAP=0; fi
+  raw=$((pane_h - row - 3 - page_h))
+  COLLAPSED_GAP=0
+  COLLAPSED_SEP=1
+  if [ "$raw" -ge 0 ]; then
+    COLLAPSED_GAP=$raw
+  else
+    COLLAPSED_SEP=0
+  fi
 }
 
 load_sel() {
@@ -1705,6 +1714,10 @@ cell_block() {
   local id="$1" status="$2" svg="$3" cell_w="$4" cell_h="$5" collateral="${6:-}" haunt="${7:-}" name="${8:-}" role="${9:-}" loading="${10:-}" face="${11:-mini}"
   CELL_SELECTED=0
   [ "${12:-0}" = 1 ] && CELL_SELECTED=1
+  # 15th arg: solo mini = the compact last tile of a tight collapsed page: art + name
+  # only (no status line, no role row), two rows shorter.
+  local solo=0
+  [ "${15:-0}" = 1 ] && solo=1
   # A gotchi working a hero (or a hero with no worker yet) draws as a hero box.
   if [ -z "$loading" ] && [ -n "${13:-}" ] && [ -n "$role" ] && [ "${GOTCHIBOT_HERO_BOX:-1}" = 1 ]; then
     hero_box "$id" "$status" "$cell_w" "$cell_h" "$collateral" "$haunt" "$name" "$role" "$face" "${13:-}" "${14:-}"
@@ -1790,23 +1803,31 @@ cell_block() {
     local inner=$((pane_w - 2)) ml="[" mr="]"
     [ "$inner" -lt 1 ] && inner=1
     [ "${TUI_GLYPHS}" != "ascii" ] && ml="▌" && mr="▐"
-    emit_line "$(printf '%b%s%b%s%b%s%b' "$AV_LIT" "$ml" "$status_color" "$(center_pad "$label" "$inner")" "$AV_LIT" "$mr" "$AV_RST")"
+    if [ "$solo" != 1 ]; then
+      emit_line "$(printf '%b%s%b%s%b%s%b' "$AV_LIT" "$ml" "$status_color" "$(center_pad "$label" "$inner")" "$AV_LIT" "$mr" "$AV_RST")"
+    fi
     id_show="${name:-$id}"
     id_show="${id_show:0:$inner}"
     emit_line "$(printf '%b%s%b%s%b%s%b' "$AV_LIT" "$ml" "$AV_ROSTER" "$(center_pad "$id_show" "$inner")" "$AV_LIT" "$mr" "$AV_RST")"
     local role_show="${role//-/ }" role_color="$AV_ROLE_GAL"
     [ -z "$role" ] && role_show="no role" && role_color="$AV_MUTED"
     role_show="${role_show:0:$inner}"
-    emit_line "$(printf '%b%s%b%s%b%s%b' "$AV_LIT" "$ml" "$role_color" "$(center_pad "$role_show" "$inner")" "$AV_LIT" "$mr" "$AV_RST")"
+    if [ "$solo" != 1 ]; then
+      emit_line "$(printf '%b%s%b%s%b%s%b' "$AV_LIT" "$ml" "$role_color" "$(center_pad "$role_show" "$inner")" "$AV_LIT" "$mr" "$AV_RST")"
+    fi
   else
-    emit_line "$(printf '%b%s%b' "$status_color" "$(center_pad "$label" "$pane_w")" "$AV_RST")"
+    if [ "$solo" != 1 ]; then
+      emit_line "$(printf '%b%s%b' "$status_color" "$(center_pad "$label" "$pane_w")" "$AV_RST")"
+    fi
     id_show="${name:-$id}"
     id_show="${id_show:0:$pane_w}"
     emit_line "$(printf '%b%s%b' "$AV_ROSTER" "$(center_pad "$id_show" "$pane_w")" "$AV_RST")"
     local role_show="${role//-/ }" role_color="$AV_ROLE_GAL"
     [ -z "$role" ] && role_show="no role" && role_color="$AV_MUTED"
     role_show="${role_show:0:$pane_w}"
-    emit_line "$(printf '%b%s%b' "$role_color" "$(center_pad "$role_show" "$pane_w")" "$AV_RST")"
+    if [ "$solo" != 1 ]; then
+      emit_line "$(printf '%b%s%b' "$role_color" "$(center_pad "$role_show" "$pane_w")" "$AV_RST")"
+    fi
   fi
 }
 
@@ -2264,13 +2285,35 @@ tile_lines() {
   TILE_LINES=$n
 }
 
+# Largest fixed page size k (>= 1) such that every page of k tiles fits in $1
+# rows, given H[] (tile heights) and FIT_SOLOK[] (1 = may be drawn solo). A page
+# that is too tall may draw its last tile solo (two rows shorter, name only) and
+# borrow the separator row above the pager. Pure. Sets FIT_PAGE.
+fit_pages() {
+  local avail="$1" n="$2" k ok sum start last i
+  for ((k = n; k > 1; k--)); do
+    ok=1
+    for ((start = 0; start < n && ok; start += k)); do
+      sum=0
+      for ((i = start; i < start + k && i < n; i++)); do sum=$((sum + H[i])); done
+      if [ "$sum" -gt "$avail" ]; then
+        last=$((start + k - 1)); [ "$last" -ge "$n" ] && last=$((n - 1))
+        if [ "${FIT_SOLOK[last]:-0}" = 1 ] && [ $((sum - 2)) -le $((avail + 1)) ]; then :; else ok=0; fi
+      fi
+    done
+    [ "$ok" = 1 ] && break
+  done
+  FIT_PAGE=$k
+}
+
 # Largest fixed page size whose every page fits in $3 rows. Heights are measured
 # once per kind — plain tile, hero box, loading tile — from the first of each.
 # Reads ID/ST/…/WEAR/HAT_ARR from render_body. Leaves FIT_PAGE.
 fit_collapsed_page() {
-  local cw="$1" ch="$2" avail="$3" n="$4" i k ok sum start kind tile=""
+  local cw="$1" ch="$2" avail="$3" n="$4" i k ok sum start last kind tile=""
   local hp=0 hb=0 hu=0 hl=0 ho=0
   local -a H=()
+  FIT_SOLOK=()
   [ "$avail" -lt 1 ] && avail=1
   for ((i = 0; i < n; i++)); do
     kind=p
@@ -2281,6 +2324,8 @@ fit_collapsed_page() {
       # A hero with no worker has a shorter (3-row) worker slot and wearable.
       [ "${ID_ARR[i]#hero:}" != "${ID_ARR[i]}" ] && kind=u
     fi
+    # Only a plain mini can be drawn solo (its role row dropped).
+    if [ "$kind" = p ]; then FIT_SOLOK+=(1); else FIT_SOLOK+=(0); fi
     case "$kind" in
       p) if [ "$hp" = 0 ]; then
            memo_call tile "fit|p|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|$cw|$ch" \
@@ -2312,15 +2357,8 @@ fit_collapsed_page() {
          H+=("$hl") ;;
     esac
   done
-  for ((k = n; k > 1; k--)); do
-    ok=1
-    for ((start = 0; start < n && ok; start += k)); do
-      sum=0
-      for ((i = start; i < start + k && i < n; i++)); do sum=$((sum + H[i])); done
-      [ "$sum" -gt "$avail" ] && ok=0
-    done
-    [ "$ok" = 1 ] && break
-  done
+  fit_pages "$avail" "$n"
+  k=$FIT_PAGE
   FIT_PAGE=$k
   FIT_H=("${H[@]}")
 }
@@ -2673,6 +2711,12 @@ render_body() {
   # Tiles start at the top; the gap goes below them so the pager row stays at the bottom.
   local page_h=0 drop
   for ((i = base; i < end; i++)); do page_h=$((page_h + ${FIT_H[i]:-0})); done
+  # A page taller than the room goes solo on its last tile (name only, 2 rows shorter).
+  local solo_i=-1
+  if [ "$page_h" -gt $((pane_h - row - 3)) ] && [ "${FIT_SOLOK[end - 1]:-0}" = 1 ]; then
+    solo_i=$((end - 1))
+    page_h=$((page_h - 2))
+  fi
   collapsed_vpad "$pane_h" "$row" "$page_h"
   drop=$COLLAPSED_GAP
   for ((i = base; i < end; i++)); do
@@ -2683,9 +2727,11 @@ render_body() {
     # The desk orchestrator draws with the medium face; everyone else is a mini.
     local tface=mini th="$cell_h"
     [ "${PIN_ARR[i]:-0}" = 1 ] && tface=mid && th="$ORCH_CELL_H"
-    k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$th|$sel_flag|${WEAR_ARR[i]}|${HAT_ARR[i]}|$tface"
+    local tsolo=0
+    [ "$i" -eq "$solo_i" ] && tsolo=1
+    k1="c|cell|${TUI_COLOR}/${TUI_GLYPHS}|${ID_ARR[i]}|${ST_ARR[i]}|${COL_ARR[i]}|${HAUNT_ARR[i]}|${NAME_ARR[i]}|${ROLE_ARR[i]}|${LOAD_ARR[i]}|$cell_w|$th|$sel_flag|${WEAR_ARR[i]}|${HAT_ARR[i]}|$tface|$tsolo"
     memo_call left "$k1" \
-      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$th" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}" "$tface" "$sel_flag" "${WEAR_ARR[i]}" "${HAT_ARR[i]}"
+      cell_block "${ID_ARR[i]}" "${ST_ARR[i]}" "${SVG_ARR[i]}" "$cell_w" "$th" "${COL_ARR[i]}" "${HAUNT_ARR[i]}" "${NAME_ARR[i]}" "${ROLE_ARR[i]}" "${LOAD_ARR[i]}" "$tface" "$sel_flag" "${WEAR_ARR[i]}" "${HAT_ARR[i]}" "$tsolo"
     while IFS= read -r line || [ -n "$line" ]; do
       [ -z "$line" ] && continue
       put_line "$row" "$line"
@@ -2701,7 +2747,8 @@ render_body() {
   fi
 
   # Button row under the roster: [ ← ]  n / N  [ → ]
-  if [ "$row" -lt "$pane_h" ]; then
+  # (one blank separator above it, unless a solo last tile took that row)
+  if [ "${COLLAPSED_SEP:-1}" = 1 ] && [ "$row" -lt "$pane_h" ]; then
     put_line "$row" ""
     row=$((row + 1))
   fi
@@ -2950,7 +2997,15 @@ case "${1:-watch}" in
       case "${!a:-}" in ''|*[!0-9]*) echo "usage: avatar-pane.sh collapsed-origin <pane-height> <first-row> <tiles-height>" >&2; exit 2 ;; esac
     done
     collapsed_vpad "$2" "$3" "$4"
-    printf 'top=%s\ngap=%s\n' "$COLLAPSED_TOP" "$COLLAPSED_GAP"
+    printf 'top=%s\ngap=%s\nsep=%s\n' "$COLLAPSED_TOP" "$COLLAPSED_GAP" "$COLLAPSED_SEP"
+    ;;
+  collapsed-fit)
+    # Pure: page size for tile heights and solo-able flags (space-separated lists).
+    case "${2:-}" in ''|*[!0-9]*) echo "usage: avatar-pane.sh collapsed-fit <avail> \"<heights>\" [\"<solo flags>\"]" >&2; exit 2 ;; esac
+    H=(${3:-}); FIT_SOLOK=(${4:-})
+    [ "${#H[@]}" -gt 0 ] || { echo "no heights" >&2; exit 2; }
+    fit_pages "$2" "${#H[@]}"
+    printf 'page=%s\n' "$FIT_PAGE"
     ;;
   sb-wheel)
     # tmux WheelUp/Down on avatar → page gotchi roster (vertical scroll).
