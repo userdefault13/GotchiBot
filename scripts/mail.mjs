@@ -30,7 +30,8 @@ const USAGE = `usage: gotchibot mail <command> [--as <identity>]
 
   list [-n N] [--mailbox M] [--json]       newest first, * = unread
   read <id> [--mailbox M] [--raw] [--seen] read one message (leaves it unread unless --seen)
-  reply <id> [--body T | --body-file F]    draft a reply, print it, send only after you type "send"
+  reply <id> [--body T | --body-file F | --prompt]  draft a reply, print it, send only after you type "send"
+  compose                                  ask for To / Subject / body, print it, send only after you type "send"
   send --to A [--cc A] [--subject S] (--body T | --body-file F)
                                            print the message, send only after you type "send"
   check                                    prove login + pinned TLS (no mail is read or sent)
@@ -87,18 +88,39 @@ function ensureCredentials(identity, cfg) {
   process.exit(r.status ?? 1);
 }
 
-function readLine(prompt) {
-  return new Promise((ok) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stderr, terminal: false });
-    process.stderr.write(prompt);
-    let done = false;
-    rl.once("line", (l) => {
-      done = true;
-      rl.close();
-      ok(l);
-    });
-    rl.once("close", () => !done && ok(""));
+// One reader for all prompts: separate readline interfaces would drop buffered lines.
+let lineQueue = null;
+function lineReader() {
+  if (lineQueue) return lineQueue;
+  const q = { lines: [], waiting: [], closed: false };
+  const rl = readline.createInterface({ input: process.stdin, terminal: false });
+  rl.on("line", (l) => (q.waiting.length ? q.waiting.shift()(l) : q.lines.push(l)));
+  rl.on("close", () => {
+    q.closed = true;
+    while (q.waiting.length) q.waiting.shift()("");
   });
+  lineQueue = q;
+  return q;
+}
+
+function readLine(prompt) {
+  const q = lineReader();
+  process.stderr.write(prompt);
+  if (q.lines.length) return Promise.resolve(q.lines.shift());
+  if (q.closed) return Promise.resolve("");
+  return new Promise((ok) => q.waiting.push(ok));
+}
+
+/** Body prompt: lines until one that is only ".", or end of input. */
+async function readBody(io) {
+  io.err('Body (finish with a line containing only "."):\n');
+  const lines = [];
+  for (;;) {
+    const l = await readLine("");
+    if (l === "." || (l === "" && lineReader().closed && !lineReader().lines.length)) break;
+    lines.push(l);
+  }
+  return lines.join("\n");
 }
 
 async function confirmAndSend(raw, identity, cfg, io) {
@@ -204,7 +226,7 @@ export async function main(argv = process.argv.slice(2), io = { out: (s) => proc
     io.out(buildHimalayaConfig(identity, { cfg, proxyPort: "<ephemeral>" }));
     return 0;
   }
-  if (!["list", "read", "reply", "send", "check", "sync"].includes(cmd)) {
+  if (!["list", "read", "reply", "send", "compose", "check", "sync"].includes(cmd)) {
     io.err(USAGE);
     return 2;
   }
@@ -234,7 +256,7 @@ export async function main(argv = process.argv.slice(2), io = { out: (s) => proc
       for (const t of targets) {
         try {
           const rows = await listRows(t, cfg, { n: 25 });
-          writeSyncDoc(join(ROOT, "sessions", "mail"), syncDoc(t, rows));
+          writeSyncDoc(join(process.env.GOTCHIBOT_MAIL_SESSIONS || join(ROOT, "sessions"), "mail"), syncDoc(t, rows));
           io.out(`synced ${t.address}: ${rows.length}\n`);
         } catch (e) {
           failed++;
@@ -253,7 +275,13 @@ export async function main(argv = process.argv.slice(2), io = { out: (s) => proc
       io.out(r.stdout);
       return 0;
     }
-    if (cmd === "send") {
+    if (cmd === "send" || cmd === "compose") {
+      // compose (and send --prompt) asks for the fields here; it still only prints and asks.
+      if (cmd === "compose" || flags.prompt) {
+        if (!flags.to) flags.to = String(await readLine("To: ")).trim();
+        if (flags.subject === undefined) flags.subject = String(await readLine("Subject: ")).trim();
+        if (bodyOf(flags) === null) flags.body = await readBody(io);
+      }
       const body = bodyOf(flags);
       if (!flags.to || body === null) return io.err("send needs --to and --body or --body-file\n"), 2;
       const args = ["message", "compose", "--from", identity.address, "--to", flags.to];
@@ -267,6 +295,7 @@ export async function main(argv = process.argv.slice(2), io = { out: (s) => proc
     }
     if (cmd === "reply") {
       if (!pos[1]) return io.err("reply needs an id\n"), 2;
+      if (flags.prompt && bodyOf(flags) === null) flags.body = await readBody(io);
       const body = bodyOf(flags);
       if (body === null) return io.err("reply needs --body or --body-file\n"), 2;
       const args = ["message", "reply", pos[1], "--from", identity.address, "--body", body];

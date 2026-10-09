@@ -242,7 +242,10 @@ export function renderInboxView({
   cols = 72,
   rows = 0,
   scroll = 0,
+  identity = "",
+  notice = "",
 } = {}) {
+  const keys = identity ? " · r reply · c compose · i identity · s sync" : "";
   const lines = [];
   if (activeLine) lines.push(`${c.dim}${activeLine}${c.reset}`);
   const msgs = Array.isArray(messages) ? messages : [];
@@ -251,6 +254,9 @@ export function renderInboxView({
     `${c.bold}INBOX${c.reset}  ${c.gold}${msgs.length}${c.reset} msg${msgs.length === 1 ? "" : "s"}` +
       (unread ? ` · ${c.yellow}${unread} unread${c.reset}` : ` · ${c.dim}all read${c.reset}`),
   );
+  if (identity) {
+    lines.push(`  ${c.dim}mail as${c.reset} ${c.cyan}${identity}${c.reset}${notice ? `  ${c.yellow}${notice}${c.reset}` : ""}`);
+  }
   if (view === "read" && message) {
     const pkm = pkmKind(message);
     const color = kindColor(message.kind, pkm);
@@ -263,13 +269,13 @@ export function renderInboxView({
     const start = Math.max(0, scroll);
     lines.push(...body.slice(start));
     lines.push("");
-    lines.push(`${c.dim}esc back · q chat${c.reset}`);
+    lines.push(`${c.dim}esc back · j/k scroll${keys} · q chat${c.reset}`);
   } else if (!msgs.length) {
     lines.push(`  ${c.dim}(inbox empty)${c.reset}`);
     lines.push(
       `  ${c.dim}scope${c.reset} project mail${address ? ` · ${address}` : ""}`,
     );
-    lines.push(`${c.dim}j/k select · enter read · q chat${c.reset}`);
+    lines.push(`${c.dim}j/k select · enter read${keys} · q chat${c.reset}`);
   } else {
     lines.push(`  ${c.dim}scope${c.reset} project mail · kind, from, subject`);
     const sel = Math.max(0, Math.min(selected, msgs.length - 1));
@@ -277,13 +283,15 @@ export function renderInboxView({
       lines.push(...listRow(msgs[i], cols, i === sel));
     }
     lines.push("");
-    lines.push(`${c.dim}j/k select · enter read · q chat${c.reset}`);
+    lines.push(`${c.dim}j/k select · enter read${keys} · q chat${c.reset}`);
   }
   if (rows > 0 && lines.length > rows) return lines.slice(0, rows).join("\n");
   return lines.join("\n");
 }
 
 
+// Tests point this at a fixture dir; the cache is the only thing it moves.
+const MAIL_SESSIONS = process.env.GOTCHIBOT_MAIL_SESSIONS || join(ROOT, "sessions");
 const MAIL_SYNC_STALE_MS = 5 * 60 * 1000;
 
 /**
@@ -322,7 +330,10 @@ export function mergeMailSource(messages, mailMessages) {
   return [...messages, ...mailMessages].sort((a, b) => String(b.ts || "").localeCompare(String(a.ts || "")));
 }
 
+let identityOverride = null;
+
 function activeMailIdentity() {
+  if (identityOverride) return identityOverride;
   try {
     return resolveIdentity({ project: currentProjectSlug(), config: loadMailConfig() }).id;
   } catch {
@@ -330,10 +341,51 @@ function activeMailIdentity() {
   }
 }
 
+/** Next identity in config order (wraps). Pure. */
+export function nextMailIdentity(ids, current) {
+  const list = Array.isArray(ids) ? ids : [];
+  if (!list.length) return null;
+  const i = list.indexOf(current);
+  return list[(i + 1) % list.length];
+}
+
+/**
+ * argv for `gotchibot mail …` for each pane action. The pane never talks to the
+ * mail server or sends itself: these run the CLI, whose send step prints the
+ * whole message and waits for the typed word "send".
+ */
+export function mailPaneArgs(action, { identity, uid } = {}) {
+  const as = ["--as", String(identity)];
+  if (action === "read") return ["mail", "read", String(uid), ...as];
+  if (action === "reply") return ["mail", "reply", String(uid), ...as, "--prompt"];
+  if (action === "compose") return ["mail", "compose", ...as];
+  if (action === "sync") return ["mail", "sync", ...as];
+  throw new Error(`unknown mail action: ${action}`);
+}
+
+/** The CLI prints headers, a part summary line, then the text. Keep it as the body. */
+export function mailBodyFromRead(stdout) {
+  return String(stdout || "").replace(/\r\n/g, "\n").trim();
+}
+
+export function isMailMessage(m) {
+  return Boolean(m && m.kind === "mail" && (m.uid || String(m.id).startsWith("imap:")));
+}
+
+function mailIdentityOf(m) {
+  const parts = String(m.id).split(":");
+  return parts.length >= 3 ? parts[1] : null;
+}
+
+function mailUid(m) {
+  return m.uid ?? String(m.id).split(":").pop();
+}
+
+
 /** Refresh the cache in the background at most every 5 minutes. Opt out: GOTCHIBOT_MAIL_PANE_SYNC=0. */
 function maybeSyncMail(identityId) {
   if (!identityId || process.env.GOTCHIBOT_MAIL_PANE_SYNC === "0") return;
-  const file = join(ROOT, "sessions", "mail", `${identityId}.json`);
+  const file = join(MAIL_SESSIONS, "mail", `${identityId}.json`);
   try {
     if (Date.now() - statSync(file).mtimeMs < MAIL_SYNC_STALE_MS) return;
   } catch {
@@ -368,7 +420,7 @@ function loadInbox() {
   const choice = chooseInboxDocument(mailDoc, botDoc);
   const file = choice.which === "bot" ? files.bot : files.mail;
   const ident = activeMailIdentity();
-  const mailMsgs = ident ? mailSourceMessages(join(ROOT, "sessions"), ident) : [];
+  const mailMsgs = ident ? mailSourceMessages(MAIL_SESSIONS, ident) : [];
   return { file, doc: choice.doc, messages: mergeMailSource(choice.messages, mailMsgs), mailIdentity: ident };
 }
 
@@ -425,11 +477,37 @@ function runWatch() {
   let doc = null;
   let messages = [];
   let open = null;
+  let notice = "";
+  let identity = activeMailIdentity();
+  const bodies = new Map();
+  const cli = process.env.GOTCHIBOT_MAIL_CLI || join(ROOT, "scripts", "gotchibot");
+
+  // Run the mail CLI with the terminal handed over (prompts, the printed
+  // message and the typed "send" all happen there), then take the pane back.
+  const external = (args, { pause = true } = {}) => {
+    if (input.isTTY) input.setRawMode(false);
+    input.pause();
+    output.write(`${ESC}[2J${ESC}[H${ESC}[?25h`);
+    const r = spawnSync(cli, args, { stdio: "inherit", env: { ...process.env, GOTCHIBOT_PROJECT: currentProjectSlug() || "" } });
+    if (pause) {
+      output.write(`\n${c.dim}— press enter to return to the inbox —${c.reset} `);
+      spawnSync("sh", ["-c", "read _"], { stdio: "inherit" });
+    }
+    output.write(`${ESC}[?25l`);
+    input.resume();
+    if (input.isTTY) input.setRawMode(true);
+    return r.status;
+  };
+
+  const captureMail = (args) => {
+    const r = spawnSync(cli, args, { encoding: "utf8", timeout: 60000, env: { ...process.env, GOTCHIBOT_PROJECT: currentProjectSlug() || "" } });
+    return { code: r.status, out: mailBodyFromRead(String(r.stdout || "").split("\n").filter((l) => !l.includes("injecting")).join("\n")) };
+  };
 
   const load = () => {
     const loaded = loadInbox();
     doc = loaded.doc;
-    messages = loaded.messages;
+    messages = loaded.messages.map((m) => (bodies.has(m.id) ? { ...m, body: bodies.get(m.id) } : m));
     if (selected >= messages.length) selected = Math.max(0, messages.length - 1);
     if (view === "read" && open) {
       open = messages.find((m) => m.id === open.id) || open;
@@ -448,6 +526,8 @@ function runWatch() {
       cols: term.cols,
       rows: Math.max(1, term.rows - 1),
       scroll,
+      identity,
+      notice,
     });
     output.write(`${ESC}[2J${ESC}[H${text}`);
   };
@@ -518,6 +598,40 @@ function runWatch() {
       leaveToChat();
       process.exit(0);
     }
+    const mailAction = (name) => {
+      if (!identity) return false;
+      if (name === "compose") {
+        external(mailPaneArgs("compose", { identity }));
+      } else if (name === "reply") {
+        const m = view === "read" ? open : messages[selected];
+        if (!isMailMessage(m)) {
+          notice = "select a mail message to reply";
+          paint();
+          return true;
+        }
+        external(mailPaneArgs("reply", { identity: mailIdentityOf(m) || identity, uid: mailUid(m) }));
+      } else if (name === "sync") {
+        notice = "syncing…";
+        paint();
+        const r = captureMail(mailPaneArgs("sync", { identity }));
+        notice = r.code === 0 ? "synced" : "sync failed";
+      } else if (name === "identity") {
+        const ids = Object.keys(loadMailConfig().identities);
+        identityOverride = identity = nextMailIdentity(ids, String(identity).replace(/\+admin$/, ""));
+        selected = 0;
+        open = null;
+        view = "list";
+        notice = `switched to ${identity}`;
+        maybeSyncMail(identity);
+      }
+      load();
+      paint();
+      return true;
+    };
+    if (key.name === "c" && !key.ctrl) return void mailAction("compose");
+    if (key.name === "r" && !key.ctrl) return void mailAction("reply");
+    if (key.name === "s" && !key.ctrl) return void mailAction("sync");
+    if (key.name === "i" && !key.ctrl) return void mailAction("identity");
     if (view === "read") {
       if (key.name === "escape" || key.name === "backspace") {
         view = "list";
@@ -551,6 +665,21 @@ function runWatch() {
     if (key.name === "return" || key.name === "enter") {
       const msg = messages[selected];
       if (!msg) return;
+      if (isMailMessage(msg)) {
+        if (!bodies.has(msg.id)) {
+          notice = "opening…";
+          paint();
+          const r = captureMail(mailPaneArgs("read", { identity: mailIdentityOf(msg) || identity, uid: mailUid(msg) }));
+          bodies.set(msg.id, r.code === 0 && r.out ? r.out : "(could not open this message; is abra unlocked and the tailnet up?)");
+          notice = "";
+        }
+        open = { ...msg, body: bodies.get(msg.id) };
+        view = "read";
+        scroll = 0;
+        load();
+        paint();
+        return;
+      }
       const file = loadInbox().file;
       const opened = file ? openMailMessage(file, msg.id) : msg;
       open = opened || msg;
@@ -572,6 +701,9 @@ async function main() {
     output.write(`usage:
   inbox-pane.mjs watch     # desk pane (j/k select · enter read · q chat)
   inbox-pane.mjs once      # print the list
+
+Mail keys (home Mailu via gotchibot mail): enter read · r reply · c compose · i next identity
+  · s sync now. Reply and compose print the whole message and send only after you type "send".
 
 Project mail: sessions/pstack/<slug>/mail.json
 Bot inbox (shown when mail is empty): sessions/pstack/<slug>/inbox/inbox.json
