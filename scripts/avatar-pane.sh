@@ -390,6 +390,15 @@ expanded_vpad() {
   fi
 }
 
+# Collapsed column: tiles start at the first row; the leftover rows (never
+# negative) sit between the last tile and the prev/next row. Pure.
+collapsed_vpad() {
+  local pane_h="${1:-0}" row="${2:-0}" page_h="${3:-0}"
+  COLLAPSED_TOP=0
+  COLLAPSED_GAP=$((pane_h - row - 3 - page_h))
+  if [ "$COLLAPSED_GAP" -lt 0 ]; then COLLAPSED_GAP=0; fi
+}
+
 load_sel() {
   SEL=0
   MODAL=0
@@ -2661,14 +2670,11 @@ render_body() {
     return
   fi
   if [ "$side" != 1 ]; then
-  # Bottom-align the column: the page's tiles sit just above the pager row.
+  # Tiles start at the top; the gap goes below them so the pager row stays at the bottom.
   local page_h=0 drop
   for ((i = base; i < end; i++)); do page_h=$((page_h + ${FIT_H[i]:-0})); done
-  drop=$((pane_h - row - 3 - page_h))
-  for ((i = 0; i < drop; i++)); do
-    put_line "$row" ""
-    row=$((row + 1))
-  done
+  collapsed_vpad "$pane_h" "$row" "$page_h"
+  drop=$COLLAPSED_GAP
   for ((i = base; i < end; i++)); do
     [ "$row" -ge "$pane_h" ] && break
     # Collapsed column shows the selector too, so the any-pane keys have a target.
@@ -2686,6 +2692,11 @@ render_body() {
       row=$((row + 1))
       [ "$row" -ge "$pane_h" ] && break
     done < <(printf '%s\n' "$left")
+  done
+  for ((i = 0; i < drop; i++)); do
+    [ "$row" -ge "$pane_h" ] && break
+    put_line "$row" ""
+    row=$((row + 1))
   done
   fi
 
@@ -2932,6 +2943,14 @@ case "${1:-watch}" in
     case "${3:-}" in ''|*[!0-9]*) echo "usage: avatar-pane.sh block-origin <pane-height> <block-height>" >&2; exit 2 ;; esac
     expanded_vpad "$2" "$3"
     printf 'top=%s\nbottom=%s\n' "$EXPANDED_TOP" "$EXPANDED_BOTTOM"
+    ;;
+  collapsed-origin)
+    # Pure: where the collapsed column starts (always the top) and the gap above the pager.
+    for a in 2 3 4; do
+      case "${!a:-}" in ''|*[!0-9]*) echo "usage: avatar-pane.sh collapsed-origin <pane-height> <first-row> <tiles-height>" >&2; exit 2 ;; esac
+    done
+    collapsed_vpad "$2" "$3" "$4"
+    printf 'top=%s\ngap=%s\n' "$COLLAPSED_TOP" "$COLLAPSED_GAP"
     ;;
   sb-wheel)
     # tmux WheelUp/Down on avatar → page gotchi roster (vertical scroll).

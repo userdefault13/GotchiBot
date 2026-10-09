@@ -256,6 +256,9 @@ function listRows(m, innerW, selected) {
  * pink section titles, dim labels, gold counts, one dim key-hint line.
  * `view` is "list" or "read".
  */
+// Furthest the read view can scroll at the last paint; j clamps to it so k answers at once.
+let lastMaxScroll = 0;
+
 export function renderInboxView({
   view = "list",
   messages = [],
@@ -307,7 +310,8 @@ export function renderInboxView({
     inbound.push(boxMid("BODY", innerW));
     const wrapped = wrapText(parsed ? parsed.text || "(no body)" : message.body || "(no body)", Math.max(8, innerW - 4));
     const room = Math.max(1, budget - inbound.length - 1);
-    const start = Math.max(0, Math.min(scroll, Math.max(0, wrapped.length - room)));
+    lastMaxScroll = Math.max(0, wrapped.length - room);
+    const start = Math.max(0, Math.min(scroll, lastMaxScroll));
     for (const l of wrapped.slice(start, start + room)) inbound.push(boxRow(`  ${l}`, innerW));
     inbound.push(boxBottom(innerW));
   } else {
@@ -697,7 +701,7 @@ function runWatch() {
         return;
       }
       if (key.name === "j" || key.name === "down") {
-        scroll += 1;
+        scroll = Math.min(lastMaxScroll, scroll + 1);
         paint();
         return;
       }
