@@ -10,10 +10,10 @@ import { join } from "node:path";
 import { mailSourceMessages, mergeMailSource, listMailMessages } from "../scripts/inbox-pane.mjs";
 import { syncDoc, writeSyncDoc } from "../scripts/mail.mjs";
 
-const identity = { id: "gotchibot.xyz", address: "admin@gotchibot.xyz" };
+const identity = { id: "gotchibot.xyz", address: "gotchibot@gotchibot.xyz" };
 const rows = [
-  { id: "5", from: "Pat <pat@x.test>", to: "admin@gotchibot.xyz", subject: "New", date: "2026-10-09T10:00:00Z", seen: false },
-  { id: "4", from: "Sam <sam@x.test>", to: "admin@gotchibot.xyz", subject: "Old", date: "2026-10-01T10:00:00Z", seen: true },
+  { id: "5", from: "Pat <pat@x.test>", to: "gotchibot@gotchibot.xyz", subject: "New", date: "2026-10-09T10:00:00Z", seen: false },
+  { id: "4", from: "Sam <sam@x.test>", to: "gotchibot@gotchibot.xyz", subject: "Old", date: "2026-10-01T10:00:00Z", seen: true },
 ];
 
 describe("sync cache", () => {

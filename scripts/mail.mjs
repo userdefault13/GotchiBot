@@ -38,6 +38,7 @@ const USAGE = `usage: gotchibot mail <command> [--as <identity>]
   identities                               list identities
   config                                   print the generated himalaya config (no password in it)
 
+--admin uses admin@<domain> instead of the default gotchibot@<domain> mailbox.
 --as takes a domain (aarcadeghst.com), a short name (aarcadeghst) or an address.
 Without --as the active project picks the identity. Credentials come from abra.
 `;
@@ -189,12 +190,12 @@ export async function main(argv = process.argv.slice(2), io = { out: (s) => proc
   const cfg = loadMailConfig();
   if (cmd === "identities") {
     const mark = (d) => (d === cfg.defaultIdentity ? " (default)" : "");
-    for (const [d, v] of Object.entries(cfg.identities)) io.out(`${d.padEnd(18)} ${v.address}${mark(d)}\n`);
+    for (const [d, v] of Object.entries(cfg.identities)) io.out(`${d.padEnd(18)} ${v.address}  (--admin: ${v.admin?.address || "-"})${mark(d)}\n`);
     return 0;
   }
   let identity;
   try {
-    identity = resolveIdentity({ as: flags.as, project: await currentSlug(), config: cfg });
+    identity = resolveIdentity({ as: flags.as, project: await currentSlug(), config: cfg, admin: Boolean(flags.admin) });
   } catch (e) {
     io.err(`${e.message}\n`);
     return 2;
@@ -228,7 +229,7 @@ export async function main(argv = process.argv.slice(2), io = { out: (s) => proc
       return 0;
     }
     if (cmd === "sync") {
-      const targets = flags.all ? Object.keys(cfg.identities).map((d) => resolveIdentity({ as: d, config: cfg })) : [identity];
+      const targets = flags.all ? Object.keys(cfg.identities).map((d) => resolveIdentity({ as: d, config: cfg, admin: Boolean(flags.admin) })) : [identity];
       let failed = 0;
       for (const t of targets) {
         try {

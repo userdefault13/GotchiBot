@@ -9,12 +9,60 @@
   "passwordEnv": "MAILU_ADMIN_PASS",
   "defaultIdentity": "gotchibot.xyz",
   "identities": {
-    "gotchibot.xyz": { "address": "admin@gotchibot.xyz", "displayName": "GotchiBot" },
-    "aarcadeghst.com": { "address": "admin@aarcadeghst.com", "displayName": "AarcadeGh-t" },
-    "wondrstack.xyz": { "address": "admin@wondrstack.xyz", "displayName": "WondrStack" },
-    "yummydog.xyz": { "address": "admin@yummydog.xyz", "displayName": "YummyDog" },
-    "lastwraphero.xyz": { "address": "admin@lastwraphero.xyz", "displayName": "LastWrapHero" },
-    "userdefault.dev": { "address": "admin@userdefault.dev", "displayName": "UserDefault" }
+    "gotchibot.xyz": {
+      "address": "gotchibot@gotchibot.xyz",
+      "displayName": "GotchiBot",
+      "passwordEnv": "MAILU_CLIENT_PASS_GOTCHIBOT_XYZ",
+      "admin": {
+        "address": "admin@gotchibot.xyz",
+        "passwordEnv": "MAILU_ADMIN_PASS_GOTCHIBOT_XYZ"
+      }
+    },
+    "aarcadeghst.com": {
+      "address": "gotchibot@aarcadeghst.com",
+      "displayName": "AarcadeGh-t",
+      "passwordEnv": "MAILU_CLIENT_PASS_AARCADEGHST_COM",
+      "admin": {
+        "address": "admin@aarcadeghst.com",
+        "passwordEnv": "MAILU_ADMIN_PASS_AARCADEGHST_COM"
+      }
+    },
+    "wondrstack.xyz": {
+      "address": "gotchibot@wondrstack.xyz",
+      "displayName": "WondrStack",
+      "passwordEnv": "MAILU_CLIENT_PASS_WONDRSTACK_XYZ",
+      "admin": {
+        "address": "admin@wondrstack.xyz",
+        "passwordEnv": "MAILU_ADMIN_PASS_WONDRSTACK_XYZ"
+      }
+    },
+    "yummydog.xyz": {
+      "address": "gotchibot@yummydog.xyz",
+      "displayName": "YummyDog",
+      "passwordEnv": "MAILU_CLIENT_PASS_YUMMYDOG_XYZ",
+      "admin": {
+        "address": "admin@yummydog.xyz",
+        "passwordEnv": "MAILU_ADMIN_PASS_YUMMYDOG_XYZ"
+      }
+    },
+    "lastwraphero.xyz": {
+      "address": "gotchibot@lastwraphero.xyz",
+      "displayName": "LastWrapHero",
+      "passwordEnv": "MAILU_CLIENT_PASS_LASTWRAPHERO_XYZ",
+      "admin": {
+        "address": "admin@lastwraphero.xyz",
+        "passwordEnv": "MAILU_ADMIN_PASS_LASTWRAPHERO_XYZ"
+      }
+    },
+    "userdefault.dev": {
+      "address": "gotchibot@userdefault.dev",
+      "displayName": "UserDefault",
+      "passwordEnv": "MAILU_CLIENT_PASS_USERDEFAULT_DEV",
+      "admin": {
+        "address": "admin@userdefault.dev",
+        "passwordEnv": "MAILU_ADMIN_PASS"
+      }
+    }
   },
   "projects": {
     "gotchibot": "gotchibot.xyz",
@@ -22,5 +70,6 @@
     "wondrstack": "wondrstack.xyz",
     "yummydog": "yummydog.xyz",
     "lastwraphero": "lastwraphero.xyz"
-  }
+  },
+  "notes": "Default login is gotchibot@<domain> (per-use mailbox). admin@<domain> only with --admin."
 }

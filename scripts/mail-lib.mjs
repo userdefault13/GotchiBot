@@ -28,7 +28,7 @@ function validList(cfg) {
 }
 
 /** --as accepts a domain, a short name (aarcadeghst), or a full address. */
-export function resolveIdentity({ as, project, config } = {}) {
+export function resolveIdentity({ as, project, config, admin = false } = {}) {
   const cfg = config || loadMailConfig();
   const ids = cfg.identities;
   const want = String(as || "").trim().toLowerCase();
@@ -46,10 +46,13 @@ export function resolveIdentity({ as, project, config } = {}) {
     domain = (slug && cfg.projects?.[slug]) || cfg.defaultIdentity;
     if (!domain || !ids[domain]) throw new Error(`no default mail identity (valid: ${validList(cfg)})`);
   }
-  const id = ids[domain];
+  const base = ids[domain];
+  // The default login is the per-use mailbox; admin@ only when asked (--admin).
+  const id = admin ? { ...base, ...(base.admin || {}) } : base;
   return {
-    id: domain,
+    id: admin ? `${domain}+admin` : domain,
     domain,
+    admin: Boolean(admin),
     address: id.address,
     displayName: id.displayName || domain,
     passwordEnv: id.passwordEnv || cfg.passwordEnv || "MAILU_ADMIN_PASS",
@@ -59,9 +62,13 @@ export function resolveIdentity({ as, project, config } = {}) {
 const q = (s) => JSON.stringify(String(s));
 
 /** himalaya v2 TOML. Holds no password, only the command that asks for it. */
-export function buildHimalayaConfig(identity, { cfg, certPath, proxyPort = null, direct = false } = {}) {
+export function buildHimalayaConfig(identity, { cfg, certPath, proxyPort = null, useName = false } = {}) {
   const c = cfg || loadMailConfig();
   const cert = certPath || (isAbsolute(c.cert) ? c.cert : join(ROOT, c.cert));
+  // Default: connect straight to the tailnet IP and trust only the pinned cert.
+  // himalaya has no separate TLS server-name setting, so name-based routing
+  // needs the relay (proxyPort) or real DNS (useName).
+  const host = proxyPort || useName ? c.host : c.via;
   const cmd = `["printenv", ${q(identity.passwordEnv)}]`;
   const lines = [
     `[accounts.${q(identity.id)}]`,
@@ -70,13 +77,13 @@ export function buildHimalayaConfig(identity, { cfg, certPath, proxyPort = null,
     `display-name = ${q(identity.displayName)}`,
     'message.send.save-copy = "sent"',
   ];
-  if (!direct && proxyPort) lines.push(`proxy.url = ${q(`socks5h://127.0.0.1:${proxyPort}`)}`);
+  if (proxyPort) lines.push(`proxy.url = ${q(`socks5h://127.0.0.1:${proxyPort}`)}`);
   lines.push(
-    `imap.server = ${q(`imaps://${c.host}:${c.imapPort || 993}`)}`,
+    `imap.server = ${q(`imaps://${host}:${c.imapPort || 993}`)}`,
     `imap.tls.cert = ${q(cert)}`,
     `imap.sasl.plain.username = ${q(identity.address)}`,
     `imap.sasl.plain.password.command = ${cmd}`,
-    `smtp.server = ${q(`smtps://${c.host}:${c.smtpPort || 465}`)}`,
+    `smtp.server = ${q(`smtps://${host}:${c.smtpPort || 465}`)}`,
     `smtp.tls.cert = ${q(cert)}`,
     `smtp.sasl.plain.username = ${q(identity.address)}`,
     `smtp.sasl.plain.password.command = ${cmd}`,
@@ -177,13 +184,15 @@ export function recipientsOf(raw) {
  */
 export async function runHimalaya(args, { identity, input, cfg, env = process.env } = {}) {
   const c = cfg || loadMailConfig();
-  const direct = env.GOTCHIBOT_MAIL_DIRECT === "1";
-  const proxy = direct ? null : await startSocksProxy({ map: { [c.host.toLowerCase()]: c.via } });
+  // Direct to the tailnet IP by default. GOTCHIBOT_MAIL_RELAY=1 falls back to the
+  // allowlisted loopback relay; GOTCHIBOT_MAIL_DNS=1 uses the host name as DNS gives it.
+  const relay = env.GOTCHIBOT_MAIL_RELAY === "1";
+  const proxy = !relay ? null : await startSocksProxy({ map: { [c.host.toLowerCase()]: c.via } });
   const dir = mkdtempSync(join(tmpdir(), "gotchibot-mail-"));
   try {
     chmodSync(dir, 0o700);
     const file = join(dir, "config.toml");
-    writeFileSync(file, buildHimalayaConfig(identity, { cfg: c, proxyPort: proxy?.port, direct }), { mode: 0o600 });
+    writeFileSync(file, buildHimalayaConfig(identity, { cfg: c, proxyPort: proxy?.port, useName: env.GOTCHIBOT_MAIL_DNS === "1" }), { mode: 0o600 });
     const bin = env.GOTCHIBOT_HIMALAYA_BIN || "himalaya";
     return await new Promise((ok) => {
       const p = spawn(bin, ["-c", file, "-a", identity.id, ...args], { env, stdio: ["pipe", "pipe", "pipe"] });

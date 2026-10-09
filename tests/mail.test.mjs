@@ -26,9 +26,9 @@ const MAIL = join(ROOT, "scripts", "mail.mjs");
 
 describe("resolveIdentity", () => {
   it("takes a domain, a short name, or an address", () => {
-    assert.equal(resolveIdentity({ as: "aarcadeghst.com", config: cfg }).address, "admin@aarcadeghst.com");
+    assert.equal(resolveIdentity({ as: "aarcadeghst.com", config: cfg }).address, "gotchibot@aarcadeghst.com");
     assert.equal(resolveIdentity({ as: "wondrstack", config: cfg }).id, "wondrstack.xyz");
-    assert.equal(resolveIdentity({ as: "ADMIN@yummydog.xyz", config: cfg }).id, "yummydog.xyz");
+    assert.equal(resolveIdentity({ as: "GOTCHIBOT@yummydog.xyz", config: cfg }).id, "yummydog.xyz");
   });
   it("falls back to the active project, then the default", () => {
     assert.equal(resolveIdentity({ project: "aarcadeghst", config: cfg }).id, "aarcadeghst.com");
@@ -40,16 +40,39 @@ describe("resolveIdentity", () => {
   });
   it("covers all six domains", () => {
     for (const d of ["gotchibot.xyz", "aarcadeghst.com", "wondrstack.xyz", "yummydog.xyz", "lastwraphero.xyz", "userdefault.dev"]) {
-      assert.equal(resolveIdentity({ as: d, config: cfg }).address, `admin@${d}`);
+      assert.equal(resolveIdentity({ as: d, config: cfg }).address, `gotchibot@${d}`);
+    }
+  });
+});
+
+describe("admin identity", () => {
+  it("uses admin@ and its own secret name only when asked", () => {
+    const a = resolveIdentity({ as: "aarcadeghst", config: cfg, admin: true });
+    assert.equal(a.address, "admin@aarcadeghst.com");
+    assert.equal(a.passwordEnv, "MAILU_ADMIN_PASS_AARCADEGHST_COM");
+    assert.equal(a.id, "aarcadeghst.com+admin");
+    assert.equal(resolveIdentity({ as: "userdefault", config: cfg, admin: true }).passwordEnv, "MAILU_ADMIN_PASS");
+    assert.equal(resolveIdentity({ as: "aarcadeghst", config: cfg }).passwordEnv, "MAILU_CLIENT_PASS_AARCADEGHST_COM");
+  });
+  it("every default identity names its MAILU_CLIENT_PASS_<DOMAIN> secret", () => {
+    for (const d of Object.keys(cfg.identities)) {
+      assert.equal(resolveIdentity({ as: d, config: cfg }).passwordEnv, `MAILU_CLIENT_PASS_${d.toUpperCase().replace(/\./g, "_")}`);
     }
   });
 });
 
 describe("buildHimalayaConfig", () => {
   const id = resolveIdentity({ as: "gotchibot", config: cfg });
+  it("by default connects straight to the tailnet IP, pinned cert, no relay", () => {
+    const toml = buildHimalayaConfig(id, { cfg });
+    assert.match(toml, /imap\.server = "imaps:\/\/100\.110\.220\.76:993"/);
+    assert.match(toml, /smtp\.server = "smtps:\/\/100\.110\.220\.76:465"/);
+    assert.ok(!/proxy\.url/.test(toml));
+    assert.match(toml, /imap\.tls\.cert = /);
+  });
   it("pins the cert, uses the relay, and asks printenv for the password", () => {
-    const prev = process.env.MAILU_ADMIN_PASS;
-    process.env.MAILU_ADMIN_PASS = "hunter2-test";
+    const prev = process.env.MAILU_CLIENT_PASS_GOTCHIBOT_XYZ;
+    process.env.MAILU_CLIENT_PASS_GOTCHIBOT_XYZ = "hunter2-test";
     try {
       const toml = buildHimalayaConfig(id, { cfg, proxyPort: 4242 });
       assert.match(toml, /imap\.server = "imaps:\/\/mail\.userdefault\.dev:993"/);
@@ -57,21 +80,23 @@ describe("buildHimalayaConfig", () => {
       assert.match(toml, /imap\.tls\.cert = ".*mail\.userdefault\.dev\.pem"/);
       assert.match(toml, /smtp\.tls\.cert = /);
       assert.match(toml, /proxy\.url = "socks5h:\/\/127\.0\.0\.1:4242"/);
-      assert.match(toml, /password\.command = \["printenv", "MAILU_ADMIN_PASS"\]/);
+      assert.match(toml, /password\.command = \["printenv", "MAILU_CLIENT_PASS_GOTCHIBOT_XYZ"\]/);
       assert.ok(!toml.includes("hunter2-test"), "no secret value in the config");
       assert.ok(!/password\.raw/.test(toml));
       assert.ok(!/verify|insecure|danger/i.test(toml), "verification is never disabled");
     } finally {
-      if (prev === undefined) delete process.env.MAILU_ADMIN_PASS;
-      else process.env.MAILU_ADMIN_PASS = prev;
+      if (prev === undefined) delete process.env.MAILU_CLIENT_PASS_GOTCHIBOT_XYZ;
+      else process.env.MAILU_CLIENT_PASS_GOTCHIBOT_XYZ = prev;
     }
   });
   it("the pinned cert file exists and matches the recorded host", () => {
     const pem = readFileSync(join(ROOT, cfg.cert), "utf8");
     assert.match(pem, /BEGIN CERTIFICATE/);
   });
-  it("direct mode drops the relay", () => {
-    assert.ok(!/proxy\.url/.test(buildHimalayaConfig(id, { cfg, direct: true })));
+  it("useName keeps the host name without a relay (real DNS)", () => {
+    const t = buildHimalayaConfig(id, { cfg, useName: true });
+    assert.match(t, /mail\.userdefault\.dev:993/);
+    assert.ok(!/proxy\.url/.test(t));
   });
 });
 
@@ -150,10 +175,10 @@ describe("CLI with a fake himalaya", () => {
 args="$*"
 case "$args" in
   *"message send"*) printf 'SEND\\n' >> "${log}"; cat >> "${log}"; exit 0 ;;
-  *"envelope list"*) echo '{"queued":0,"envelopes":[{"id":"3","flags":[],"subject":"Fixture subject","from":[{"name":"Pat","email":"pat@x.test"}],"to":[{"email":"admin@gotchibot.xyz"}],"date":"2026-10-09T01:02:03Z"}]}'; exit 0 ;;
-  *"message compose"*) printf 'From: admin@gotchibot.xyz\\nTo: pat@x.test\\nSubject: Hello\\n\\nbody line\\n'; exit 0 ;;
-  *"message reply"*) printf 'From: admin@gotchibot.xyz\\nTo: pat@x.test\\nSubject: Re: Fixture subject\\n\\nthanks\\n'; exit 0 ;;
-  *"message read"*) printf 'To: admin@gotchibot.xyz\\nSubject: Fixture subject\\n\\nfixture body\\n'; exit 0 ;;
+  *"envelope list"*) echo '{"queued":0,"envelopes":[{"id":"3","flags":[],"subject":"Fixture subject","from":[{"name":"Pat","email":"pat@x.test"}],"to":[{"email":"gotchibot@gotchibot.xyz"}],"date":"2026-10-09T01:02:03Z"}]}'; exit 0 ;;
+  *"message compose"*) printf 'From: gotchibot@gotchibot.xyz\\nTo: pat@x.test\\nSubject: Hello\\n\\nbody line\\n'; exit 0 ;;
+  *"message reply"*) printf 'From: gotchibot@gotchibot.xyz\\nTo: pat@x.test\\nSubject: Re: Fixture subject\\n\\nthanks\\n'; exit 0 ;;
+  *"message read"*) printf 'To: gotchibot@gotchibot.xyz\\nSubject: Fixture subject\\n\\nfixture body\\n'; exit 0 ;;
   *"account check"*) printf 'Account: gotchibot.xyz\\n  imap: OK\\n  smtp: OK\\n'; exit 0 ;;
 esac
 exit 9
@@ -164,7 +189,7 @@ exit 9
     spawnSync(process.execPath, [MAIL, ...args], {
       input,
       encoding: "utf8",
-      env: { ...process.env, GOTCHIBOT_HIMALAYA_BIN: fake, GOTCHIBOT_MAIL_ABRA: "1", MAILU_ADMIN_PASS: "fake-secret", GOTCHIBOT_MAIL_DIRECT: "1" },
+      env: { ...process.env, GOTCHIBOT_HIMALAYA_BIN: fake, GOTCHIBOT_MAIL_ABRA: "1", MAILU_CLIENT_PASS_GOTCHIBOT_XYZ: "fake-secret" },
     });
   const sends = () => (existsSync(log) ? readFileSync(log, "utf8").split("SEND").length - 1 : 0);
 
@@ -181,7 +206,7 @@ exit 9
   it("check reports OK without echoing the secret", () => {
     const r = run(["check", "--as", "gotchibot"]);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /^OK admin@gotchibot\.xyz/);
+    assert.match(r.stdout, /^OK gotchibot@gotchibot\.xyz/);
     assert.ok(!(r.stdout + r.stderr).includes("fake-secret"));
   });
   it("send prints the full message and does NOT send without the word send", () => {
@@ -189,7 +214,7 @@ exit 9
     assert.equal(r.status, 3);
     assert.match(r.stdout, /Subject: Hello/);
     assert.match(r.stdout, /body line/);
-    assert.match(r.stdout, /About to send as admin@gotchibot\.xyz to pat@x\.test/);
+    assert.match(r.stdout, /About to send as gotchibot@gotchibot\.xyz to pat@x\.test/);
     assert.match(r.stdout, /not sent/);
     assert.equal(sends(), 0);
   });
