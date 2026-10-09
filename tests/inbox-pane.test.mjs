@@ -97,7 +97,9 @@ describe("project mail.json", () => {
       activeLine: "DAI · factory",
       cols: 40,
     });
-    assert.match(read.replace(/\n/g, " "), /Full body text that is definitely longer/);
+    // The read view is now boxed like the dossier: drop colors and the │ borders before joining wrapped lines.
+    const flat = read.replace(/\x1b\[[0-9;]*m/g, "").replace(/│/g, " ").replace(/\s+/g, " ");
+    assert.match(flat, /Full body text that is definitely longer/);
     assert.match(read, /esc back/);
     assert.doesNotMatch(read, /not-a-real-key/);
 

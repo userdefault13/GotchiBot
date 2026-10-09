@@ -39,7 +39,7 @@ const ART_H = 9;
 const MIN_DETAIL_H = 20;
 
 const ESC = "\x1b";
-const c = {
+export const c = {
   reset: `${ESC}[0m`,
   dim: `${ESC}[2m`,
   bold: `${ESC}[1m`,
@@ -76,7 +76,7 @@ function termSize() {
 
 /* ---------- tiny helpers ---------- */
 
-function trunc(s, n) {
+export function trunc(s, n) {
   const t = String(s || "").replace(/\s+/g, " ").trim();
   if (!t) return "—";
   return t.length > n ? `${t.slice(0, Math.max(0, n - 1))}…` : t;
@@ -86,14 +86,14 @@ function visLen(str) {
   return String(str || "").replace(/\x1b\[[0-9;]*m/g, "").length;
 }
 
-function padVis(str, width) {
+export function padVis(str, width) {
   const s = String(str || "");
   const n = visLen(s);
   if (n >= width) return s;
   return s + " ".repeat(width - n);
 }
 
-function pad(str, width) {
+export function pad(str, width) {
   const s = String(str);
   const n = visLen(s);
   if (n <= width) return s + " ".repeat(width - n);
@@ -149,7 +149,7 @@ function formatPt(isoOrMs) {
 }
 
 /** MM-DD HH:MM for ledger rows. */
-function tsShort(iso) {
+export function tsShort(iso) {
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "—";
@@ -431,26 +431,26 @@ function shortId(id) {
 
 /* ---------- JA2 box chrome ---------- */
 
-function boxTop(title, innerW) {
+export function boxTop(title, innerW) {
   const t = trunc(String(title || "").trim() || " ", Math.max(1, innerW - 3));
   const used = 3 + visLen(t); // "─ " + title + " "
   const fill = Math.max(0, innerW - used);
   return `${c.border}┌─ ${c.reset}${c.pink}${c.bold}${t}${c.reset}${c.border} ${"─".repeat(fill)}┐${c.reset}`;
 }
 
-function boxMid(title, innerW) {
+export function boxMid(title, innerW) {
   const t = trunc(String(title || "").trim() || " ", Math.max(1, innerW - 3));
   const used = 3 + visLen(t);
   const fill = Math.max(0, innerW - used);
   return `${c.border}├─ ${c.reset}${c.pink}${c.bold}${t}${c.reset}${c.border} ${"─".repeat(fill)}┤${c.reset}`;
 }
 
-function boxRow(content, innerW) {
+export function boxRow(content, innerW) {
   const body = pad(String(content ?? ""), innerW);
   return `${c.border}│${c.reset}${body}${c.border}│${c.reset}`;
 }
 
-function boxBottom(innerW) {
+export function boxBottom(innerW) {
   return `${c.border}└${"─".repeat(innerW)}┘${c.reset}`;
 }
 
@@ -892,7 +892,7 @@ export function buildMilestonesPanelBody(milestones, cols) {
 }
 
 /** Full-width boxed panel between TEAM and Gotchis. */
-function packFullWidthPanel(title, bodyRows, cols, maxH) {
+export function packFullWidthPanel(title, bodyRows, cols, maxH) {
   const innerW = Math.max(8, cols - 2);
   const budget = Math.max(3, maxH || 8);
   const inner = Math.max(1, budget - 2);

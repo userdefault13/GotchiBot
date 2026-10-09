@@ -40,7 +40,7 @@ describe("pane helpers", () => {
   it("renders the identity and key hints only for mail", () => {
     const msgs = [{ id: "imap:g:1", from: "Pat", to: "", kind: "mail", subject: "S", body: "b", ts: "2026-10-09T00:00:00Z", readAt: null }];
     const withMail = strip(renderInboxView({ messages: msgs, identity: "gotchibot.xyz", notice: "synced" }));
-    assert.match(withMail, /mail as gotchibot\.xyz/);
+    assert.match(withMail, /mail as\s+gotchibot\.xyz/);
     assert.match(withMail, /r reply · c compose · i identity · s sync/);
     assert.match(withMail, /synced/);
     const plain = strip(renderInboxView({ messages: msgs }));
@@ -169,14 +169,14 @@ describe("pane in a real pty (fake himalaya)", () => {
     const r = spawnSync("python3", ["-c", PTY], { encoding: "utf8", env, timeout: 90000 });
     assert.equal(r.status, 0, r.stderr);
     const out = strip(r.stdout);
-    assert.match(out, /mail as gotchibot\.xyz/);
+    assert.match(out, /mail as\s+gotchibot\.xyz/);
     assert.match(out, /fixture body/, "message body is read through gotchibot mail read");
     assert.match(out, /Body \(finish with a line containing only/);
     assert.match(out, /About to send as gotchibot@gotchibot\.xyz to pat@x\.test/);
     assert.match(out, /Type "send" to send this message/);
     assert.match(out, /not sent/);
     assert.match(out, /To: /);
-    assert.match(out, /mail as aarcadeghst\.com/, "i switches identity");
+    assert.match(out, /mail as\s+aarcadeghst\.com/, "i switches identity");
     assert.equal(sends(), 0, "the pane session never sent");
     assert.ok(!out.includes("fake-secret"));
   });

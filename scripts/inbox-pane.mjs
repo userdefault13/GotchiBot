@@ -22,20 +22,12 @@ import { stdin as input, stdout as output } from "node:process";
 import { isMainModule } from "./is-main.mjs";
 import { currentProjectSlug, mailPath } from "./project-context.mjs";
 import { loadMailConfig, resolveIdentity } from "./mail-lib.mjs";
+// Same chrome as the dossier pane: its palette, JA2 box, section dividers, key-hint line.
+import { c, boxTop, boxMid, boxRow, boxBottom, padVis, tsShort } from "./pstack-window.mjs";
 import { publishProjectWrite, pullOpenProject, startHubProjectMirror } from "./hub-project-sync.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ESC = "\x1b";
-const c = {
-  reset: `${ESC}[0m`,
-  dim: `${ESC}[38;5;245m`,
-  bold: `${ESC}[1m`,
-  yellow: `${ESC}[33m`,
-  cyan: `${ESC}[36m`,
-  orange: `${ESC}[38;5;208m`,
-  gold: `${ESC}[38;5;220m`,
-  pink: `${ESC}[38;5;213m`,
-};
 
 const SECRET_KEYS = new Set([
   "apiKey",
@@ -199,37 +191,69 @@ function wrapText(text, width) {
   return out.length ? out : [""];
 }
 
-function listRow(m, cols, selected) {
+const kv = (label, value) => `  ${c.dim}${padVis(label, 10)}${c.reset}${value}`;
+
+/** `gotchibot mail read` output → labeled fields, part summary lines, and the text. */
+export function parseMailRead(text) {
+  const raw = String(text || "").replace(/\r\n/g, "\n");
+  const head = raw.match(/^((?:[A-Za-z][A-Za-z-]*:[^\n]*\n)+)\n/);
+  if (!head) return null;
+  const headers = {};
+  for (const line of head[1].split("\n")) {
+    const m = line.match(/^([A-Za-z][A-Za-z-]*):\s*(.*)$/);
+    if (m) headers[m[1].toLowerCase()] = m[2];
+  }
+  const parts = [];
+  const body = [];
+  for (const line of raw.slice(head[0].length).split("\n")) {
+    const m = line.match(/^\[(\d+)\]\s+(\S+)(?:\s+\(([^)]*)\))?(.*)$/);
+    if (m && body.every((l) => !l.trim())) parts.push({ n: m[1], type: m[2], size: m[3] || "", rest: m[4].trim() });
+    else body.push(line);
+  }
+  return { headers, parts, text: body.join("\n").trim() };
+}
+
+function mailFields(message, parsed) {
+  const h = parsed?.headers || {};
+  const attach = (parsed?.parts || []).filter((p) => !/^text\//i.test(p.type) || p.rest);
+  return {
+    from: h.from || message.from || "?",
+    to: h.to || message.to || "",
+    cc: h.cc || "",
+    subject: h.subject || message.subject || "(no subject)",
+    date: h.date ? tsShort(h.date) : mailTsShort(message.ts),
+    attach: attach.length
+      ? attach.map((p) => `${p.type}${p.size ? ` (${p.size})` : ""}${p.rest ? ` ${p.rest}` : ""}`).join(" · ")
+      : "none",
+  };
+}
+
+function listRows(m, innerW, selected) {
   const pkm = pkmKind(m);
   const color = kindColor(m.kind, pkm);
   const kindLabel = (pkm ? `pkm:${pkm}` : String(m.kind || "?")).slice(0, 12);
   const mark = m.readAt ? " " : `${c.yellow}•${c.reset}`;
-  const caret = selected ? `${c.pink}›${c.reset}` : " ";
+  const caret = selected ? `${c.yellow}${c.bold}▸${c.reset}` : " ";
   const from = trunc(m.from || "?", 12);
   const to = m.to ? trunc(m.to, 10) : "";
-  const rawSubj = String(m.subject || "(no subject)").replace(
-    /^pkm:(delegated|submitted|reviewed)\s*[—\-]\s*/i,
-    "",
-  );
-  const when = mailTsShort(m.ts);
-  const subjW = Math.max(10, cols - 42);
-  const head =
-    `${caret}${mark}${color}${kindLabel.padEnd(12)}${c.reset} ` +
-    `${c.dim}${from}${c.reset}${to ? `${c.dim}→${to}${c.reset}` : ""} ` +
-    `${trunc(rawSubj, subjW)} ${c.dim}${when}${c.reset}`;
-  const rows = [head];
-  const preview = String(m.body || "")
+  const rawSubj = String(m.subject || "(no subject)").replace(/^pkm:(delegated|submitted|reviewed)\s*[—\-]\s*/i, "");
+  const subjW = Math.max(10, innerW - 40);
+  const subj = selected ? `${c.bold}${trunc(rawSubj, subjW)}${c.reset}` : trunc(rawSubj, subjW);
+  const rows = [
+    ` ${caret}${mark}${color}${padVis(kindLabel, 12)}${c.reset} ` +
+      `${c.dim}${from}${c.reset}${to ? `${c.dim}→${to}${c.reset}` : ""} ${subj} ${c.dim}${mailTsShort(m.ts)}${c.reset}`,
+  ];
+  const preview = String(parseMailRead(m.body)?.text ?? m.body ?? "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^pkm:(delegated|submitted|reviewed)\s*[—\-]\s*/i, "");
-  if (preview) {
-    rows.push(`    ${c.dim}scope${c.reset} ${trunc(preview, Math.max(12, cols - 12))}`);
-  }
+  if (preview) rows.push(`    ${c.dim}scope${c.reset} ${trunc(preview, Math.max(12, innerW - 12))}`);
   return rows;
 }
 
 /**
- * Paint the list or one open message.
+ * Paint the list or one open message in the dossier pane's chrome: JA2 box,
+ * pink section titles, dim labels, gold counts, one dim key-hint line.
  * `view` is "list" or "read".
  */
 export function renderInboxView({
@@ -245,50 +269,82 @@ export function renderInboxView({
   identity = "",
   notice = "",
 } = {}) {
-  const keys = identity ? " · r reply · c compose · i identity · s sync" : "";
-  const lines = [];
-  if (activeLine) lines.push(`${c.dim}${activeLine}${c.reset}`);
+  const innerW = Math.max(8, cols - 2);
   const msgs = Array.isArray(messages) ? messages : [];
-  const unread = msgs.filter((m) => !m.readAt).length;
-  lines.push(
-    `${c.bold}INBOX${c.reset}  ${c.gold}${msgs.length}${c.reset} msg${msgs.length === 1 ? "" : "s"}` +
-      (unread ? ` · ${c.yellow}${unread} unread${c.reset}` : ` · ${c.dim}all read${c.reset}`),
-  );
-  if (identity) {
-    lines.push(`  ${c.dim}mail as${c.reset} ${c.cyan}${identity}${c.reset}${notice ? `  ${c.yellow}${notice}${c.reset}` : ""}`);
-  }
-  if (view === "read" && message) {
-    const pkm = pkmKind(message);
-    const color = kindColor(message.kind, pkm);
-    const kindLabel = pkm ? `pkm:${pkm}` : String(message.kind || "fyi");
-    const who = `${message.from || "?"}${message.to ? ` → ${message.to}` : ""}`;
-    lines.push(`${color}${kindLabel}${c.reset}  ${c.dim}${who}${c.reset}  ${c.dim}${mailTsShort(message.ts)}${c.reset}`);
-    lines.push(`${c.bold}${message.subject || "(no subject)"}${c.reset}`);
-    lines.push("");
-    const body = wrapText(message.body || "(no body)", Math.max(8, cols - 2));
-    const start = Math.max(0, scroll);
-    lines.push(...body.slice(start));
-    lines.push("");
-    lines.push(`${c.dim}esc back · j/k scroll${keys} · q chat${c.reset}`);
-  } else if (!msgs.length) {
-    lines.push(`  ${c.dim}(inbox empty)${c.reset}`);
-    lines.push(
-      `  ${c.dim}scope${c.reset} project mail${address ? ` · ${address}` : ""}`,
-    );
-    lines.push(`${c.dim}j/k select · enter read${keys} · q chat${c.reset}`);
-  } else {
-    lines.push(`  ${c.dim}scope${c.reset} project mail · kind, from, subject`);
-    const sel = Math.max(0, Math.min(selected, msgs.length - 1));
-    for (let i = 0; i < msgs.length; i++) {
-      lines.push(...listRow(msgs[i], cols, i === sel));
-    }
-    lines.push("");
-    lines.push(`${c.dim}j/k select · enter read${keys} · q chat${c.reset}`);
-  }
-  if (rows > 0 && lines.length > rows) return lines.slice(0, rows).join("\n");
-  return lines.join("\n");
-}
+  const keys = identity ? " · r reply · c compose · i identity · s sync" : "";
+  const out = [];
+  if (activeLine) out.push(`${c.dim}${activeLine}${c.reset}`);
+  const hint =
+    view === "read" && message
+      ? `${c.dim}esc back · j/k scroll${keys} · q chat${c.reset}`
+      : `${c.dim}j/k select · enter read${keys} · q chat${c.reset}`;
+  // rows available for the box: total - active line - hint
+  const budget = rows > 0 ? Math.max(5, rows - out.length - 1) : Infinity;
+  const inbound = [];
+  const mailAs = identity
+    ? [kv("mail as", `${c.cyan}${identity}${c.reset}${notice ? `  ${c.yellow}${notice}${c.reset}` : ""}`)]
+    : notice
+      ? [kv("status", `${c.yellow}${notice}${c.reset}`)]
+      : [];
 
+  if (view === "read" && message) {
+    const parsed = parseMailRead(message.body);
+    const f = mailFields(message, parsed);
+    const pkm = pkmKind(message);
+    const kindLabel = pkm ? `pkm:${pkm}` : String(message.kind || "fyi");
+    inbound.push(boxTop("MESSAGE", innerW));
+    const top = [
+      kv("kind", `${kindColor(message.kind, pkm)}${kindLabel}${c.reset}`),
+      kv("from", f.from),
+      kv("to", f.to || `${c.dim}—${c.reset}`),
+      ...(f.cc ? [kv("cc", f.cc)] : []),
+      kv("subject", `${c.bold}${f.subject}${c.reset}`),
+      kv("date", `${c.dim}${f.date}${c.reset}`),
+      kv("attach", f.attach === "none" ? `${c.dim}none${c.reset}` : `${c.gold}${f.attach}${c.reset}`),
+      ...mailAs,
+    ];
+    for (const r of top) inbound.push(boxRow(r, innerW));
+    inbound.push(boxMid("BODY", innerW));
+    const wrapped = wrapText(parsed ? parsed.text || "(no body)" : message.body || "(no body)", Math.max(8, innerW - 4));
+    const room = Math.max(1, budget - inbound.length - 1);
+    const start = Math.max(0, Math.min(scroll, Math.max(0, wrapped.length - room)));
+    for (const l of wrapped.slice(start, start + room)) inbound.push(boxRow(`  ${l}`, innerW));
+    inbound.push(boxBottom(innerW));
+  } else {
+    inbound.push(boxTop("INBOX", innerW));
+    const unread = msgs.filter((m) => !m.readAt).length;
+    inbound.push(
+      boxRow(
+        `  ${c.gold}${msgs.length}${c.reset} msg${msgs.length === 1 ? "" : "s"}` +
+          (unread ? ` · ${c.yellow}${unread} unread${c.reset}` : ` · ${c.dim}all read${c.reset}`),
+        innerW,
+      ),
+    );
+    for (const r of mailAs) inbound.push(boxRow(r, innerW));
+    if (!msgs.length) {
+      inbound.push(boxRow(`  ${c.dim}(inbox empty)${c.reset}`, innerW));
+      inbound.push(boxRow(kv("scope", `project mail${address ? ` · ${address}` : ""}`), innerW));
+    } else {
+      inbound.push(boxMid("MESSAGES", innerW));
+      const sel = Math.max(0, Math.min(selected, msgs.length - 1));
+      const room = Math.max(2, budget - inbound.length - 1);
+      const blocks = msgs.map((m, i) => listRows(m, innerW, i === sel));
+      // Window the list so the selected message stays on screen.
+      let first = 0;
+      const used = (a, b) => blocks.slice(a, b + 1).reduce((n, x) => n + x.length, 0);
+      while (first < sel && used(first, sel) > room) first += 1;
+      let n = 0;
+      for (let i = first; i < blocks.length; i++) {
+        if (n + blocks[i].length > room) break;
+        for (const r of blocks[i]) inbound.push(boxRow(r, innerW));
+        n += blocks[i].length;
+      }
+    }
+    inbound.push(boxBottom(innerW));
+  }
+  out.push(...inbound, hint);
+  return out.join("\n");
+}
 
 // Tests point this at a fixture dir; the cache is the only thing it moves.
 const MAIL_SESSIONS = process.env.GOTCHIBOT_MAIL_SESSIONS || join(ROOT, "sessions");
