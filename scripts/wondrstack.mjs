@@ -12,7 +12,7 @@
  *   gotchibot wondrstack call   <project> <tool> [json]  any WondrStack MCP tool
  *   gotchibot wondrstack launch <project> [--name N] [--type T] [--template blank] [--hosting vercel]
  *                                          [--city C --state S --country X] [--workspace slug] [--wait]
- *   gotchibot wondrstack logout <project>
+ *   gotchibot wondrstack logout <project> [--hub]
  *
  * launch walks get_status's state machine and only ever does the next step:
  *   no workspace → create_business · repo failed/missing → start_provisioning ·
@@ -52,12 +52,24 @@ export function credKey(project) {
 /** abra-backed store; tests pass an in-memory one. */
 export const abraStore = {
   get(key) {
-    // A time limit: a locked vault can wait on a passphrase prompt nobody answers.
-    const r = spawnSync("abra", ["get", "gotchibot", key], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: ABRA_TIMEOUT_MS });
-    if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer (vault locked?) — run: abra unlock");
+    // At a terminal abra may ask to approve the reveal: hand it the terminal and
+    // wait. Unattended, a time limit: nobody will answer the prompt.
+    const tty = Boolean(process.stdin.isTTY);
+    const r = spawnSync("abra", ["get", "gotchibot", key], {
+      encoding: "utf8",
+      stdio: [tty ? "inherit" : "ignore", "pipe", tty ? "inherit" : "pipe"],
+      timeout: tty ? 0 : ABRA_TIMEOUT_MS,
+    });
+    if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer: the vault is locked (abra unlock) or the reveal is waiting for approval (abra grant)");
     if (r.status !== 0) {
       const err = String(r.stderr || "");
       if (/locked/i.test(err)) throw new Error("abra vault is locked — run: abra unlock");
+      if (/approv|passphrase|denied/i.test(err)) throw new Error(`abra did not approve reading ${key}: run this from a terminal and answer its prompt, or abra grant`);
+      if (tty) {
+        // stderr went to the terminal: a missing key and a refused prompt look alike, so check the list.
+        const ls = spawnSync("abra", ["ls", "gotchibot"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: ABRA_TIMEOUT_MS });
+        if (new RegExp(`(^|\\s)${key}(\\s|$)`, "m").test(String(ls.stdout || "").replace(/\x1b\[[0-9;]*m/g, ""))) throw new Error(`abra did not approve reading ${key}`);
+      }
       return null;
     }
     const v = String(r.stdout || "").trim();
@@ -70,8 +82,18 @@ export const abraStore = {
       stdio: ["pipe", "ignore", "pipe"],
       timeout: ABRA_TIMEOUT_MS,
     });
-    if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer (vault locked?) — run: abra unlock");
+    if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer: the vault is locked (abra unlock) or the reveal is waiting for approval (abra grant)");
     if (r.status !== 0) throw new Error(/locked/i.test(String(r.stderr)) ? "abra vault is locked — run: abra unlock" : "abra set failed");
+  },
+  /** Delete the key (abra refuses an empty value). false = it was not there. */
+  remove(key) {
+    const r = spawnSync("abra", ["rm", "gotchibot", key], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: ABRA_TIMEOUT_MS });
+    if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer: the vault is locked (abra unlock)");
+    if (r.status === 0) return true;
+    const err = String(r.stderr || "") + String(r.stdout || "");
+    if (/locked/i.test(err)) throw new Error("abra vault is locked — run: abra unlock");
+    if (/not found|no such|unknown|does not exist/i.test(err)) return false;
+    throw new Error(`abra rm failed: ${err.replace(/\x1b\[[0-9;]*m/g, "").trim() || `exit ${r.status}`}`);
   },
 };
 
@@ -153,6 +175,7 @@ function oauthCallbackPage(success) {
     : "Return to GotchiBot and try signing in again.";
   const status = success ? "Connection complete" : "Sign-in needs another try";
   const mark = success ? "✓" : "!";
+  const brandMark = `<svg class="brand-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 24" shape-rendering="crispEdges" aria-hidden="true"><g fill="#7aa9ff"><path d="M2 9h2v1H2zM18 9h2v1h-2zM4 10h2v1H4zM16 10h2v1h-2zM6 11h2v1H6zM14 11h2v1h-2zM8 12h2v1H8zM12 12h2v1h-2zM10 13h2v1h-2z"/></g><g fill="#3b81ff"><path d="M2 12h2v1H2zM18 12h2v1h-2zM4 13h2v1H4zM16 13h2v1h-2zM6 14h2v1H6zM14 14h2v1h-2zM8 15h2v1H8zM12 15h2v1h-2zM10 16h2v1h-2z"/></g><g fill="#5283db"><path d="M2 15h2v1H2zM18 15h2v1h-2zM4 16h2v1H4zM16 16h2v1h-2zM6 17h2v1H6zM14 17h2v1h-2zM8 18h2v1H8zM12 18h2v1h-2zM10 19h2v1h-2z"/></g><g fill="#fff"><path d="M8 7h1v2H8zM12 7h1v2h-1zM10 8h1v1h-1zM9 9h1v1H9zM11 9h1v1h-1z"/></g><g fill="#9dc0ff"><path d="M9 4h4v1H9zM7 5h2v1H7zM13 5h2v1h-2zM5 6h2v1H5zM15 6h2v1h-2zM3 7h2v1H3zM17 7h2v1h-2zM2 8h1v1H2zM19 8h1v1h-1z"/></g></svg>`;
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -165,8 +188,8 @@ function oauthCallbackPage(success) {
       * { box-sizing: border-box; }
       body { min-height: 100vh; min-height: 100svh; margin: 0; padding: 28px; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 0%, #e8edff 0, #f7f8fc 58%); }
       main { width: min(100%, 560px); padding: clamp(28px, 7vw, 48px); border: 1px solid #e5e8f1; border-radius: 28px; background: rgba(255,255,255,.94); box-shadow: 0 28px 80px -48px rgba(39,54,105,.38); }
-      .brand { display: flex; align-items: center; gap: 11px; color: #28314d; font-size: 15px; font-weight: 650; letter-spacing: -.02em; }
-      .brand-mark { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 12px; background: linear-gradient(145deg, #7aa9ff, #3b81ff); color: white; font-family: Georgia, serif; font-size: 23px; font-weight: 700; box-shadow: 0 5px 14px rgba(59,129,255,.25); }
+      .brand { display: flex; align-items: center; gap: 13px; color: #234e9b; font-size: 17px; font-weight: 650; letter-spacing: -.02em; }
+      .brand-mark { display: block; width: 38px; height: 42px; flex: none; }
       .status { display: grid; width: 54px; height: 54px; margin-top: 42px; place-items: center; border-radius: 18px; background: ${success ? "#eaf1ff" : "#fff2e9"}; color: ${success ? "#356ee0" : "#b45332"}; font-size: 29px; font-weight: 600; }
       .eyebrow { margin: 23px 0 0; color: ${success ? "#356ee0" : "#a54b32"}; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
       h1 { margin: 8px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(34px, 8vw, 46px); font-weight: 500; letter-spacing: -.045em; line-height: 1.12; }
@@ -179,7 +202,7 @@ function oauthCallbackPage(success) {
   </head>
   <body>
     <main>
-      <div class="brand"><span class="brand-mark" aria-hidden="true">W</span><span>WondrStack</span></div>
+      <div class="brand">${brandMark}<span>wondrstack</span></div>
       <div class="status" aria-hidden="true">${mark}</div>
       <p class="eyebrow">${status}</p>
       <h1>${title}</h1>
@@ -385,7 +408,7 @@ export function keyNamespace(project, { loadRepoFn = loadRepo } = {}) {
 /** abra get <namespace> <key>, or null when it is not there. Value stays in memory only. */
 export function abraValue(namespace, key) {
   const r = spawnSync("abra", ["get", namespace, key], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: ABRA_TIMEOUT_MS });
-  if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer (vault locked?) — run: abra unlock");
+  if (r.error?.code === "ETIMEDOUT" || r.signal) throw new Error("abra did not answer: the vault is locked (abra unlock) or the reveal is waiting for approval (abra grant)");
   if (r.status !== 0) {
     if (/locked/i.test(String(r.stderr || ""))) throw new Error("abra vault is locked — run: abra unlock");
     return null;
@@ -656,6 +679,14 @@ function hubSshTarget() {
  * fixed loopback port, ssh forwards that port here, and the browser opens here.
  * The tokens are stored in the Hub's abra.
  */
+/** Run one `gotchibot …` command on the Hub over ssh, output here. */
+export function onHub(args, { target = hubSshTarget() } = {}) {
+  if (!target) throw new Error("no Hub ssh target: pair this desk with the Hub first (gotchibot hub setup)");
+  const remote = `cd ~/dev/GotchiBot 2>/dev/null || cd ~/Dev/GotchiBot; export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"; ./scripts/gotchibot ${args}`;
+  const r = spawnSync("ssh", ["-t", target, remote], { stdio: "inherit" });
+  if (r.status !== 0) process.exitCode = r.status || 1;
+}
+
 export async function loginOnHub(project, { target = hubSshTarget(), log = console.log } = {}) {
   if (!target) throw new Error("no Hub ssh target: pair this desk with the Hub first (gotchibot hub setup)");
   credKey(project);
@@ -673,11 +704,25 @@ export async function loginOnHub(project, { target = hubSshTarget(), log = conso
     }
   });
   const code = await new Promise((r) => child.on("close", r));
-  if (code !== 0) throw new Error(`sign-in on the Hub failed (exit ${code}): is its abra unlocked? (abra unlock on the Hub)`);
+  if (code !== 0) throw new Error(`sign-in on the Hub failed (exit ${code}): abra on the Hub must be unlocked, and the token read approved (run this from your own terminal to answer the prompt)`);
   log(`signed ${project} in on the Hub`);
 }
 
 // ---------- launch: the deterministic pipeline ----------
+
+/**
+ * One account per project: the sign-in's workspace must be the project's own.
+ * Returns the problem sentence, or null (no workspace yet counts as fine).
+ */
+export function workspaceMismatch(project, status, expected = project) {
+  const slug = status?.workspace?.slug;
+  if (!slug || slug === expected) return null;
+  return (
+    `this ${project} sign-in is WondrStack workspace "${slug}", not "${expected}" — one account per project: ` +
+    `sign out of wondrstack.xyz in the browser (or use a private window), ` +
+    `then gotchibot wondrstack login ${project} with the ${expected} account (or pass --workspace ${slug})`
+  );
+}
 
 /**
  * The one next step for a get_status result (pure):
@@ -713,12 +758,8 @@ export async function launch(project, opts = {}) {
   let createdOnce = false;
   for (;;) {
     const status = await call("get_status", {});
-    if (status?.workspace && status.workspace.slug !== expected) {
-      throw new Error(
-        `this sign-in is WondrStack workspace "${status.workspace.slug}", not "${expected}" — one account per project: ` +
-          `run gotchibot wondrstack login ${project} with the ${expected} account (or pass --workspace ${status.workspace.slug})`,
-      );
-    }
+    const wrong = workspaceMismatch(project, status, expected);
+    if (wrong) throw new Error(wrong);
     const next = nextStep(status);
     log(`· ${next.step}: ${next.why}`);
     if (next.step === "create") {
@@ -802,7 +843,7 @@ gotchibot wondrstack call   <project> <tool> [json-args]
 gotchibot wondrstack launch <project> [--name N] [--type T] [--template blank] [--hosting vercel]
                                      [--city C --state S --country X] [--workspace slug] [--wait]
 gotchibot wondrstack keys   <project> [--hosting] [--database] [--payments] [--google] [--all] [--namespace N] [--dry-run]
-gotchibot wondrstack logout <project>
+gotchibot wondrstack logout <project> [--hub]
 gotchibot wondrstack login  <project> --hub          sign a project in on the Hub (browser here, tokens in the Hub's abra)
 gotchibot wondrstack watch  <project>|--all           Site Ops pass: status + site check, PM alerts, one auto-redeploy when trusted
 gotchibot wondrstack schedule install|uninstall|status [--interval 3600]   hourly watch on the Hub (systemd timer)
@@ -833,12 +874,22 @@ async function main() {
     await login(project, { port: Number(flag(rest, "port")) || 0, open: rest.includes("--no-open") ? null : openBrowser });
     const s = await callTool(project, "get_status", {});
     console.log(`signed in · workspace ${s?.workspace?.slug || "(none yet — run launch)"}`);
+    const wrong = workspaceMismatch(project, s);
+    if (wrong) {
+      console.log(`WARNING: ${wrong}`);
+      process.exitCode = 2;
+    }
     return;
   }
   if (cmd === "status") {
     const s = await callTool(project, "get_status", {});
     console.log(JSON.stringify(s, null, 2));
     console.log(`next: ${nextStep(s).step} — ${nextStep(s).why}`);
+    const wrong = workspaceMismatch(project, s, flag(rest, "workspace") || project);
+    if (wrong) {
+      console.log(`WARNING: ${wrong}`);
+      process.exitCode = 2;
+    }
     const site = await siteCheck(s?.workspace?.app_url);
     if (site) console.log(`site: ${site.url} ${site.ok ? `up (${site.status}, ${site.ms} ms)` : `DOWN (${site.status || site.error})`}`);
     return;
@@ -872,13 +923,20 @@ async function main() {
       ? Object.keys(KEY_MAP)
       : Object.keys(KEY_MAP).filter((k) => rest.includes(`--${k}`) || (k === "google_signin" && rest.includes("--google")));
     if (!kinds.length) throw new Error("say what to send: --hosting --database --payments --google, or --all");
-    const r = await pushKeys(project, kinds, { namespace: flag(rest, "namespace"), dryRun: rest.includes("--dry-run") });
+    const dryRun = rest.includes("--dry-run");
+    if (!dryRun) {
+      // Never send this project's keys into another project's workspace.
+      const wrong = workspaceMismatch(project, await callTool(project, "get_status", {}), flag(rest, "workspace") || project);
+      if (wrong) throw new Error(wrong);
+    }
+    const r = await pushKeys(project, kinds, { namespace: flag(rest, "namespace"), dryRun });
     if (r.some((x) => x.ok === false)) process.exitCode = 1;
     return;
   }
   if (cmd === "logout") {
-    abraStore.set(credKey(project), "");
-    console.log(`signed out of WondrStack for ${project}`);
+    if (rest.includes("--hub")) return onHub(`wondrstack logout ${project}`);
+    const had = abraStore.remove(credKey(project));
+    console.log(had ? `signed out of WondrStack for ${project}` : `no WondrStack sign-in for ${project} here (on the Hub? add --hub)`);
     return;
   }
   throw new Error(`unknown command: ${cmd}`);

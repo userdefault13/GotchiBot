@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { bodyFromVault, callTool, credKey, keyNamespace, launch, login, nextStep, pushKeys, pushSetup } from "../scripts/wondrstack.mjs";
+import { bodyFromVault, callTool, credKey, keyNamespace, launch, login, nextStep, pushKeys, workspaceMismatch, pushSetup } from "../scripts/wondrstack.mjs";
 
 let server;
 let base;
@@ -20,6 +20,7 @@ const tokens = new Set();
 const calls = [];
 const setupCalls = [];
 let agentSetup = false;
+let forceBadState = false;
 
 function status() {
   if (ws.state === "none") return { workspace: null, next_steps: [] };
@@ -55,7 +56,11 @@ before(async () => {
       codes.set(code, u.searchParams.get("code_challenge"));
       assert.equal(u.searchParams.get("code_challenge_method"), "S256");
       assert.equal(u.searchParams.get("resource"), `${base}/mcp`);
-      res.writeHead(302, { location: `${u.searchParams.get("redirect_uri")}?code=${code}&state=${u.searchParams.get("state")}` });
+      const callback = new URL(u.searchParams.get("redirect_uri"));
+      callback.searchParams.set("code", code);
+      callback.searchParams.set("state", forceBadState ? "mismatched-state" : u.searchParams.get("state"));
+      forceBadState = false;
+      res.writeHead(302, { location: callback.toString() });
       return res.end();
     }
     if (u.pathname === "/oauth/token") {
@@ -108,15 +113,46 @@ describe("wondrstack", () => {
   });
 
   it("signs a project in with PKCE and calls tools with its token", async () => {
+    let callbackResponse;
     await login("gotchibot", {
       endpoint: `${base}/mcp`, store, log: () => {},
-      open: (url) => fetch(url, { redirect: "follow" }).catch(() => {}),
+      open: (url) => { callbackResponse = fetch(url, { redirect: "follow" }); },
     });
+    const page = await callbackResponse;
+    const html = await page.text();
+    assert.equal(page.status, 200);
+    assert.match(html, /You're connected\./);
+    assert.match(html, /Return to GotchiBot/);
+    assert.match(html, /<style>/);
+    assert.match(html, /class="brand-mark"[^>]*viewBox="0 0 22 24"/);
+    assert.match(html, /fill="#3b81ff"/);
+    assert.match(html, /<span>wondrstack<\/span>/);
+    assert.equal(page.headers.get("cache-control"), "no-store");
+    assert.match(page.headers.get("content-security-policy"), /default-src 'none'/);
+    assert.equal(page.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(page.headers.get("x-content-type-options"), "nosniff");
     const creds = JSON.parse(mem.get("WONDRSTACK_GOTCHIBOT"));
     assert.equal(creds.client_id, "c1");
     assert.ok(creds.access_token && creds.refresh_token);
     const s = await callTool("gotchibot", "get_status", {}, { endpoint: `${base}/mcp`, store });
     assert.equal(s.workspace, null);
+  });
+
+  it("shows a styled retry page when the OAuth state does not match", async () => {
+    forceBadState = true;
+    let callbackResponse;
+    await assert.rejects(login("gotchibot", {
+      endpoint: `${base}/mcp`, store, log: () => {},
+      open: (url) => { callbackResponse = fetch(url, { redirect: "follow" }); },
+    }), /sign-in failed/);
+    const page = await callbackResponse;
+    const html = await page.text();
+    assert.equal(page.status, 400);
+    assert.match(html, /We couldn't connect\./);
+    assert.match(html, /try signing in again/);
+    assert.match(html, /<style>/);
+    assert.equal(page.headers.get("cache-control"), "no-store");
+    assert.match(page.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   });
 
   it("knows the next step from get_status alone", () => {
@@ -195,4 +231,13 @@ describe("wondrstack", () => {
     assert.equal(viaPage.step, "hosting");
     assert.equal(viaPage.url, "https://x/hosting");
   });
+});
+
+it("workspaceMismatch: a project's sign-in must be its own workspace", () => {
+  assert.equal(workspaceMismatch("gotchibot", { workspace: null }), null);
+  assert.equal(workspaceMismatch("gotchibot", { workspace: { slug: "gotchibot" } }), null);
+  const wrong = workspaceMismatch("gotchibot", { workspace: { slug: "aarcadeghst" } });
+  assert.match(wrong, /workspace "aarcadeghst", not "gotchibot"/);
+  assert.match(wrong, /wondrstack login gotchibot/);
+  assert.equal(workspaceMismatch("gotchibot", { workspace: { slug: "aarcadeghst" } }, "aarcadeghst"), null);
 });
