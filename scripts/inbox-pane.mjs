@@ -16,11 +16,12 @@
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import readline from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import { isMainModule } from "./is-main.mjs";
 import { currentProjectSlug, mailPath } from "./project-context.mjs";
+import { loadMailConfig, resolveIdentity } from "./mail-lib.mjs";
 import { publishProjectWrite, pullOpenProject, startHubProjectMirror } from "./hub-project-sync.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -282,6 +283,75 @@ export function renderInboxView({
   return lines.join("\n");
 }
 
+
+const MAIL_SYNC_STALE_MS = 5 * 60 * 1000;
+
+/**
+ * Read-only mail source: the headers `gotchibot mail sync` cached under
+ * sessions/mail/<identity>.json. Bodies are not cached; the read view says how
+ * to open one. Sending never happens from the pane.
+ */
+export function mailSourceMessages(sessionsDir, identityId) {
+  const out = [];
+  let doc = null;
+  try {
+    doc = JSON.parse(readFileSync(join(sessionsDir, "mail", `${identityId}.json`), "utf8"));
+  } catch {
+    return out;
+  }
+  const ident = doc?.identity || identityId;
+  for (const raw of Array.isArray(doc?.messages) ? doc.messages : []) {
+    const uid = raw.uid ?? String(raw.id || "").split(":").pop();
+    out.push(
+      normalizeMailMessage(
+        {
+          ...raw,
+          kind: "mail",
+          body:
+            raw.body ||
+            `Open with: gotchibot mail read ${uid} --as ${ident}\nReply: gotchibot mail reply ${uid} --as ${ident} --body "..."  (asks before sending)`,
+        },
+        out.length,
+      ),
+    );
+  }
+  return out;
+}
+
+export function mergeMailSource(messages, mailMessages) {
+  return [...messages, ...mailMessages].sort((a, b) => String(b.ts || "").localeCompare(String(a.ts || "")));
+}
+
+function activeMailIdentity() {
+  try {
+    return resolveIdentity({ project: currentProjectSlug(), config: loadMailConfig() }).id;
+  } catch {
+    return null;
+  }
+}
+
+/** Refresh the cache in the background at most every 5 minutes. Opt out: GOTCHIBOT_MAIL_PANE_SYNC=0. */
+function maybeSyncMail(identityId) {
+  if (!identityId || process.env.GOTCHIBOT_MAIL_PANE_SYNC === "0") return;
+  const file = join(ROOT, "sessions", "mail", `${identityId}.json`);
+  try {
+    if (Date.now() - statSync(file).mtimeMs < MAIL_SYNC_STALE_MS) return;
+  } catch {
+    /* no cache yet */
+  }
+  try {
+    const p = spawn(join(ROOT, "scripts", "gotchibot"), ["mail", "sync", "--as", identityId], {
+      detached: true,
+      stdio: "ignore",
+      timeout: 30000,
+    });
+    p.on("error", () => {});
+    p.unref();
+  } catch {
+    /* pane stays usable without mail */
+  }
+}
+
 function inboxFiles() {
   const slug = currentProjectSlug();
   if (!slug) return { mail: null, bot: null };
@@ -297,7 +367,9 @@ function loadInbox() {
   const botDoc = files.bot ? readMailDocument(files.bot) : null;
   const choice = chooseInboxDocument(mailDoc, botDoc);
   const file = choice.which === "bot" ? files.bot : files.mail;
-  return { file, doc: choice.doc, messages: choice.messages };
+  const ident = activeMailIdentity();
+  const mailMsgs = ident ? mailSourceMessages(join(ROOT, "sessions"), ident) : [];
+  return { file, doc: choice.doc, messages: mergeMailSource(choice.messages, mailMsgs), mailIdentity: ident };
 }
 
 function readActiveLine() {
@@ -342,6 +414,7 @@ async function runOnce() {
 }
 
 function runWatch() {
+  maybeSyncMail(activeMailIdentity());
   readline.emitKeypressEvents(input);
   if (input.isTTY) input.setRawMode(true);
   output.write(`${ESC}[?25l`);

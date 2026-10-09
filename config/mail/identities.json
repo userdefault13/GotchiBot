@@ -1,0 +1,26 @@
+{
+  "host": "mail.userdefault.dev",
+  "via": "100.110.220.76",
+  "imapPort": 993,
+  "smtpPort": 465,
+  "cert": "config/mail/mail.userdefault.dev.pem",
+  "certSha256": "AE:B5:E3:84:D2:3A:0E:ED:61:5E:E9:05:D0:72:B4:08:8A:E7:79:5B:79:D9:3F:02:2C:DE:B7:A4:2D:90:F0:9D",
+  "abraProject": "gotchibot",
+  "passwordEnv": "MAILU_ADMIN_PASS",
+  "defaultIdentity": "gotchibot.xyz",
+  "identities": {
+    "gotchibot.xyz": { "address": "admin@gotchibot.xyz", "displayName": "GotchiBot" },
+    "aarcadeghst.com": { "address": "admin@aarcadeghst.com", "displayName": "AarcadeGh-t" },
+    "wondrstack.xyz": { "address": "admin@wondrstack.xyz", "displayName": "WondrStack" },
+    "yummydog.xyz": { "address": "admin@yummydog.xyz", "displayName": "YummyDog" },
+    "lastwraphero.xyz": { "address": "admin@lastwraphero.xyz", "displayName": "LastWrapHero" },
+    "userdefault.dev": { "address": "admin@userdefault.dev", "displayName": "UserDefault" }
+  },
+  "projects": {
+    "gotchibot": "gotchibot.xyz",
+    "aarcadeghst": "aarcadeghst.com",
+    "wondrstack": "wondrstack.xyz",
+    "yummydog": "yummydog.xyz",
+    "lastwraphero": "lastwraphero.xyz"
+  }
+}
