@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import net from "node:net";
+import tls from "node:tls";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -17,7 +18,9 @@ import {
   parseEnvelopes,
   recipientsOf,
   resolveIdentity,
+  resolveMailTarget,
   startSocksProxy,
+  verifyPinnedTls,
 } from "../scripts/mail-lib.mjs";
 import { ROOT } from "../scripts/mail-lib.mjs";
 
@@ -139,6 +142,63 @@ describe("startSocksProxy", () => {
   });
 });
 
+describe("resolveMailTarget", () => {
+  const look = (...addrs) => async () => addrs.map((address) => ({ address, family: 4 }));
+  it("uses the host name when it resolves to the tailnet IP", async () => {
+    const t = await resolveMailTarget(cfg, {}, look(cfg.via));
+    assert.equal(t.mode, "name");
+    assert.equal(t.connectHost, cfg.host);
+  });
+  it("falls back to the tailnet IP, never the public one, and says how to fix it", async () => {
+    for (const lk of [look("45.79.68.233"), look(cfg.via, "45.79.68.233"), async () => { throw new Error("nx"); }]) {
+      const t = await resolveMailTarget(cfg, {}, lk);
+      assert.equal(t.mode, "direct");
+      assert.equal(t.connectHost, cfg.via);
+      assert.match(t.note, /tailscale set --accept-dns=true/);
+      assert.match(t.note, /hosts line/);
+      assert.ok(!t.note.includes("45.79.68.233"));
+    }
+  });
+  it("relay is opt-in only", async () => {
+    assert.equal((await resolveMailTarget(cfg, { GOTCHIBOT_MAIL_RELAY: "1" }, look(cfg.via))).mode, "relay");
+  });
+  it("the generated config uses the host name in name mode and the IP in direct mode", () => {
+    const id = resolveIdentity({ as: "gotchibot", config: cfg });
+    assert.match(buildHimalayaConfig(id, { cfg, useName: true }), /mail\.userdefault\.dev:993/);
+    assert.match(buildHimalayaConfig(id, { cfg }), /100\.110\.220\.76:993/);
+  });
+});
+
+function mkCert(dir, name, cn) {
+  const key = join(dir, `${name}.key`);
+  const crt = join(dir, `${name}.pem`);
+  const r = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", crt, "-days", "2", "-subj", `/CN=${cn}`, "-addext", `subjectAltName=DNS:${cn}`], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  return { key: readFileSync(key), pem: readFileSync(crt) };
+}
+
+describe("name-checked pinned TLS (local server, no network)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mail-tls-"));
+  const good = mkCert(dir, "good", "mail.example.test");
+  const other = mkCert(dir, "other", "mail.example.test");
+  it("accepts the pinned cert for the right name, rejects a wrong name and a wrong cert", async () => {
+    const srv = tls.createServer({ key: good.key, cert: good.pem }, (s) => s.on("error", () => {}));
+    await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+    const port = srv.address().port;
+    try {
+      assert.equal(await verifyPinnedTls({ host: "mail.example.test", connectHost: "127.0.0.1", port, pem: good.pem }), true);
+      await assert.rejects(verifyPinnedTls({ host: "evil.example.test", connectHost: "127.0.0.1", port, pem: good.pem }), /altnames|hostname|match/i);
+      await assert.rejects(verifyPinnedTls({ host: "mail.example.test", connectHost: "127.0.0.1", port, pem: other.pem }), /self-signed|unable to verify|certificate/i);
+    } finally {
+      srv.close();
+    }
+  });
+  it("the shipped pin verifies for mail.userdefault.dev (name in its SAN)", () => {
+    const r = spawnSync("openssl", ["x509", "-noout", "-ext", "subjectAltName", "-in", join(ROOT, cfg.cert)], { encoding: "utf8" });
+    assert.match(r.stdout, /DNS:mail\.userdefault\.dev/);
+  });
+});
+
 describe("parsing", () => {
   it("normalizes envelopes", () => {
     const rows = parseEnvelopes({
@@ -189,7 +249,7 @@ exit 9
     spawnSync(process.execPath, [MAIL, ...args], {
       input,
       encoding: "utf8",
-      env: { ...process.env, GOTCHIBOT_HIMALAYA_BIN: fake, GOTCHIBOT_MAIL_ABRA: "1", MAILU_CLIENT_PASS_GOTCHIBOT_XYZ: "fake-secret" },
+      env: { ...process.env, GOTCHIBOT_HIMALAYA_BIN: fake, GOTCHIBOT_MAIL_ABRA: "1", GOTCHIBOT_MAIL_PREFLIGHT: "0", MAILU_CLIENT_PASS_GOTCHIBOT_XYZ: "fake-secret" },
     });
   const sends = () => (existsSync(log) ? readFileSync(log, "utf8").split("SEND").length - 1 : 0);
 

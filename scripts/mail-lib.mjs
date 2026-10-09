@@ -9,7 +9,9 @@
  */
 import { spawn } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import dns from "node:dns";
 import net from "node:net";
+import tls from "node:tls";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -178,21 +180,74 @@ export function recipientsOf(raw) {
 }
 
 /**
+ * himalaya trusts a pinned cert but does not compare its name to the host
+ * (proved: a pinned other.example cert was accepted for localhost). So the name
+ * check is done here, in Node, with the same pinned cert and the stock
+ * hostname check, before himalaya connects.
+ */
+export function verifyPinnedTls({ host, connectHost, port, pem, timeoutMs = 8000 }) {
+  return new Promise((ok, fail) => {
+    const sock = tls.connect({ host: connectHost || host, port, servername: host, ca: pem, rejectUnauthorized: true, timeout: timeoutMs });
+    const done = (err) => {
+      sock.destroy();
+      err ? fail(err) : ok(true);
+    };
+    sock.once("secureConnect", () => done(null));
+    sock.once("timeout", () => done(new Error("tls preflight timed out")));
+    sock.once("error", (e) => done(e));
+  });
+}
+
+/**
+ * Pick how to reach the mail host. Name mode needs the name to resolve to the
+ * tailnet IP; otherwise direct-IP (never the public address). Relay is opt-in.
+ */
+export async function resolveMailTarget(cfg, env = process.env, lookup = (h) => dns.promises.lookup(h, { all: true, family: 4 })) {
+  if (env.GOTCHIBOT_MAIL_RELAY === "1") return { mode: "relay" };
+  let addrs = [];
+  try {
+    addrs = (await lookup(cfg.host)).map((a) => a.address);
+  } catch {
+    /* unresolved: fall back */
+  }
+  if (addrs.length && addrs.every((a) => a === cfg.via)) return { mode: "name", connectHost: cfg.host };
+  return {
+    mode: "direct",
+    connectHost: cfg.via,
+    note: `note: ${cfg.host} does not resolve to ${cfg.via} on this desk; using the tailnet IP. Run \`tailscale set --accept-dns=true\` or add the hosts line "${cfg.via} ${cfg.host}".`,
+  };
+}
+
+/**
  * Run himalaya for one identity. Starts the loopback relay, writes the
  * credential-free config to a 0600 temp dir, removes both afterwards.
  * Returns { code, stdout, stderr }.
  */
+let noted = false;
+
 export async function runHimalaya(args, { identity, input, cfg, env = process.env } = {}) {
   const c = cfg || loadMailConfig();
-  // Direct to the tailnet IP by default. GOTCHIBOT_MAIL_RELAY=1 falls back to the
-  // allowlisted loopback relay; GOTCHIBOT_MAIL_DNS=1 uses the host name as DNS gives it.
-  const relay = env.GOTCHIBOT_MAIL_RELAY === "1";
-  const proxy = !relay ? null : await startSocksProxy({ map: { [c.host.toLowerCase()]: c.via } });
+  const target = await resolveMailTarget(c, env);
+  if (target.note && !noted) {
+    noted = true;
+    process.stderr.write(`${target.note}\n`);
+  }
+  // The fake-binary tests run offline; the preflight is never skipped for real himalaya.
+  const skip = env.GOTCHIBOT_MAIL_PREFLIGHT === "0" && env.GOTCHIBOT_HIMALAYA_BIN;
+  if (target.mode !== "relay" && !skip) {
+    const pem = readFileSync(isAbsolute(c.cert) ? c.cert : join(ROOT, c.cert));
+    try {
+      await verifyPinnedTls({ host: c.host, connectHost: target.connectHost, port: c.imapPort || 993, pem });
+    } catch (e) {
+      return { code: 1, stdout: "", stderr: `certificate check failed (${e.code || e.message})` };
+    }
+  }
+  const proxy = target.mode === "relay" ? await startSocksProxy({ map: { [c.host.toLowerCase()]: c.via } }) : null;
   const dir = mkdtempSync(join(tmpdir(), "gotchibot-mail-"));
   try {
     chmodSync(dir, 0o700);
     const file = join(dir, "config.toml");
-    writeFileSync(file, buildHimalayaConfig(identity, { cfg: c, proxyPort: proxy?.port, useName: env.GOTCHIBOT_MAIL_DNS === "1" }), { mode: 0o600 });
+    writeFileSync(file, buildHimalayaConfig(identity, { cfg: c, proxyPort: proxy?.port, useName: target.mode === "name" }), { mode: 0o600 });
     const bin = env.GOTCHIBOT_HIMALAYA_BIN || "himalaya";
     return await new Promise((ok) => {
       const p = spawn(bin, ["-c", file, "-a", identity.id, ...args], { env, stdio: ["pipe", "pipe", "pipe"] });
