@@ -105,7 +105,10 @@ connect a wallet, grab an install token, and pick a starter hero (YFI, BTC, LINK
 The `gotchibot tmux` command opens the Desk (OpenClaw cockpit) for fleet management, agent
 spawning, and PnL monitoring. From the Desk, `gotchibot hub` / `/hub` monitors the Hub
 (always-on iMac): SSH, OpenClaw gateway, sessions, tunnel, and Docker (`hub --infra` for
-the container table). GoBall cartridges and the GoBall SIM follow the same
+the container table). Cockpit option 9, **Remote**, opens a tile picker of the desks in
+`config/desks.json` (this machine skipped, online state from `tailscale status`); Enter opens a
+new tmux window named after the desk running an interactive `ssh user_default@<host>`
+(`gotchibot remote-picker`-style: `node scripts/remote-picker.mjs --list` prints the list). GoBall cartridges and the GoBall SIM follow the same
 pattern — see the `cartridge-mint` skill for mint/bind workflows.
 
 ## Docs

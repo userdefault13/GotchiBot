@@ -37,6 +37,20 @@ import { hubNetworkSummary } from "./hub-network.mjs";
 const CONCIERGE_MINT_URL = "https://www.aarcadeghst.com/concierge/terminal";
 const MARKETPLACE_URL = "https://aarcadeghst.com/gotchibot-templates";
 
+/**
+ * Option 9: a new tmux window running the desk picker (scripts/remote-picker.mjs).
+ * Picking a desk there opens one more window running an interactive ssh.
+ */
+function openRemotePicker() {
+  const sess = tmuxSessionName();
+  if (!sess) {
+    console.log("\n  ✗ attach tmux first: ./scripts/gotchibot tmux\n");
+    return false;
+  }
+  const r = spawnSync("tmux", ["new-window", "-n", "Remote", "-t", `${sess}:`, "-c", ROOT, `node ${JSON.stringify(`${ROOT}/scripts/remote-picker.mjs`)}`], { stdio: "ignore" });
+  return r.status === 0;
+}
+
 function tmuxSessionName() {
   return layoutSession();
 }
@@ -2765,7 +2779,7 @@ function cockpitMenuLeafCount(rows) {
  * Cockpit "What next?" rows. Related actions sit under a parent; Enter on that
  * row opens the group, Esc returns here. Leaf labels and relative order match
  * the old flat list, so 1..n inside a group still picks those siblings.
- * Top-level is 8 rows. Leaves are 21 (Hub SSH down) or 22 (Hub SSH up), plus
+ * Top-level is 9 rows. Leaves are 22 (Hub SSH down) or 23 (Hub SSH up), plus
  * "Screen off" under Settings… on a machine with a backlight (Linux desks).
  * The second Hub… row is the full dashboard only when this computer is the
  * Hub (sessions/.hub-api.json). Every other desk gets the lite view instead.
@@ -2839,6 +2853,7 @@ function cockpitMenuRows({ sshHubUp = false, net = {}, screenPower = hasScreenPo
       item("roster-order", "Rearrange roster display order"),
       ...(screenPower ? [item("screen-off", "Screen off — save the panel and power (any key wakes)")] : []),
     ]),
+    item("remote", "Remote (ssh into another desk)"),
   ];
 }
 
@@ -3181,6 +3196,11 @@ async function mainMenu(wallet, cartridgeId) {
       enterFactoryLayout();
       if (process.env.GOTCHIBOT_IN_CHAT_PANE === "1") return;
       await pause();
+      continue;
+    }
+
+    if (pick.key === "remote") {
+      if (!openRemotePicker()) await pause();
       continue;
     }
 

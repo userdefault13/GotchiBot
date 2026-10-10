@@ -50,3 +50,13 @@ install still succeeds. Run the installer yourself on each Omarchy desk; GotchiB
 
 `gotchibot doctor` reports whether gliff is present. It does not run `gliff-probe`, which
 captures frames and is not read-only; run `gliff-probe all` yourself when a session misbehaves.
+
+## Remote picker (cockpit option 9)
+
+Cockpit **9) Remote (ssh into another desk)** opens a new tmux window with a tile grid of the desks in
+`config/desks.json` (the same registry as `gotchibot gliff`). The current machine is skipped. Online/offline
+comes from `tailscale status --json` (read-only); if tailscale is unavailable the state shows as unknown and
+ssh fails visibly. Keys: arrows / h j k l move, Enter open, r refresh, Esc / q close. Enter opens another tmux
+window named after the desk that runs only an interactive `ssh <user>@<host>` (Tailscale SSH, no key setup; a
+one-time approval URL may print). Nothing is run on the remote desk for you. This is a terminal shell, unlike
+gliff (a Hyprland GUI client). `node scripts/remote-picker.mjs --list` prints the list.

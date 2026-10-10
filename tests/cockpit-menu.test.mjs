@@ -64,16 +64,17 @@ const LEAVES_DOWN = [
   "settings",
   "avatar",
   "roster-order",
+  "remote",
 ];
 
 describe("cockpit menu nesting", () => {
   it("prints a shorter top list and keeps every action", () => {
     const down = parse(printed(["--tree"]));
     const up = parse(printed(["--ssh-hub", "--tree"]));
-    assert.equal(down.top, 8);
-    assert.equal(up.top, 8);
-    assert.equal(down.flat, 21);
-    assert.equal(up.flat, 22);
+    assert.equal(down.top, 9);
+    assert.equal(up.top, 9);
+    assert.equal(down.flat, 22);
+    assert.equal(up.flat, 23);
     assert.ok(down.top < down.flat);
     assert.deepEqual(down.labels, [
       "Open desk",
@@ -84,6 +85,7 @@ describe("cockpit menu nesting", () => {
       "View & browse…",
       "Mint…",
       "Settings…",
+      "Remote (ssh into another desk)",
     ]);
     assert.deepEqual(down.groups["group:project"], ["select-project", "checkpoint-project"]);
     assert.deepEqual(down.groups["group:hub"], ["hub-network", "hub-lite", "hub-phone", "hub-implement"]);
@@ -95,6 +97,7 @@ describe("cockpit menu nesting", () => {
     const leaves = [
       "launch",
       "meet",
+      "remote",
       ...Object.values(down.groups).flat(),
     ];
     assert.deepEqual(leaves.sort(), [...LEAVES_DOWN].sort());
