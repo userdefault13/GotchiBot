@@ -188,7 +188,7 @@ function oauthCallbackPage(success) {
       * { box-sizing: border-box; }
       body { min-height: 100vh; min-height: 100svh; margin: 0; padding: 28px; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 0%, #e8edff 0, #f7f8fc 58%); }
       main { width: min(100%, 560px); padding: clamp(28px, 7vw, 48px); border: 1px solid #e5e8f1; border-radius: 28px; background: rgba(255,255,255,.94); box-shadow: 0 28px 80px -48px rgba(39,54,105,.38); }
-      .brand { display: flex; align-items: center; gap: 13px; color: #234e9b; font-size: 17px; font-weight: 650; letter-spacing: -.02em; }
+      .brand { display: flex; align-items: center; gap: 13px; color: #234e9b; font-family: "Bitcount Single", ui-monospace, monospace; font-size: 17px; font-weight: 600; letter-spacing: .02em; }
       .brand-mark { display: block; width: 38px; height: 42px; flex: none; }
       .status { display: grid; width: 54px; height: 54px; margin-top: 42px; place-items: center; border-radius: 18px; background: ${success ? "#eaf1ff" : "#fff2e9"}; color: ${success ? "#356ee0" : "#b45332"}; font-size: 29px; font-weight: 600; }
       .eyebrow { margin: 23px 0 0; color: ${success ? "#356ee0" : "#a54b32"}; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
