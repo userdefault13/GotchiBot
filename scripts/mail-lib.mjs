@@ -275,6 +275,12 @@ export function failStage(stderr) {
   return "other";
 }
 
+/** True when the server could not be reached (not a wrong password, not a bad cert). */
+export function isServerDown(text) {
+  const s = String(text || "").toLowerCase();
+  return /socks|proxy|refused|unreachable|timed out|timeout|no route|name or service not known|nodename|getaddrinfo|enotfound|dns|resolve|tailscale|network is down|connection reset/.test(s);
+}
+
 /** `himalaya account check` exits 0 even on failure; read its report. */
 export function parseCheckReport(stdout) {
   const out = {};

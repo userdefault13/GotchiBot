@@ -17,6 +17,7 @@ import {
   ROOT,
   buildHimalayaConfig,
   failStage,
+  isServerDown,
   formatMessageForConfirm,
   loadMailConfig,
   parseCheckReport,
@@ -121,6 +122,46 @@ async function readBody(io) {
     lines.push(l);
   }
   return lines.join("\n");
+}
+
+const SERVER_DOWN_OPTIONS = `The mail server cannot be reached. Pick one (nothing is started or sent for you):
+  1) start the server   (the 2011's Mailu on omarchyimac)
+  2) use another computer
+  3) use Gmail instead
+  q) quit
+`;
+
+function serverDownGuidance(choice, cfg) {
+  const host = cfg.host || "mail.userdefault.dev";
+  if (choice === "1")
+    return `Start Mailu on the 2011 (omarchyimac, 100.110.220.76). Nothing was run.
+No Mailu start command is documented in this repo (no Mailu notes in docs/), so check it first:
+  ssh user_default@100.110.220.76        # Tailscale SSH; or use cockpit option 9 (Remote)
+  docker ps --filter name=mail            # is Mailu up?
+  tailscale status | grep omarchyimac     # is the 2011 online at all?
+If the containers are stopped, start them from the Mailu compose directory on that machine (docker compose up -d); ask Home Infra for its path.
+Then re-run: gotchibot mail check
+`;
+  if (choice === "2")
+    return `Use another computer. Nothing was run.
+Run the client from a desk that can reach 100.110.220.76 on the tailnet (ports 993 and 465; mail host ${host}):
+  gotchibot mail list --as <identity>
+Open a shell on that desk with cockpit option 9 (Remote) or: ssh user_default@<desk>
+The desk needs the GotchiBot checkout, himalaya, and abra for the password. Check it first there: gotchibot mail check --as <identity>
+`;
+  return `Use Gmail instead. Nothing was run.
+This repo has no Gmail path: gotchibot mail talks only to the home Mailu server, and no Gmail connector or himalaya Gmail config is shipped.
+Minimal setup, no secrets stored in the repo: in Gmail turn on 2-step verification and create an app password, add a separate himalaya account (imap.gmail.com:993, smtp.gmail.com:465) outside this repo with the password read from your keychain or abra, then use himalaya directly. Or just use the Gmail web app.
+`;
+}
+
+async function serverDownPrompt(identity, cfg, io) {
+  const interactive = process.env.GOTCHIBOT_MAIL_PROMPT_TTY === "1" || (process.stdin.isTTY && process.stderr.isTTY);
+  io.out(SERVER_DOWN_OPTIONS);
+  if (!interactive) return;
+  const a = (await readLine("choice [1/2/3/q]: ")).trim().toLowerCase();
+  if (["1", "2", "3"].includes(a)) io.out(serverDownGuidance(a, cfg));
+  else io.out("no choice made; server still down\n");
 }
 
 async function confirmAndSend(raw, identity, cfg, io) {
@@ -240,6 +281,8 @@ export async function main(argv = process.argv.slice(2), io = { out: (s) => proc
       if (r.code !== 0 || !Object.keys(rep).length || bad.length) {
         const why = bad.map(([k, v]) => `${k}=${failStage(v.reason)}`).join(" ") || `stage=${failStage(r.stderr)}`;
         io.err(`FAIL ${identity.address} ${why}\n`);
+        const blob = `${bad.map(([, v]) => v.reason).join(" ")} ${r.stderr}`;
+        if (isServerDown(blob) && !/certificate check failed/.test(blob)) await serverDownPrompt(identity, cfg, io);
         return 1;
       }
       io.out(`OK ${identity.address} (imaps ${cfg.host}:${cfg.imapPort} + smtps :${cfg.smtpPort}, pinned cert)\n`);

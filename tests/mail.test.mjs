@@ -314,3 +314,53 @@ exit 9
     assert.match(r.stdout, /printenv/);
   });
 });
+
+describe("mail server down prompt (fake himalaya, nothing started or sent)", () => {
+  const dir2 = mkdtempSync(join(tmpdir(), "mail-down-"));
+  const log2 = join(dir2, "calls.log");
+  const mk = (name, report) => {
+    const f = join(dir2, name);
+    writeFileSync(f, `#!/bin/sh\necho "$*" >> "${log2}"\ncase "$*" in *"account check"*) printf '${report}'; exit 0;; esac\nexit 9\n`);
+    chmodSync(f, 0o755);
+    return f;
+  };
+  const down = mk("down", "Account: x\\n  imap: FAIL (connection refused)\\n  smtp: FAIL (connection timed out)\\n");
+  const badpw = mk("badpw", "Account: x\\n  imap: FAIL (authentication failed: invalid credentials)\\n  smtp: OK\\n");
+  const go = (bin, input, tty) =>
+    spawnSync(process.execPath, [MAIL, "check", "--as", "gotchibot"], {
+      input,
+      encoding: "utf8",
+      env: { ...process.env, GOTCHIBOT_HIMALAYA_BIN: bin, GOTCHIBOT_MAIL_ABRA: "1", GOTCHIBOT_MAIL_PREFLIGHT: "0", GOTCHIBOT_MAIL_PROMPT_TTY: tty ? "1" : "0", MAILU_CLIENT_PASS_GOTCHIBOT_XYZ: "fake-secret" },
+    });
+  it("server down prints the three options and exits non-zero without a TTY", () => {
+    const r = go(down, "", false);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /1\) start the server[\s\S]*2\) use another computer[\s\S]*3\) use Gmail/);
+    assert.ok(!/choice \[/.test(r.stderr));
+    assert.ok(!(r.stdout + r.stderr).includes("fake-secret"));
+  });
+  it("wrong password does not trigger the prompt", () => {
+    const r = go(badpw, "1\n", true);
+    assert.equal(r.status, 1);
+    assert.ok(!/start the server/.test(r.stdout));
+    assert.match(r.stderr, /FAIL .*auth/);
+  });
+  it("each choice prints its guidance and still exits non-zero", () => {
+    const one = go(down, "1\n", true);
+    assert.equal(one.status, 1);
+    assert.match(one.stdout, /100\.110\.220\.76[\s\S]*Nothing was run[\s\S]*No Mailu start command is documented[\s\S]*ssh user_default@100\.110\.220\.76/);
+    const two = go(down, "2\n", true);
+    assert.equal(two.status, 1);
+    assert.match(two.stdout, /another computer[\s\S]*993 and 465[\s\S]*option 9/);
+    const three = go(down, "3\n", true);
+    assert.equal(three.status, 1);
+    assert.match(three.stdout, /no Gmail path/);
+    const q = go(down, "q\n", true);
+    assert.equal(q.status, 1);
+    assert.match(q.stdout, /server still down/);
+  });
+  it("only ever calls account check: nothing started or sent", () => {
+    const calls = readFileSync(log2, "utf8");
+    assert.ok(!/send|docker|ssh/.test(calls));
+  });
+});
