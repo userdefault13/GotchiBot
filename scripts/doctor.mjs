@@ -274,6 +274,12 @@ if (topo.mode === "fleet") {
   warn("topology legacy — remote probe skipped here; legacy callers probe at spawn time");
 }
 
+/* ─── 5b. gliff (optional remote desktop to Omarchy desks) ─────── */
+// Presence only. gliff-probe captures frames, so doctor never runs it.
+if (process.platform === "darwin") ok("gliff: n/a on macOS (the client needs Hyprland)");
+else if (commandExists("gliff")) ok("gliff installed (gotchibot gliff <desk>; run gliff-probe all by hand if a session misbehaves)");
+else warn("gliff not installed (optional; Omarchy desks: omarchy pkg add gliff, see docs/GLIFF.md)");
+
 /* ─── 6. launcher tip ─────────────────────────────────────────── */
 console.log("tip   GotchiBot alias must be bare  ./scripts/gotchibot tmux  — never abra-wrapped (TTY)");
 

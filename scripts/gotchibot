@@ -75,6 +75,7 @@ gotchibot — GotchiBot orchestrator CLI
   gotchibot project-kanban …            sealed project + desk mini task boards
   gotchibot project-tickets …           agent request/claim/submit tickets (PKM owns lifecycle)
   gotchibot project-mailbox …           per-desk local mailboxes (inbox+sent) under project AgentMail
+  gotchibot gliff <desk|user@host> [--headless]   open an Omarchy desk with gliff (Hyprland remote desktop over ssh); --list shows desk names
   gotchibot mail list|read|reply|send|check|sync|identities [--as <identity>]   terminal mail (himalaya + Mailu; send/reply need a typed confirm)
   gotchibot inbox send|list|read|archive|housekeep|digest|unread|tui   internal bot mail (not AgentMail)
   gotchibot graph [--days N] [--json]   agent graph: handoff flows, stalled, rework, off-graph
@@ -679,6 +680,10 @@ cmd_inbox() {
   exec node "$ROOT/scripts/bot-inbox.mjs" "$@"
 }
 
+cmd_gliff() {
+  exec node "$ROOT/scripts/gliff-desk.mjs" "$@"
+}
+
 cmd_mail() {
   exec node "$ROOT/scripts/mail.mjs" "$@"
 }
@@ -859,6 +864,7 @@ case "$cmd" in
   project-kanban|proj-kanban) cmd_project_kanban "$@" ;;
   project-tickets|proj-tickets|tickets) cmd_project_tickets "$@" ;;
   project-mailbox|proj-mailbox|mailbox) cmd_project_mailbox "$@" ;;
+  gliff) cmd_gliff "$@" ;;
   mail) cmd_mail "$@" ;;
   inbox|bot-inbox) cmd_inbox "$@" ;;
   graph) cmd_graph "$@" ;;

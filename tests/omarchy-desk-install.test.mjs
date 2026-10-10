@@ -37,7 +37,7 @@ describe("omarchy desk install", () => {
     try {
       const r = spawnSync("bash", [script], {
         encoding: "utf8",
-        env: { ...process.env, HOME: home },
+        env: { ...process.env, HOME: home, GOTCHIBOT_GLIFF: "0" },
       });
       assert.equal(r.status, 0, `${r.stderr}\n${r.stdout}`);
       assert.match(r.stdout, /Port 4001 was not touched/);

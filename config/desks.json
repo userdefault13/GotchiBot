@@ -1,0 +1,10 @@
+{
+  "user": "user_default",
+  "note": "Desk names for `gotchibot gliff <desk>`. Tailnet addresses only.",
+  "desks": {
+    "imacomarchy": { "host": "100.97.16.64", "aliases": ["imacOmarchy", "2020", "hub"], "role": "hub" },
+    "omarchyimac": { "host": "100.110.220.76", "aliases": ["2011"] },
+    "omarchymini": { "host": "100.82.137.20", "aliases": ["mini"], "lowRam": true },
+    "omarchym1": { "host": "omarchym1.tail4120f5.ts.net", "aliases": ["omarchyM1", "m1"] }
+  }
+}

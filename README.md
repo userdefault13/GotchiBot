@@ -118,4 +118,5 @@ pattern — see the `cartridge-mint` skill for mint/bind workflows.
 | [docs/FRIENDS-BETA-ROLLOUT.md](docs/FRIENDS-BETA-ROLLOUT.md) | Install token beta |
 | [COMMERCIAL.md](COMMERCIAL.md) | NFT entitlements & commercial licensing |
 | [ORCHESTRATOR.md](ORCHESTRATOR.md) | Orchestrator configuration |
+| [docs/GLIFF.md](docs/GLIFF.md) | `gotchibot gliff <desk>`: open an Omarchy desk with gliff; optional installer step |
 | [Gotchibot.md](Gotchibot.md) | GotchiBot abilities and agent skills list |
