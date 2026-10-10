@@ -5,6 +5,11 @@
 no protocol of its own, no secrets and no ports. It only installs the package on eligible desks
 and gives you a desk-name shortcut.
 
+> **Caveats.** The gliff repo (v0.3.0, MIT) is brand new with 0 stars and was only skimmed, not fully
+> audited (read-only review found no install-time downloads; traffic is a TCP connection tunnelled over ssh).
+> `omarchy pkg add gliff` (Omarchy Package Repository) has **not been verified to exist**; if it is missing the
+> installer prints a note and moves on. Both ends need gliff; the client needs Hyprland+GTK, so it will not run on macOS.
+
 ## Open a desk
 
 ```
