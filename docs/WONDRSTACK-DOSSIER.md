@@ -47,6 +47,8 @@ A project's app keys live in its repo-named abra namespace (`gotchibot` → `Got
 Values are read inside the script and sent to WondrStack's `POST /api/agent/setup/<kind>` with the project's sign-in; they are never printed or shown to a model. `launch` sends the Vercel token this way when it is in abra, and falls back to WondrStack's secure page when it is not (or until WondrStack ships the endpoint).
 
 
-## Temporary account
+## Next connection path: device-code login
 
-Throwaway address: `gotchibot-temp@gotchibot.xyz` (no Mailu mailbox needed; the old flow sends no code). Password is in abra only, project gotchibot, `WONDRSTACK_TEMP_PASSWORD`. Until the verified-signup fix deploys, browser sign-up is the only route, because `headless-signup.mjs` expects the new verify step. After the fix deploys it counts as legacy verified and does NOT expire. Cleanup means deleting its record from the `website_signups` collection and revoking its OAuth tokens.
+The temporary account is dropped and `gotchibot-temp@gotchibot.xyz` must not be created (the old signup goes away once WondrStack PR #4, 342657c, deploys). The next connection path is the device-code login (RFC 8628): `gotchibot wondrstack link` calls `/oauth/device_authorization`, polls `/oauth/token`, and the owner approves in a browser by matching the short code. First grant: read tools plus `create_business`. Tokens go to abra as `WONDRSTACK_<PROJECT>`. Real client id, base URL and paths are TODO until WondrStack confirms (env overrides `WONDRSTACK_DEVICE_*`).
+
+Note: the abra secret `WONDRSTACK_TEMP_PASSWORD` is unused and can be deleted by Julius. It has not been deleted.

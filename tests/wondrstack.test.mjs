@@ -241,3 +241,97 @@ it("workspaceMismatch: a project's sign-in must be its own workspace", () => {
   assert.match(wrong, /wondrstack login gotchibot/);
   assert.equal(workspaceMismatch("gotchibot", { workspace: { slug: "aarcadeghst" } }, "aarcadeghst"), null);
 });
+
+describe("wondrstack device link (fake server)", async () => {
+  const { deviceLink, deviceConfig, DEVICE_GRANT } = await import("../scripts/wondrstack.mjs");
+  const SECRET_AT = "AT-secret-123";
+  const SECRET_RT = "RT-secret-456";
+  const DEVICE_CODE = "DC-secret-789";
+
+  function fake(script) {
+    const polls = [];
+    const fetchFn = async (url, init) => {
+      const body = Object.fromEntries(new URLSearchParams(init.body));
+      const json = (status, o) => ({ status, ok: status < 400, json: async () => o });
+      if (String(url).endsWith("/oauth/device_authorization")) {
+        assert.equal(body.client_id, "cid");
+        assert.match(body.client_name, /GotchiBot/);
+        return json(200, { device_code: DEVICE_CODE, user_code: "ABCD-1234", verification_uri: "https://wondrstack.xyz/device", expires_in: 600, interval: 5 });
+      }
+      assert.equal(body.grant_type, DEVICE_GRANT);
+      assert.equal(body.device_code, DEVICE_CODE);
+      polls.push(1);
+      const step = script[Math.min(polls.length - 1, script.length - 1)];
+      return step === "ok" ? json(200, { access_token: SECRET_AT, refresh_token: SECRET_RT, expires_in: 3600 }) : json(400, { error: step });
+    };
+    return { fetchFn, polls };
+  }
+  function harness(script, extra = {}) {
+    const f = fake(script);
+    const out = [];
+    const sleeps = [];
+    const saved = {};
+    let t = 0;
+    const opts = {
+      config: deviceConfig({ WONDRSTACK_DEVICE_CLIENT_ID: "cid" }, "https://wondrstack.xyz/mcp"),
+      store: { get: (k) => saved[k] || null, set: (k, v) => { saved[k] = v; } },
+      log: (m) => out.push(String(m)),
+      sleep: async (ms) => { sleeps.push(ms); t += ms; },
+      now: () => t,
+      fetchFn: f.fetchFn,
+      ...extra,
+    };
+    return { opts, out, sleeps, saved, polls: f.polls };
+  }
+  const noLeak = (out, err) => {
+    const all = out.join("\n") + String(err?.message || "");
+    for (const s of [SECRET_AT, SECRET_RT, DEVICE_CODE]) assert.ok(!all.includes(s), "token leaked");
+  };
+
+  it("needs a confirmed client id", () => {
+    assert.throws(() => deviceConfig({}, "https://wondrstack.xyz/mcp"), /TODO/);
+  });
+
+  it("pending then success: stores tokens, prints code and link only", async () => {
+    const h = harness(["authorization_pending", "authorization_pending", "ok"]);
+    await deviceLink("gotchibot", h.opts);
+    assert.equal(h.polls.length, 3);
+    const joined = h.out.join("\n");
+    assert.match(joined, /ABCD-1234/);
+    assert.match(joined, /wondrstack\.xyz\/device/);
+    assert.match(joined, /matches/);
+    const creds = JSON.parse(h.saved[credKey("gotchibot")]);
+    assert.equal(creds.access_token, SECRET_AT);
+    assert.equal(creds.refresh_token, SECRET_RT);
+    noLeak(h.out);
+  });
+
+  it("slow_down backs off the interval", async () => {
+    const h = harness(["slow_down", "authorization_pending", "ok"]);
+    await deviceLink("gotchibot", h.opts);
+    assert.deepEqual(h.sleeps, [5000, 10000, 10000]);
+    noLeak(h.out);
+  });
+
+  it("access_denied stops and stores nothing", async () => {
+    const h = harness(["authorization_pending", "access_denied"]);
+    await assert.rejects(deviceLink("gotchibot", h.opts), (e) => { noLeak(h.out, e); return /denied/.test(e.message); });
+    assert.deepEqual(h.saved, {});
+    assert.equal(h.polls.length, 2);
+  });
+
+  it("expired_token from the server stops", async () => {
+    const h = harness(["expired_token"]);
+    await assert.rejects(deviceLink("gotchibot", h.opts), /expired/);
+    assert.deepEqual(h.saved, {});
+    assert.equal(h.polls.length, 1);
+  });
+
+  it("local deadline stops polling without looping on", async () => {
+    const h = harness(["authorization_pending"]);
+    await assert.rejects(deviceLink("gotchibot", h.opts), /expired/);
+    assert.ok(h.polls.length <= 121);
+    assert.deepEqual(h.saved, {});
+    noLeak(h.out);
+  });
+});

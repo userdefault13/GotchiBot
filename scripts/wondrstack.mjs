@@ -7,6 +7,7 @@
  * Each project has its own OAuth sign-in, kept in abra as WONDRSTACK_<PROJECT>
  * (client id + tokens, never printed).
  *
+ *   gotchibot wondrstack link   [--project gotchibot]   device-code sign-in (owner approves in a browser by matching a short code)
  *   gotchibot wondrstack login  <project>              browser sign-in for that project's account
  *   gotchibot wondrstack status <project>              get_status
  *   gotchibot wondrstack call   <project> <tool> [json]  any WondrStack MCP tool
@@ -297,6 +298,88 @@ export async function login(project, { endpoint = ENDPOINT, store = abraStore, o
   });
   saveCreds(project, tokenSet(t, { client_id: reg.client_id, token_endpoint: meta.token_endpoint, resource: meta.resource }), store);
   return { ok: true };
+}
+
+// ---------- device-code link (RFC 8628) ----------
+//
+// `gotchibot wondrstack link`: the owner approves in a browser by matching a short
+// code. No loopback port, no password, no mail. Tokens go straight into abra.
+//
+// TODO(WondrStack CoS): confirm every value below. Nothing here is guessed to work:
+//   client id  - no default; set WONDRSTACK_DEVICE_CLIENT_ID (link refuses to run without it)
+//   base URL   - WONDRSTACK_DEVICE_BASE_URL, else the origin of the MCP endpoint (TODO confirm)
+//   paths      - WONDRSTACK_DEVICE_AUTH_PATH / WONDRSTACK_DEVICE_TOKEN_PATH, defaults are the
+//                documented /oauth/device_authorization and /oauth/token (TODO confirm)
+//   scope      - WONDRSTACK_DEVICE_SCOPE, optional (server decides the first grant)
+
+export const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+
+export function deviceConfig(env = process.env, endpoint = ENDPOINT) {
+  const clientId = String(env.WONDRSTACK_DEVICE_CLIENT_ID || "").trim();
+  if (!clientId) throw new Error("device link client id is TODO: WondrStack has not confirmed it yet. Set WONDRSTACK_DEVICE_CLIENT_ID once it does.");
+  const base = String(env.WONDRSTACK_DEVICE_BASE_URL || new URL(endpoint).origin).replace(/\/$/, "");
+  return {
+    clientId,
+    base,
+    authUrl: base + (env.WONDRSTACK_DEVICE_AUTH_PATH || "/oauth/device_authorization"),
+    tokenUrl: base + (env.WONDRSTACK_DEVICE_TOKEN_PATH || "/oauth/token"),
+    scope: env.WONDRSTACK_DEVICE_SCOPE || "",
+    resource: endpoint.replace(/\/$/, ""),
+  };
+}
+
+async function postFormRaw(url, fields, fetchFn = fetch) {
+  const r = await fetchFn(url, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+    body: new URLSearchParams(fields).toString(),
+    signal: AbortSignal.timeout(20000),
+  });
+  return { status: r.status, ok: r.ok, body: await r.json().catch(() => ({})) };
+}
+
+/**
+ * Device-code sign-in for one project. Prints the link and short code (never a token),
+ * polls at the server's interval, stores tokens in the store (abra). Resolves { ok: true }.
+ */
+export async function deviceLink(project, { config, store = abraStore, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, fetchFn = fetch, agentName = `GotchiBot (${project})`, maxMs = 600_000 } = {}) {
+  credKey(project);
+  const cfg = config || deviceConfig();
+  const start = await postFormRaw(cfg.authUrl, { client_id: cfg.clientId, client_name: agentName, ...(cfg.scope ? { scope: cfg.scope } : {}), resource: cfg.resource }, fetchFn);
+  const d = start.body;
+  if (!start.ok || !d.device_code || !d.user_code || !(d.verification_uri_complete || d.verification_uri)) {
+    throw new Error(`device link: ${d.error_description || d.error || `HTTP ${start.status}`}`);
+  }
+  const link = d.verification_uri_complete || d.verification_uri;
+  log(`Approve GotchiBot for project ${project} in your browser:\n  ${link}`);
+  log(`Confirm this code matches the one on the approval page: ${d.user_code}`);
+  log("If the codes differ, do NOT approve.");
+
+  let interval = Math.max(1, Number(d.interval) || 5) * 1000;
+  const deadline = now() + Math.min(maxMs, (Number(d.expires_in) || 600) * 1000);
+  for (;;) {
+    if (now() >= deadline) throw new Error("device link expired before approval: run link again");
+    await sleep(interval);
+    const r = await postFormRaw(cfg.tokenUrl, { grant_type: DEVICE_GRANT, device_code: d.device_code, client_id: cfg.clientId }, fetchFn);
+    const t = r.body;
+    if (r.ok && t.access_token) {
+      saveCreds(project, tokenSet(t, { client_id: cfg.clientId, token_endpoint: cfg.tokenUrl, resource: cfg.resource, via: "device" }), store);
+      return { ok: true };
+    }
+    switch (t.error) {
+      case "authorization_pending":
+        break;
+      case "slow_down":
+        interval += 5000;
+        break;
+      case "access_denied":
+        throw new Error("device link denied: the owner refused the approval");
+      case "expired_token":
+        throw new Error("device link expired before approval: run link again");
+      default:
+        throw new Error(`device link: ${t.error_description || t.error || `HTTP ${r.status}`}`);
+    }
+  }
 }
 
 /** A live access token for the project, refreshing (and storing the rotated token) when due. */
@@ -837,7 +920,8 @@ function flag(argv, name) {
 }
 
 function usage() {
-  console.log(`gotchibot wondrstack login  <project>
+  console.log(`gotchibot wondrstack link   [--project gotchibot]   device-code sign-in: approve in a browser by matching the short code
+gotchibot wondrstack login  <project>
 gotchibot wondrstack status <project>
 gotchibot wondrstack call   <project> <tool> [json-args]
 gotchibot wondrstack launch <project> [--name N] [--type T] [--template blank] [--hosting vercel]
@@ -856,6 +940,13 @@ VERCEL_TOKEN, MONGODB_URI, STRIPE_SECRET_KEY + STRIPE_PUBLISHABLE_KEY, GOOGLE_CL
 async function main() {
   const [cmd, project, ...rest] = process.argv.slice(2);
   if (!cmd || cmd === "help" || cmd === "--help") return usage();
+  if (cmd === "link") {
+    const argv = [project, ...rest].filter((x) => x != null);
+    const slug = flag(argv, "project") || (argv[0] && !argv[0].startsWith("--") ? argv[0] : "gotchibot");
+    await deviceLink(slug);
+    console.log(`linked ${slug} (tokens stored in abra; none shown). Next: gotchibot wondrstack status ${slug}`);
+    return;
+  }
   if (!project) throw new Error(cmd === "schedule" ? "say install, uninstall or status" : "project slug required");
   if (cmd === "watch") {
     if (project === "--all") return watchAll();
@@ -883,6 +974,7 @@ async function main() {
   }
   if (cmd === "status") {
     const s = await callTool(project, "get_status", {});
+    console.log(`linked: yes (${project})`);
     console.log(JSON.stringify(s, null, 2));
     console.log(`next: ${nextStep(s).step} — ${nextStep(s).why}`);
     const wrong = workspaceMismatch(project, s, flag(rest, "workspace") || project);

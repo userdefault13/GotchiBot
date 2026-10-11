@@ -1,11 +1,10 @@
 ---
 name: wondrstack-signup
 description: >-
-  Sign a project up to WondrStack headlessly (email verification code, no
-  browser) with wondrstack's headless-signup script, then compose the business
-  with the WondrStack MCP tools. LIVE USE IS BLOCKED for now; dry-run only.
-  Load when a project has no WondrStack account yet and UserDefault asks to
-  create one.
+  Connect a project to WondrStack with the device-code link
+  (`gotchibot wondrstack link`): the owner approves in a browser by matching a
+  short code, then compose the business with the WondrStack MCP tools. Load when
+  a project has no WondrStack sign-in yet.
 license: MIT
 compatibility: opencode
 metadata:
@@ -15,85 +14,51 @@ metadata:
 
 # wondrstack-signup
 
-Wraps `headless-signup.mjs` in the wondrstack repo. The script is at
-`~/dev/wondrstack/apps/website/scripts/headless-signup.mjs`; run it from
-`apps/website` (commit `e05b177` on `fix/verified-signup`, not pushed). Use it only when
-`./scripts/gotchibot wondrstack status <project>` shows the project has no
-sign-in. If a sign-in already exists, use the `wondrstack` skill instead.
+Primary path: the device link. No password, no mailbox code, no token file.
+Use it only when `./scripts/gotchibot wondrstack status <project>` shows the
+project is not linked. If a sign-in already exists, use the `wondrstack` skill.
 
 ## Hard rules
 
-1. **Ask first.** Never sign up or launch without UserDefault's yes in this
-   conversation. Name the project, the email and the base URL when you ask.
-2. **Mail first.** Run `gotchibot mail check` before anything. If it fails, show
-   its server-down prompt (start the server / use another computer / use Gmail)
-   and stop. Do not start the server yourself.
-3. **Secrets go through abra only.** The password is read from the env var
-   `WONDRSTACK_PASSWORD`, loaded from abra for this one command. The token file
-   is written at mode 600, moved into abra as `WONDRSTACK_<PROJECT>`, and then
-   deleted from disk. Never echo, log, paste or print the password, the
-   verification code or the tokens. Report only `linked` or `failed: <reason>`.
-4. **LIVE USE IS BLOCKED** until the verified-signup branch is deployed and the
-   SMTP relay exists (SMTP work is paused by Julius). Until then dry-run against
-   a local dev copy of WondrStack only (a loopback `--base`), never
-   production, and say it was a dry run.
-5. **After linking**, compose the business with the WondrStack MCP tools
-   (`list_templates`, `recommend_setup`, `create_business`, `deploy_app`, and
-   so on), proposing each step to UserDefault first. `launch` in the
-   `wondrstack` skill covers the repo and hosting pipeline.
-
-## Identity
-
-Sign up with `admin@gotchibot.xyz` (not `.com`) for the gotchibot project. The
-verification mail arrives in the `gotchibot.xyz` mailbox with the subject
-`Your WondrStack verification code` and a body like
-`Your WondrStack verification code is 123456. It expires in 10 minutes...`.
-The script extracts the code with `is (\d{6})\.`.
+1. **Ask the owner first.** Never start `link` without a yes in this
+   conversation. Name the project and say they will approve in a browser.
+2. **Show the code, not secrets.** Print the verification link and the short
+   user code, and tell the owner to confirm the code matches the one on the
+   approval page (if not, do not approve). Never print tokens or the device code.
+3. **Tokens live in abra only** (`WONDRSTACK_<PROJECT>`), written by the command.
+   No token file. Never echo, log or paste them.
+4. **No retry loops.** The link expires in about 10 minutes. On denied or
+   expired, report it and ask before running `link` again.
+5. **Not live until confirmed.** The client id, base URL and endpoint paths are
+   TODO until WondrStack confirms them. If `link` says the client id is TODO,
+   stop and report; do not guess values. Do not run against the live site until then.
+6. **After linking**, compose the business with the WondrStack MCP tools
+   (`list_templates`, `recommend_setup`, `create_business`, and so on),
+   proposing each step first. The first grant is read tools plus `create_business`;
+   other tools may be refused. `launch` in the `wondrstack` skill covers repo and hosting.
 
 ## Command
 
 ```sh
-# from ~/dev/wondrstack/apps/website
-node scripts/headless-signup.mjs --base <url> --email admin@gotchibot.xyz \
-  --password-env WONDRSTACK_PASSWORD \
-  --code-cmd 'gotchibot mail read --as gotchibot.xyz' \
-  [--code-env WONDRSTACK_CODE] [--redirect <loopback url>] \
-  --out <tokens.json | ->
+./scripts/gotchibot wondrstack link [--project gotchibot]
+./scripts/gotchibot wondrstack status <project>   # prints "linked: yes" when it works
 ```
 
-It prints one stderr line: `linked (...)` or `failed: <reason>`. Tokens go to
-`--out` at mode 600. `--code-cmd` is any shell command that prints the mail
-body; `--code-env` reads the code from an env var instead.
+Config (env overrides): `WONDRSTACK_DEVICE_CLIENT_ID` (required),
+`WONDRSTACK_DEVICE_BASE_URL`, `WONDRSTACK_DEVICE_AUTH_PATH`
+(`/oauth/device_authorization`), `WONDRSTACK_DEVICE_TOKEN_PATH` (`/oauth/token`),
+`WONDRSTACK_DEVICE_SCOPE`.
 
-## Steps (once unblocked, and after the yes)
+## Steps (after the owner's yes)
 
-1. `gotchibot mail check`, and stop on failure (rule 2).
-2. Load the password from abra into `WONDRSTACK_PASSWORD` for this process only.
-3. Run the command with `--out` set to a temp file outside the repo.
-4. On `linked`: move the token file into abra, delete it from disk, then run
-   `./scripts/gotchibot wondrstack status <project>` and quote it.
-5. On `failed: <reason>`: quote the reason, delete any token file, and stop.
-   Never retry in a loop; each try sends a mail.
-6. Compose the business with the MCP tools (rule 5).
+1. Run `link`; relay the link and short code to the owner verbatim.
+2. Wait. The command polls at the server's interval and stops by itself.
+3. On `linked`: run `status <project>` and quote it.
+4. On failure: quote the reason and stop (rule 4).
+5. Compose the business (rule 6).
 
-## Dry run (local only, the only allowed mode for now)
+## Old headless path (legacy, not the main flow)
 
-With no SMTP the dev server logs the verification code, so read it from the
-Nuxt log instead of `gotchibot mail read`:
-
-```sh
---code-cmd "grep -o 'is [0-9]\{6\}\.' <nuxt.log> | tail -1"
-```
-
-Needs a throwaway local mongo and `nuxt dev` on `127.0.0.1`, both started
-detached from the shell (so they outlive the command). Use a loopback `--base`
-and a throwaway email, never `admin@gotchibot.xyz`. No mail is sent.
-
-Verified results (local only):
-
-- New email: `linked (signed up); get_status: ok`.
-- Rerun with the same email: `linked (account already existed, logged in)`.
-- Wrong password: `failed: verification failed and login refused`, and no
-  token file is written.
-
-- Temp account: gotchibot-temp@gotchibot.xyz (password in abra as WONDRSTACK_TEMP_PASSWORD). Until the verified-signup fix deploys, browser sign-up is the only route, because headless-signup.mjs expects the new verify step. After the fix deploys it counts as legacy verified and does NOT expire. Cleanup means deleting its record from the `website_signups` collection and revoking its OAuth tokens. Nothing important may sit on it (the old live signup has an account-takeover hole).
+The old email-code script (`headless-signup.mjs`) is superseded; the temporary
+account `gotchibot-temp@gotchibot.xyz` must not be created. The abra secret
+`WONDRSTACK_TEMP_PASSWORD` is unused and can be deleted by Julius.
