@@ -117,7 +117,7 @@ describe("desk tools", () => {
 });
 
 describe("stdio catalog", () => {
-  it("lists the 4 old tools plus 5 read-only desk tools", async () => {
+  it("lists the 4 old tools, 5 read-only desk tools and the 2 WondrStack link tools", async () => {
     const child = spawn(process.execPath, ["mcp-servers/hub-status/stdio.mjs"], { cwd: ROOT, stdio: ["pipe", "pipe", "inherit"] });
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })}\n`);
     const [chunk] = await once(child.stdout, "data");
@@ -126,6 +126,7 @@ describe("stdio catalog", () => {
     assert.deepEqual(names, [
       "hub_status", "openclaw_gateway_check_would_run", "gotchibot_chat", "gotchibot_handoff",
       "desk_status", "desk_logs", "desk_git", "desk_panes", "desk_mail_check",
+      "wondrstack_link_start", "wondrstack_link_wait",
     ]);
   });
 });

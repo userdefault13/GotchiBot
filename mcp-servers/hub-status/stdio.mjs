@@ -12,12 +12,16 @@
  *
  * desk_* tools are read-only local desk monitors (see desk-lib.mjs): no writes,
  * no restarts, no sends, all output redacted.
+ *
+ * wondrstack_link_start / wondrstack_link_wait are the only tools that are not read-only
+ * (see link-lib.mjs): explicit start/poll, start needs confirm_full_scope, no token in output.
  */
 import { readHubSnapshot, gatewayCheckWouldRun } from "./hub-status-lib.mjs";
 import { redactSecrets, talkToHub } from "./chat-lib.mjs";
+import { wondrstackLink } from "./link-lib.mjs";
 import { deskStatus, deskLogs, deskGit, deskPanes, deskMailCheck, deskRedact } from "./desk-lib.mjs";
 
-const SERVER = { name: "gotchibot-hub-status", version: "0.3.0" };
+const SERVER = { name: "gotchibot-hub-status", version: "0.4.0" };
 
 const TOOLS = [
   {
@@ -103,6 +107,33 @@ const TOOLS = [
       "Read-only. Runs `gotchibot mail check --as gotchibot.xyz` non-interactively and returns up/down/timeout, exit code, and the OK/FAIL line. No mail is read, moved, or sent; the server-down prompt starts nothing.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
+  {
+    name: "wondrstack_link_start",
+    description:
+      "NOT read-only. Step A of the WondrStack device link. ASK THE OWNER FIRST: approval grants the FULL `wondrstack` scope (every tool incl. deploy, delete, spend; no read-only scope). Requires confirm_full_scope true. Returns verification_uri, verification_uri_complete, user_code, expires_in to post in chat; tell the owner to confirm the code on the page matches. Never returns the device code or tokens. Base URL from WONDRSTACK_DEVICE_BASE_URL; project defaults to gotchibot-local for a loopback base, else gotchibot.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        confirm_full_scope: { type: "boolean", description: "Must be true, and only after the owner agreed to the full scope." },
+        project: { type: "string", description: "Abra project slug for the tokens. Default gotchibot-local (local base) or gotchibot." },
+      },
+      required: ["confirm_full_scope"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "wondrstack_link_wait",
+    description:
+      "NOT read-only. Step B: poll the pending link started by wondrstack_link_start for up to timeout_seconds (default 50, max 55). Returns status linked (tokens stored in abra, never shown), pending (call again), or failed with kind denied | expired | error | no_pending. Does not approve anything; the owner approves in the browser.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        timeout_seconds: { type: "number", description: "1-55. Default 50." },
+        project: { type: "string", description: "Same project as start." },
+      },
+      additionalProperties: false,
+    },
+  },
 ];
 
 function send(msg) {
@@ -121,6 +152,7 @@ async function callTool(name, args = {}) {
   if (name === "desk_git") return toolText(await deskGit());
   if (name === "desk_panes") return toolText(await deskPanes());
   if (name === "desk_mail_check") return toolText(await deskMailCheck());
+  if (name === "wondrstack_link_start" || name === "wondrstack_link_wait") return toolText(await wondrstackLink(name, args));
   if (name === "gotchibot_chat" || name === "gotchibot_handoff") {
     const input = args && typeof args === "object" ? args : {};
     const data = await talkToHub({

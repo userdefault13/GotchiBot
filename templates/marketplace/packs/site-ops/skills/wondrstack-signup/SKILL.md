@@ -43,6 +43,23 @@ project is not linked. If a sign-in already exists, use the `wondrstack` skill.
 
 The owner can connect from the cockpit instead (Ctrl+Space, Shift+K, Desk panes…, WondrStack) or `gotchibot wondrstack pane`. It shows link state, the warning, the code and a countdown, and has Disconnect. Disconnect only removes stored tokens from abra; WondrStack revocation is not supported by this client.
 
+## For an agent (no terminal)
+
+Two steps, never automatic. First ask the owner and explain the full-scope warning.
+Only after their yes:
+
+1. Start: the `wondrstack_link_start` tool with `confirm_full_scope: true`
+   (CLI: `gotchibot wondrstack link --json --confirm-full-scope`). Post the
+   `verification_uri` (and `verification_uri_complete`) and the `user_code` in
+   chat, and say the owner must confirm the code on the page matches.
+2. Wait: the `wondrstack_link_wait` tool (CLI: `link --wait`). It returns `linked`,
+   `pending` (call again) or `failed` with kind denied, expired or error.
+
+Never approve for the owner. The pending device code is kept in a 0600 file under
+`sessions/wondrstack/` and never printed. For a local WondrStack set
+`WONDRSTACK_DEVICE_BASE_URL` (the project then defaults to `gotchibot-local`, so
+tokens never mix with production's `WONDRSTACK_GOTCHIBOT`).
+
 ## Command
 
 ```sh

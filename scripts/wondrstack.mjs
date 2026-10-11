@@ -29,7 +29,7 @@ import { createServer } from "node:http";
 import { isMainModule } from "./is-main.mjs";
 import { connectWondrStack } from "./pstack-wondrstack.mjs";
 import { benchHeroes, loadRepo } from "./project-context.mjs";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -323,7 +323,8 @@ export function deviceConfig(env = process.env, endpoint = ENDPOINT) {
     authUrl: base + (env.WONDRSTACK_DEVICE_AUTH_PATH || "/oauth/device_authorization"),
     tokenUrl: base + (env.WONDRSTACK_DEVICE_TOKEN_PATH || "/oauth/token"),
     scope: env.WONDRSTACK_DEVICE_SCOPE || "wondrstack",
-    resource: endpoint.replace(/\/$/, ""),
+    // The token audience follows the base when only the base is overridden (a local WondrStack is its own /mcp).
+    resource: (env.WONDRSTACK_DEVICE_BASE_URL && !env.WONDRSTACK_MCP_URL ? `${base}/mcp` : endpoint).replace(/\/$/, ""),
   };
 }
 
@@ -391,6 +392,27 @@ function kinded(kind, message) {
   return Object.assign(new Error(message), { kind });
 }
 
+/** POST /oauth/device_authorization (429 slow_down backs off, up to 3 retries). Returns the response body. */
+async function requestDeviceCode(cfg, { fetchFn, sleep, agentName }) {
+  let start;
+  let startWait = 5000;
+  for (let tries = 0; ; tries++) {
+    start = await postFormRaw(cfg.authUrl, { client_id: cfg.clientId, client_name: agentName, ...(cfg.scope ? { scope: cfg.scope } : {}), resource: cfg.resource }, fetchFn);
+    if (start.status === 429 && start.body?.error === "slow_down" && tries < 3) {
+      await sleep(startWait);
+      startWait += 5000;
+      continue;
+    }
+    break;
+  }
+  const d = start.body;
+  if (!start.ok || !d.device_code || !d.user_code || !(d.verification_uri_complete || d.verification_uri)) {
+    if (d.error === "invalid_client") throw new Error("device link: WondrStack does not know this client (invalid_client). Delete the cached client id under sessions/pstack/<project>/ and run link again");
+    throw new Error(`device link: ${d.error_description || d.error || `HTTP ${start.status}`}`);
+  }
+  return d;
+}
+
 /**
  * Library entry for the CLI and the terminal UI. Same as deviceLink, plus:
  *   onEvent({type: "started", link, completeLink, userCode, expiresAt, intervalMs})
@@ -415,22 +437,7 @@ async function deviceLinkInner(project, { config, cache, store = abraStore, log 
   const base = config || deviceConfig();
   const clientId = await resolveClientId(project, base, { cache, fetchFn, agentName, log });
   const cfg = { ...base, clientId };
-  let start;
-  let startWait = 5000;
-  for (let tries = 0; ; tries++) {
-    start = await postFormRaw(cfg.authUrl, { client_id: cfg.clientId, client_name: agentName, ...(cfg.scope ? { scope: cfg.scope } : {}), resource: cfg.resource }, fetchFn);
-    if (start.status === 429 && start.body?.error === "slow_down" && tries < 3) {
-      await sleep(startWait);
-      startWait += 5000;
-      continue;
-    }
-    break;
-  }
-  const d = start.body;
-  if (!start.ok || !d.device_code || !d.user_code || !(d.verification_uri_complete || d.verification_uri)) {
-    if (d.error === "invalid_client") throw new Error("device link: WondrStack does not know this client (invalid_client). Delete the cached client id under sessions/pstack/<project>/ and run link again");
-    throw new Error(`device link: ${d.error_description || d.error || `HTTP ${start.status}`}`);
-  }
+  const d = await requestDeviceCode(cfg, { fetchFn, sleep, agentName });
   log(`WARNING: ${DEVICE_WARNING} Only approve if you intend that.`);
   log(`Open ${d.verification_uri || d.verification_uri_complete} and approve GotchiBot for project ${project}.`);
   if (d.verification_uri && d.verification_uri_complete) log(`Direct link: ${d.verification_uri_complete}`);
@@ -492,11 +499,164 @@ export function disconnect(project, { store = abraStore } = {}) {
   return { removed: Boolean(removed), revoked: false };
 }
 
+// ---------- non-interactive start / wait (agents, no TTY) ----------
+//
+// Two calls that work across processes. deviceStart registers (if needed), asks for a code and
+// saves the pending device_code in a 0600 file under sessions/wondrstack/ (never printed).
+// deviceWait polls that pending request and, on approval, stores tokens in abra only.
+// Both return plain objects with no device_code and no token.
+
+export function defaultLinkProject(env = process.env) {
+  const base = String(env.WONDRSTACK_DEVICE_BASE_URL || "");
+  try {
+    return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(base).hostname) ? "gotchibot-local" : "gotchibot";
+  } catch {
+    return "gotchibot";
+  }
+}
+
+function pendingFile(project, stateDir = join(ROOT, "sessions", "wondrstack")) {
+  credKey(project);
+  return join(stateDir, `pending-${project}.json`);
+}
+
+function readPending(project, stateDir) {
+  try {
+    return JSON.parse(readFileSync(pendingFile(project, stateDir), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writePending(project, state, stateDir = join(ROOT, "sessions", "wondrstack")) {
+  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+  const f = pendingFile(project, stateDir);
+  writeFileSync(f, `${JSON.stringify(state)}\n`, { mode: 0o600 });
+  chmodSync(f, 0o600);
+}
+
+function clearPending(project, stateDir) {
+  try {
+    unlinkSync(pendingFile(project, stateDir));
+  } catch {
+    /* already gone */
+  }
+}
+
+/** Step A. Needs confirmFullScope: true (the agent must have asked the owner first). */
+export async function deviceStart(project, { confirmFullScope = false, config, cache, fetchFn = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, agentName = `GotchiBot (${project})`, stateDir, log = () => {} } = {}) {
+  credKey(project);
+  if (confirmFullScope !== true) {
+    return {
+      ok: false,
+      status: "failed",
+      kind: "confirm_required",
+      warning: DEVICE_WARNING,
+      message: "Ask the owner first. Explain the warning, then call start again with confirm_full_scope true (CLI: --confirm-full-scope). Nothing was started.",
+    };
+  }
+  try {
+    const base = config || deviceConfig();
+    const clientId = await resolveClientId(project, base, { cache, fetchFn, agentName, log });
+    const cfg = { ...base, clientId };
+    const d = await requestDeviceCode(cfg, { fetchFn, sleep, agentName });
+    const expiresIn = Number(d.expires_in) || 600;
+    writePending(project, {
+      project,
+      device_code: d.device_code,
+      client_id: clientId,
+      token_url: cfg.tokenUrl,
+      resource: cfg.resource,
+      base: cfg.base,
+      interval_ms: Math.max(1, Number(d.interval) || 5) * 1000,
+      last_poll_at: 0,
+      expires_at: now() + expiresIn * 1000,
+    }, stateDir);
+    return {
+      ok: true,
+      status: "pending",
+      project,
+      verification_uri: d.verification_uri || d.verification_uri_complete,
+      verification_uri_complete: d.verification_uri_complete || null,
+      user_code: d.user_code,
+      expires_in: expiresIn,
+      interval: Math.max(1, Number(d.interval) || 5),
+      base: cfg.base,
+      warning: DEVICE_WARNING,
+      next: "Post the link and user_code in chat. Tell the owner to confirm the code on the page matches, and not to approve if it differs. Then call wait.",
+    };
+  } catch (e) {
+    return { ok: false, status: "failed", kind: e.kind || (/client registration failed/.test(e.message) ? "registration" : "error"), message: String(e.message || e) };
+  }
+}
+
+/**
+ * Step B. Polls the saved pending request for up to timeoutMs (default 50 s, so one tool call stays short).
+ * Returns { status: "linked" } | { status: "pending", ... } (call wait again) | { status: "failed", kind }.
+ */
+export async function deviceWait(project, { timeoutMs = 50_000, store = abraStore, fetchFn = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, stateDir } = {}) {
+  credKey(project);
+  const st = readPending(project, stateDir);
+  if (!st) return { ok: false, status: "failed", kind: "no_pending", message: "No pending link for this project. Call start first." };
+  const until = now() + timeoutMs;
+  let interval = st.interval_ms;
+  for (;;) {
+    if (now() >= st.expires_at) {
+      clearPending(project, stateDir);
+      return { ok: false, status: "failed", kind: "expired", message: "The code expired before it was approved. Call start again if the owner still wants to connect." };
+    }
+    const wait = Math.max(0, (st.last_poll_at || 0) + interval - now());
+    if (now() + wait > until) {
+      return { ok: true, status: "pending", project, expires_in: Math.max(0, Math.round((st.expires_at - now()) / 1000)), next: "Not approved yet. Call wait again." };
+    }
+    if (wait) await sleep(wait);
+    let r;
+    try {
+      r = await postFormRaw(st.token_url, { grant_type: DEVICE_GRANT, device_code: st.device_code, client_id: st.client_id }, fetchFn);
+    } catch (e) {
+      return { ok: false, status: "failed", kind: "error", retryable: true, message: `could not reach WondrStack (${e?.cause?.code || e?.name || "network error"}); call wait again` };
+    }
+    st.last_poll_at = now();
+    const t = r.body;
+    if (r.ok && t.access_token) {
+      try {
+        saveCreds(project, tokenSet(t, { client_id: st.client_id, token_endpoint: st.token_url, resource: st.resource, via: "device" }), store);
+      } catch (e) {
+        return { ok: false, status: "failed", kind: "error", message: `approved, but storing the sign-in in abra failed: ${String(e.message || e).replace(/\s+/g, " ").slice(0, 160)}` };
+      }
+      clearPending(project, stateDir);
+      return { ok: true, status: "linked", project, message: "Linked. Tokens are stored in abra and not shown." };
+    }
+    if (t.error === "authorization_pending") {
+      writePending(project, { ...st, interval_ms: interval }, stateDir);
+      continue;
+    }
+    if (t.error === "slow_down") {
+      interval += 5000;
+      writePending(project, { ...st, interval_ms: interval }, stateDir);
+      continue;
+    }
+    clearPending(project, stateDir);
+    if (t.error === "access_denied") return { ok: false, status: "failed", kind: "denied", message: "The owner refused the approval. Nothing was connected." };
+    if (t.error === "expired_token") return { ok: false, status: "failed", kind: "expired", message: "The code expired before it was approved. Call start again if the owner still wants to connect." };
+    return { ok: false, status: "failed", kind: "error", message: `WondrStack answered ${String(t.error_description || t.error || `HTTP ${r.status}`).slice(0, 160)}` };
+  }
+}
+
 /** A live access token for the project, refreshing (and storing the rotated token) when due. */
-export async function accessToken(project, { store = abraStore } = {}) {
+export async function accessToken(project, opts = {}) {
+  return (await accessSession(project, opts)).token;
+}
+
+/**
+ * { token, resource }: the token and the MCP endpoint it was issued for. A project linked to a local
+ * WondrStack keeps talking to that local server, never to the default production endpoint.
+ */
+export async function accessSession(project, { store = abraStore } = {}) {
   const creds = loadCreds(project, store);
   if (!creds?.access_token) throw new Error(`no WondrStack sign-in for ${project} — run: gotchibot wondrstack login ${project}`);
-  if (creds.expires_at && creds.expires_at > Date.now() + 60_000) return creds.access_token;
+  const resource = creds.resource || ENDPOINT;
+  if (creds.expires_at && creds.expires_at > Date.now() + 60_000) return { token: creds.access_token, resource };
   if (!creds.refresh_token) throw new Error(`WondrStack sign-in for ${project} expired — run: gotchibot wondrstack login ${project}`);
   const t = await postForm(creds.token_endpoint, {
     grant_type: "refresh_token",
@@ -505,7 +665,7 @@ export async function accessToken(project, { store = abraStore } = {}) {
     resource: creds.resource,
   });
   saveCreds(project, tokenSet(t, creds), store);
-  return t.access_token;
+  return { token: t.access_token, resource };
 }
 
 // ---------- MCP over streamable HTTP ----------
@@ -551,8 +711,10 @@ async function rpc(endpoint, token, session, method, params, id) {
 }
 
 /** Call one WondrStack tool for a project; returns its parsed JSON result. */
-export async function callTool(project, tool, args = {}, { endpoint = ENDPOINT, store = abraStore } = {}) {
-  const token = await accessToken(project, { store });
+export async function callTool(project, tool, args = {}, { endpoint, store = abraStore } = {}) {
+  const session0 = await accessSession(project, { store });
+  const token = session0.token;
+  endpoint ||= session0.resource;
   const session = {};
   await rpc(endpoint, token, session, "initialize", {
     protocolVersion: PROTOCOL,
@@ -633,8 +795,10 @@ export function bodyFromVault(kind, namespace, { get = abraValue } = {}) {
 }
 
 /** POST the body to WondrStack's agent setup endpoint with the project's sign-in. Never echoes secrets. */
-export async function pushSetup(project, kind, body, { endpoint = ENDPOINT, store = abraStore } = {}) {
-  const token = await accessToken(project, { store });
+export async function pushSetup(project, kind, body, { endpoint, store = abraStore } = {}) {
+  const sess = await accessSession(project, { store });
+  const token = sess.token;
+  endpoint ||= sess.resource;
   const url = `${new URL(endpoint).origin}/api/agent/setup/${kind}`;
   const r = await fetch(url, {
     method: "POST",
@@ -1031,6 +1195,8 @@ function flag(argv, name) {
 
 function usage() {
   console.log(`gotchibot wondrstack link   [--project gotchibot]   device-code sign-in: approve in a browser by matching the short code
+gotchibot wondrstack link   --json --confirm-full-scope [--project P]   non-interactive: start, prints link + code as JSON
+gotchibot wondrstack link   --wait [--timeout 50] [--project P]          non-interactive: poll; linked | pending (exit 3) | failed
 gotchibot wondrstack pane   [--project gotchibot]   terminal UI: link state, connect, disconnect
 gotchibot wondrstack login  <project>
 gotchibot wondrstack status <project>
@@ -1060,7 +1226,17 @@ async function main() {
   }
   if (cmd === "link") {
     const argv = [project, ...rest].filter((x) => x != null);
-    const slug = flag(argv, "project") || (argv[0] && !argv[0].startsWith("--") ? argv[0] : "gotchibot");
+    const slug = flag(argv, "project") || (argv[0] && !argv[0].startsWith("--") ? argv[0] : defaultLinkProject());
+    if (argv.includes("--json") || argv.includes("--wait")) {
+      // Non-interactive, no TTY: --confirm-full-scope starts, --wait polls. JSON only, never a token or device code.
+      const out = argv.includes("--wait")
+        ? await deviceWait(slug, { timeoutMs: (Number(flag(argv, "timeout")) || 50) * 1000 })
+        : await deviceStart(slug, { confirmFullScope: argv.includes("--confirm-full-scope") });
+      console.log(JSON.stringify(out));
+      if (out.status === "failed") process.exitCode = out.kind === "confirm_required" ? 2 : 1;
+      else if (out.status === "pending" && argv.includes("--wait")) process.exitCode = 3;
+      return;
+    }
     await deviceLink(slug);
     console.log(`linked ${slug} (tokens stored in abra; none shown). Next: gotchibot wondrstack status ${slug}`);
     return;
