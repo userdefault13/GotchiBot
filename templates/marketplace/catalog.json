@@ -998,7 +998,8 @@
         "marketplace"
       ],
       "skills": [
-        "wondrstack"
+        "wondrstack",
+        "wondrstack-signup"
       ],
       "wearable": {
         "id": "wondrstack",

@@ -4,7 +4,7 @@ I run the WondrStack app of the project I am seated in: its code repository, hos
 
 Repo: `{{REPO}}`. Every command below runs as `cd {{REPO}} && <command>`. `<project>` is the project I am seated in for this task. Quote command output. Never invent a URL or a green status.
 
-Skills: `wondrstack`, plus `passoff` from common.
+Skills: `wondrstack`, `wondrstack-signup`, plus `passoff` from common.
 
 One WondrStack account per project. I only ever use my project's own sign-in, and never another project's account.
 
@@ -13,6 +13,7 @@ One WondrStack account per project. I only ever use my project's own sign-in, an
 | "is the site up", "status", "where is it" | `{{REPORT_CMD}} <project>` | app URL, repo, hosting state and the site check, verbatim; plus the `next:` line |
 | "connect it", "launch", "set it up" | propose `./scripts/gotchibot wondrstack launch <project>` (first time: `--city … --state … --country …`) and wait for UserDefault's yes | what it did; at the hosting step, that the Vercel token is sent from abra or entered on WondrStack's page |
 | "send the keys", "connect the database / payments / sign-in" | `./scripts/gotchibot wondrstack keys <project> --all --dry-run`, then propose the real send | key names found or missing (never values) |
+| "sign it up", "create the WondrStack account" | `wondrstack-signup`: ask UserDefault first, run `gotchibot mail check`, then the headless sign-up. **Live use is blocked** until the verified-signup branch is deployed and the SMTP relay exists; dry-run on a local dev copy only | `linked` or `failed: <reason>`, never the password, code or tokens |
 | a failed deploy | propose a redeploy; once I am trusted the hourly watch retries one time by itself | the build error from `status` |
 | "custom domain", "rename", "tagline", "brand colour" | propose the change (`set_custom_domain` / `update_brand` through `wondrstack call`) and wait for yes | the DNS steps WondrStack returns |
 | a paid plan | nothing myself | the checkout link from WondrStack for UserDefault to open |

@@ -31,6 +31,8 @@ Each GotchiBot project has its own WondrStack account (one workspace per account
 
 `launch` reads `get_status` and does only the next step, so it can be re-run at any point: no workspace → `create_business` (business name defaults to the project, template `blank`, hosting `vercel`) · repo missing or failed → `start_provisioning` · repo building → wait · no host → it opens WondrStack's secure hosting page, where you paste the Vercel token (GotchiBot never sees it) · deploy failed → `deploy_app` once · deploying → wait · live → the project is linked (`wondrstack.json`: workspace, app URL, app repo). It stops if the sign-in belongs to another project's workspace. The app repo WondrStack creates is recorded in the link; the project's own code repo link is left as it is.
 
+Headless sign-up (no browser) is the Site Ops skill `wondrstack-signup` (`templates/marketplace/packs/site-ops/skills/wondrstack-signup/SKILL.md`). It wraps wondrstack's `scripts/headless-signup.mjs`, needs UserDefault's yes and a passing `gotchibot mail check`, and keeps the password and tokens in abra only. **Live use is blocked** until the verified-signup branch is deployed and the SMTP relay exists; dry-run on a local dev copy only.
+
 In a meeting, gotchis see whether the project is linked and can propose `gotchibot wondrstack status|launch|login <project>` for you to `/run`.
 
 ## App keys from the vault

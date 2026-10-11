@@ -6,7 +6,8 @@
   "summary": "Runs the project's WondrStack app: its repo, hosting, deploys, domain and branding. Watches its health, reports what changed, and proposes the next step. Does not own business goals; the Chief of Staff does.",
   "scope": "aarcade",
   "skills": [
-    "wondrstack"
+    "wondrstack",
+    "wondrstack-signup"
   ],
   "skillsExternal": [],
   "standingDuties": [],
@@ -21,7 +22,8 @@
     "AGENTS.md",
     "cron-hints.md",
     "playbook.json",
-    "skills/wondrstack/SKILL.md"
+    "skills/wondrstack/SKILL.md",
+    "skills/wondrstack-signup/SKILL.md"
   ],
   "wearable": {
     "id": "wondrstack",

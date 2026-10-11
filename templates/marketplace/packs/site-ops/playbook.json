@@ -2,7 +2,8 @@
   "title": "Site Ops",
   "summary": "Runs the project's WondrStack app: its repo, hosting, deploys, domain and branding. Watches its health, reports what changed, and proposes the next step. Does not own business goals; the Chief of Staff does.",
   "skills": [
-    "wondrstack"
+    "wondrstack",
+    "wondrstack-signup"
   ],
   "reportCmd": "./scripts/gotchibot wondrstack status",
   "cycleCmd": "./scripts/gotchibot wondrstack watch --all",
