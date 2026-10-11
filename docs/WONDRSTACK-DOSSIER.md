@@ -46,3 +46,7 @@ A project's app keys live in its repo-named abra namespace (`gotchibot` → `Got
 
 Values are read inside the script and sent to WondrStack's `POST /api/agent/setup/<kind>` with the project's sign-in; they are never printed or shown to a model. `launch` sends the Vercel token this way when it is in abra, and falls back to WondrStack's secure page when it is not (or until WondrStack ships the endpoint).
 
+
+## Temporary account
+
+Throwaway address for the old live signup: `gotchibot-temp@gotchibot.xyz` (no Mailu mailbox needed; the old flow sends no code). Password is in abra only, project gotchibot, `WONDRSTACK_TEMP_PASSWORD`. Drop and re-create through the verified flow after the fix deploys.

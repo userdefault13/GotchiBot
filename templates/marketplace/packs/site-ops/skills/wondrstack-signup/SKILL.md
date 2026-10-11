@@ -95,3 +95,5 @@ Verified results (local only):
 - Rerun with the same email: `linked (account already existed, logged in)`.
 - Wrong password: `failed: verification failed and login refused`, and no
   token file is written.
+
+- Temp account: gotchibot-temp@gotchibot.xyz (password in abra as WONDRSTACK_TEMP_PASSWORD) is to be dropped and re-created through the verified flow after the fix deploys; nothing important may sit on it (the old live signup has an account-takeover hole).
