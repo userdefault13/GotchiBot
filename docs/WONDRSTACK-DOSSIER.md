@@ -49,6 +49,6 @@ Values are read inside the script and sent to WondrStack's `POST /api/agent/setu
 
 ## Next connection path: device-code login
 
-The temporary account is dropped and `gotchibot-temp@gotchibot.xyz` must not be created (the old signup goes away once WondrStack PR #4, 342657c, deploys). The next connection path is the device-code login (RFC 8628): `gotchibot wondrstack link` calls `/oauth/device_authorization`, polls `/oauth/token`, and the owner approves in a browser by matching the short code. First grant: read tools plus `create_business`. Tokens go to abra as `WONDRSTACK_<PROJECT>`. Real client id, base URL and paths are TODO until WondrStack confirms (env overrides `WONDRSTACK_DEVICE_*`).
+The temporary account is dropped and `gotchibot-temp@gotchibot.xyz` must not be created (the old signup goes away once WondrStack PR #4, 342657c, deploys). The next connection path is the device-code login (RFC 8628): `gotchibot wondrstack link` calls `/oauth/device_authorization`, polls `/oauth/token`, and the owner approves in a browser by matching the short code. First grant: read tools plus `create_business`. Tokens go to abra as `WONDRSTACK_<PROJECT>`. The client id is registered per install on first run (`/oauth/register`) and cached under `sessions/pstack/<project>/`; `WONDRSTACK_DEVICE_CLIENT_ID` overrides. Base URL and paths are TODO until WondrStack confirms (env overrides `WONDRSTACK_DEVICE_*`).
 
 Note: the abra secret `WONDRSTACK_TEMP_PASSWORD` is unused and can be deleted by Julius. It has not been deleted.

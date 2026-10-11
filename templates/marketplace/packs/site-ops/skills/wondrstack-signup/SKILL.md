@@ -29,9 +29,10 @@ project is not linked. If a sign-in already exists, use the `wondrstack` skill.
    No token file. Never echo, log or paste them.
 4. **No retry loops.** The link expires in about 10 minutes. On denied or
    expired, report it and ask before running `link` again.
-5. **Not live until confirmed.** The client id, base URL and endpoint paths are
-   TODO until WondrStack confirms them. If `link` says the client id is TODO,
-   stop and report; do not guess values. Do not run against the live site until then.
+5. **Not live until confirmed.** The base URL and endpoint paths are TODO until
+   WondrStack confirms them; do not guess values or run against the live site
+   until then. The client id is registered per install on first run
+   (`/oauth/register`) and cached; if registration fails, report the message and stop.
 6. **After linking**, compose the business with the WondrStack MCP tools
    (`list_templates`, `recommend_setup`, `create_business`, and so on),
    proposing each step first. The first grant is read tools plus `create_business`;
@@ -44,7 +45,8 @@ project is not linked. If a sign-in already exists, use the `wondrstack` skill.
 ./scripts/gotchibot wondrstack status <project>   # prints "linked: yes" when it works
 ```
 
-Config (env overrides): `WONDRSTACK_DEVICE_CLIENT_ID` (required),
+Config (env overrides): `WONDRSTACK_DEVICE_CLIENT_ID` (optional; skips registration),
+`WONDRSTACK_DEVICE_REGISTER_PATH` (`/oauth/register`),
 `WONDRSTACK_DEVICE_BASE_URL`, `WONDRSTACK_DEVICE_AUTH_PATH`
 (`/oauth/device_authorization`), `WONDRSTACK_DEVICE_TOKEN_PATH` (`/oauth/token`),
 `WONDRSTACK_DEVICE_SCOPE`.

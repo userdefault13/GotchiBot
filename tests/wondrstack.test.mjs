@@ -288,8 +288,59 @@ describe("wondrstack device link (fake server)", async () => {
     for (const s of [SECRET_AT, SECRET_RT, DEVICE_CODE]) assert.ok(!all.includes(s), "token leaked");
   };
 
-  it("needs a confirmed client id", () => {
-    assert.throws(() => deviceConfig({}, "https://wondrstack.xyz/mcp"), /TODO/);
+  const memCache = (init) => { const m = new Map(init ? [["gotchibot", init]] : []); return { get: (p) => m.get(p) || null, set: (p, id) => m.set(p, id), m }; };
+  function regFetch(inner, reg) {
+    const calls = [];
+    const fetchFn = async (url, init) => {
+      if (String(url).endsWith("/oauth/register")) {
+        calls.push(JSON.parse(init.body));
+        return reg();
+      }
+      return inner(url, init);
+    };
+    return { fetchFn, calls };
+  }
+  const regOk = () => ({ status: 201, ok: true, json: async () => ({ client_id: "cid", client_secret_x: "REG-SECRET" }) });
+
+  it("first run registers a public device_code client, caches it, and does not log the response", async () => {
+    const h = harness(["ok"]);
+    const cache = memCache();
+    const r = regFetch(h.opts.fetchFn, regOk);
+    await deviceLink("gotchibot", { ...h.opts, config: deviceConfig({}, "https://wondrstack.xyz/mcp"), cache, fetchFn: r.fetchFn });
+    assert.equal(r.calls.length, 1);
+    assert.equal(r.calls[0].token_endpoint_auth_method, "none");
+    assert.ok(r.calls[0].grant_types.includes(DEVICE_GRANT));
+    assert.match(r.calls[0].client_name, /GotchiBot/);
+    assert.equal(cache.m.get("gotchibot"), "cid");
+    assert.ok(!h.out.join("\n").includes("REG-SECRET"));
+    noLeak(h.out);
+  });
+
+  it("cached id is reused without registering", async () => {
+    const h = harness(["ok"]);
+    const r = regFetch(h.opts.fetchFn, () => { throw new Error("must not register"); });
+    await deviceLink("gotchibot", { ...h.opts, config: deviceConfig({}, "https://wondrstack.xyz/mcp"), cache: memCache("cid"), fetchFn: r.fetchFn });
+    assert.equal(r.calls.length, 0);
+  });
+
+  it("env override skips cache and registration", async () => {
+    const h = harness(["ok"]);
+    const r = regFetch(h.opts.fetchFn, () => { throw new Error("must not register"); });
+    const cache = memCache("other");
+    await deviceLink("gotchibot", { ...h.opts, config: deviceConfig({ WONDRSTACK_DEVICE_CLIENT_ID: "cid" }, "https://wondrstack.xyz/mcp"), cache, fetchFn: r.fetchFn });
+    assert.equal(r.calls.length, 0);
+  });
+
+  it("registration failure is a clear error and caches nothing", async () => {
+    const h = harness(["ok"]);
+    const cache = memCache();
+    const r = regFetch(h.opts.fetchFn, () => ({ status: 400, ok: false, json: async () => ({ error: "invalid_client_metadata", detail: "REG-SECRET" }) }));
+    await assert.rejects(
+      deviceLink("gotchibot", { ...h.opts, config: deviceConfig({}, "https://wondrstack.xyz/mcp"), cache, fetchFn: r.fetchFn }),
+      (e) => /client registration failed \(invalid_client_metadata\)/.test(e.message) && !e.message.includes("REG-SECRET"),
+    );
+    assert.equal(cache.m.size, 0);
+    assert.equal(h.polls.length, 0);
   });
 
   it("pending then success: stores tokens, prints code and link only", async () => {

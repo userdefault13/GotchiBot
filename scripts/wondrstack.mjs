@@ -305,27 +305,72 @@ export async function login(project, { endpoint = ENDPOINT, store = abraStore, o
 // `gotchibot wondrstack link`: the owner approves in a browser by matching a short
 // code. No loopback port, no password, no mail. Tokens go straight into abra.
 //
-// TODO(WondrStack CoS): confirm every value below. Nothing here is guessed to work:
-//   client id  - no default; set WONDRSTACK_DEVICE_CLIENT_ID (link refuses to run without it)
-//   base URL   - WONDRSTACK_DEVICE_BASE_URL, else the origin of the MCP endpoint (TODO confirm)
-//   paths      - WONDRSTACK_DEVICE_AUTH_PATH / WONDRSTACK_DEVICE_TOKEN_PATH, defaults are the
-//                documented /oauth/device_authorization and /oauth/token (TODO confirm)
+// Client id: registered per install on first run (POST /oauth/register, public client)
+// and cached in the project's non-secret desk config; a client id is not secret.
+// WONDRSTACK_DEVICE_CLIENT_ID overrides and skips registration. No fixed shared id.
+//
+// TODO(WondrStack CoS): confirm the final shapes of these:
+//   base URL   - WONDRSTACK_DEVICE_BASE_URL, else the origin of the MCP endpoint
+//   paths      - WONDRSTACK_DEVICE_AUTH_PATH / _TOKEN_PATH / _REGISTER_PATH, defaults are
+//                /oauth/device_authorization, /oauth/token, /oauth/register
 //   scope      - WONDRSTACK_DEVICE_SCOPE, optional (server decides the first grant)
 
 export const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
 export function deviceConfig(env = process.env, endpoint = ENDPOINT) {
-  const clientId = String(env.WONDRSTACK_DEVICE_CLIENT_ID || "").trim();
-  if (!clientId) throw new Error("device link client id is TODO: WondrStack has not confirmed it yet. Set WONDRSTACK_DEVICE_CLIENT_ID once it does.");
   const base = String(env.WONDRSTACK_DEVICE_BASE_URL || new URL(endpoint).origin).replace(/\/$/, "");
   return {
-    clientId,
+    clientId: String(env.WONDRSTACK_DEVICE_CLIENT_ID || "").trim(),
     base,
+    registerUrl: base + (env.WONDRSTACK_DEVICE_REGISTER_PATH || "/oauth/register"),
     authUrl: base + (env.WONDRSTACK_DEVICE_AUTH_PATH || "/oauth/device_authorization"),
     tokenUrl: base + (env.WONDRSTACK_DEVICE_TOKEN_PATH || "/oauth/token"),
     scope: env.WONDRSTACK_DEVICE_SCOPE || "",
     resource: endpoint.replace(/\/$/, ""),
   };
+}
+
+/** Non-secret client-id cache: sessions/pstack/<project>/wondrstack-device.json. */
+export function clientIdCache(root = ROOT) {
+  const file = (project) => join(root, "sessions", "pstack", project, "wondrstack-device.json");
+  return {
+    get(project) {
+      try {
+        return String(JSON.parse(readFileSync(file(project), "utf8"))?.client_id || "") || null;
+      } catch {
+        return null;
+      }
+    },
+    set(project, clientId, baseUrl) {
+      mkdirSync(dirname(file(project)), { recursive: true });
+      writeFileSync(file(project), `${JSON.stringify({ client_id: clientId, base: baseUrl }, null, 2)}\n`);
+    },
+  };
+}
+
+/** Env override, else the cached id, else register once (public client, device_code grant) and cache it. */
+export async function resolveClientId(project, cfg, { cache = clientIdCache(), fetchFn = fetch, agentName = `GotchiBot (${project})`, log = console.log } = {}) {
+  if (cfg.clientId) return cfg.clientId;
+  const cached = cache.get(project);
+  if (cached) return cached;
+  let r;
+  try {
+    r = await fetchFn(cfg.registerUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ client_name: agentName, grant_types: [DEVICE_GRANT, "refresh_token"], token_endpoint_auth_method: "none" }),
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (e) {
+    throw new Error(`device link: client registration failed (${e?.cause?.code || e?.name || "network error"}); nothing was cached`);
+  }
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok || !b.client_id) {
+    throw new Error(`device link: client registration failed (${b.error_description || b.error || `HTTP ${r.status}`}); nothing was cached. You can set WONDRSTACK_DEVICE_CLIENT_ID to skip it.`);
+  }
+  cache.set(project, String(b.client_id), cfg.base);
+  log(`registered a WondrStack client for ${project} (cached)`);
+  return String(b.client_id);
 }
 
 async function postFormRaw(url, fields, fetchFn = fetch) {
@@ -342,9 +387,11 @@ async function postFormRaw(url, fields, fetchFn = fetch) {
  * Device-code sign-in for one project. Prints the link and short code (never a token),
  * polls at the server's interval, stores tokens in the store (abra). Resolves { ok: true }.
  */
-export async function deviceLink(project, { config, store = abraStore, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, fetchFn = fetch, agentName = `GotchiBot (${project})`, maxMs = 600_000 } = {}) {
+export async function deviceLink(project, { config, cache, store = abraStore, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, fetchFn = fetch, agentName = `GotchiBot (${project})`, maxMs = 600_000 } = {}) {
   credKey(project);
-  const cfg = config || deviceConfig();
+  const base = config || deviceConfig();
+  const clientId = await resolveClientId(project, base, { cache, fetchFn, agentName, log });
+  const cfg = { ...base, clientId };
   const start = await postFormRaw(cfg.authUrl, { client_id: cfg.clientId, client_name: agentName, ...(cfg.scope ? { scope: cfg.scope } : {}), resource: cfg.resource }, fetchFn);
   const d = start.body;
   if (!start.ok || !d.device_code || !d.user_code || !(d.verification_uri_complete || d.verification_uri)) {
