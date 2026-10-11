@@ -2076,6 +2076,24 @@ async function settingsMenu() {
 }
 
 
+/** WondrStack link pane: a TUI over the device-link library, run on this tty. */
+async function viewWondrStack() {
+  try {
+    rl.pause();
+  } catch {}
+  try {
+    spawnSync(process.execPath, [`${ROOT}/scripts/wondrstack.mjs`, "pane", "--project", "gotchibot"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: process.env,
+    });
+  } finally {
+    try {
+      rl.resume();
+    } catch {}
+  }
+}
+
 async function viewBotInbox() {
   clear();
   title("Bot inbox");
@@ -2835,6 +2853,7 @@ function cockpitMenuRows({ sshHubUp = false, net = {}, screenPower = hasScreenPo
       item("kanban", "Kanban (agents · tasks · seats)"),
       item("inbox", "Bot inbox (iMessage · agents | thread)"),
       item("pstack", "Pstack (dossier pane · program store)"),
+      item("wondrstack", "WondrStack (link state · connect · disconnect)"),
       item("factory", "Factory (project bots · Hub · desk infra)"),
     ]),
     group("group:view", "View & browse…", [
@@ -3179,6 +3198,11 @@ async function mainMenu(wallet, cartridgeId) {
 
     if (pick.key === "inbox") {
       await viewBotInbox();
+      continue;
+    }
+
+    if (pick.key === "wondrstack") {
+      await viewWondrStack();
       continue;
     }
 

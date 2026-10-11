@@ -160,7 +160,7 @@ function tokenSet(t, prev = {}) {
   };
 }
 
-function openBrowser(url) {
+export function openBrowser(url) {
   const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
   const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
   spawnSync(cmd, args, { stdio: "ignore" });
@@ -385,7 +385,32 @@ async function postFormRaw(url, fields, fetchFn = fetch) {
  * Device-code sign-in for one project. Prints the link and short code (never a token),
  * polls at the server's interval, stores tokens in the store (abra). Resolves { ok: true }.
  */
-export async function deviceLink(project, { config, cache, store = abraStore, log = console.log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, fetchFn = fetch, agentName = `GotchiBot (${project})`, maxMs = 600_000 } = {}) {
+export const DEVICE_WARNING = "approving gives GotchiBot the FULL `wondrstack` scope, including every WondrStack tool (deploy, delete, spend). There is no read-only scope yet.";
+
+function kinded(kind, message) {
+  return Object.assign(new Error(message), { kind });
+}
+
+/**
+ * Library entry for the CLI and the terminal UI. Same as deviceLink, plus:
+ *   onEvent({type: "started", link, completeLink, userCode, expiresAt, intervalMs})
+ *   onEvent({type: "polling"}) before each poll, onEvent({type: "approved"}) after tokens are stored
+ *   signal: an AbortSignal that cancels the wait (error kind "cancelled")
+ * Errors carry .kind: denied | expired | cancelled | registration | error. No event carries a token or the device code.
+ */
+export async function deviceLink(project, opts = {}) {
+  try {
+    return await deviceLinkInner(project, opts);
+  } catch (e) {
+    if (!e.kind) e.kind = /client registration failed/.test(e.message) ? "registration" : "error";
+    throw e;
+  }
+}
+
+async function deviceLinkInner(project, { config, cache, store = abraStore, log = console.log, onEvent = () => {}, signal, sleep = (ms) => new Promise((r) => {
+  const t = setTimeout(r, ms);
+  signal?.addEventListener("abort", () => { clearTimeout(t); r(); }, { once: true });
+}), now = Date.now, fetchFn = fetch, agentName = `GotchiBot (${project})`, maxMs = 600_000 } = {}) {
   credKey(project);
   const base = config || deviceConfig();
   const clientId = await resolveClientId(project, base, { cache, fetchFn, agentName, log });
@@ -406,7 +431,7 @@ export async function deviceLink(project, { config, cache, store = abraStore, lo
     if (d.error === "invalid_client") throw new Error("device link: WondrStack does not know this client (invalid_client). Delete the cached client id under sessions/pstack/<project>/ and run link again");
     throw new Error(`device link: ${d.error_description || d.error || `HTTP ${start.status}`}`);
   }
-  log("WARNING: approving gives GotchiBot the FULL `wondrstack` scope, including every WondrStack tool (deploy, delete, spend). There is no read-only scope yet. Only approve if you intend that.");
+  log(`WARNING: ${DEVICE_WARNING} Only approve if you intend that.`);
   log(`Open ${d.verification_uri || d.verification_uri_complete} and approve GotchiBot for project ${project}.`);
   if (d.verification_uri && d.verification_uri_complete) log(`Direct link: ${d.verification_uri_complete}`);
   log(`Confirm this code matches the one on the approval page: ${d.user_code}`);
@@ -414,13 +439,18 @@ export async function deviceLink(project, { config, cache, store = abraStore, lo
 
   let interval = Math.max(1, Number(d.interval) || 5) * 1000;
   const deadline = now() + Math.min(maxMs, (Number(d.expires_in) || 600) * 1000);
+  onEvent({ type: "started", link: d.verification_uri || d.verification_uri_complete, completeLink: d.verification_uri_complete || null, userCode: d.user_code, expiresAt: deadline, intervalMs: interval });
   for (;;) {
-    if (now() >= deadline) throw new Error("device link expired before approval: run link again");
+    if (signal?.aborted) throw kinded("cancelled", "device link cancelled");
+    if (now() >= deadline) throw kinded("expired", "device link expired before approval: run link again");
     await sleep(interval);
+    if (signal?.aborted) throw kinded("cancelled", "device link cancelled");
+    onEvent({ type: "polling" });
     const r = await postFormRaw(cfg.tokenUrl, { grant_type: DEVICE_GRANT, device_code: d.device_code, client_id: cfg.clientId }, fetchFn);
     const t = r.body;
     if (r.ok && t.access_token) {
       saveCreds(project, tokenSet(t, { client_id: cfg.clientId, token_endpoint: cfg.tokenUrl, resource: cfg.resource, via: "device" }), store);
+      onEvent({ type: "approved" });
       return { ok: true };
     }
     switch (t.error) {
@@ -430,13 +460,36 @@ export async function deviceLink(project, { config, cache, store = abraStore, lo
         interval += 5000;
         break;
       case "access_denied":
-        throw new Error("device link denied: the owner refused the approval");
+        throw kinded("denied", "device link denied: the owner refused the approval");
       case "expired_token":
-        throw new Error("device link expired before approval: run link again");
+        throw kinded("expired", "device link expired before approval: run link again");
       default:
         throw new Error(`device link: ${t.error_description || t.error || `HTTP ${r.status}`}`);
     }
   }
+}
+
+/**
+ * Is this project linked? Reads the stored sign-in and answers yes/no only, never a token.
+ * { linked: boolean, via?: "device", error?: string } (error = the vault could not be read).
+ */
+export function linkState(project, { store = abraStore } = {}) {
+  try {
+    const creds = loadCreds(project, store);
+    return creds?.access_token ? { linked: true, ...(creds.via ? { via: creds.via } : {}) } : { linked: false };
+  } catch (e) {
+    return { linked: false, error: String(e?.message || e) };
+  }
+}
+
+/**
+ * Disconnect a project. WondrStack has no revocation endpoint in this client (none is documented
+ * or called), so this only removes the stored sign-in from abra. The server-side grant stays until
+ * it is revoked on wondrstack.xyz. Returns { removed: boolean, revoked: false }.
+ */
+export function disconnect(project, { store = abraStore } = {}) {
+  const removed = store.remove(credKey(project));
+  return { removed: Boolean(removed), revoked: false };
 }
 
 /** A live access token for the project, refreshing (and storing the rotated token) when due. */
@@ -978,6 +1031,7 @@ function flag(argv, name) {
 
 function usage() {
   console.log(`gotchibot wondrstack link   [--project gotchibot]   device-code sign-in: approve in a browser by matching the short code
+gotchibot wondrstack pane   [--project gotchibot]   terminal UI: link state, connect, disconnect
 gotchibot wondrstack login  <project>
 gotchibot wondrstack status <project>
 gotchibot wondrstack call   <project> <tool> [json-args]
@@ -997,6 +1051,13 @@ VERCEL_TOKEN, MONGODB_URI, STRIPE_SECRET_KEY + STRIPE_PUBLISHABLE_KEY, GOOGLE_CL
 async function main() {
   const [cmd, project, ...rest] = process.argv.slice(2);
   if (!cmd || cmd === "help" || cmd === "--help") return usage();
+  if (cmd === "pane") {
+    const argv = [project, ...rest].filter((x) => x != null);
+    const slug = flag(argv, "project") || (argv[0] && !argv[0].startsWith("--") ? argv[0] : "gotchibot");
+    const { runRealPane } = await import("./wondrstack-pane.mjs");
+    process.exitCode = await runRealPane(slug);
+    return;
+  }
   if (cmd === "link") {
     const argv = [project, ...rest].filter((x) => x != null);
     const slug = flag(argv, "project") || (argv[0] && !argv[0].startsWith("--") ? argv[0] : "gotchibot");

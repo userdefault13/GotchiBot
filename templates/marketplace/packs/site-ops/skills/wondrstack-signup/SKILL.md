@@ -39,6 +39,10 @@ project is not linked. If a sign-in already exists, use the `wondrstack` skill.
    proposing each step first. Because the grant is full, **always ask first
    before deploy, delete, or anything that spends money.**
 
+## For the owner: no typing
+
+The owner can connect from the cockpit instead (Ctrl+Space, Shift+K, Desk panes…, WondrStack) or `gotchibot wondrstack pane`. It shows link state, the warning, the code and a countdown, and has Disconnect. Disconnect only removes stored tokens from abra; WondrStack revocation is not supported by this client.
+
 ## Command
 
 ```sh
