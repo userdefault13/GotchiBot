@@ -9,11 +9,15 @@
  * gotchibot_chat and gotchibot_handoff call the pinned Hub desk API
  * (X-GotchiBot-Desk-Token). They do not start a runner, bridge, or receiver,
  * and they do not touch chain, signing, or treasury routes.
+ *
+ * desk_* tools are read-only local desk monitors (see desk-lib.mjs): no writes,
+ * no restarts, no sends, all output redacted.
  */
 import { readHubSnapshot, gatewayCheckWouldRun } from "./hub-status-lib.mjs";
 import { redactSecrets, talkToHub } from "./chat-lib.mjs";
+import { deskStatus, deskLogs, deskGit, deskPanes, deskMailCheck, deskRedact } from "./desk-lib.mjs";
 
-const SERVER = { name: "gotchibot-hub-status", version: "0.2.0" };
+const SERVER = { name: "gotchibot-hub-status", version: "0.3.0" };
 
 const TOOLS = [
   {
@@ -64,6 +68,41 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "desk_status",
+    description:
+      "Read-only. Desk receiver :45679 /health, tmux session gotchibot up/down, and the pairing line (desk name, id, API base, host, paired time) with the token never shown.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "desk_logs",
+    description:
+      "Read-only. With no file: list sessions/*.log files (name, bytes, mtime). With file: the last N lines (default 60, max 200) of that log, tokens redacted.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file: { type: "string", description: "Log file name from the list, e.g. moltbook-watch.log." },
+        lines: { type: "number", description: "Lines from the end, 1-200. Default 60." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "desk_git",
+    description: "Read-only. Checkout branch, short sha, tracking line, and the dirty file list (git status --porcelain).",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "desk_panes",
+    description: "Read-only. tmux panes of the gotchibot session (window, command, dead flag) and node/tmux/himalaya/abra process age, cpu, mem.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "desk_mail_check",
+    description:
+      "Read-only. Runs `gotchibot mail check --as gotchibot.xyz` non-interactively and returns up/down/timeout, exit code, and the OK/FAIL line. No mail is read, moved, or sent; the server-down prompt starts nothing.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
 ];
 
 function send(msg) {
@@ -77,6 +116,11 @@ function toolText(data) {
 async function callTool(name, args = {}) {
   if (name === "hub_status") return toolText(readHubSnapshot());
   if (name === "openclaw_gateway_check_would_run") return toolText(gatewayCheckWouldRun());
+  if (name === "desk_status") return toolText(await deskStatus());
+  if (name === "desk_logs") return toolText(await deskLogs({ file: args?.file, lines: args?.lines }));
+  if (name === "desk_git") return toolText(await deskGit());
+  if (name === "desk_panes") return toolText(await deskPanes());
+  if (name === "desk_mail_check") return toolText(await deskMailCheck());
   if (name === "gotchibot_chat" || name === "gotchibot_handoff") {
     const input = args && typeof args === "object" ? args : {};
     const data = await talkToHub({
@@ -121,7 +165,7 @@ async function handle(msg) {
         jsonrpc: "2.0",
         id,
         result: {
-          content: [{ type: "text", text: JSON.stringify({ ok: false, error: redactSecrets(e?.message || e) }) }],
+          content: [{ type: "text", text: JSON.stringify({ ok: false, error: deskRedact(e?.message || e) }) }],
           isError: true,
         },
       });

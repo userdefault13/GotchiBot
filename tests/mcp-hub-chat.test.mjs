@@ -225,6 +225,11 @@ describe("stdio tools", () => {
     const listed = lines.find((m) => m.id === 2);
     const names = listed.result.tools.map((t) => t.name).sort();
     assert.deepEqual(names, [
+      "desk_git",
+      "desk_logs",
+      "desk_mail_check",
+      "desk_panes",
+      "desk_status",
       "gotchibot_chat",
       "gotchibot_handoff",
       "hub_status",
