@@ -96,4 +96,4 @@ Verified results (local only):
 - Wrong password: `failed: verification failed and login refused`, and no
   token file is written.
 
-- Temp account: gotchibot-temp@gotchibot.xyz (password in abra as WONDRSTACK_TEMP_PASSWORD) is to be dropped and re-created through the verified flow after the fix deploys; nothing important may sit on it (the old live signup has an account-takeover hole).
+- Temp account: gotchibot-temp@gotchibot.xyz (password in abra as WONDRSTACK_TEMP_PASSWORD). Until the verified-signup fix deploys, browser sign-up is the only route, because headless-signup.mjs expects the new verify step. After the fix deploys it counts as legacy verified and does NOT expire. Cleanup means deleting its record from the `website_signups` collection and revoking its OAuth tokens. Nothing important may sit on it (the old live signup has an account-takeover hole).

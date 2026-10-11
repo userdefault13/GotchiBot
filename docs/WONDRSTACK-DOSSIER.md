@@ -49,4 +49,4 @@ Values are read inside the script and sent to WondrStack's `POST /api/agent/setu
 
 ## Temporary account
 
-Throwaway address for the old live signup: `gotchibot-temp@gotchibot.xyz` (no Mailu mailbox needed; the old flow sends no code). Password is in abra only, project gotchibot, `WONDRSTACK_TEMP_PASSWORD`. Drop and re-create through the verified flow after the fix deploys.
+Throwaway address: `gotchibot-temp@gotchibot.xyz` (no Mailu mailbox needed; the old flow sends no code). Password is in abra only, project gotchibot, `WONDRSTACK_TEMP_PASSWORD`. Until the verified-signup fix deploys, browser sign-up is the only route, because `headless-signup.mjs` expects the new verify step. After the fix deploys it counts as legacy verified and does NOT expire. Cleanup means deleting its record from the `website_signups` collection and revoking its OAuth tokens.
