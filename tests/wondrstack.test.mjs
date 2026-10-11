@@ -288,7 +288,7 @@ describe("wondrstack device link (fake server)", async () => {
     for (const s of [SECRET_AT, SECRET_RT, DEVICE_CODE]) assert.ok(!all.includes(s), "token leaked");
   };
 
-  const memCache = (init) => { const m = new Map(init ? [["gotchibot", init]] : []); return { get: (p) => m.get(p) || null, set: (p, id) => m.set(p, id), m }; };
+  const memCache = (init, base = "https://wondrstack.xyz") => { const m = new Map(init ? [["gotchibot", { client_id: init, base }]] : []); return { get: (p) => m.get(p) || null, set: (p, id, b) => m.set(p, { client_id: id, base: b }), m }; };
   function regFetch(inner, reg) {
     const calls = [];
     const fetchFn = async (url, init) => {
@@ -311,7 +311,8 @@ describe("wondrstack device link (fake server)", async () => {
     assert.equal(r.calls[0].token_endpoint_auth_method, "none");
     assert.ok(r.calls[0].grant_types.includes(DEVICE_GRANT));
     assert.match(r.calls[0].client_name, /GotchiBot/);
-    assert.equal(cache.m.get("gotchibot"), "cid");
+    assert.deepEqual(cache.m.get("gotchibot"), { client_id: "cid", base: "https://wondrstack.xyz" });
+    assert.deepEqual(r.calls[0].redirect_uris, ["http://127.0.0.1/callback"]);
     assert.ok(!h.out.join("\n").includes("REG-SECRET"));
     noLeak(h.out);
   });
@@ -321,6 +322,68 @@ describe("wondrstack device link (fake server)", async () => {
     const r = regFetch(h.opts.fetchFn, () => { throw new Error("must not register"); });
     await deviceLink("gotchibot", { ...h.opts, config: deviceConfig({}, "https://wondrstack.xyz/mcp"), cache: memCache("cid"), fetchFn: r.fetchFn });
     assert.equal(r.calls.length, 0);
+  });
+
+  it("a different cached base re-registers", async () => {
+    const h = harness(["ok"]);
+    const cache = memCache("old", "https://staging.example");
+    const r = regFetch(h.opts.fetchFn, regOk);
+    await deviceLink("gotchibot", { ...h.opts, config: deviceConfig({}, "https://wondrstack.xyz/mcp"), cache, fetchFn: r.fetchFn });
+    assert.equal(r.calls.length, 1);
+    assert.equal(cache.m.get("gotchibot").client_id, "cid");
+  });
+
+  it("default base is https://wondrstack.xyz and scope wondrstack", () => {
+    const c = deviceConfig({}, "https://elsewhere.example/mcp");
+    assert.equal(c.authUrl, "https://wondrstack.xyz/oauth/device_authorization");
+    assert.equal(c.tokenUrl, "https://wondrstack.xyz/oauth/token");
+    assert.equal(c.registerUrl, "https://wondrstack.xyz/oauth/register");
+    assert.equal(c.scope, "wondrstack");
+  });
+
+  it("prints the full-scope warning, uri, complete link and code; sends scope", async () => {
+    const h = harness(["ok"]);
+    let sent;
+    const inner = h.opts.fetchFn;
+    const fetchFn = async (url, init) => {
+      if (String(url).endsWith("/oauth/device_authorization")) sent = Object.fromEntries(new URLSearchParams(init.body));
+      const r = await inner(url, init);
+      if (String(url).endsWith("/oauth/device_authorization")) {
+        const b = await r.json();
+        return { status: 200, ok: true, json: async () => ({ ...b, verification_uri_complete: "https://wondrstack.xyz/device?user_code=ABCD-1234" }) };
+      }
+      return r;
+    };
+    await deviceLink("gotchibot", { ...h.opts, config: deviceConfig({ WONDRSTACK_DEVICE_CLIENT_ID: "cid" }), fetchFn });
+    const j = h.out.join("\n");
+    assert.equal(sent.scope, "wondrstack");
+    assert.match(j, /FULL `wondrstack` scope/);
+    assert.match(j, /no read-only scope/i);
+    assert.match(j, /Open https:\/\/wondrstack\.xyz\/device /);
+    assert.match(j, /Direct link: .*user_code=ABCD-1234/);
+    assert.match(j, /ABCD-1234/);
+    noLeak(h.out);
+  });
+
+  it("429 slow_down on device_authorization backs off and retries", async () => {
+    const h = harness(["ok"]);
+    let n = 0;
+    const inner = h.opts.fetchFn;
+    const fetchFn = async (url, init) => {
+      if (String(url).endsWith("/oauth/device_authorization") && n++ < 2) return { status: 429, ok: false, json: async () => ({ error: "slow_down" }) };
+      return inner(url, init);
+    };
+    await deviceLink("gotchibot", { ...h.opts, fetchFn });
+    assert.equal(n, 3);
+    assert.deepEqual(h.sleeps.slice(0, 2), [5000, 10000]);
+    noLeak(h.out);
+  });
+
+  it("invalid_client from device_authorization gives a clear message", async () => {
+    const h = harness(["ok"]);
+    const fetchFn = async () => ({ status: 401, ok: false, json: async () => ({ error: "invalid_client" }) });
+    await assert.rejects(deviceLink("gotchibot", { ...h.opts, fetchFn }), /invalid_client/);
+    assert.deepEqual(h.saved, {});
   });
 
   it("env override skips cache and registration", async () => {

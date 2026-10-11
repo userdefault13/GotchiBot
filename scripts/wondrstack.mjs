@@ -307,25 +307,22 @@ export async function login(project, { endpoint = ENDPOINT, store = abraStore, o
 //
 // Client id: registered per install on first run (POST /oauth/register, public client)
 // and cached in the project's non-secret desk config; a client id is not secret.
+// The cache is {client_id, base}; a different base re-registers.
 // WONDRSTACK_DEVICE_CLIENT_ID overrides and skips registration. No fixed shared id.
-//
-// TODO(WondrStack CoS): confirm the final shapes of these:
-//   base URL   - WONDRSTACK_DEVICE_BASE_URL, else the origin of the MCP endpoint
-//   paths      - WONDRSTACK_DEVICE_AUTH_PATH / _TOKEN_PATH / _REGISTER_PATH, defaults are
-//                /oauth/device_authorization, /oauth/token, /oauth/register
-//   scope      - WONDRSTACK_DEVICE_SCOPE, optional (server decides the first grant)
+// Overrides: WONDRSTACK_DEVICE_BASE_URL (default https://wondrstack.xyz),
+// WONDRSTACK_DEVICE_{REGISTER,AUTH,TOKEN}_PATH, WONDRSTACK_DEVICE_SCOPE (default wondrstack).
 
 export const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
 export function deviceConfig(env = process.env, endpoint = ENDPOINT) {
-  const base = String(env.WONDRSTACK_DEVICE_BASE_URL || new URL(endpoint).origin).replace(/\/$/, "");
+  const base = String(env.WONDRSTACK_DEVICE_BASE_URL || "https://wondrstack.xyz").replace(/\/$/, "");
   return {
     clientId: String(env.WONDRSTACK_DEVICE_CLIENT_ID || "").trim(),
     base,
     registerUrl: base + (env.WONDRSTACK_DEVICE_REGISTER_PATH || "/oauth/register"),
     authUrl: base + (env.WONDRSTACK_DEVICE_AUTH_PATH || "/oauth/device_authorization"),
     tokenUrl: base + (env.WONDRSTACK_DEVICE_TOKEN_PATH || "/oauth/token"),
-    scope: env.WONDRSTACK_DEVICE_SCOPE || "",
+    scope: env.WONDRSTACK_DEVICE_SCOPE || "wondrstack",
     resource: endpoint.replace(/\/$/, ""),
   };
 }
@@ -336,7 +333,8 @@ export function clientIdCache(root = ROOT) {
   return {
     get(project) {
       try {
-        return String(JSON.parse(readFileSync(file(project), "utf8"))?.client_id || "") || null;
+        const j = JSON.parse(readFileSync(file(project), "utf8"));
+        return j?.client_id ? { client_id: String(j.client_id), base: String(j.base || "") } : null;
       } catch {
         return null;
       }
@@ -352,13 +350,13 @@ export function clientIdCache(root = ROOT) {
 export async function resolveClientId(project, cfg, { cache = clientIdCache(), fetchFn = fetch, agentName = `GotchiBot (${project})`, log = console.log } = {}) {
   if (cfg.clientId) return cfg.clientId;
   const cached = cache.get(project);
-  if (cached) return cached;
+  if (cached?.client_id && cached.base === cfg.base) return cached.client_id;
   let r;
   try {
     r = await fetchFn(cfg.registerUrl, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ client_name: agentName, grant_types: [DEVICE_GRANT, "refresh_token"], token_endpoint_auth_method: "none" }),
+      body: JSON.stringify({ client_name: agentName, redirect_uris: ["http://127.0.0.1/callback"], grant_types: [DEVICE_GRANT, "refresh_token"], token_endpoint_auth_method: "none" }),
       signal: AbortSignal.timeout(20000),
     });
   } catch (e) {
@@ -392,13 +390,25 @@ export async function deviceLink(project, { config, cache, store = abraStore, lo
   const base = config || deviceConfig();
   const clientId = await resolveClientId(project, base, { cache, fetchFn, agentName, log });
   const cfg = { ...base, clientId };
-  const start = await postFormRaw(cfg.authUrl, { client_id: cfg.clientId, client_name: agentName, ...(cfg.scope ? { scope: cfg.scope } : {}), resource: cfg.resource }, fetchFn);
+  let start;
+  let startWait = 5000;
+  for (let tries = 0; ; tries++) {
+    start = await postFormRaw(cfg.authUrl, { client_id: cfg.clientId, client_name: agentName, ...(cfg.scope ? { scope: cfg.scope } : {}), resource: cfg.resource }, fetchFn);
+    if (start.status === 429 && start.body?.error === "slow_down" && tries < 3) {
+      await sleep(startWait);
+      startWait += 5000;
+      continue;
+    }
+    break;
+  }
   const d = start.body;
   if (!start.ok || !d.device_code || !d.user_code || !(d.verification_uri_complete || d.verification_uri)) {
+    if (d.error === "invalid_client") throw new Error("device link: WondrStack does not know this client (invalid_client). Delete the cached client id under sessions/pstack/<project>/ and run link again");
     throw new Error(`device link: ${d.error_description || d.error || `HTTP ${start.status}`}`);
   }
-  const link = d.verification_uri_complete || d.verification_uri;
-  log(`Approve GotchiBot for project ${project} in your browser:\n  ${link}`);
+  log("WARNING: approving gives GotchiBot the FULL `wondrstack` scope, including every WondrStack tool (deploy, delete, spend). There is no read-only scope yet. Only approve if you intend that.");
+  log(`Open ${d.verification_uri || d.verification_uri_complete} and approve GotchiBot for project ${project}.`);
+  if (d.verification_uri && d.verification_uri_complete) log(`Direct link: ${d.verification_uri_complete}`);
   log(`Confirm this code matches the one on the approval page: ${d.user_code}`);
   log("If the codes differ, do NOT approve.");
 

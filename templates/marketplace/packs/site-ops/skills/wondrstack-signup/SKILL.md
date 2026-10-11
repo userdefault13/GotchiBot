@@ -20,8 +20,10 @@ project is not linked. If a sign-in already exists, use the `wondrstack` skill.
 
 ## Hard rules
 
-1. **Ask the owner first.** Never start `link` without a yes in this
-   conversation. Name the project and say they will approve in a browser.
+1. **Ask the owner first, and warn them.** Never start `link` without a yes in
+   this conversation. Name the project and say they will approve in a browser.
+   Before starting, tell them: approval grants the FULL `wondrstack` scope,
+   including every WondrStack tool. There is no read-only scope yet.
 2. **Show the code, not secrets.** Print the verification link and the short
    user code, and tell the owner to confirm the code matches the one on the
    approval page (if not, do not approve). Never print tokens or the device code.
@@ -29,14 +31,13 @@ project is not linked. If a sign-in already exists, use the `wondrstack` skill.
    No token file. Never echo, log or paste them.
 4. **No retry loops.** The link expires in about 10 minutes. On denied or
    expired, report it and ask before running `link` again.
-5. **Not live until confirmed.** The base URL and endpoint paths are TODO until
-   WondrStack confirms them; do not guess values or run against the live site
-   until then. The client id is registered per install on first run
-   (`/oauth/register`) and cached; if registration fails, report the message and stop.
+5. **The client id is registered per install** on first run (`/oauth/register`)
+   and cached with its base URL; a different base re-registers. If registration
+   fails, report the message and stop.
 6. **After linking**, compose the business with the WondrStack MCP tools
    (`list_templates`, `recommend_setup`, `create_business`, and so on),
-   proposing each step first. The first grant is read tools plus `create_business`;
-   other tools may be refused. `launch` in the `wondrstack` skill covers repo and hosting.
+   proposing each step first. Because the grant is full, **always ask first
+   before deploy, delete, or anything that spends money.**
 
 ## Command
 
@@ -45,11 +46,9 @@ project is not linked. If a sign-in already exists, use the `wondrstack` skill.
 ./scripts/gotchibot wondrstack status <project>   # prints "linked: yes" when it works
 ```
 
-Config (env overrides): `WONDRSTACK_DEVICE_CLIENT_ID` (optional; skips registration),
-`WONDRSTACK_DEVICE_REGISTER_PATH` (`/oauth/register`),
-`WONDRSTACK_DEVICE_BASE_URL`, `WONDRSTACK_DEVICE_AUTH_PATH`
-(`/oauth/device_authorization`), `WONDRSTACK_DEVICE_TOKEN_PATH` (`/oauth/token`),
-`WONDRSTACK_DEVICE_SCOPE`.
+Config (env overrides, all optional): `WONDRSTACK_DEVICE_CLIENT_ID` (skips registration),
+`WONDRSTACK_DEVICE_BASE_URL` (`https://wondrstack.xyz`), `WONDRSTACK_DEVICE_REGISTER_PATH`,
+`WONDRSTACK_DEVICE_AUTH_PATH`, `WONDRSTACK_DEVICE_TOKEN_PATH`, `WONDRSTACK_DEVICE_SCOPE` (`wondrstack`).
 
 ## Steps (after the owner's yes)
 
