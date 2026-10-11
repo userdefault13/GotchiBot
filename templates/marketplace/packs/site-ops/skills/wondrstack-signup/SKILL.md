@@ -15,8 +15,9 @@ metadata:
 
 # wondrstack-signup
 
-Wraps `scripts/headless-signup.mjs` in the wondrstack repo (`~/dev/wondrstack`,
-commit `e05b177` on `fix/verified-signup`, not pushed). Use it only when
+Wraps `headless-signup.mjs` in the wondrstack repo. The script is at
+`~/dev/wondrstack/apps/website/scripts/headless-signup.mjs`; run it from
+`apps/website` (commit `e05b177` on `fix/verified-signup`, not pushed). Use it only when
 `./scripts/gotchibot wondrstack status <project>` shows the project has no
 sign-in. If a sign-in already exists, use the `wondrstack` skill instead.
 
@@ -52,6 +53,7 @@ The script extracts the code with `is (\d{6})\.`.
 ## Command
 
 ```sh
+# from ~/dev/wondrstack/apps/website
 node scripts/headless-signup.mjs --base <url> --email admin@gotchibot.xyz \
   --password-env WONDRSTACK_PASSWORD \
   --code-cmd 'gotchibot mail read --as gotchibot.xyz' \
@@ -73,3 +75,23 @@ body; `--code-env` reads the code from an env var instead.
 5. On `failed: <reason>`: quote the reason, delete any token file, and stop.
    Never retry in a loop; each try sends a mail.
 6. Compose the business with the MCP tools (rule 5).
+
+## Dry run (local only, the only allowed mode for now)
+
+With no SMTP the dev server logs the verification code, so read it from the
+Nuxt log instead of `gotchibot mail read`:
+
+```sh
+--code-cmd "grep -o 'is [0-9]\{6\}\.' <nuxt.log> | tail -1"
+```
+
+Needs a throwaway local mongo and `nuxt dev` on `127.0.0.1`, both started
+detached from the shell (so they outlive the command). Use a loopback `--base`
+and a throwaway email, never `admin@gotchibot.xyz`. No mail is sent.
+
+Verified results (local only):
+
+- New email: `linked (signed up); get_status: ok`.
+- Rerun with the same email: `linked (account already existed, logged in)`.
+- Wrong password: `failed: verification failed and login refused`, and no
+  token file is written.
