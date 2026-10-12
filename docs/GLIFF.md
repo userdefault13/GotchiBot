@@ -33,7 +33,7 @@ Exit codes: `1` gliff cannot run here (not installed, or macOS — the client ne
 
 ## Install (optional, Omarchy desks only)
 
-`scripts/omarchy-desk-install.sh` runs `omarchy pkg add gliff` and nothing else (no source
+`scripts/omarchy-desk-install.sh` tries `omarchy pkg add gliff` (OPR), then yay/paru if the AUR lists gliff, then (opt-in `GOTCHIBOT_GLIFF_SOURCE=1`, non-interactive sudo only) upstream `github.com/omacom/gliff` `bin/install`; `GOTCHIBOT_GLIFF_ONLY=1` runs just this step (no
 build, no `curl | sh`). It prints one line and moves on when it skips:
 
 | Skipped when | Note |

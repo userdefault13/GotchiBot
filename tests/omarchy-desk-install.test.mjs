@@ -5,7 +5,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readlinkSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, readlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +42,34 @@ describe("omarchy desk install", () => {
       assert.equal(r.status, 0, `${r.stderr}\n${r.stdout}`);
       assert.match(r.stdout, /dry-run: ln -sfn/);
       assert.match(r.stdout, /nothing was changed/);
+      assert.match(r.stdout, /desk client would link:/);
+      assert.doesNotMatch(r.stdout, /desk client linked:/);
       assert.equal(existsSync(path.join(home, ".local")), false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("gliff missing from OPR/AUR: hint, exit 0, no source build by default", () => {
+    const home = mkdtempSync(path.join(tmpdir(), "omarchy-gliff-"));
+    try {
+      const bin = path.join(home, "stub");
+      mkdirSync(bin);
+      writeFileSync(path.join(bin, "omarchy"), "#!/bin/sh\necho 'error: target not found: gliff' >&2\nexit 1\n", { mode: 0o755 });
+      writeFileSync(path.join(bin, "hyprctl"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      const r = spawnSync("bash", [script], {
+        encoding: "utf8",
+        env: {
+          ...process.env, HOME: home, PATH: `${bin}:/usr/bin:/bin`,
+          GOTCHIBOT_GLIFF_ONLY: "1", GOTCHIBOT_GLIFF_OS: "Linux",
+          GOTCHIBOT_GLIFF_HOST: "omarchywin", GOTCHIBOT_GLIFF_MEMKB: "16000000",
+        },
+      });
+      assert.equal(r.status, 0, `${r.stderr}\n${r.stdout}`);
+      assert.match(r.stdout, /not in OPR\/AUR here/);
+      assert.match(r.stdout, /github\.com\/omacom\/gliff/);
+      assert.doesNotMatch(r.stdout, /desk client/);
+      assert.equal(existsSync(path.join(home, ".cache/gotchibot/gliff")), false);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

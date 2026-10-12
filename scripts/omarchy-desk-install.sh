@@ -35,33 +35,44 @@ BIN_DIR="${HOME}/.local/bin"
 SOURCE="$ROOT/scripts/gotchibot"
 TARGET="$BIN_DIR/gotchibot"
 
-if [[ ! -f "$SOURCE" ]]; then
-  echo "missing desk CLI: $SOURCE" >&2
-  exit 1
-fi
+link_desk() {
+  if [[ ! -f "$SOURCE" ]]; then
+    echo "missing desk CLI: $SOURCE" >&2
+    exit 1
+  fi
 
-run mkdir -p "$BIN_DIR"
-run ln -sfn "$SOURCE" "$TARGET"
+  run mkdir -p "$BIN_DIR"
+  run ln -sfn "$SOURCE" "$TARGET"
 
-if command -v node >/dev/null 2>&1; then
-  run node "$ROOT/scripts/ensure-local-config.mjs" --quiet
-else
-  echo "node not on PATH; symlink is in place, skipped config seed" >&2
-fi
+  if command -v node >/dev/null 2>&1; then
+    run node "$ROOT/scripts/ensure-local-config.mjs" --quiet
+  else
+    echo "node not on PATH; symlink is in place, skipped config seed" >&2
+  fi
 
-[[ "$DRY_RUN" == "1" ]] && echo "Dry run: nothing was changed."
-echo "GotchiBot desk client linked: $TARGET -> $SOURCE"
-echo "No hub was installed. Port 4001 was not touched."
-case ":${PATH}:" in
-  *":${BIN_DIR}:"*) ;;
-  *) echo "Add ${BIN_DIR} to PATH, or run ${SOURCE}" ;;
-esac
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "Dry run: nothing was changed."
+    echo "GotchiBot desk client would link: $TARGET -> $SOURCE"
+  else
+    echo "GotchiBot desk client linked: $TARGET -> $SOURCE"
+  fi
+  echo "No hub was installed. Port 4001 was not touched."
+  case ":${PATH}:" in
+    *":${BIN_DIR}:"*) ;;
+    *) echo "Add ${BIN_DIR} to PATH, or run ${SOURCE}" ;;
+  esac
+}
 
 # ── optional: gliff (Hyprland-to-Hyprland remote desktop over ssh) ──────────
-# Installed with `omarchy pkg add gliff` only: no source build, no piped installer.
+# Sources in order: OPR (`omarchy pkg add gliff`), an AUR helper if the AUR lists it,
+# then opt-in upstream source build (GOTCHIBOT_GLIFF_SOURCE=1). No piped installer.
+# GOTCHIBOT_GLIFF_ONLY=1 runs just this step.
 # Skipped (one line each) on macOS, non-Omarchy boxes, the hub, low-RAM desks,
 # and when gliff is already there. Opt out with GOTCHIBOT_GLIFF=0. A missing
 # package is a note, never a failed desk install.
+gliff_done() {
+  if [[ "$DRY_RUN" == "1" ]]; then echo "gliff: would install with $1"; else echo "gliff: installed with $1"; fi
+}
 install_gliff() {
   local os mem_kb min_kb host hub_names
   os="${GOTCHIBOT_GLIFF_OS:-$(uname -s)}"
@@ -91,11 +102,46 @@ install_gliff() {
   if command -v gliff >/dev/null 2>&1; then
     echo "gliff: already installed"; return 0
   fi
+  # 1) Omarchy Package Repository (OPR, github.com/omacom/omarchy-pkgs).
   if run omarchy pkg add gliff; then
-    echo "gliff: installed with omarchy pkg add gliff"
+    gliff_done "omarchy pkg add gliff"; return 0
+  fi
+  # 2) An AUR helper, only if the AUR actually lists gliff (it did not on 2026-10-11).
+  local helper
+  for helper in yay paru; do
+    if command -v "$helper" >/dev/null 2>&1 && "$helper" -Ssq '^gliff$' 2>/dev/null | grep -qx gliff; then
+      if run "$helper" -S --needed --noconfirm gliff; then gliff_done "$helper (AUR)"; return 0; fi
+    fi
+  done
+  # 3) Upstream source (github.com/omacom/gliff): bin/install runs makepkg -fsi,
+  #    which needs sudo for pacman. Opt-in only, and only with non-interactive sudo.
+  local src="${GOTCHIBOT_GLIFF_SRC_DIR:-${HOME}/.cache/gotchibot/gliff}"
+  local hint="git clone https://github.com/omacom/gliff ${src} && ${src}/bin/install"
+  if [[ "${GOTCHIBOT_GLIFF_SOURCE:-0}" != "1" ]]; then
+    echo "gliff: not in OPR/AUR here; not installed (desk install is fine)."
+    echo "gliff: hint: GOTCHIBOT_GLIFF_SOURCE=1 $0  or run: ${hint}"
+    return 0
+  fi
+  if ! command -v makepkg >/dev/null 2>&1; then
+    echo "gliff: skipped (no makepkg for a source build); run on Arch: ${hint}"; return 0
+  fi
+  if [[ "$DRY_RUN" != "1" ]] && ! sudo -n true 2>/dev/null; then
+    echo "gliff: source build needs sudo (pacman); run it yourself: ${hint}"; return 0
+  fi
+  if [[ -d "$src/.git" ]]; then
+    run git -C "$src" pull --ff-only -q || { echo "gliff: could not update $src; run: ${hint}"; return 0; }
   else
-    echo "gliff: package not found via 'omarchy pkg add gliff'; not installed (desk install is fine)"
+    run mkdir -p "$(dirname "$src")"
+    run git clone -q https://github.com/omacom/gliff "$src" || { echo "gliff: clone failed; run: ${hint}"; return 0; }
+  fi
+  if run "$src/bin/install" --noconfirm; then
+    gliff_done "source build (github.com/omacom/gliff bin/install)"
+  else
+    echo "gliff: source build failed; not installed (desk install is fine). Retry: ${hint}"
   fi
   return 0
 }
+if [[ "${GOTCHIBOT_GLIFF_ONLY:-0}" != "1" ]]; then
+  link_desk
+fi
 install_gliff
