@@ -2,11 +2,33 @@
 # Omarchy desk refresh for the existing checkout (omarchymini). No hub, no :4001.
 set -euo pipefail
 
-if [[ $# -ne 0 ]]; then
-  echo "usage: $(basename "$0")" >&2
+DRY_RUN=0
+usage() {
+  echo "usage: $(basename "$0") [--dry-run]" >&2
   echo "desk client only — does not install a hub and leaves port 4001 alone" >&2
-  exit 2
-fi
+  echo "--dry-run prints each step and changes nothing (also GOTCHIBOT_DRY_RUN=1)" >&2
+}
+case "${1:-}" in
+  "") ;;
+  --dry-run|-n) DRY_RUN=1 ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage; exit 2 ;;
+esac
+if [[ $# -gt 1 ]]; then usage; exit 2; fi
+[[ "${GOTCHIBOT_DRY_RUN:-0}" == "1" ]] && DRY_RUN=1
+
+# run CMD...: execute, or print it under --dry-run.
+run() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf 'dry-run:'; printf ' %q' "$@"; printf '\n'
+  else
+    "$@"
+  fi
+}
+
+for tool in git node; do
+  command -v "$tool" >/dev/null 2>&1 || echo "note: $tool not on PATH (Omarchy: omarchy pkg add ${tool/node/nodejs})" >&2
+done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="${HOME}/.local/bin"
@@ -18,15 +40,16 @@ if [[ ! -f "$SOURCE" ]]; then
   exit 1
 fi
 
-mkdir -p "$BIN_DIR"
-ln -sfn "$SOURCE" "$TARGET"
+run mkdir -p "$BIN_DIR"
+run ln -sfn "$SOURCE" "$TARGET"
 
 if command -v node >/dev/null 2>&1; then
-  node "$ROOT/scripts/ensure-local-config.mjs" --quiet
+  run node "$ROOT/scripts/ensure-local-config.mjs" --quiet
 else
   echo "node not on PATH; symlink is in place, skipped config seed" >&2
 fi
 
+[[ "$DRY_RUN" == "1" ]] && echo "Dry run: nothing was changed."
 echo "GotchiBot desk client linked: $TARGET -> $SOURCE"
 echo "No hub was installed. Port 4001 was not touched."
 case ":${PATH}:" in
@@ -68,7 +91,7 @@ install_gliff() {
   if command -v gliff >/dev/null 2>&1; then
     echo "gliff: already installed"; return 0
   fi
-  if omarchy pkg add gliff; then
+  if run omarchy pkg add gliff; then
     echo "gliff: installed with omarchy pkg add gliff"
   else
     echo "gliff: package not found via 'omarchy pkg add gliff'; not installed (desk install is fine)"

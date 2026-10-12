@@ -5,7 +5,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readlinkSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,27 @@ describe("omarchy desk install", () => {
     assert.doesNotMatch(text, /\b(nc|socat|ss)\b/);
     assert.match(readFileSync(script, "utf8"), /scripts\/gotchibot/);
     assert.match(readFileSync(pkgbuild, "utf8"), /omarchy-desk-install\.sh/);
+  });
+
+  it("--dry-run changes nothing under a temp HOME", () => {
+    const home = mkdtempSync(path.join(tmpdir(), "omarchy-desk-dry-"));
+    try {
+      const r = spawnSync("bash", [script, "--dry-run"], {
+        encoding: "utf8",
+        env: { ...process.env, HOME: home, GOTCHIBOT_GLIFF: "0" },
+      });
+      assert.equal(r.status, 0, `${r.stderr}\n${r.stdout}`);
+      assert.match(r.stdout, /dry-run: ln -sfn/);
+      assert.match(r.stdout, /nothing was changed/);
+      assert.equal(existsSync(path.join(home, ".local")), false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unknown args", () => {
+    const r = spawnSync("bash", [script, "--bogus"], { encoding: "utf8" });
+    assert.equal(r.status, 2);
   });
 
   it("links the checkout CLI under a temp HOME", () => {

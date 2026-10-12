@@ -58,7 +58,7 @@ cd GotchiBot
 ./scripts/gotchibot tmux
 ```
 
-Omarchy desk (existing checkout, no second hub): `cd ~/dev/GotchiBot && git pull --ff-only origin main && ./scripts/omarchy-desk-install.sh`
+Omarchy desk (no second hub): fresh desk `git clone https://github.com/userdefault13/GotchiBot ~/dev/GotchiBot && cd ~/dev/GotchiBot && ./scripts/omarchy-desk-install.sh --dry-run && ./scripts/omarchy-desk-install.sh`; existing checkout `cd ~/dev/GotchiBot && git pull --ff-only origin main && ./scripts/omarchy-desk-install.sh`. Then `gotchibot gliff <desk>` (see docs/GLIFF.md).
 
 ## Quick start
 
