@@ -12,11 +12,12 @@ RUN apt-get update \
     python3 \
   && rm -rf /var/lib/apt/lists/*
 
-# OpenCode CLI (Linux). Pin via OPENCODE_VERSION build-arg when needed.
-ARG OPENCODE_VERSION=
-RUN curl -fsSL https://opencode.ai/install | bash \
+# OpenCode CLI (Linux). Pinned: 2.x breaks GotchiBot plugins/server API/tui.json.
+ARG OPENCODE_VERSION=1.19.0
+RUN curl -fsSL https://opencode.ai/install | VERSION="${OPENCODE_VERSION}" bash \
   && ln -sf /root/.opencode/bin/opencode /usr/local/bin/opencode \
-  && opencode --version || true
+  && ocv="$(opencode --version)" \
+  && case "$ocv" in 1.*) echo "opencode $ocv";; *) echo "opencode $ocv unsupported (need 1.x)" >&2; exit 1;; esac
 
 WORKDIR /work
 ENV GOTCHIBOT_SANDBOX=1 \

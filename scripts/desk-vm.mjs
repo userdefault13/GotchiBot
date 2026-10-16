@@ -46,6 +46,7 @@ import { randomBytes } from "node:crypto";
 import { cpus, freemem, homedir, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { opencodeInstallShell, opencodeVersion } from "./opencode-pin.mjs";
 import { isMainModule } from "./is-main.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -229,7 +230,7 @@ curl -fsSL "https://nodejs.org/dist/latest-v22.x/$tarball" -o "$tmp/$tarball"
 tar -xzf "$tmp/$tarball" -C /usr/local --strip-components=1
 rm -rf "$tmp"
 
-curl -fsSL https://opencode.ai/install | HOME=/root bash
+${opencodeInstallShell(opencodeVersion())}
 install -m 0755 /root/.opencode/bin/opencode /usr/local/bin/opencode
 
 # The unprivileged job user: no sudo, no ssh login.

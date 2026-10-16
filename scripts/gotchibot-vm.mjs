@@ -45,6 +45,7 @@ import {
 } from "node:fs";
 import { dirname, resolve, join, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
+import { opencodeInstallShell, opencodeVersion } from "./opencode-pin.mjs";
 import { homedir, hostname } from "node:os";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
@@ -175,7 +176,7 @@ node --version >&2
 
 # Same installer as the Dockerfile. Installed, not symlinked: a link into
 # /root is unreadable by the unprivileged gotchi user.
-curl -fsSL https://opencode.ai/install | HOME=/root bash
+${opencodeInstallShell(opencodeVersion())}
 install -m 0755 /root/.opencode/bin/opencode /usr/local/bin/opencode
 sudo -u ${GUEST_USER} -H opencode --version >&2
 
